@@ -1,0 +1,22 @@
+extern "wasi_unstable" "fd_write" fn write(file: i32, ptr: i32, len: i32, nwritten: i32) -> i32
+extern "wasi_unstable" "proc_exit" fn exit(code: i32)
+
+fn dup(a: i32) -> i32, i32 { $a $a }
+
+fn main "_start" () {
+    local i: i32
+    local addr: i32
+    0 #addr
+    loop {
+        $i 26 = if { break }
+        $i $addr + 97 $i + store8
+        $i $addr + 1 + 10 store8
+
+        28 $addr store32
+        32 $i 2 + store32
+        1 28 1 400 write drop
+        
+        $i 1 + #i
+    }
+    0 exit
+}
