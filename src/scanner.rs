@@ -36,7 +36,9 @@ pub enum Token {
     Loop,
     Break,
     Hash,
-    Data,
+    Memory,
+    Semicolon,
+    Bool,
 }
 
 impl Token {
@@ -68,7 +70,9 @@ pub enum TokenType {
     Loop,
     Break,
     Hash,
-    Data,
+    Memory,
+    Semicolon,
+    Bool,
 }
 
 impl From<&Token> for TokenType {
@@ -95,7 +99,9 @@ impl From<&Token> for TokenType {
             Token::Loop => Self::Loop,
             Token::Break => Self::Break,
             Token::Hash => Self::Hash,
-            Token::Data => Self::Data,
+            Token::Memory => Self::Memory,
+            Token::Semicolon => Self::Semicolon,
+            Token::Bool => Self::Bool,
         }
     }
 }
@@ -219,12 +225,16 @@ impl Scanner {
             ':' => TokenWithLocation::new(':', self.location(), Token::Colon),
             '$' => TokenWithLocation::new("$", self.location(), Token::Dollar),
             '#' => TokenWithLocation::new("#", self.location(), Token::Hash),
+            ';' => TokenWithLocation::new(";", self.location(), Token::Semicolon),
             '-' if self.matsch('>') => TokenWithLocation::new("->", self.location(), Token::Arrow),
             '/' if self.matsch('/') => {
                 loop {
-                    match self.peek() {
+                    match self.advance() {
                         None => break,
-                        Some('\n') => break,
+                        Some('\n') => {
+                            self.line += 1;
+                            break;
+                        }
                         _ => {}
                     }
                 }
@@ -246,7 +256,7 @@ impl Scanner {
                 return self.string().map(Some);
             }
             c if c.is_digit(10) => return self.number().map(Some),
-            c if allowd_in_ident(c) => return self.identifier().map(Some),
+            c if allowed_in_ident(c) => return self.identifier().map(Some),
             _ => return Err(ScanError::UnexpectedCharacter(self.location())),
         }))
     }
@@ -312,7 +322,7 @@ impl Scanner {
         })
     }
     fn identifier(&mut self) -> Result<TokenWithLocation, ScanError> {
-        while self.peek().map(allowd_in_ident).unwrap_or(false) {
+        while self.peek().map(allowed_in_ident).unwrap_or(false) {
             self.advance();
         }
         let ident = self.lexeme().trim().to_string();
@@ -328,15 +338,16 @@ impl Scanner {
                 "else" => Token::Else,
                 "loop" => Token::Loop,
                 "break" => Token::Break,
-                "data" => Token::Data,
+                "memory" => Token::Memory,
+                "bool" => Token::Bool,
                 _ => Token::Identifier(ident),
             },
         ))
     }
 }
 
-fn allowd_in_ident(char: char) -> bool {
-    let disallowed = ['{', '}', '(', ')', ' ', '\t', '\n', ':', ','];
+fn allowed_in_ident(char: char) -> bool {
+    let disallowed = ['{', '}', '(', ')', ' ', ';', '\t', '\n', ':', ','];
     for c in disallowed {
         if char == c {
             return false;

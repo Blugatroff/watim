@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        Data, Extern, Function, FunctionSignature, Iff, Intrinsic, Local, Loop, Param, Program,
+        Extern, Function, FunctionSignature, Iff, Intrinsic, Local, Loop, Memory, Param, Program,
         Type, Word,
     },
     scanner::{Token, TokenType, TokenWithLocation},
@@ -130,6 +130,14 @@ impl Parser {
         let signature = self.function_signature()?;
         self.expect(TokenType::LeftBrace)?;
         let mut locals = Vec::new();
+        let mut memory = Vec::new();
+        while self
+            .peek()
+            .map(|t| t.ty() == TokenType::Memory)
+            .unwrap_or(false)
+        {
+            memory.push(self.memory()?);
+        }
         while self
             .peek()
             .map(|t| t.ty() == TokenType::Local)
@@ -143,38 +151,7 @@ impl Parser {
             signature,
             locals,
             body,
-        })
-    }
-    fn data(&mut self) -> Result<Data, ParseError> {
-        let location = self.expect(TokenType::Data)?.location;
-        let addr = match self.advance() {
-            Some(TokenWithLocation {
-                token: Token::Number(addr),
-                ..
-            }) => addr,
-            _ => {
-                return Err(ParseError::new(
-                    self.peek().unwrap(),
-                    ParseErrorType::ExpectedToken(TokenType::Number),
-                ))
-            }
-        };
-        let data = match self.advance() {
-            Some(TokenWithLocation {
-                token: Token::String(data),
-                ..
-            }) => data,
-            _ => {
-                return Err(ParseError::new(
-                    self.peek().unwrap(),
-                    ParseErrorType::ExpectedToken(TokenType::String),
-                ))
-            }
-        };
-        Ok(Data {
-            location,
-            addr,
-            data,
+            memory,
         })
     }
     fn body(&mut self) -> Result<Vec<Word>, ParseError> {
@@ -190,6 +167,7 @@ impl Parser {
                     || ty == TokenType::Loop
                     || ty == TokenType::Break
                     || ty == TokenType::Hash
+                    || ty == TokenType::String
             })
             .unwrap_or(false)
         {
@@ -211,14 +189,24 @@ impl Parser {
         } else {
             None
         };
-        Ok(Iff { location, body, el })
+        Ok(Iff {
+            location,
+            body,
+            el,
+            ret: Vec::new(),
+        })
     }
     fn lop(&mut self) -> Result<Loop, ParseError> {
         let location = self.expect(TokenType::Loop)?.location;
         self.expect(TokenType::LeftBrace)?;
         let body = self.body()?;
         self.expect(TokenType::RightBrace)?;
-        Ok(Loop { location, body })
+        let ret = Vec::new(); // is filled in type_checker
+        Ok(Loop {
+            location,
+            body,
+            ret,
+        })
     }
     fn word(&mut self) -> Result<Word, ParseError> {
         if self
@@ -238,6 +226,17 @@ impl Parser {
         if let Some(t) = self.matsch(TokenType::Break) {
             return Ok(Word::Break {
                 location: t.location,
+            });
+        }
+        if let Some(t) = self.matsch(TokenType::String) {
+            return Ok(Word::String {
+                location: t.location,
+                value: match t.token {
+                    Token::String(value) => value,
+                    _ => unreachable!(),
+                },
+                addr: 0,
+                size: 0,
             });
         }
         match self.advance() {
@@ -282,6 +281,56 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Eq,
                     })
+                } else if &ident.lexeme == "%" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Mod,
+                    })
+                } else if &ident.lexeme == "/" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Div,
+                    })
+                } else if &ident.lexeme == "stack" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Stack,
+                    })
+                } else if &ident.lexeme == "<" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::L,
+                    })
+                } else if &ident.lexeme == ">" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::G,
+                    })
+                } else if &ident.lexeme == "<=" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::LE,
+                    })
+                } else if &ident.lexeme == ">=" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::GE,
+                    })
+                } else if &ident.lexeme == "and" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::And,
+                    })
+                } else if &ident.lexeme == "or" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Or,
+                    })
+                } else if &ident.lexeme == "*" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Mul,
+                    })
                 } else {
                     Ok(Word::Call {
                         location: ident.location,
@@ -322,6 +371,40 @@ impl Parser {
             location: ident.location,
             ty,
         })
+    }
+    fn memory(&mut self) -> Result<Memory, ParseError> {
+        let location = self.expect(TokenType::Memory)?.location;
+        let ident = self.ident()?;
+        match self.advance() {
+            Some(TokenWithLocation {
+                token: Token::Number(size),
+                ..
+            }) => {
+                let alignment = if self
+                    .peek()
+                    .map(|t| t.ty() == TokenType::Number)
+                    .unwrap_or(false)
+                {
+                    match self.expect(TokenType::Number)?.token {
+                        Token::Number(alignment) => Some(alignment),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    None
+                };
+                self.expect(TokenType::Semicolon)?;
+                Ok(Memory {
+                    ident: ident.lexeme,
+                    location,
+                    size,
+                    alignment,
+                })
+            }
+            _ => Err(ParseError::new(
+                self.peek().unwrap(),
+                ParseErrorType::ExpectedToken(TokenType::String),
+            )),
+        }
     }
     fn function_signature(&mut self) -> Result<FunctionSignature, ParseError> {
         self.expect(TokenType::Fn)?;
@@ -398,8 +481,12 @@ impl Parser {
         })
     }
     fn ty(&mut self) -> Result<Type, ParseError> {
-        match self.matsch_any([TokenType::I32]).as_deref() {
+        match self
+            .matsch_any([TokenType::I32, TokenType::Bool])
+            .as_deref()
+        {
             Some(Token::I32) => return Ok(Type::I32),
+            Some(Token::Bool) => return Ok(Type::Bool),
             _ => {}
         }
         return Err(ParseError::new(
@@ -410,7 +497,6 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Program, ParseError> {
         let mut externs = Vec::new();
         let mut functions = Vec::new();
-        let mut data = Vec::new();
         while self
             .peek()
             .map(|t| t.ty() != TokenType::Eof)
@@ -422,12 +508,6 @@ impl Parser {
                 .unwrap_or(false)
             {
                 externs.push(self.ext()?);
-            } else if self
-                .peek()
-                .map(|t| t.ty() == TokenType::Data)
-                .unwrap_or(false)
-            {
-                data.push(self.data()?);
             } else {
                 functions.push(self.function()?);
             }
@@ -435,7 +515,7 @@ impl Parser {
         Ok(Program {
             externs,
             functions,
-            data,
+            data: Vec::new(),
         })
     }
 }
