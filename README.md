@@ -28,7 +28,7 @@ Then run:
 VIM syntax highlighting in [./editor/watim.vim](https://github.com/Blugatroff/watim/tree/main/editor/watim.vim)
 
 ## Example Program
-This program exits which the exit code read from stdin
+This program exits with the exit code read from stdin.
 ```
 extern "wasi_unstable" "proc_exit" fn exit(code: i32)
 extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: i32, iovs_count: i32, result: i32) -> i32
