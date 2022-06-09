@@ -1,11 +1,4 @@
-extern "wasi_unstable" "fd_write" fn raw_write(file: i32, ptr: i32, len: i32, nwritten: i32) -> i32
-
-fn write(file: i32, ptr: i32, len: i32) -> i32 {
-    memory space 8 4;
-    $space $ptr store32
-    $space 4 + $len store32
-    $file $space 1 $space raw_write
-}
+import "./util.watim" as U
 
 fn print_alphabet() {
     memory buf 27; // 26 letters + \n
@@ -15,7 +8,7 @@ fn print_alphabet() {
         $i $buf + 97 $i + store8
         $i $buf + 1 + 10 store8
 
-        1 $buf $i 2 + write drop
+        1 $buf $i 2 + U.write drop
         
         $i 1 + #i
     }

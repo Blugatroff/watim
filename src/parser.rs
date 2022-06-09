@@ -1,7 +1,9 @@
+use std::path::{Path, PathBuf};
+
 use crate::{
     ast::{
-        Extern, Function, FunctionSignature, Iff, Intrinsic, Local, Loop, Memory, Param, Program,
-        Type, Word,
+        Extern, Function, FunctionSignature, Ident, Iff, Import, Intrinsic, Local, Loop, Memory,
+        Module, Param, Type, Word,
     },
     scanner::{Token, TokenType, TokenWithLocation},
 };
@@ -11,6 +13,7 @@ pub struct Parser {
     current: usize,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum ParseErrorType {
     ExpectedIdent,
@@ -126,6 +129,26 @@ impl Parser {
             path,
         })
     }
+    fn import(&mut self) -> Result<Import, ParseError> {
+        self.expect(TokenType::Import)?;
+        match self.advance() {
+            Some(TokenWithLocation {
+                token: Token::String(path),
+                ..
+            }) => {
+                self.expect(TokenType::As)?;
+                let ident = self.ident()?;
+                Ok(Import {
+                    path,
+                    ident: ident.lexeme,
+                })
+            }
+            _ => Err(ParseError::new(
+                self.peek().unwrap(),
+                ParseErrorType::ExpectedToken(TokenType::String),
+            )),
+        }
+    }
     fn function(&mut self) -> Result<Function, ParseError> {
         let signature = self.function_signature()?;
         self.expect(TokenType::LeftBrace)?;
@@ -156,21 +179,18 @@ impl Parser {
     }
     fn body(&mut self) -> Result<Vec<Word>, ParseError> {
         let mut words = Vec::new();
-        while self
-            .peek()
-            .map(|t| {
-                let ty = t.ty();
-                ty == TokenType::Identifier
-                    || ty == TokenType::Dollar
-                    || ty == TokenType::Number
-                    || ty == TokenType::If
-                    || ty == TokenType::Loop
-                    || ty == TokenType::Break
-                    || ty == TokenType::Hash
-                    || ty == TokenType::String
-            })
-            .unwrap_or(false)
-        {
+        let is_start_of_word = |t: TokenWithLocation| {
+            let ty = t.ty();
+            ty == TokenType::Identifier
+                || ty == TokenType::Dollar
+                || ty == TokenType::Number
+                || ty == TokenType::If
+                || ty == TokenType::Loop
+                || ty == TokenType::Break
+                || ty == TokenType::Hash
+                || ty == TokenType::String
+        };
+        while self.peek().map(is_start_of_word).unwrap_or(false) {
             let word = self.word()?;
             words.push(word);
         }
@@ -189,24 +209,14 @@ impl Parser {
         } else {
             None
         };
-        Ok(Iff {
-            location,
-            body,
-            el,
-            ret: Vec::new(),
-        })
+        Ok(Iff { location, body, el })
     }
     fn lop(&mut self) -> Result<Loop, ParseError> {
         let location = self.expect(TokenType::Loop)?.location;
         self.expect(TokenType::LeftBrace)?;
         let body = self.body()?;
         self.expect(TokenType::RightBrace)?;
-        let ret = Vec::new(); // is filled in type_checker
-        Ok(Loop {
-            location,
-            body,
-            ret,
-        })
+        Ok(Loop { location, body })
     }
     fn word(&mut self) -> Result<Word, ParseError> {
         if self
@@ -235,8 +245,6 @@ impl Parser {
                     Token::String(value) => value,
                     _ => unreachable!(),
                 },
-                addr: 0,
-                size: 0,
             });
         }
         match self.advance() {
@@ -331,10 +339,16 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Mul,
                     })
+                } else if self.matsch(TokenType::Dot).is_some() {
+                    let ident_2 = self.ident()?;
+                    Ok(Word::Call {
+                        location: ident.location,
+                        ident: Ident::Qualified(ident.lexeme, ident_2.lexeme),
+                    })
                 } else {
                     Ok(Word::Call {
                         location: ident.location,
-                        ident: ident.lexeme,
+                        ident: Ident::Direct(ident.lexeme),
                     })
                 }
             }
@@ -411,7 +425,7 @@ impl Parser {
         let ident = self.ident()?;
         let export = if let Some(Token::String(export)) = self.peek().map(|t| t.token) {
             self.expect(TokenType::String)?;
-            Some(export.clone())
+            Some(export)
         } else {
             None
         };
@@ -443,12 +457,10 @@ impl Parser {
     fn ident(&mut self) -> Result<TokenWithLocation, ParseError> {
         match self.matsch(TokenType::Identifier) {
             Some(token) => Ok(token),
-            None => {
-                return Err(ParseError::new(
-                    self.peek().unwrap(),
-                    ParseErrorType::ExpectedIdent,
-                ))
-            }
+            None => Err(ParseError::new(
+                self.peek().unwrap(),
+                ParseErrorType::ExpectedIdent,
+            )),
         }
     }
     fn params(&mut self) -> Result<Vec<Param>, ParseError> {
@@ -489,14 +501,15 @@ impl Parser {
             Some(Token::Bool) => return Ok(Type::Bool),
             _ => {}
         }
-        return Err(ParseError::new(
+        Err(ParseError::new(
             self.peek().unwrap(),
             ParseErrorType::ExpectedType,
-        ));
+        ))
     }
-    pub fn parse(&mut self) -> Result<Program, ParseError> {
+    pub fn parse(&mut self, path: impl AsRef<Path>) -> Result<Module, ParseError> {
         let mut externs = Vec::new();
         let mut functions = Vec::new();
+        let mut imports = Vec::new();
         while self
             .peek()
             .map(|t| t.ty() != TokenType::Eof)
@@ -508,14 +521,21 @@ impl Parser {
                 .unwrap_or(false)
             {
                 externs.push(self.ext()?);
+            } else if self
+                .peek()
+                .map(|t| t.ty() == TokenType::Import)
+                .unwrap_or(false)
+            {
+                imports.push(self.import()?);
             } else {
                 functions.push(self.function()?);
             }
         }
-        Ok(Program {
+        Ok(Module {
             externs,
             functions,
-            data: Vec::new(),
+            path: PathBuf::from(path.as_ref()),
+            imports,
         })
     }
 }

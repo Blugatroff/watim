@@ -1,6 +1,6 @@
 use crate::ast::{
-    Data, Extern, Function, FunctionSignature, Iff, Intrinsic, Local, Loop, Param, Program, Type,
-    Word,
+    CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
+    CheckedLoop, CheckedWord, Data, Intrinsic, Local, Param, Program, Type,
 };
 
 fn indent(input: &str) -> String {
@@ -14,7 +14,7 @@ fn indent(input: &str) -> String {
     res
 }
 
-impl std::fmt::Display for Extern {
+impl std::fmt::Display for CheckedExtern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "(import \"{}\" \"{}\" ({}))",
@@ -23,9 +23,9 @@ impl std::fmt::Display for Extern {
     }
 }
 
-impl std::fmt::Display for FunctionSignature {
+impl std::fmt::Display for CheckedFunctionSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ident = &self.ident;
+        let ident = format!("{}:{}", &self.prefix, &self.ident);
         let params = self
             .params
             .iter()
@@ -70,15 +70,17 @@ impl std::fmt::Display for Type {
 impl std::fmt::Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let externs = self
-            .externs
+            .modules
             .iter()
+            .flat_map(|a| &a.1.externs)
             .map(|e| format!("{e}"))
             .intersperse(String::from("\n"))
             .reduce(|a, b| a + &b)
             .unwrap_or_default();
         let functions = self
-            .functions
+            .modules
             .iter()
+            .flat_map(|a| &a.1.functions)
             .map(|f| format!("{f}"))
             .intersperse(String::from("\n"))
             .reduce(|a, b| a + &b)
@@ -95,7 +97,7 @@ impl std::fmt::Display for Program {
     }
 }
 
-impl std::fmt::Display for Function {
+impl std::fmt::Display for CheckedFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let locals = self
             .locals
@@ -140,13 +142,13 @@ impl std::fmt::Display for Function {
                 Some(alignment) => format!("\nglobal.get $stac:k\ni32.const {alignment}\nglobal.get $stac:k\ni32.const {alignment}\ni32.rem_u\ni32.sub\ni32.add\nglobal.set $stac:k"),
                 None => String::new(),
             };
-
-            mem_str.push_str(&format!("{align}\nglobal.get $stac:k\nglobal.get $stac:k\ni32.const {size}\ni32.add\nglobal.set $stac:k\nlocal.set ${ident}"));
+            use std::fmt::Write;
+            write!(&mut mem_str, "{align}\nglobal.get $stac:k\nglobal.get $stac:k\ni32.const {size}\ni32.add\nglobal.set $stac:k\nlocal.set ${ident}").unwrap();
         }
         let drop = if stack == 0 {
             String::new()
         } else {
-            format!("local.get $stac:k\nglobal.set $stac:k\n")
+            String::from("local.get $stac:k\nglobal.set $stac:k\n")
         };
         f.write_fmt(format_args!(
             "({}{}{}{}{})",
@@ -165,25 +167,35 @@ impl std::fmt::Display for Local {
     }
 }
 
-impl std::fmt::Display for Word {
+impl std::fmt::Display for CheckedWord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Word::Call { ident, .. } => f.write_fmt(format_args!("call ${ident}")),
-            Word::Var { ident, .. } => f.write_fmt(format_args!("local.get ${ident}")),
-            Word::Number { number, .. } => f.write_fmt(format_args!("i32.const {number}")),
-            Word::Intrinsic { intrinsic, .. } => intrinsic.fmt(f),
-            Word::If(iff) => iff.fmt(f),
-            Word::Loop(lop) => lop.fmt(f),
-            Word::Break { .. } => f.write_str("br $block"),
-            Word::Set { ident, .. } => f.write_fmt(format_args!("local.set ${ident}")),
-            Word::String { addr, size, .. } => {
+            CheckedWord::Call { ident, .. } => f.write_fmt(format_args!("call ${ident}")),
+            CheckedWord::Var { ident, .. } => f.write_fmt(format_args!("local.get ${ident}")),
+            CheckedWord::Number { number, .. } => f.write_fmt(format_args!("i32.const {number}")),
+            CheckedWord::Intrinsic { intrinsic, .. } => intrinsic.fmt(f),
+            CheckedWord::If(iff) => iff.fmt(f),
+            CheckedWord::Loop(lop) => lop.fmt(f),
+            CheckedWord::Break { .. } => f.write_str("br $block"),
+            CheckedWord::Set { ident, .. } => f.write_fmt(format_args!("local.set ${ident}")),
+            CheckedWord::String { addr, size, .. } => {
                 f.write_fmt(format_args!("i32.const {addr}\ni32.const {size}"))
             }
         }
     }
 }
 
-impl std::fmt::Display for Iff {
+impl std::fmt::Display for CheckedIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let CheckedIdent {
+            module_prefix,
+            ident,
+        } = self;
+        f.write_fmt(format_args!("{module_prefix}:{ident}",))
+    }
+}
+
+impl std::fmt::Display for CheckedIff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let body = self
             .body
@@ -216,7 +228,7 @@ impl std::fmt::Display for Iff {
     }
 }
 
-impl std::fmt::Display for Loop {
+impl std::fmt::Display for CheckedLoop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let body = self
             .body

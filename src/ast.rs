@@ -1,3 +1,5 @@
+use std::{collections::HashMap, path::PathBuf};
+
 use crate::scanner::Location;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +35,13 @@ pub struct Iff {
     pub location: Location,
     pub body: Vec<Word>,
     pub el: Option<Vec<Word>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckedIff {
+    pub location: Location,
+    pub body: Vec<CheckedWord>,
+    pub el: Option<Vec<CheckedWord>>,
     pub ret: Vec<Type>,
 }
 
@@ -40,14 +49,32 @@ pub struct Iff {
 pub struct Loop {
     pub location: Location,
     pub body: Vec<Word>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckedLoop {
+    pub location: Location,
+    pub body: Vec<CheckedWord>,
     pub ret: Vec<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Ident {
+    Direct(String),
+    Qualified(String, String),
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckedIdent {
+    pub module_prefix: String,
+    pub ident: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum Word {
     Call {
         location: Location,
-        ident: String,
+        ident: Ident,
     },
     Var {
         location: Location,
@@ -73,6 +100,37 @@ pub enum Word {
     String {
         location: Location,
         value: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckedWord {
+    Call {
+        location: Location,
+        ident: CheckedIdent,
+    },
+    Var {
+        location: Location,
+        ident: String,
+    },
+    Set {
+        location: Location,
+        ident: String,
+    },
+    Number {
+        location: Location,
+        number: i32,
+    },
+    Intrinsic {
+        location: Location,
+        intrinsic: Intrinsic,
+    },
+    If(CheckedIff),
+    Loop(CheckedLoop),
+    Break {
+        location: Location,
+    },
+    String {
         addr: i32,
         size: i32,
     },
@@ -126,10 +184,28 @@ pub struct FunctionSignature {
 }
 
 #[derive(Debug, Clone)]
+pub struct CheckedFunctionSignature {
+    pub location: Location,
+    pub params: Vec<Param>,
+    pub ret: Vec<Type>,
+    pub ident: String,
+    pub export: Option<String>,
+    pub prefix: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub signature: FunctionSignature,
     pub locals: Vec<Local>,
     pub body: Vec<Word>,
+    pub memory: Vec<Memory>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckedFunction {
+    pub signature: CheckedFunctionSignature,
+    pub locals: Vec<Local>,
+    pub body: Vec<CheckedWord>,
     pub memory: Vec<Memory>,
 }
 
@@ -141,10 +217,44 @@ pub struct Extern {
 }
 
 #[derive(Debug, Clone)]
-pub struct Program {
+pub struct CheckedExtern {
+    pub location: Location,
+    pub signature: CheckedFunctionSignature,
+    pub path: (String, String),
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub path: String,
+    pub ident: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckedImport {
+    pub path: PathBuf,
+    pub ident: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Module {
     pub externs: Vec<Extern>,
+    pub imports: Vec<Import>,
     pub functions: Vec<Function>,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckedModule {
+    pub externs: Vec<CheckedExtern>,
+    pub imports: HashMap<String, CheckedImport>,
+    pub functions: Vec<CheckedFunction>,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct Program {
     pub data: Vec<u8>,
+    pub modules: HashMap<PathBuf, CheckedModule>,
 }
 
 #[derive(Debug, Clone)]

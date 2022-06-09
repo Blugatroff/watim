@@ -16,7 +16,7 @@ endif
 syntax keyword watimTodos TODO
 
 " Language keywords
-syntax keyword watimKeywords if extern loop local fn memory data break else
+syntax keyword watimKeywords if extern loop local fn memory data break else import as
 
 " Comments
 syntax region watimCommentLine start="//" end="$" contains=watimTodos

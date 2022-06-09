@@ -1,15 +1,24 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
-    pub file: String,
+    pub path: Arc<PathBuf>,
     pub line: usize,
     pub column: usize,
 }
 
 impl Display for Location {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}:{}:{}", &self.file, self.line, self.column))
+        f.write_fmt(format_args!(
+            "{}:{}:{}",
+            self.path.display(),
+            self.line,
+            self.column
+        ))
     }
 }
 
@@ -39,6 +48,9 @@ pub enum Token {
     Memory,
     Semicolon,
     Bool,
+    Dot,
+    Import,
+    As,
 }
 
 impl Token {
@@ -73,6 +85,9 @@ pub enum TokenType {
     Memory,
     Semicolon,
     Bool,
+    Dot,
+    Import,
+    As,
 }
 
 impl From<&Token> for TokenType {
@@ -102,6 +117,9 @@ impl From<&Token> for TokenType {
             Token::Memory => Self::Memory,
             Token::Semicolon => Self::Semicolon,
             Token::Bool => Self::Bool,
+            Token::Dot => Self::Dot,
+            Token::Import => Self::Import,
+            Token::As => Self::As,
         }
     }
 }
@@ -156,18 +174,19 @@ pub struct Scanner {
     start: usize,
     line: usize,
     current: usize,
-    file: String,
+    path: Arc<PathBuf>,
 }
 
 impl Scanner {
-    pub fn new(source: String, file: String) -> Self {
+    pub fn new(source: String, file: impl AsRef<Path>) -> Self {
+        let path = Arc::new(PathBuf::from(file.as_ref()));
         Self {
             source: source.chars().collect(),
             tokens: Vec::new(),
             start: 0,
             current: 0,
             line: 1,
-            file,
+            path,
         }
     }
     fn column(&self) -> usize {
@@ -198,7 +217,7 @@ impl Scanner {
         let column = self.column();
         self.tokens.push(TokenWithLocation {
             location: Location {
-                file: self.file.clone(),
+                path: self.path.clone(),
                 line: self.line,
                 column,
             },
@@ -206,9 +225,9 @@ impl Scanner {
             token: Token::Eof,
         });
         if errors.is_empty() {
-            return Ok(&self.tokens);
+            Ok(&self.tokens)
         } else {
-            return Err(errors);
+            Err(errors)
         }
     }
     fn scan_token(&mut self) -> Result<Option<TokenWithLocation>, ScanError> {
@@ -226,6 +245,7 @@ impl Scanner {
             '$' => TokenWithLocation::new("$", self.location(), Token::Dollar),
             '#' => TokenWithLocation::new("#", self.location(), Token::Hash),
             ';' => TokenWithLocation::new(";", self.location(), Token::Semicolon),
+            '.' => TokenWithLocation::new(".", self.location(), Token::Dot),
             '-' if self.matsch('>') => TokenWithLocation::new("->", self.location(), Token::Arrow),
             '/' if self.matsch('/') => {
                 loop {
@@ -255,7 +275,7 @@ impl Scanner {
             '"' => {
                 return self.string().map(Some);
             }
-            c if c.is_digit(10) => return self.number().map(Some),
+            c if c.is_ascii_digit() => return self.number().map(Some),
             c if allowed_in_ident(c) => return self.identifier().map(Some),
             _ => return Err(ScanError::UnexpectedCharacter(self.location())),
         }))
@@ -268,19 +288,19 @@ impl Scanner {
             self.current += 1;
             return true;
         }
-        return false;
+        false
     }
     fn location(&self) -> Location {
         Location {
             line: self.line,
             column: self.column(),
-            file: self.file.clone(),
+            path: self.path.clone(),
         }
     }
     fn advance(&mut self) -> Option<char> {
         let c = self.source.get(self.current)?;
         self.current += 1;
-        return Some(*c);
+        Some(*c)
     }
     fn lexeme(&self) -> String {
         String::from_iter(&self.source[self.start..self.current])
@@ -308,7 +328,7 @@ impl Scanner {
     fn number(&mut self) -> Result<TokenWithLocation, ScanError> {
         loop {
             match self.peek() {
-                Some(c) if c.is_digit(10) => {
+                Some(c) if c.is_ascii_digit() => {
                     self.advance();
                 }
                 _ => break,
@@ -340,6 +360,8 @@ impl Scanner {
                 "break" => Token::Break,
                 "memory" => Token::Memory,
                 "bool" => Token::Bool,
+                "import" => Token::Import,
+                "as" => Token::As,
                 _ => Token::Identifier(ident),
             },
         ))
@@ -347,7 +369,7 @@ impl Scanner {
 }
 
 fn allowed_in_ident(char: char) -> bool {
-    let disallowed = ['{', '}', '(', ')', ' ', ';', '\t', '\n', ':', ','];
+    let disallowed = ['{', '}', '(', ')', ' ', ';', '\t', '\n', ':', ',', '.'];
     for c in disallowed {
         if char == c {
             return false;
@@ -367,7 +389,7 @@ fn local_test() {
             location: Location {
                 line: 1,
                 column: 1,
-                file: String::from("stdin")
+                path: PathBuf::from("stdin")
             },
             lexeme: String::from("i32"),
             token: Token::I32,
