@@ -1,17 +1,19 @@
 #![feature(iter_intersperse)]
+#![feature(if_let_guard)]
 
+use crate::interpreter::Interpreter;
+use ast::{Module, Program};
+use checker::ModuleChecker;
+use scanner::Scanner;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
 
-use ast::{Module, Program};
-use checker::ModuleChecker;
-use scanner::Scanner;
-
 mod ast;
 mod checker;
 mod generator;
+mod interpreter;
 mod parser;
 mod scanner;
 
@@ -37,9 +39,18 @@ fn load_module(path: impl AsRef<Path>) -> Module {
 }
 
 fn main() {
-    let file = PathBuf::from(std::env::args().nth(1).unwrap())
+    let file = PathBuf::from(std::env::args().nth(2).unwrap())
         .canonicalize()
         .unwrap();
+    let mode = std::env::args().nth(1).unwrap();
+    let sim = match mode.as_str() {
+        "com" => false,
+        "sim" => true,
+        mode => {
+            eprintln!("unknown mode: `{mode}`");
+            std::process::exit(1)
+        }
+    };
     let module = load_module(&file);
     let mut modules = HashMap::from([(module.path.clone(), module.clone())]);
     for import in &module.imports {
@@ -78,5 +89,9 @@ fn main() {
         data,
         modules: checked_modules,
     };
-    println!("{program}")
+    if sim {
+        Interpreter::new(program).unwrap();
+    } else {
+        println!("{program}");
+    }
 }

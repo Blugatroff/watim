@@ -13,6 +13,12 @@ fn write(file: i32, ptr: i32, len: i32) -> i32 {
     $file $space 1 $space raw_write
 }
 
+fn write_byte(file: i32, byte: i32) {
+    memory buf 1;
+    $buf $byte store8
+    $file $buf 1 write drop
+}
+
 fn print(n: i32) {
     memory buf 16;
     memory buf_reversed 16;
@@ -66,7 +72,8 @@ fn parse(ptr: i32, len: i32) -> i32 {
         } else {
             1 "Failed to parse: '" write drop
             1 $original-ptr $original-len write drop
-            1 "'\n" write drop
+            1 "'" write drop
+            1 10 write_byte
             1 exit
         }
         $ptr 1 + #ptr // advance pointer

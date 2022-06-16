@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Location {
     pub path: Arc<PathBuf>,
     pub line: usize,
@@ -389,7 +389,7 @@ fn local_test() {
             location: Location {
                 line: 1,
                 column: 1,
-                path: PathBuf::from("stdin")
+                path: Arc::new(PathBuf::from("stdin"))
             },
             lexeme: String::from("i32"),
             token: Token::I32,

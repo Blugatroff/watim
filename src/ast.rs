@@ -64,7 +64,7 @@ pub enum Ident {
     Qualified(String, String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CheckedIdent {
     pub module_prefix: String,
     pub ident: String,
