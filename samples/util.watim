@@ -8,9 +8,22 @@ fn exit(code: i32) {
 
 fn write(file: i32, ptr: i32, len: i32) -> i32 {
     memory space 8 4;
+    local written: i32
     $space $ptr store32
     $space 4 + $len store32
-    $file $space 1 $space raw_write
+    $file $space 1 $space raw_write drop 
+    $space load32 #written
+    $written $len = if { 
+        $len 
+    } else {
+        $file $ptr $written + $len $written - write $written +
+    }
+}
+
+fn write_byte(file: i32, b: i32) {
+    memory buf 1;
+    $buf $b store8
+    $file $buf 1 write drop
 }
 
 fn print(n: i32) {
@@ -18,7 +31,6 @@ fn print(n: i32) {
     memory buf_reversed 16;
     local l: i32
     local i: i32
-    1 100 7 write drop
     0 #l
     $n 0 = if {
         1 #l // length = 1
@@ -36,11 +48,10 @@ fn print(n: i32) {
     }
     $l #i
     loop {
-        $buf_reversed $l 1 - $i - + $buf $i + load32 store32
+        $buf_reversed $l 1 - $i - + $buf $i + load8 store8
         $i 0 = if { break }
         $i 1 - #i
     }
-    $buf_reversed $l + 10 store8
     1 $buf_reversed $l 1 + write drop
 }
 
@@ -62,11 +73,12 @@ fn parse(ptr: i32, len: i32) -> i32 {
     loop {
         $ptr load8 #d
         $d 48 >= $d 58 <= and if { // 48 is ascii '0'
-            $n $d 48 - + #n            
+            $n $d 48 - + #n
         } else {
             1 "Failed to parse: '" write drop
             1 $original-ptr $original-len write drop
-            1 "'\n" write drop
+            //1 "\n" write drop
+            1 10 write_byte
             1 exit
         }
         $ptr 1 + #ptr // advance pointer
@@ -78,5 +90,13 @@ fn parse(ptr: i32, len: i32) -> i32 {
 
 fn dup(a: i32) -> i32, i32 {
     $a $a
+}
+
+fn copy(src_ptr: i32, dst_ptr: i32, size: i32) {
+    loop {
+        $size 1 - #size
+        $dst_ptr $size + $src_ptr $size + load8 store8
+        $size 0 = if { break }
+    }
 }
 

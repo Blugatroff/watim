@@ -27,6 +27,11 @@ Then run:
 ## Editor Support
 VIM syntax highlighting in [./editor/watim.vim](https://github.com/Blugatroff/watim/tree/main/editor/watim.vim)
 
+## Debugger
+```bash
+cargo run -- debug <source-file>
+```
+
 ## Example Program
 This program exits with the exit code read from stdin.
 ```

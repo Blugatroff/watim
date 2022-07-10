@@ -139,7 +139,11 @@ impl std::fmt::Display for CheckedFunction {
             let size = mem.size;
             let ident = &mem.ident;
             let align = match mem.alignment {
-                Some(alignment) => format!("\nglobal.get $stac:k\ni32.const {alignment}\nglobal.get $stac:k\ni32.const {alignment}\ni32.rem_u\ni32.sub\ni32.add\nglobal.set $stac:k"),
+                Some(alignment) => {
+                    // align = (n, alignment) => n + (alignment - (n % alignment)) * (n % alignment > 0)
+                    // n alignment n alignment % - n alignment % 0 > * +
+                    format!("\nglobal.get $stac:k\ni32.const {alignment}\nglobal.get $stac:k\ni32.const {alignment}\ni32.rem_u\ni32.sub\nglobal.get $stac:k\ni32.const {alignment}\ni32.rem_u\ni32.const 0\ni32.gt_u\ni32.mul\ni32.add\nglobal.set $stac:k")
+                }
                 None => String::new(),
             };
             use std::fmt::Write;
@@ -270,6 +274,7 @@ impl std::fmt::Display for Intrinsic {
             Intrinsic::LE => "i32.le_u",
             Intrinsic::GE => "i32.ge_u",
             Intrinsic::Mul => "i32.mul",
+            Intrinsic::NotEq => "i32.ne",
         })
     }
 }

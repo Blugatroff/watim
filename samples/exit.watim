@@ -4,6 +4,6 @@ fn main "_start" () {
     memory buf 32;
     local nread: i32
     0 $buf 32 U.read #nread
-    $buf $nread 1 - U.parse 
+    $buf $nread 1 - U.parse
     U.dup U.print U.exit
 }

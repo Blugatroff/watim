@@ -1,8 +1,10 @@
 [package]
-name = "wal"
+name = "watim"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+crossterm = "0.23"
+
 
 [dev-dependencies]

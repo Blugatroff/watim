@@ -452,7 +452,7 @@ impl<'a> ModuleChecker<'a> {
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Eq => {
+                intrinsic @ Intrinsic::Eq | intrinsic @ Intrinsic::NotEq => {
                     self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
                     stack.push(Type::Bool);
                     Ok((
@@ -751,13 +751,21 @@ impl<'a> ModuleChecker<'a> {
                 }],
                 CheckedWord::Break { location },
             )),
-            Word::String { value, .. } => {
+            Word::String { value, location } => {
                 let addr = data.len() as i32;
                 let size = value.as_bytes().len() as i32;
                 data.extend(value.as_bytes());
                 stack.push(Type::I32);
                 stack.push(Type::I32);
-                Ok((Returns::Yes, Vec::new(), CheckedWord::String { addr, size }))
+                Ok((
+                    Returns::Yes,
+                    Vec::new(),
+                    CheckedWord::String {
+                        addr,
+                        size,
+                        location,
+                    },
+                ))
             }
         }
     }

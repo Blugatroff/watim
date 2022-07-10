@@ -18,6 +18,7 @@ pub enum Intrinsic {
     Drop,
     Sub,
     Eq,
+    NotEq,
     Mod,
     Div,
     Stack,
@@ -131,9 +132,26 @@ pub enum CheckedWord {
         location: Location,
     },
     String {
+        location: Location,
         addr: i32,
         size: i32,
     },
+}
+
+impl CheckedWord {
+    pub fn location(&self) -> &Location {
+        match self {
+            CheckedWord::Call { location, .. } => location,
+            CheckedWord::Var { location, .. } => location,
+            CheckedWord::Set { location, .. } => location,
+            CheckedWord::Number { location, .. } => location,
+            CheckedWord::Intrinsic { location, .. } => location,
+            CheckedWord::If(iff) => &iff.location,
+            CheckedWord::Loop(lop) => &lop.location,
+            CheckedWord::Break { location } => location,
+            CheckedWord::String { location, .. } => location,
+        }
+    }
 }
 
 impl Word {

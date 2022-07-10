@@ -9,6 +9,7 @@ pub struct Location {
     pub path: Arc<PathBuf>,
     pub line: usize,
     pub column: usize,
+    pub len: usize,
 }
 
 impl Display for Location {
@@ -220,6 +221,7 @@ impl Scanner {
                 path: self.path.clone(),
                 line: self.line,
                 column,
+                len: 1,
             },
             lexeme: "".into(),
             token: Token::Eof,
@@ -295,6 +297,7 @@ impl Scanner {
             line: self.line,
             column: self.column(),
             path: self.path.clone(),
+            len: self.current - self.start,
         }
     }
     fn advance(&mut self) -> Option<char> {
@@ -376,23 +379,4 @@ fn allowed_in_ident(char: char) -> bool {
         }
     }
     true
-}
-
-#[test]
-fn local_test() {
-    assert_eq!(
-        Scanner::new(String::from("i32"), String::from("stdin"))
-            .scan_tokens()
-            .unwrap()
-            .get(0),
-        Some(&TokenWithLocation {
-            location: Location {
-                line: 1,
-                column: 1,
-                path: PathBuf::from("stdin")
-            },
-            lexeme: String::from("i32"),
-            token: Token::I32,
-        })
-    )
 }

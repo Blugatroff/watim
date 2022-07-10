@@ -1,12 +1,11 @@
-use std::path::{Path, PathBuf};
-
 use crate::{
     ast::{
         Extern, Function, FunctionSignature, Ident, Iff, Import, Intrinsic, Local, Loop, Memory,
         Module, Param, Type, Word,
     },
-    scanner::{Token, TokenType, TokenWithLocation},
+    scanner::{Location, Token, TokenType, TokenWithLocation},
 };
+use std::path::{Path, PathBuf};
 
 pub struct Parser {
     tokens: Vec<TokenWithLocation>,
@@ -289,6 +288,11 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Eq,
                     })
+                } else if &ident.lexeme == "!=" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::NotEq,
+                    })
                 } else if &ident.lexeme == "%" {
                     Ok(Word::Intrinsic {
                         location: ident.location,
@@ -355,7 +359,12 @@ impl Parser {
             Some(token) if token.ty() == TokenType::Dollar => {
                 let ident = self.ident()?;
                 Ok(Word::Var {
-                    location: ident.location,
+                    location: Location {
+                        path: ident.location.path,
+                        line: ident.location.line,
+                        column: token.location.column,
+                        len: ident.location.len + (ident.location.column - token.location.column),
+                    },
                     ident: ident.lexeme,
                 })
             }
