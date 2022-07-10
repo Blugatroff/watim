@@ -77,6 +77,7 @@ fn parse(ptr: i32, len: i32) -> i32 {
         } else {
             1 "Failed to parse: '" write drop
             1 $original-ptr $original-len write drop
+            1 "'" write drop
             //1 "\n" write drop
             1 10 write_byte
             1 exit

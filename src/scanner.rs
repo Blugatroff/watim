@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Location {
     pub path: Arc<PathBuf>,
     pub line: usize,

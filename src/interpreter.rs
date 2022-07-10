@@ -1196,7 +1196,11 @@ impl StepInterpreter {
                 }
                 Ok(())
             }
-            CheckedWord::String { .. } => todo!(),
+            CheckedWord::String { addr, size, .. } => {
+                self.scope.stack.push(Value::I32(addr));
+                self.scope.stack.push(Value::I32(size));
+                Ok(())
+            }
         }
     }
 }
