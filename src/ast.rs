@@ -1,6 +1,5 @@
-use std::{collections::HashMap, path::PathBuf};
-
 use crate::scanner::Location;
+use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
