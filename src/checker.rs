@@ -488,17 +488,6 @@ impl<'a> ModuleChecker<'a> {
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Stack => {
-                    stack.push(Type::I32);
-                    Ok((
-                        Returns::Yes,
-                        Vec::new(),
-                        CheckedWord::Intrinsic {
-                            location: location.clone(),
-                            intrinsic: intrinsic.clone(),
-                        },
-                    ))
-                }
                 intrinsic @ Intrinsic::And => {
                     self.expect_stack(stack, &word, [Type::Bool, Type::Bool])?;
                     stack.push(Type::Bool);

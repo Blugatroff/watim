@@ -20,7 +20,6 @@ pub enum Intrinsic {
     NotEq,
     Mod,
     Div,
-    Stack,
     And,
     Or,
     L,

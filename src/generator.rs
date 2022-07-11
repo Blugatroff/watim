@@ -266,7 +266,6 @@ impl std::fmt::Display for Intrinsic {
             Intrinsic::Eq => "i32.eq",
             Intrinsic::Div => "i32.div_u",
             Intrinsic::Mod => "i32.rem_u",
-            Intrinsic::Stack => "global.get $stac:k",
             Intrinsic::And => "i32.and",
             Intrinsic::Or => "i32.or",
             Intrinsic::L => "i32.lt_u",

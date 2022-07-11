@@ -6,6 +6,7 @@ mod checker;
 mod debugger;
 mod generator;
 mod interpreter;
+mod intrinsics;
 mod parser;
 mod scanner;
 mod step_interpreter;

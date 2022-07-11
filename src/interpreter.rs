@@ -3,12 +3,10 @@ use crate::{
         CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff, CheckedLoop,
         CheckedWord, Intrinsic, Local, Memory, Param, Program, Type,
     },
+    intrinsics::execute_intrinsic,
     scanner::Location,
 };
-use std::{
-    collections::HashMap,
-    io::{Read, Write},
-};
+use std::{collections::HashMap, io::Read};
 
 #[derive(Debug)]
 pub struct Interpreter {
@@ -19,8 +17,7 @@ pub struct Interpreter {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Value {
-    True,
-    False,
+    Bool(bool),
     I32(i32),
 }
 
@@ -28,12 +25,12 @@ impl Value {
     pub fn default_of_type(ty: &Type) -> Self {
         match ty {
             Type::I32 => Self::I32(0),
-            Type::Bool => Self::False,
+            Type::Bool => Self::Bool(false),
         }
     }
     pub fn ty(self) -> Type {
         match self {
-            Self::True | Self::False => Type::Bool,
+            Self::Bool(_) => Type::Bool,
             Self::I32(_) => Type::I32,
         }
     }
@@ -42,8 +39,8 @@ impl Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::True => f.write_str("True"),
-            Value::False => f.write_str("False"),
+            Value::Bool(true) => f.write_str("True"),
+            Value::Bool(false) => f.write_str("False"),
             Value::I32(n) => n.fmt(f),
         }
     }
@@ -102,7 +99,7 @@ impl Interpreter {
             Some(entry) => entry.clone(),
             None => return Err(Error::NoEntryPoint),
         };
-        this.execute_fn(&entry, Vec::new())?;
+        this.execute_fn(&entry, std::iter::empty())?;
         Ok(())
     }
     fn find_entry_point(&self) -> Option<&InterpreterFunction> {
@@ -117,7 +114,7 @@ impl Interpreter {
     fn execute_fn(
         &mut self,
         function: &InterpreterFunction,
-        mut args: Vec<Value>,
+        mut args: impl Iterator<Item = Value>,
     ) -> Result<Vec<Value>, Error> {
         match function {
             InterpreterFunction::Normal(function) => {
@@ -126,8 +123,8 @@ impl Interpreter {
                     .locals
                     .iter()
                     .map(|local: &Local| (local.ident.clone(), Value::default_of_type(&local.ty)))
-                    .chain(function.signature.params.iter().map(|p: &Param| {
-                        let v = args.pop().unwrap();
+                    .chain(function.signature.params.iter().rev().map(|p: &Param| {
+                        let v = args.next().unwrap();
                         (p.ident.clone(), v)
                     }))
                     .chain(function.memory.iter().map(|mem: &Memory| {
@@ -149,131 +146,7 @@ impl Interpreter {
                 Ok(stack)
             }
             InterpreterFunction::Extern((path_0, path_1), ..) => {
-                match (path_0.as_str(), path_1.as_str()) {
-                    ("wasi_unstable", "fd_write") => {
-                        let file = match args.pop().unwrap() {
-                            Value::I32(file) => file,
-                            _ => todo!(),
-                        };
-                        let iovec_ptr = match args.pop().unwrap() {
-                            Value::I32(ptr) => ptr,
-                            _ => todo!(),
-                        };
-                        let len = match args.pop().unwrap() {
-                            Value::I32(len) => len,
-                            _ => {
-                                todo!()
-                            }
-                        };
-                        let nwritten = match args.pop().unwrap() {
-                            Value::I32(nwritten) => nwritten,
-                            _ => todo!(),
-                        };
-                        let iovec_ptr = iovec_ptr as usize;
-                        let nwritten = nwritten as usize;
-                        match file {
-                            // stdout
-                            1 => {
-                                let mut written = 0;
-                                for i in 0..len as usize {
-                                    let i = i * 8;
-                                    let ptr: [u8; 4] = self.memory
-                                        [iovec_ptr + i..iovec_ptr + 4 + i]
-                                        .try_into()
-                                        .unwrap();
-                                    let ptr: i32 = i32::from_le_bytes(ptr);
-                                    let ptr = ptr as usize;
-
-                                    let len: [u8; 4] = self.memory[iovec_ptr + 4..iovec_ptr + 8]
-                                        .try_into()
-                                        .unwrap();
-                                    let len: i32 = i32::from_le_bytes(len);
-                                    written += len;
-                                    let len = len as usize;
-                                    let data = &self.memory[ptr..ptr + len];
-                                    //dbg!(String::from_utf8(data.to_vec()).unwrap());
-                                    std::io::stdout().write_all(data).unwrap();
-                                    std::io::stdout().flush().unwrap();
-                                }
-                                let res = Value::I32(written);
-                                let written: [u8; 4] = written.to_le_bytes();
-                                for (i, b) in written.into_iter().enumerate() {
-                                    self.memory[nwritten + i] = b;
-                                }
-                                Ok(vec![res])
-                            }
-                            file => {
-                                todo!("unhandled fd_write for file: {file}")
-                            }
-                        }
-                    }
-                    ("wasi_unstable", "fd_read") => {
-                        let file = match args.pop().unwrap() {
-                            Value::I32(file) => file,
-                            _ => todo!(),
-                        };
-                        let iovec_ptr = match args.pop().unwrap() {
-                            Value::I32(ptr) => ptr,
-                            _ => todo!(),
-                        };
-                        let len = match args.pop().unwrap() {
-                            Value::I32(len) => len,
-                            _ => {
-                                todo!()
-                            }
-                        };
-                        let nwritten = match args.pop().unwrap() {
-                            Value::I32(nwritten) => nwritten,
-                            _ => todo!(),
-                        };
-                        let iovec_ptr = iovec_ptr as usize;
-                        let nwritten = nwritten as usize;
-                        match file {
-                            // stdin
-                            0 => {
-                                let mut read = 0;
-                                for i in 0..len as usize {
-                                    let i = i * 8;
-                                    let ptr: [u8; 4] = self.memory
-                                        [iovec_ptr + i..iovec_ptr + 4 + i]
-                                        .try_into()
-                                        .unwrap();
-                                    let ptr: i32 = i32::from_le_bytes(ptr);
-                                    let ptr = ptr as usize;
-
-                                    let len: [u8; 4] = self.memory
-                                        [iovec_ptr + 4 + i..iovec_ptr + 8 + i]
-                                        .try_into()
-                                        .unwrap();
-                                    let len = i32::from_le_bytes(len) as usize;
-                                    read += std::io::stdin()
-                                        .read(&mut self.memory[ptr..ptr + len])
-                                        .unwrap()
-                                        as i32;
-                                }
-                                let written: [u8; 4] = read.to_le_bytes();
-                                for (i, b) in written.into_iter().enumerate() {
-                                    self.memory[nwritten + i] = b;
-                                }
-                                Ok(vec![Value::I32(read)])
-                            }
-                            file => {
-                                todo!("unhandled fd_write for file: {file}")
-                            }
-                        }
-                    }
-                    ("wasi_unstable", "proc_exit") => {
-                        let code = args.pop().unwrap();
-                        let code = match code {
-                            Value::I32(code) => code,
-                            _ => todo!(),
-                        };
-                        std::process::exit(code)
-                    }
-                    path => {
-                        todo!("{path:?}")
-                    }
-                }
+                execute_extern(path_0, path_1, args, &mut self.memory, std::io::stdout())
             }
         }
     }
@@ -292,20 +165,8 @@ impl Interpreter {
                 {
                     Some(function) => {
                         let function = function.clone();
-                        let signature = match function.clone() {
-                            InterpreterFunction::Normal(function) => function.signature,
-                            InterpreterFunction::Extern(_, sig) => sig,
-                        };
-                        let mut args = Vec::new();
-                        for _ in signature.params {
-                            match stack.pop() {
-                                Some(v) => args.push(v),
-                                None => {
-                                    todo!()
-                                }
-                            }
-                        }
-                        stack.extend(self.execute_fn(&function, args)?);
+                        let res = self.execute_fn(&function, std::iter::from_fn(|| stack.pop()))?;
+                        stack.extend(res);
                     }
                     None => return Err(Error::FunctionNotFound(location.clone(), ident.clone())),
                 }
@@ -359,197 +220,7 @@ impl Interpreter {
         location: &Location,
         stack: &mut Vec<Value>,
     ) -> Result<(), Error> {
-        match intrinsic {
-            Intrinsic::Add => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => stack.push(Value::I32(a + b)),
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Store32 => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(value)), Some(Value::I32(addr))) => {
-                    let addr = addr as usize;
-                    let bytes = value.to_le_bytes();
-                    for (i, v) in bytes.into_iter().enumerate() {
-                        self.memory[addr + i] = v;
-                    }
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Store8 => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(value)), Some(Value::I32(addr))) => {
-                    let addr = addr as usize;
-                    let byte = value.to_le_bytes()[0];
-                    self.memory[addr] = byte;
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Load32 => match stack.pop() {
-                Some(Value::I32(addr)) => {
-                    let addr = addr as usize;
-                    let bytes: [u8; 4] = self.memory[addr..addr + 4].try_into().unwrap();
-                    stack.push(Value::I32(i32::from_le_bytes(bytes)))
-                }
-                v => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32],
-                        vec![v.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Load8 => match stack.pop() {
-                Some(Value::I32(addr)) => {
-                    let addr = addr as usize;
-                    let byte = self.memory[addr];
-                    stack.push(Value::I32(byte as i32))
-                }
-                v => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32],
-                        vec![v.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Drop => {
-                stack.pop();
-            }
-            Intrinsic::Sub => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => stack.push(Value::I32(b - a)),
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Eq => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => {
-                    stack.push(if a == b { Value::True } else { Value::False })
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::NotEq => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => {
-                    stack.push(if a != b { Value::True } else { Value::False })
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Mod => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => stack.push(Value::I32(b % a)),
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Div => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => stack.push(Value::I32(b / a)),
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Stack => todo!(),
-            Intrinsic::And => match (stack.pop(), stack.pop()) {
-                (
-                    Some(a @ Value::True | a @ Value::False),
-                    Some(b @ Value::True | b @ Value::False),
-                ) => {
-                    let a = match a {
-                        Value::True => true,
-                        Value::False => false,
-                        Value::I32(_) => unreachable!(),
-                    };
-                    let b = match b {
-                        Value::True => true,
-                        Value::False => false,
-                        Value::I32(_) => unreachable!(),
-                    };
-                    stack.push(if a && b { Value::True } else { Value::False })
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::Bool, Type::Bool],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Or => todo!(),
-            Intrinsic::L => todo!(),
-            Intrinsic::G => todo!(),
-            Intrinsic::LE => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => {
-                    stack.push(if b <= a { Value::True } else { Value::False })
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::GE => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => {
-                    stack.push(if b >= a { Value::True } else { Value::False })
-                }
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-            Intrinsic::Mul => match (stack.pop(), stack.pop()) {
-                (Some(Value::I32(a)), Some(Value::I32(b))) => stack.push(Value::I32(a * b)),
-                (a, b) => {
-                    return Err(Error::ArgsMismatch(
-                        location.clone(),
-                        vec![Type::I32, Type::I32],
-                        vec![a.map(Value::ty), b.map(Value::ty)],
-                    ))
-                }
-            },
-        }
-        Ok(())
+        execute_intrinsic(intrinsic, location, stack, &mut self.memory)
     }
     fn execute_loop(
         &mut self,
@@ -573,24 +244,146 @@ impl Interpreter {
         stack: &mut Vec<Value>,
     ) -> Result<bool, Error> {
         match stack.pop() {
-            Some(Value::True) => {
+            Some(Value::Bool(true)) => {
                 for word in &iff.body {
                     if self.execute_word(word, locals, stack)? {
                         return Ok(true)
                     }
                 }
             }
-            Some(Value::False) if let Some(el) = &iff.el => {
+            Some(Value::Bool(false)) if let Some(el) = &iff.el => {
                 for word in el {
                     if self.execute_word(word, locals, stack)? {
                         return Ok(true)
                     }
                 }
             }
-            Some(Value::False) => {
-}
+            Some(Value::Bool(false)) => {}
             v => return Err(Error::ExpectedBool(iff.location.clone(), v.map(Value::ty))),
         }
         Ok(false)
+    }
+}
+
+pub fn execute_extern(
+    path_0: &str,
+    path_1: &str,
+    mut args: impl Iterator<Item = Value>,
+    memory: &mut [u8],
+    mut stdout: impl std::io::Write,
+) -> Result<Vec<Value>, Error> {
+    match (path_0, path_1) {
+        ("wasi_unstable", "fd_write") => {
+            let nwritten = match args.next().unwrap() {
+                Value::I32(nwritten) => nwritten,
+                _ => todo!(),
+            };
+            let len = match args.next().unwrap() {
+                Value::I32(len) => len,
+                _ => {
+                    todo!()
+                }
+            };
+            let iovec_ptr = match args.next().unwrap() {
+                Value::I32(ptr) => ptr,
+                _ => todo!(),
+            };
+            let file = match args.next().unwrap() {
+                Value::I32(file) => file,
+                _ => todo!(),
+            };
+            let iovec_ptr = iovec_ptr as usize;
+            let nwritten = nwritten as usize;
+            match file {
+                // stdout
+                1 => {
+                    let mut written = 0;
+                    for i in 0..len as usize {
+                        let i = i * 8;
+                        let ptr: [u8; 4] =
+                            memory[iovec_ptr + i..iovec_ptr + 4 + i].try_into().unwrap();
+                        let ptr: i32 = i32::from_le_bytes(ptr);
+                        let ptr = ptr as usize;
+
+                        let len: [u8; 4] = memory[iovec_ptr + 4..iovec_ptr + 8].try_into().unwrap();
+                        let len: i32 = i32::from_le_bytes(len);
+                        written += len;
+                        let len = len as usize;
+                        let data = &memory[ptr..ptr + len];
+                        stdout.write_all(data).unwrap();
+                        stdout.flush().unwrap();
+                    }
+                    let res = Value::I32(written);
+                    let written: [u8; 4] = written.to_le_bytes();
+                    for (i, b) in written.into_iter().enumerate() {
+                        memory[nwritten + i] = b;
+                    }
+                    Ok(vec![res])
+                }
+                file => {
+                    todo!("unhandled fd_write for file: {file}")
+                }
+            }
+        }
+        ("wasi_unstable", "fd_read") => {
+            let nwritten = match args.next().unwrap() {
+                Value::I32(nwritten) => nwritten,
+                _ => todo!(),
+            };
+            let len = match args.next().unwrap() {
+                Value::I32(len) => len,
+                _ => {
+                    todo!()
+                }
+            };
+            let iovec_ptr = match args.next().unwrap() {
+                Value::I32(ptr) => ptr,
+                _ => todo!(),
+            };
+            let file = match args.next().unwrap() {
+                Value::I32(file) => file,
+                _ => todo!(),
+            };
+            let iovec_ptr = iovec_ptr as usize;
+            let nwritten = nwritten as usize;
+            match file {
+                // stdin
+                0 => {
+                    let mut read = 0;
+                    for i in 0..len as usize {
+                        let i = i * 8;
+                        let ptr: [u8; 4] =
+                            memory[iovec_ptr + i..iovec_ptr + 4 + i].try_into().unwrap();
+                        let ptr: i32 = i32::from_le_bytes(ptr);
+                        let ptr = ptr as usize;
+
+                        let len: [u8; 4] = memory[iovec_ptr + 4 + i..iovec_ptr + 8 + i]
+                            .try_into()
+                            .unwrap();
+                        let len = i32::from_le_bytes(len) as usize;
+                        read += std::io::stdin().read(&mut memory[ptr..ptr + len]).unwrap() as i32;
+                    }
+                    let written: [u8; 4] = read.to_le_bytes();
+                    for (i, b) in written.into_iter().enumerate() {
+                        memory[nwritten + i] = b;
+                    }
+                    Ok(vec![Value::I32(read)])
+                }
+                file => {
+                    todo!("unhandled fd_write for file: {file}")
+                }
+            }
+        }
+        ("wasi_unstable", "proc_exit") => {
+            let code = args.next().unwrap();
+            let code = match code {
+                Value::I32(code) => code,
+                _ => todo!(),
+            };
+            std::process::exit(code)
+        }
+        path => {
+            todo!("{path:?}")
+        }
     }
 }

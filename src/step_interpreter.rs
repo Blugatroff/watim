@@ -1,9 +1,10 @@
 use crate::{
-    ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Intrinsic, Program},
-    interpreter::{Error, InterpreterFunction, Value},
+    ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program},
+    interpreter::{execute_extern, Error, InterpreterFunction, Value},
+    intrinsics::execute_intrinsic,
     scanner::Location,
 };
-use std::{collections::HashMap, io::Read, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone)]
 enum ScopeKind {
@@ -237,130 +238,17 @@ impl StepInterpreter {
                         Ok(())
                     }
                     Some(InterpreterFunction::Extern((prefix, ident), _)) => {
-                        match (prefix.as_str(), ident.as_str()) {
-                            ("wasi_unstable", "fd_write") => {
-                                let nwritten = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(nwritten) => nwritten,
-                                    _ => todo!(),
-                                };
-                                let len = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(len) => len,
-                                    _ => {
-                                        todo!()
-                                    }
-                                };
-                                let iovec_ptr = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(ptr) => ptr,
-                                    _ => todo!(),
-                                };
-                                let file = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(file) => file,
-                                    _ => todo!(),
-                                };
-                                let iovec_ptr = iovec_ptr as usize;
-                                let nwritten = nwritten as usize;
-                                match file {
-                                    // stdout
-                                    1 => {
-                                        let mut written = 0;
-                                        for i in 0..len as usize {
-                                            let i = i * 8;
-                                            let ptr: [u8; 4] = self.memory
-                                                [iovec_ptr + i..iovec_ptr + 4 + i]
-                                                .try_into()
-                                                .unwrap();
-                                            let ptr: i32 = i32::from_le_bytes(ptr);
-                                            let ptr = ptr as usize;
-
-                                            let len: [u8; 4] = self.memory
-                                                [iovec_ptr + i + 4..iovec_ptr + i + 8]
-                                                .try_into()
-                                                .unwrap();
-                                            let len: i32 = i32::from_le_bytes(len);
-                                            written += len;
-                                            let len = len as usize;
-                                            let data = &self.memory[ptr..ptr + len];
-                                            self.stdout.extend(data);
-                                        }
-                                        let res = Value::I32(written);
-                                        let written: [u8; 4] = written.to_le_bytes();
-                                        for (i, b) in written.into_iter().enumerate() {
-                                            self.memory[nwritten + i] = b;
-                                        }
-                                        self.scope.stack.push(res);
-                                        Ok(())
-                                    }
-                                    file => {
-                                        todo!("unhandled fd_write for file: {file}")
-                                    }
-                                }
-                            }
-                            ("wasi_unstable", "fd_read") => {
-                                let result = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(result) => result,
-                                    _ => todo!(),
-                                };
-                                let iovs_count = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(iovs_count) => iovs_count,
-                                    _ => todo!(),
-                                };
-                                let iovs = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(iovs) => iovs,
-                                    _ => todo!(),
-                                };
-                                let file = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(file) => file,
-                                    _ => todo!(),
-                                };
-                                match file {
-                                    0 => {
-                                        let mut read = 0;
-                                        let iovs = iovs as usize;
-                                        for i in 0..iovs_count as usize {
-                                            let i = i * 8;
-                                            let ptr: [u8; 4] = self.memory[iovs + i..iovs + 4 + i]
-                                                .try_into()
-                                                .unwrap();
-                                            let ptr: i32 = i32::from_le_bytes(ptr);
-                                            let ptr = ptr as usize;
-                                            let len: [u8; 4] = self.memory
-                                                [iovs + i + 4..iovs + i + 8]
-                                                .try_into()
-                                                .unwrap();
-                                            let len = i32::from_le_bytes(len) as usize;
-                                            read += std::io::stdin()
-                                                .read(&mut self.memory[ptr..ptr + len])
-                                                .unwrap();
-                                        }
-                                        let read = read as i32;
-                                        self.scope.stack.push(Value::I32(read));
-                                        let read: [u8; 4] = read.to_le_bytes();
-                                        for (i, b) in read.into_iter().enumerate() {
-                                            self.memory[result as usize + i] = b;
-                                        }
-                                        Ok(())
-                                    }
-                                    file => {
-                                        todo!("unhandled fd_read for file: {file}")
-                                    }
-                                }
-                            }
-                            ("wasi_unstable", "proc_exit") => {
-                                let code = match self.scope.stack.pop().unwrap() {
-                                    Value::I32(code) => code,
-                                    _ => todo!(),
-                                };
-                                std::process::exit(code);
-                            }
-                            _ => {
-                                println!("{prefix} {ident}");
-                                todo!()
-                            }
-                        }
+                        let res = execute_extern(
+                            prefix,
+                            ident,
+                            std::iter::from_fn(|| self.scope.stack.pop()),
+                            &mut self.memory,
+                            &mut self.stdout,
+                        )?;
+                        self.scope.stack.extend(res);
+                        Ok(())
                     }
-                    None => {
-                        todo!()
-                    }
+                    None => todo!(),
                 }
             }
             CheckedWord::Var { ident, .. } => match self.scope.locals.get(&ident) {
@@ -386,187 +274,19 @@ impl StepInterpreter {
                 self.scope.stack.push(Value::I32(number));
                 Ok(())
             }
-            CheckedWord::Intrinsic { intrinsic, .. } => {
-                match intrinsic {
-                    Intrinsic::Add => {
-                        match (
-                            self.scope.stack.pop().unwrap(),
-                            self.scope.stack.pop().unwrap(),
-                        ) {
-                            (Value::I32(a), Value::I32(b)) => {
-                                self.scope.stack.push(Value::I32(a + b));
-                            }
-                            _ => {
-                                todo!()
-                            }
-                        }
-                    }
-                    Intrinsic::Store32 => {
-                        match (
-                            self.scope.stack.pop().unwrap(),
-                            self.scope.stack.pop().unwrap(),
-                        ) {
-                            (Value::I32(value), Value::I32(addr)) => {
-                                let addr = addr as usize;
-                                for (i, b) in value.to_le_bytes().into_iter().enumerate() {
-                                    self.memory[addr + i] = b;
-                                }
-                            }
-                            _ => {
-                                todo!()
-                            }
-                        }
-                    }
-                    Intrinsic::Store8 => {
-                        match (
-                            self.scope.stack.pop().unwrap(),
-                            self.scope.stack.pop().unwrap(),
-                        ) {
-                            (Value::I32(value), Value::I32(addr)) => {
-                                let addr = addr as usize;
-                                self.memory[addr] = value.to_le_bytes()[0];
-                            }
-                            _ => {
-                                todo!()
-                            }
-                        }
-                    }
-                    Intrinsic::Load32 => match self.scope.stack.pop().unwrap() {
-                        Value::I32(addr) => {
-                            let addr = addr as usize;
-                            let bytes: [u8; 4] = self.memory[addr..addr + 4].try_into().unwrap();
-                            self.scope.stack.push(Value::I32(i32::from_le_bytes(bytes)));
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::Load8 => match self.scope.stack.pop().unwrap() {
-                        Value::I32(addr) => {
-                            let addr = addr as usize;
-                            self.scope.stack.push(Value::I32(self.memory[addr] as i32));
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::Drop => {
-                        self.scope.stack.pop().unwrap();
-                    }
-                    Intrinsic::Sub => {
-                        match (
-                            self.scope.stack.pop().unwrap(),
-                            self.scope.stack.pop().unwrap(),
-                        ) {
-                            (Value::I32(a), Value::I32(b)) => {
-                                self.scope.stack.push(Value::I32(b - a));
-                            }
-                            _ => {
-                                todo!()
-                            }
-                        }
-                    }
-                    Intrinsic::Eq => {
-                        match (
-                            self.scope.stack.pop().unwrap(),
-                            self.scope.stack.pop().unwrap(),
-                        ) {
-                            (Value::I32(a), Value::I32(b)) => {
-                                self.scope.stack.push(if a == b {
-                                    Value::True
-                                } else {
-                                    Value::False
-                                });
-                            }
-                            _ => {
-                                todo!()
-                            }
-                        }
-                    }
-                    Intrinsic::Mod => match (
-                        self.scope.stack.pop().unwrap(),
-                        self.scope.stack.pop().unwrap(),
-                    ) {
-                        (Value::I32(a), Value::I32(b)) => {
-                            self.scope.stack.push(Value::I32(b % a));
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::Div => match (
-                        self.scope.stack.pop().unwrap(),
-                        self.scope.stack.pop().unwrap(),
-                    ) {
-                        (Value::I32(a), Value::I32(b)) => {
-                            self.scope.stack.push(Value::I32(b / a));
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::Stack => todo!(),
-                    Intrinsic::And => {
-                        match (
-                            self.scope.stack.pop().unwrap(),
-                            self.scope.stack.pop().unwrap(),
-                        ) {
-                            (Value::True, Value::True) => {
-                                self.scope.stack.push(Value::True);
-                            }
-                            _ => {
-                                self.scope.stack.push(Value::False);
-                            }
-                        }
-                    }
-                    Intrinsic::Or => todo!(),
-                    Intrinsic::L => todo!(),
-                    Intrinsic::G => todo!(),
-                    Intrinsic::LE => match (
-                        self.scope.stack.pop().unwrap(),
-                        self.scope.stack.pop().unwrap(),
-                    ) {
-                        (Value::I32(a), Value::I32(b)) => {
-                            self.scope
-                                .stack
-                                .push(if b <= a { Value::True } else { Value::False });
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::GE => match (
-                        self.scope.stack.pop().unwrap(),
-                        self.scope.stack.pop().unwrap(),
-                    ) {
-                        (Value::I32(a), Value::I32(b)) => {
-                            self.scope
-                                .stack
-                                .push(if b >= a { Value::True } else { Value::False });
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::Mul => match (
-                        self.scope.stack.pop().unwrap(),
-                        self.scope.stack.pop().unwrap(),
-                    ) {
-                        (Value::I32(a), Value::I32(b)) => {
-                            self.scope.stack.push(Value::I32(b * a));
-                        }
-                        _ => {
-                            todo!()
-                        }
-                    },
-                    Intrinsic::NotEq => todo!(),
-                }
-                Ok(())
-            }
+            CheckedWord::Intrinsic {
+                intrinsic,
+                location,
+                ..
+            } => execute_intrinsic(
+                &intrinsic,
+                &location,
+                &mut self.scope.stack,
+                &mut self.memory,
+            ),
             CheckedWord::If(CheckedIff { body, el, .. }) => {
                 let condition = match self.scope.stack.pop() {
-                    Some(Value::True) => true,
-                    Some(Value::False) => false,
+                    Some(Value::Bool(v)) => v,
                     _ => {
                         todo!()
                     }

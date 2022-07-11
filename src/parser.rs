@@ -303,11 +303,6 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Div,
                     })
-                } else if &ident.lexeme == "stack" {
-                    Ok(Word::Intrinsic {
-                        location: ident.location,
-                        intrinsic: Intrinsic::Stack,
-                    })
                 } else if &ident.lexeme == "<" {
                     Ok(Word::Intrinsic {
                         location: ident.location,
