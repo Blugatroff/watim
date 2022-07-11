@@ -1,13 +1,14 @@
 use crate::{
     ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Intrinsic, Program},
     interpreter::{Error, InterpreterFunction, Value},
+    scanner::Location,
 };
 use std::{collections::HashMap, io::Read, sync::Arc};
 
 #[derive(Clone)]
 enum ScopeKind {
     Function(Arc<CheckedFunction>, i32),
-    Loop,
+    Loop(Location),
     If,
 }
 
@@ -100,13 +101,22 @@ impl StepInterpreter {
             mem_stack,
         })
     }
+    pub fn depth(&self) -> usize {
+        let mut depth = 1;
+        let mut current = &self.scope;
+        while let Some(parent) = &current.parent {
+            current = parent;
+            depth += 1;
+        }
+        depth
+    }
     pub fn call_stack(&self) -> impl IntoIterator<Item = Arc<CheckedFunction>> {
         fn inner(scope: &Scope, functions: &mut Vec<Arc<CheckedFunction>>) {
             match scope.kind.clone() {
                 ScopeKind::Function(function, _) => {
                     functions.push(function);
                 }
-                ScopeKind::Loop | ScopeKind::If => {}
+                ScopeKind::Loop(_) | ScopeKind::If => {}
             }
             match &scope.parent {
                 Some(parent) => inner(parent, functions),
@@ -116,6 +126,15 @@ impl StepInterpreter {
         let mut functions = Vec::new();
         inner(&self.scope, &mut functions);
         functions.into_iter().rev()
+    }
+    pub fn current_loop_location(&self) -> Option<&Location> {
+        fn inner(scope: &Scope) -> Option<&Location> {
+            match &scope.kind {
+                ScopeKind::Loop(location) => Some(location),
+                _ => scope.parent.as_deref().and_then(inner),
+            }
+        }
+        inner(&self.scope)
     }
     pub fn locals(&self) -> &HashMap<String, Value> {
         &self.scope.locals
@@ -161,7 +180,7 @@ impl StepInterpreter {
                 Ok(())
             }
             None => {
-                if let ScopeKind::Loop = &self.scope.kind {
+                if let ScopeKind::Loop(_) = &self.scope.kind {
                     self.scope.word = 0;
                     return self.step();
                 } else if let Some(mut parent) = self.scope.parent.clone() {
@@ -573,10 +592,10 @@ impl StepInterpreter {
                 }
                 Ok(())
             }
-            CheckedWord::Loop(CheckedLoop { body, .. }) => {
+            CheckedWord::Loop(CheckedLoop { body, location, .. }) => {
                 self.scope = Scope {
                     parent: Some(Box::new(self.scope.clone())),
-                    kind: ScopeKind::Loop,
+                    kind: ScopeKind::Loop(location),
                     words: Arc::new(body),
                     locals: self.scope.locals.clone(),
                     stack: Vec::new(),
@@ -587,7 +606,7 @@ impl StepInterpreter {
             CheckedWord::Break { .. } => {
                 loop {
                     match &self.scope.kind {
-                        ScopeKind::Loop => {
+                        ScopeKind::Loop(_) => {
                             let mut parent = self.scope.parent.clone().unwrap();
                             parent.locals = self.scope.locals.clone();
                             parent.stack.extend(self.scope.stack.clone());

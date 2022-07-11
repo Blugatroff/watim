@@ -4,13 +4,20 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Location {
     pub path: Arc<PathBuf>,
     pub line: usize,
     pub column: usize,
     pub len: usize,
 }
+
+impl std::cmp::PartialEq for Location {
+    fn eq(&self, other: &Self) -> bool {
+        self.line == other.line && self.column == other.column && self.path == other.path
+    }
+}
+impl std::cmp::Eq for Location {}
 
 impl Display for Location {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

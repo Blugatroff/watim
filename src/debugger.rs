@@ -1,10 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::Write,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
+use crate::{ast::Program, interpreter, scanner::Location, step_interpreter::StepInterpreter};
 use crossterm::{
     cursor::{MoveTo, MoveToColumn, MoveToNextLine},
     event::{Event, KeyCode, KeyModifiers},
@@ -12,8 +6,12 @@ use crossterm::{
     terminal::{Clear, ClearType},
     ExecutableCommand,
 };
-
-use crate::{ast::Program, interpreter, scanner::Location, step_interpreter::StepInterpreter};
+use std::{
+    collections::HashMap,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[derive(Debug)]
 pub enum DebuggerError {
@@ -37,10 +35,7 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
     crossterm::terminal::enable_raw_mode().unwrap();
     let mut debugger = StepInterpreter::new(program)?;
     let mut file_lookup = FileLookup::default();
-    loop {
-        if debugger.done() {
-            break;
-        }
+    'outer: loop {
         let mut stdout = std::io::stdout();
         stdout
             .execute(Clear(ClearType::All))?
@@ -130,7 +125,7 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
         }
         stdout.execute(MoveTo(80, 0))?;
         let height = crossterm::terminal::size()?.1;
-        for h in 0..height {
+        for h in 0..height - 1 {
             stdout.execute(MoveTo(80, h))?.execute(Print("|"))?;
         }
         stdout
@@ -146,13 +141,13 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
                 97 + (nibble - 10)
             }) as char
         }
-        for y in 0..height {
+        for y in 0..height - 2 {
             let y = y as usize;
             let start = y * 16;
             let end = ((y + 1) * 16).min(debugger.memory().len());
             let data = &debugger.memory()[start..end];
             let text: String = data
-                .into_iter()
+                .iter()
                 .map(|b| {
                     if b.is_ascii() && !b.is_ascii_control() {
                         *b as char
@@ -162,7 +157,7 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
                 })
                 .collect();
             let data: String = data
-                .into_iter()
+                .iter()
                 .flat_map(|b| [*b >> 4, *b & 0b00001111].map(nibble_to_hex))
                 .collect::<Vec<char>>()
                 .chunks(4)
@@ -176,13 +171,55 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
                 break;
             }
         }
+        stdout
+            .execute(MoveTo(0, height - 1))?
+            .execute(Print("step: n, quit: q, up: u"))?;
+        if debugger.current_loop_location().is_some() {
+            stdout.execute(Print(", loop once: l"))?;
+        }
         loop {
             if let Event::Key(event) = crossterm::event::read()? {
                 match event.code {
-                    KeyCode::Char('n') => break,
+                    KeyCode::Char('n') => {
+                        debugger.step()?;
+                        break;
+                    }
                     KeyCode::Char('q') => {
                         crossterm::terminal::disable_raw_mode().unwrap();
-                        return Ok(());
+                        break 'outer;
+                    }
+                    KeyCode::Char('u') => {
+                        let level = debugger.depth();
+                        while !debugger.done() && debugger.depth() >= level {
+                            debugger.step()?;
+                        }
+                        continue 'outer;
+                    }
+                    KeyCode::Char('l') => {
+                        if debugger.done() {
+                            continue;
+                        }
+                        if let Some(location) = debugger.current_loop_location().cloned() {
+                            let depth = debugger.depth();
+                            let word = debugger.current_word().map(|w| w.location()).cloned();
+                            loop {
+                                debugger.step()?;
+                                if let Some(loc) = debugger.current_loop_location() {
+                                    if &location == loc {
+                                        if debugger.current_word().map(|w| w.location())
+                                            == word.as_ref()
+                                        {
+                                            break;
+                                        }
+                                    } else if depth < debugger.depth() {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                            continue 'outer;
+                        }
                     }
                     KeyCode::Char('d') => {
                         std::fs::File::create("./mem.raw")
@@ -199,7 +236,9 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
                 }
             }
         }
-        debugger.step()?;
+        if debugger.done() {
+            break;
+        }
     }
     crossterm::terminal::disable_raw_mode().unwrap();
     Ok(())
