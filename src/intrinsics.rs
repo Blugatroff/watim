@@ -4,13 +4,16 @@ use crate::{
     scanner::Location,
 };
 
+macro_rules! drop {
+    ($_:tt) => {};
+}
+
 macro_rules! expect_args {
     ($location:expr, $stack:expr, [$(
         $var:ident: $ty:expr => $pat:pat
     ),*] => $body:block) => {
         match ($({
-            let $var = ();
-            drop($var);
+            drop!($var);
             $stack.pop()
         },)*) {
             ($(
