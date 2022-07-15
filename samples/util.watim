@@ -1,22 +1,22 @@
-extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: i32, iovs_count: i32, result: i32) -> i32
-extern "wasi_unstable" "fd_write" fn raw_write(file: i32, ptr: i32, len: i32, nwritten: i32) -> i32
+extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .i32, iovs_count: i32, result: .i32) -> i32
+extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .i32, iovs_count: i32, nwritten: .i32) -> i32
 extern "wasi_unstable" "proc_exit" fn raw_exit(code: i32)
 
 fn exit(code: i32) {
     $code raw_exit
 }
 
-fn write(file: i32, ptr: i32, len: i32) -> i32 {
+fn write(file: i32, pt: .i32, len: i32) -> i32 {
     memory space 8 4;
     local written: i32
-    $space $ptr store32
+    $space $pt !i32 store32
     $space 4 + $len store32
     $file $space 1 $space raw_write drop
     $space load32 #written
     $written $len = if {
         $len
     } else {
-        $file $ptr $written + $len $written - write $written +
+        $file $pt !i32 $written + !.i32 $len $written - write $written +
     }
 }
 
@@ -38,7 +38,7 @@ fn print(n: i32) {
     } else {
         loop {
             $n 0 = if { break }
-            $buf $l +
+            $buf !i32 $l + !.i32
             $n 10 % // rightmost digit
             48 + // + ascii 'a'
             store8
@@ -48,8 +48,8 @@ fn print(n: i32) {
     }
     0 #i
     loop {
-        $buf_reversed $i +
-        $buf $l 1 - $i - + load8
+        $buf_reversed !i32 $i + !.i32
+        $buf !i32 $l 1 - $i - + !.i32 load8
         store8
         $i 1 + #i
         $i $l = if { break }
@@ -57,23 +57,23 @@ fn print(n: i32) {
     1 $buf_reversed $l write drop
 }
 
-fn read(file: i32, buf_addr: i32, buf_size: i32) -> i32 {
+fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32 {
     memory space 8 4;
-    $space $buf_addr store32 
-    $space 4 + $buf_size store32 
+    $space $buf_addr !i32 store32 
+    $space !i32 4 + !.i32 $buf_size store32 
     $file $space 1 $space raw_read drop
     $space load32
 }
 
-fn parse(ptr: i32, len: i32) -> i32 {
+fn parse(pt: .i32, len: i32) -> i32 {
     local n: i32
     local d: i32
-    local original-ptr: i32
+    local original-ptr: .i32
     local original-len: i32
-    $ptr #original-ptr
+    $pt #original-ptr
     $len #original-len
     loop {
-        $ptr load8 #d
+        $pt load8 #d
         $d 48 >= $d 58 <= and if { // 48 is ascii '0'
             $n $d 48 - + #n
         } else {
@@ -84,7 +84,7 @@ fn parse(ptr: i32, len: i32) -> i32 {
             1 10 write_byte
             1 exit
         }
-        $ptr 1 + #ptr // advance pointer
+        $pt 1 + #pt // advance pointer
         $len 1 - #len // reduce length
         $len 0 = if { $n break }
         $n 10 * #n
@@ -94,12 +94,3 @@ fn parse(ptr: i32, len: i32) -> i32 {
 fn dup(a: i32) -> i32, i32 {
     $a $a
 }
-
-fn copy(src_ptr: i32, dst_ptr: i32, size: i32) {
-    loop {
-        $size 1 - #size
-        $dst_ptr $size + $src_ptr $size + load8 store8
-        $size 0 = if { break }
-    }
-}
-

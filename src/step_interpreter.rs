@@ -1,5 +1,5 @@
 use crate::{
-    ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program},
+    ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program, Type},
     interpreter::{execute_extern, Error, InterpreterFunction, Value},
     intrinsics::execute_intrinsic,
     scanner::Location,
@@ -82,7 +82,7 @@ impl StepInterpreter {
                     mem_stack
                 };
                 mem_stack = ptr + mem.size;
-                locals.insert(mem.ident.clone(), Value::I32(ptr));
+                locals.insert(mem.ident.clone(), Value::Ptr(ptr, Type::I32));
             }
             Scope {
                 words,
@@ -225,7 +225,7 @@ impl StepInterpreter {
                                 self.mem_stack
                             };
                             self.mem_stack = ptr + mem.size;
-                            locals.insert(mem.ident.clone(), Value::I32(ptr));
+                            locals.insert(mem.ident.clone(), Value::Ptr(ptr, Type::I32));
                         }
                         self.scope = Scope {
                             words,
@@ -253,7 +253,7 @@ impl StepInterpreter {
             }
             CheckedWord::Var { ident, .. } => match self.scope.locals.get(&ident) {
                 Some(local) => {
-                    self.scope.stack.push(*local);
+                    self.scope.stack.push(local.clone());
                     Ok(())
                 }
                 None => {
@@ -344,7 +344,7 @@ impl StepInterpreter {
                 Ok(())
             }
             CheckedWord::String { addr, size, .. } => {
-                self.scope.stack.push(Value::I32(addr));
+                self.scope.stack.push(Value::Ptr(addr, Type::I32));
                 self.scope.stack.push(Value::I32(size));
                 Ok(())
             }

@@ -25,7 +25,7 @@ pub enum TypeError {
     RedefinedLocal(String, Location),
     LocalNotFound(String, Location),
     FunctionNotFound(String, Location),
-    TypeMismatch(Option<Type>, Word),
+    TypeMismatch(Option<Type>, Type, Word),
     IfBlocksMismatch(Location, Vec<Type>, Vec<Type>),
     BreakTypeMismatch(Location, Vec<BreakStack>),
     ReturnTypeMismatch(Location, Vec<Type>, Vec<Type>),
@@ -63,9 +63,10 @@ impl std::fmt::Display for TypeError {
             TypeError::FunctionNotFound(name, location) => {
                 f.write_fmt(format_args!("{location} function `{name}` not found"))
             }
-            TypeError::TypeMismatch(ty, word) => {
-                f.write_fmt(format_args!("{} type mismatch {ty:?}", word.location()))
-            }
+            TypeError::TypeMismatch(ty, expected, word) => f.write_fmt(format_args!(
+                "{} type mismatch got {ty:?} expected {expected:?}",
+                word.location()
+            )),
             TypeError::IfBlocksMismatch(location, if_stack, else_stack) => f.write_fmt(
                 format_args!("{location} if else stack mismatch {if_stack:?} <-> {else_stack:?}"),
             ),
@@ -93,6 +94,8 @@ impl std::fmt::Display for TypeError {
         }
     }
 }
+
+type Signature<'a, T, const L: usize> = ([Type; L], &'a dyn Fn([Type; L]) -> T);
 
 impl<'a> ModuleChecker<'a> {
     pub fn check(
@@ -184,7 +187,7 @@ impl<'a> ModuleChecker<'a> {
                     Local {
                         ident: mem.ident.clone(),
                         location: mem.location.clone(),
-                        ty: Type::I32,
+                        ty: Type::Ptr(Box::new(Type::I32)),
                     },
                 )
                 .is_some()
@@ -304,12 +307,14 @@ impl<'a> ModuleChecker<'a> {
                         Some(ty) => {
                             return Err(TypeError::TypeMismatch(
                                 Some(ty),
+                                param.ty.clone(),
                                 Word::Call { location, ident },
                             ))
                         }
                         None => {
                             return Err(TypeError::TypeMismatch(
                                 None,
+                                param.ty.clone(),
                                 Word::Call { location, ident },
                             ))
                         }
@@ -343,12 +348,17 @@ impl<'a> ModuleChecker<'a> {
                         if ty != &local.ty {
                             return Err(TypeError::TypeMismatch(
                                 Some(ty.clone()),
+                                local.ty.clone(),
                                 Word::Set { location, ident },
                             ));
                         }
                         stack.pop();
                     } else {
-                        return Err(TypeError::TypeMismatch(None, Word::Set { location, ident }));
+                        return Err(TypeError::TypeMismatch(
+                            None,
+                            local.ty.clone(),
+                            Word::Set { location, ident },
+                        ));
                     }
                 } else {
                     return Err(TypeError::LocalNotFound(ident.clone(), location));
@@ -372,8 +382,15 @@ impl<'a> ModuleChecker<'a> {
                 ref location,
             } => match intrinsic {
                 Intrinsic::Add => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [
+                            ([Type::I32, Type::I32], &|_| Type::I32),
+                            ([Type::AnyPtr, Type::I32], &|[a, _]| a),
+                        ],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -384,7 +401,11 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Store32 => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
+                    self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::Ptr(Box::new(Type::I32)), Type::I32], &|_| ())],
+                    )?;
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -395,7 +416,11 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Store8 => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
+                    self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::Ptr(Box::new(Type::I32)), Type::I32], &|_| ())],
+                    )?;
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -406,8 +431,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Load32 => {
-                    self.expect_stack(stack, &word, [Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::Ptr(Box::new(Type::I32))], &|_| Type::I32)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -418,8 +447,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Load8 => {
-                    self.expect_stack(stack, &word, [Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::Ptr(Box::new(Type::I32))], &|_| Type::I32)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -430,7 +463,15 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Drop => {
-                    self.expect_stack(stack, &word, [Type::I32])?;
+                    self.expect_stack(
+                        stack,
+                        &word,
+                        [
+                            ([Type::I32], &|_| ()),
+                            ([Type::AnyPtr], &|_| ()),
+                            ([Type::Bool], &|_| ()),
+                        ],
+                    )?;
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -441,8 +482,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Sub => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -453,8 +498,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Eq | intrinsic @ Intrinsic::NotEq => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -465,8 +514,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Mod => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -477,8 +530,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Div => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -489,8 +546,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::And => {
-                    self.expect_stack(stack, &word, [Type::Bool, Type::Bool])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::Bool, Type::Bool], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -501,8 +562,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Or => {
-                    self.expect_stack(stack, &word, [Type::Bool, Type::Bool])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::Bool, Type::Bool], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -513,8 +578,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::L => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -525,8 +594,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::G => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -537,8 +610,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::LE => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -549,8 +626,12 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::GE => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::Bool);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                    )?;
+                    stack.push(ret);
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -561,8 +642,40 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Mul => {
-                    self.expect_stack(stack, &word, [Type::I32, Type::I32])?;
-                    stack.push(Type::I32);
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                    )?;
+                    stack.push(ret);
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            location: location.clone(),
+                            intrinsic: intrinsic.clone(),
+                        },
+                    ))
+                }
+                intrinsic @ Intrinsic::Cast(ty) => {
+                    match ty {
+                        Type::I32 => match stack.pop() {
+                            Some(Type::Ptr(_)) => stack.push(Type::I32),
+                            _ => {
+                                todo!()
+                            }
+                        },
+                        Type::Ptr(ty) => {
+                            let ret = self.expect_stack(
+                                stack,
+                                &word,
+                                [([Type::I32], &|_| Type::Ptr(ty.clone()))],
+                            )?;
+                            stack.push(ret);
+                        }
+                        Type::Bool => todo!(),
+                        Type::AnyPtr => todo!(),
+                    };
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -580,7 +693,7 @@ impl<'a> ModuleChecker<'a> {
             }) => {
                 match stack.pop() {
                     Some(Type::Bool) => {}
-                    ty => return Err(TypeError::TypeMismatch(ty, word.clone())),
+                    ty => return Err(TypeError::TypeMismatch(ty, Type::Bool, word.clone())),
                 }
                 let mut if_block_termination = Returns::Yes;
                 let mut break_stacks = Vec::new();
@@ -744,7 +857,7 @@ impl<'a> ModuleChecker<'a> {
                 let addr = data.len() as i32;
                 let size = value.as_bytes().len() as i32;
                 data.extend(value.as_bytes());
-                stack.push(Type::I32);
+                stack.push(Type::Ptr(Box::new(Type::I32)));
                 stack.push(Type::I32);
                 Ok((
                     Returns::Yes,
@@ -758,19 +871,55 @@ impl<'a> ModuleChecker<'a> {
             }
         }
     }
-    fn expect_stack<const L: usize>(
+    fn expect_stack<T, const L: usize, const O: usize>(
         &self,
         stack: &mut Vec<Type>,
         word: &Word,
-        expected: [Type; L],
-    ) -> Result<(), TypeError> {
-        for expected_ty in expected.into_iter().rev() {
-            match stack.pop() {
-                Some(ty) if ty == expected_ty => {}
-                Some(ty) => return Err(TypeError::TypeMismatch(Some(ty), word.clone())),
-                None => return Err(TypeError::TypeMismatch(None, word.clone())),
+        expected: [Signature<T, L>; O],
+    ) -> Result<T, TypeError> {
+        assert!(!expected.is_empty());
+        let res = expected.into_iter().map(|(overload, f)| {
+            let mut stack = stack.clone();
+            let mut overloads = overload.into_iter().rev();
+            let mut popped = Vec::new();
+            loop {
+                match overloads.next() {
+                    Some(expected_ty) => match stack.pop() {
+                        Some(ty) if ty == expected_ty => popped.push(ty),
+                        Some(ty @ Type::Ptr(_)) if expected_ty == Type::AnyPtr => popped.push(ty),
+                        Some(ty) => {
+                            popped.push(ty.clone());
+                            break Err(TypeError::TypeMismatch(
+                                Some(ty),
+                                expected_ty,
+                                word.clone(),
+                            ));
+                        }
+                        None => {
+                            break Err(TypeError::TypeMismatch(None, expected_ty, word.clone()));
+                        }
+                    },
+                    None => {
+                        let mut popped: [Type; L] = popped.try_into().unwrap();
+                        popped.reverse();
+                        let ret = f(popped);
+                        break Ok((stack, ret));
+                    }
+                }
+            }
+        });
+        let mut error = None;
+        for res in res {
+            match res {
+                Ok((s, rets)) => {
+                    *stack = s;
+                    return Ok(rets);
+                }
+                Err(e) => {
+                    error = Some(e);
+                }
             }
         }
-        Ok(())
+        Err(error.unwrap())
     }
 }

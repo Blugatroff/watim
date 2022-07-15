@@ -5,8 +5,8 @@ fn print_alphabet() {
     local i: i32
     loop {
         $i 26 = if { break }
-        $i $buf + 97 $i + store8
-        $i $buf + 1 + 10 store8
+        $i $buf !i32 + !.i32 97 $i + store8
+        $i $buf !i32 + 1 + !.i32 10 store8
 
         1 $buf $i 2 + U.write drop
         

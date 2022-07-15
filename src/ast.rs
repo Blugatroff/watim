@@ -5,6 +5,8 @@ use std::{collections::HashMap, path::PathBuf};
 pub enum Type {
     I32,
     Bool,
+    Ptr(Box<Type>),
+    AnyPtr,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +29,7 @@ pub enum Intrinsic {
     LE,
     GE,
     Mul,
+    Cast(Type),
 }
 
 #[derive(Debug, Clone)]

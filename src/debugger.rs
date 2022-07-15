@@ -1,4 +1,9 @@
-use crate::{ast::Program, interpreter, scanner::Location, step_interpreter::StepInterpreter};
+use crate::{
+    ast::Program,
+    interpreter::{self},
+    scanner::Location,
+    step_interpreter::StepInterpreter,
+};
 use crossterm::{
     cursor::{MoveTo, MoveToColumn, MoveToNextLine},
     event::{Event, KeyCode, KeyModifiers},
@@ -104,7 +109,7 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
             stdout
                 .execute(MoveToColumn(4))?
                 .execute(Print(ident))?
-                .execute(Print(format!(" {:?} {:?}", local.ty(), local)))?
+                .execute(Print(format!(" {:?} {:?}", local.clone().ty(), local)))?
                 .execute(MoveToNextLine(1))?;
         }
         stdout
@@ -115,7 +120,7 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
         for value in debugger.stack() {
             stdout
                 .execute(MoveToColumn(4))?
-                .execute(Print(value))?
+                .execute(Print(format_args!("{} {:?}", value.ty(), value)))?
                 .execute(MoveToNextLine(1))?;
         }
         stdout.execute(Print(&line))?.execute(MoveToNextLine(1))?;

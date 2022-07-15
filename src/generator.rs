@@ -63,6 +63,8 @@ impl std::fmt::Display for Type {
         match self {
             Type::I32 => f.write_str("i32"),
             Type::Bool => f.write_str("i32"),
+            Type::Ptr(_) => f.write_str("i32"),
+            Type::AnyPtr => todo!(),
         }
     }
 }
@@ -274,6 +276,7 @@ impl std::fmt::Display for Intrinsic {
             Intrinsic::GE => "i32.ge_u",
             Intrinsic::Mul => "i32.mul",
             Intrinsic::NotEq => "i32.ne",
+            Intrinsic::Cast(_) => "",
         })
     }
 }

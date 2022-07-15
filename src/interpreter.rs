@@ -15,10 +15,11 @@ pub struct Interpreter {
     mem_stack: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Bool(bool),
     I32(i32),
+    Ptr(i32, Type),
 }
 
 impl Value {
@@ -26,12 +27,15 @@ impl Value {
         match ty {
             Type::I32 => Self::I32(0),
             Type::Bool => Self::Bool(false),
+            Type::Ptr(ty) => Self::Ptr(0, (**ty).clone()),
+            Type::AnyPtr => Self::Ptr(0, Type::AnyPtr),
         }
     }
-    pub fn ty(self) -> Type {
+    pub fn ty(&self) -> Type {
         match self {
             Self::Bool(_) => Type::Bool,
             Self::I32(_) => Type::I32,
+            Self::Ptr(_, ty) => Type::Ptr(Box::new(ty.clone())),
         }
     }
 }
@@ -42,6 +46,7 @@ impl std::fmt::Display for Value {
             Value::Bool(true) => f.write_str("True"),
             Value::Bool(false) => f.write_str("False"),
             Value::I32(n) => n.fmt(f),
+            Value::Ptr(ptr, ty) => f.write_fmt(format_args!(".{ty}={ptr}")),
         }
     }
 }
@@ -58,7 +63,7 @@ pub enum Error {
     NoEntryPoint,
     LocalNotFound(Location, String),
     LocalSetTypeMismatch(Location, Type, Type),
-    ArgsMismatch(Location, Vec<Type>, Vec<Option<Type>>),
+    ArgsMismatch(Location, Vec<Vec<Type>>, Vec<Option<Type>>),
     ExpectedBool(Location, Option<Type>),
 }
 
@@ -133,7 +138,7 @@ impl Interpreter {
                         } else {
                             self.mem_stack
                         };
-                        let value = Value::I32(ptr);
+                        let value = Value::Ptr(ptr, Type::I32);
                         self.mem_stack = ptr + mem.size;
                         (mem.ident.clone(), value)
                     }))
@@ -173,7 +178,7 @@ impl Interpreter {
             }
             CheckedWord::Var { location, ident } => match locals.get(ident) {
                 Some(value) => {
-                    stack.push(*value);
+                    stack.push(value.clone());
                 }
                 None => return Err(Error::LocalNotFound(location.clone(), ident.clone())),
             },
@@ -208,7 +213,7 @@ impl Interpreter {
             }
             CheckedWord::Break { .. } => return Ok(true),
             CheckedWord::String { addr, size, .. } => {
-                stack.push(Value::I32(*addr));
+                stack.push(Value::Ptr(*addr, Type::I32));
                 stack.push(Value::I32(*size));
             }
         }
@@ -259,7 +264,7 @@ impl Interpreter {
                 }
             }
             Some(Value::Bool(false)) => {}
-            v => return Err(Error::ExpectedBool(iff.location.clone(), v.map(Value::ty))),
+            v => return Err(Error::ExpectedBool(iff.location.clone(), v.as_ref().map(Value::ty))),
         }
         Ok(false)
     }
@@ -275,7 +280,7 @@ pub fn execute_extern(
     match (path_0, path_1) {
         ("wasi_unstable", "fd_write") => {
             let nwritten = match args.next().unwrap() {
-                Value::I32(nwritten) => nwritten,
+                Value::Ptr(nwritten, _) => nwritten,
                 _ => todo!(),
             };
             let len = match args.next().unwrap() {
@@ -285,7 +290,7 @@ pub fn execute_extern(
                 }
             };
             let iovec_ptr = match args.next().unwrap() {
-                Value::I32(ptr) => ptr,
+                Value::Ptr(ptr, _) => ptr,
                 _ => todo!(),
             };
             let file = match args.next().unwrap() {
@@ -327,7 +332,7 @@ pub fn execute_extern(
         }
         ("wasi_unstable", "fd_read") => {
             let nwritten = match args.next().unwrap() {
-                Value::I32(nwritten) => nwritten,
+                Value::Ptr(nwritten, _) => nwritten,
                 _ => todo!(),
             };
             let len = match args.next().unwrap() {
@@ -337,7 +342,7 @@ pub fn execute_extern(
                 }
             };
             let iovec_ptr = match args.next().unwrap() {
-                Value::I32(ptr) => ptr,
+                Value::Ptr(ptr, _) => ptr,
                 _ => todo!(),
             };
             let file = match args.next().unwrap() {

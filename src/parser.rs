@@ -188,6 +188,7 @@ impl Parser {
                 || ty == TokenType::Break
                 || ty == TokenType::Hash
                 || ty == TokenType::String
+                || ty == TokenType::Bang
         };
         while self.peek().map(is_start_of_word).unwrap_or(false) {
             let word = self.word()?;
@@ -244,6 +245,13 @@ impl Parser {
                     Token::String(value) => value,
                     _ => unreachable!(),
                 },
+            });
+        }
+        if let Some(t) = self.matsch(TokenType::Bang) {
+            let ty = self.ty()?;
+            return Ok(Word::Intrinsic {
+                location: t.location,
+                intrinsic: Intrinsic::Cast(ty),
             });
         }
         match self.advance() {
@@ -498,11 +506,15 @@ impl Parser {
     }
     fn ty(&mut self) -> Result<Type, ParseError> {
         match self
-            .matsch_any([TokenType::I32, TokenType::Bool])
+            .matsch_any([TokenType::I32, TokenType::Bool, TokenType::Dot])
             .as_deref()
         {
             Some(Token::I32) => return Ok(Type::I32),
             Some(Token::Bool) => return Ok(Type::Bool),
+            Some(Token::Dot) => {
+                let ty = self.ty()?;
+                return Ok(Type::Ptr(Box::new(ty)));
+            }
             _ => {}
         }
         Err(ParseError::new(

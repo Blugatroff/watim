@@ -59,6 +59,7 @@ pub enum Token {
     Dot,
     Import,
     As,
+    Bang,
 }
 
 impl Token {
@@ -96,6 +97,7 @@ pub enum TokenType {
     Dot,
     Import,
     As,
+    Bang,
 }
 
 impl From<&Token> for TokenType {
@@ -128,6 +130,7 @@ impl From<&Token> for TokenType {
             Token::Dot => Self::Dot,
             Token::Import => Self::Import,
             Token::As => Self::As,
+            Token::Bang => Self::Bang,
         }
     }
 }
@@ -255,6 +258,7 @@ impl Scanner {
             '#' => TokenWithLocation::new("#", self.location(), Token::Hash),
             ';' => TokenWithLocation::new(";", self.location(), Token::Semicolon),
             '.' => TokenWithLocation::new(".", self.location(), Token::Dot),
+            '!' => TokenWithLocation::new("!", self.location(), Token::Bang),
             '-' if self.matsch('>') => TokenWithLocation::new("->", self.location(), Token::Arrow),
             '/' if self.matsch('/') => {
                 loop {
