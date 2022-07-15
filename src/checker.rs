@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use thiserror::Error;
 
 pub struct ModuleChecker<'a> {
     functions: HashMap<String, FunctionSignature>,
@@ -19,20 +20,102 @@ pub struct ModuleChecker<'a> {
     prefix: String,
 }
 
-#[derive(Debug, Clone)]
+fn display_maybe_list<T: std::fmt::Display>(items: &[T], sep: &'static str) -> String {
+    match items.first() {
+        Some(v) if items.len() == 1 => format!("{v}"),
+        _ => {
+            let a = items
+                .iter()
+                .map(|t| format!("{t}"))
+                .intersperse(String::from(sep))
+                .fold(String::new(), |a, b| a + &b);
+            format!("[{a}]")
+        }
+    }
+}
+
+#[derive(Error, Debug, Clone)]
 pub enum TypeError {
     RedefinedFunction(String, Location),
     RedefinedLocal(String, Location),
     LocalNotFound(String, Location),
     FunctionNotFound(String, Location),
-    TypeMismatch(Option<Type>, Type, Word),
+    ArgsMismatch(Word, Vec<Vec<Type>>, Vec<Option<Type>>),
     IfBlocksMismatch(Location, Vec<Type>, Vec<Type>),
     BreakTypeMismatch(Location, Vec<BreakStack>),
     ReturnTypeMismatch(Location, Vec<Type>, Vec<Type>),
     ValuesLeftInLoop(Location, Vec<Type>),
-    Io(Arc<std::io::Error>),
+    Io(#[from] Arc<std::io::Error>),
     FunctionInModuleNotFound(String, Location, PathBuf),
     ModuleNotFound(String, Location),
+}
+
+impl std::fmt::Display for TypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeError::RedefinedFunction(fun, loc) => {
+                write!(f, "{loc}: Redefinition of function `{fun}`!")
+            }
+            TypeError::RedefinedLocal(local, loc) => {
+                write!(f, "{loc}: Redefinition of local `{local}`!")
+            }
+            TypeError::LocalNotFound(local, loc) => {
+                write!(f, "{loc}: local `{local}` not found!")
+            }
+            TypeError::FunctionNotFound(function, loc) => {
+                write!(f, "{loc}: function `{function}` not found!")
+            }
+            TypeError::ArgsMismatch(word, expected, got) => {
+                let expected: Vec<_> = expected
+                    .into_iter()
+                    .map(|t| display_maybe_list(&t, ", "))
+                    .collect();
+                let got = display_maybe_list(
+                    &got.into_iter()
+                        .map(|t| match t {
+                            Some(t) => format!("{t}"),
+                            None => String::from("_"),
+                        })
+                        .collect::<Vec<_>>(),
+                    ", ",
+                );
+                let expected = display_maybe_list(&expected, ", ");
+                write!(f, "{}: expected: {expected}, got: {got}!", word.location())
+            }
+            TypeError::IfBlocksMismatch(loc, iff, el) => {
+                let iff = display_maybe_list(&iff, ", ");
+                let el = display_maybe_list(&el, ", ");
+                write!(f, "{loc}: {iff} {el}!")
+            }
+            TypeError::BreakTypeMismatch(loc, stack) => {
+                let stack = stack
+                    .into_iter()
+                    .map(|s| display_maybe_list(&s.stack, ", "))
+                    .collect::<Vec<_>>();
+                let stack = display_maybe_list(&stack, ", ");
+                write!(f, "{loc}: break types mismatch {stack}!")
+            }
+            TypeError::ReturnTypeMismatch(loc, expected, got) => {
+                let expected = display_maybe_list(&expected, ", ");
+                let got = display_maybe_list(&got, ", ");
+                write!(
+                    f,
+                    "{loc}: return types mismatch expected: {expected}, got: {got}!"
+                )
+            }
+            TypeError::ValuesLeftInLoop(loc, vals) => {
+                let vals = display_maybe_list(&vals, ", ");
+                write!(f, "{loc}: values left in loop: {vals}!")
+            }
+            TypeError::Io(e) => e.fmt(f),
+            TypeError::FunctionInModuleNotFound(fun, loc, path) => {
+                write!(f, "{loc}: function `{fun}` not found in module `{path:?}`!")
+            }
+            TypeError::ModuleNotFound(mo, loc) => {
+                write!(f, "{loc}: module `{mo}` not found!")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,53 +129,6 @@ pub struct BreakStack {
 enum Returns {
     Yes,
     No,
-}
-
-impl std::fmt::Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TypeError::RedefinedFunction(name, location) => f.write_fmt(format_args!(
-                "{location} Redefinition of function: `{name}`"
-            )),
-            TypeError::RedefinedLocal(name, location) => {
-                f.write_fmt(format_args!("{location} Redefinition of local: `{name}`"))
-            }
-            TypeError::LocalNotFound(name, location) => {
-                f.write_fmt(format_args!("{location} local `{name}` not found"))
-            }
-            TypeError::FunctionNotFound(name, location) => {
-                f.write_fmt(format_args!("{location} function `{name}` not found"))
-            }
-            TypeError::TypeMismatch(ty, expected, word) => f.write_fmt(format_args!(
-                "{} type mismatch got {ty:?} expected {expected:?}",
-                word.location()
-            )),
-            TypeError::IfBlocksMismatch(location, if_stack, else_stack) => f.write_fmt(
-                format_args!("{location} if else stack mismatch {if_stack:?} <-> {else_stack:?}"),
-            ),
-            TypeError::BreakTypeMismatch(location, stacks) => f.write_fmt(format_args!(
-                "{location} break type mismatches: {:?}",
-                stacks.iter().map(|s| &s.stack).collect::<Vec<_>>()
-            )),
-            TypeError::ReturnTypeMismatch(location, stack, expected) => f.write_fmt(format_args!(
-                "{location} return type mismatch: {:?} <-> {:?}",
-                stack, expected,
-            )),
-            TypeError::ValuesLeftInLoop(location, stack) => f.write_fmt(format_args!(
-                "{location} values left on top of stack at end of loop {stack:?}"
-            )),
-            TypeError::Io(e) => f.write_fmt(format_args!("{:?}", e)),
-            TypeError::FunctionInModuleNotFound(ident, location, path) => {
-                f.write_fmt(format_args!(
-                    "{location} function `{ident}` in file {} not found",
-                    path.display()
-                ))
-            }
-            TypeError::ModuleNotFound(ident, location) => {
-                f.write_fmt(format_args!("{location} module `{ident}` not found"))
-            }
-        }
-    }
 }
 
 type Signature<'a, T, const L: usize> = ([Type; L], &'a dyn Fn([Type; L]) -> T);
@@ -225,8 +261,8 @@ impl<'a> ModuleChecker<'a> {
         if stack != function.signature.ret {
             return Err(TypeError::ReturnTypeMismatch(
                 function.signature.location.clone(),
-                stack,
                 function.signature.ret,
+                stack,
             ));
         }
         Ok(CheckedFunction {
@@ -301,22 +337,19 @@ impl<'a> ModuleChecker<'a> {
                         None => return Err(TypeError::ModuleNotFound(qualifier.clone(), location)),
                     },
                 };
+                let mut popped = Vec::new();
                 for param in function.params.iter().rev() {
                     match stack.pop() {
-                        Some(ty) if ty == param.ty => {}
-                        Some(ty) => {
-                            return Err(TypeError::TypeMismatch(
-                                Some(ty),
-                                param.ty.clone(),
-                                Word::Call { location, ident },
-                            ))
+                        Some(ty) if ty == param.ty => {
+                            popped.push(Some(ty));
                         }
-                        None => {
-                            return Err(TypeError::TypeMismatch(
-                                None,
-                                param.ty.clone(),
+                        ty => {
+                            popped.push(ty);
+                            return Err(TypeError::ArgsMismatch(
                                 Word::Call { location, ident },
-                            ))
+                                vec![function.params.iter().map(|p| p.ty.clone()).collect()],
+                                popped,
+                            ));
                         }
                     }
                 }
@@ -344,21 +377,17 @@ impl<'a> ModuleChecker<'a> {
             }
             Word::Set { ident, location } => {
                 if let Some(local) = locals.get(&ident) {
-                    if let Some(ty) = stack.last() {
-                        if ty != &local.ty {
-                            return Err(TypeError::TypeMismatch(
-                                Some(ty.clone()),
-                                local.ty.clone(),
+                    match stack.last() {
+                        Some(ty) if ty == &local.ty => {
+                            stack.pop();
+                        }
+                        ty => {
+                            return Err(TypeError::ArgsMismatch(
                                 Word::Set { location, ident },
+                                vec![vec![local.ty.clone()]],
+                                vec![ty.cloned()],
                             ));
                         }
-                        stack.pop();
-                    } else {
-                        return Err(TypeError::TypeMismatch(
-                            None,
-                            local.ty.clone(),
-                            Word::Set { location, ident },
-                        ));
                     }
                 } else {
                     return Err(TypeError::LocalNotFound(ident.clone(), location));
@@ -693,7 +722,13 @@ impl<'a> ModuleChecker<'a> {
             }) => {
                 match stack.pop() {
                     Some(Type::Bool) => {}
-                    ty => return Err(TypeError::TypeMismatch(ty, Type::Bool, word.clone())),
+                    ty => {
+                        return Err(TypeError::ArgsMismatch(
+                            word.clone(),
+                            vec![vec![Type::Bool]],
+                            vec![ty],
+                        ))
+                    }
                 }
                 let mut if_block_termination = Returns::Yes;
                 let mut break_stacks = Vec::new();
@@ -878,6 +913,7 @@ impl<'a> ModuleChecker<'a> {
         expected: [Signature<T, L>; O],
     ) -> Result<T, TypeError> {
         assert!(!expected.is_empty());
+        let expected_types: Vec<Vec<Type>> = expected.iter().map(|(tys, _)| tys.to_vec()).collect();
         let res = expected.into_iter().map(|(overload, f)| {
             let mut stack = stack.clone();
             let mut overloads = overload.into_iter().rev();
@@ -887,16 +923,13 @@ impl<'a> ModuleChecker<'a> {
                     Some(expected_ty) => match stack.pop() {
                         Some(ty) if ty == expected_ty => popped.push(ty),
                         Some(ty @ Type::Ptr(_)) if expected_ty == Type::AnyPtr => popped.push(ty),
-                        Some(ty) => {
-                            popped.push(ty.clone());
-                            break Err(TypeError::TypeMismatch(
-                                Some(ty),
-                                expected_ty,
+                        ty => {
+                            popped.extend(ty.clone());
+                            break Err(TypeError::ArgsMismatch(
                                 word.clone(),
+                                expected_types.clone(),
+                                popped.into_iter().map(Some).chain([ty]).collect(),
                             ));
-                        }
-                        None => {
-                            break Err(TypeError::TypeMismatch(None, expected_ty, word.clone()));
                         }
                     },
                     None => {

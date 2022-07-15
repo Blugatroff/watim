@@ -18,22 +18,12 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum DebuggerError {
-    IoError(std::io::Error),
-    InterpreterError(interpreter::Error),
-}
-
-impl From<std::io::Error> for DebuggerError {
-    fn from(e: std::io::Error) -> Self {
-        Self::IoError(e)
-    }
-}
-
-impl From<interpreter::Error> for DebuggerError {
-    fn from(e: interpreter::Error) -> Self {
-        Self::InterpreterError(e)
-    }
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    InterpreterError(#[from] interpreter::Error),
 }
 
 pub fn debug(program: Program) -> Result<(), DebuggerError> {

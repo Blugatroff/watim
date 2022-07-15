@@ -6,13 +6,14 @@ use crate::{
     intrinsics::execute_intrinsic,
     scanner::Location,
 };
-use std::{collections::HashMap, io::Read};
+use std::collections::HashMap;
 
-#[derive(Debug)]
-pub struct Interpreter {
+pub struct Interpreter<'stdin, 'stdout> {
     memory: [u8; 2usize.pow(16)],
     functions: HashMap<String, HashMap<String, InterpreterFunction>>,
     mem_stack: i32,
+    stdout: Box<dyn std::io::Write + 'stdin>,
+    stdin: Box<dyn std::io::Read + 'stdout>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,18 +58,24 @@ pub enum InterpreterFunction {
     Extern((String, String), CheckedFunctionSignature),
 }
 
-#[derive(Debug, Clone)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum Error {
+    #[error("{0}: function `{1}` not found!")]
     FunctionNotFound(Location, CheckedIdent),
+    #[error("No entry point found! Export a function as '_start' to make it the entry point.")]
     NoEntryPoint,
+    #[error("{0}: local `{1}` not found!")]
     LocalNotFound(Location, String),
-    LocalSetTypeMismatch(Location, Type, Type),
+    #[error("{0}: expected {1:?} but found {2:?}")]
     ArgsMismatch(Location, Vec<Vec<Type>>, Vec<Option<Type>>),
-    ExpectedBool(Location, Option<Type>),
 }
 
-impl Interpreter {
-    pub fn interpret_program(program: Program) -> Result<(), Error> {
+impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
+    pub fn interpret_program(
+        program: Program,
+        stdin: impl std::io::Read + 'stdout,
+        stdout: impl std::io::Write + 'stdin,
+    ) -> Result<(), Error> {
         let mut memory = [0u8; 2usize.pow(16)];
         for (i, b) in program.data.iter().enumerate() {
             memory[i] = *b;
@@ -99,6 +106,8 @@ impl Interpreter {
             memory,
             functions,
             mem_stack,
+            stdout: Box::new(stdout),
+            stdin: Box::new(stdin),
         };
         let entry = match this.find_entry_point() {
             Some(entry) => entry.clone(),
@@ -150,9 +159,14 @@ impl Interpreter {
                 self.mem_stack = ostack;
                 Ok(stack)
             }
-            InterpreterFunction::Extern((path_0, path_1), ..) => {
-                execute_extern(path_0, path_1, args, &mut self.memory, std::io::stdout())
-            }
+            InterpreterFunction::Extern((path_0, path_1), ..) => execute_extern(
+                path_0,
+                path_1,
+                args,
+                &mut self.memory,
+                &mut self.stdin,
+                &mut self.stdout,
+            ),
         }
     }
     fn execute_word(
@@ -187,15 +201,12 @@ impl Interpreter {
                     Some(val) if local.ty() == val.ty() => {
                         *local = val;
                     }
-                    Some(val) => {
-                        return Err(Error::LocalSetTypeMismatch(
+                    val => {
+                        return Err(Error::ArgsMismatch(
                             location.clone(),
-                            val.ty(),
-                            local.ty(),
+                            vec![vec![local.ty()]],
+                            vec![val.as_ref().map(Value::ty)],
                         ))
-                    }
-                    None => {
-                        panic!()
                     }
                 },
                 None => return Err(Error::LocalNotFound(location.clone(), ident.clone())),
@@ -264,7 +275,7 @@ impl Interpreter {
                 }
             }
             Some(Value::Bool(false)) => {}
-            v => return Err(Error::ExpectedBool(iff.location.clone(), v.as_ref().map(Value::ty))),
+            v => return Err(Error::ArgsMismatch(iff.location.clone(), vec![vec![Type::Bool]], vec![v.as_ref().map(Value::ty)])),
         }
         Ok(false)
     }
@@ -275,6 +286,7 @@ pub fn execute_extern(
     path_1: &str,
     mut args: impl Iterator<Item = Value>,
     memory: &mut [u8],
+    mut stdin: impl std::io::Read,
     mut stdout: impl std::io::Write,
 ) -> Result<Vec<Value>, Error> {
     match (path_0, path_1) {
@@ -366,7 +378,7 @@ pub fn execute_extern(
                             .try_into()
                             .unwrap();
                         let len = i32::from_le_bytes(len) as usize;
-                        read += std::io::stdin().read(&mut memory[ptr..ptr + len]).unwrap() as i32;
+                        read += stdin.read(&mut memory[ptr..ptr + len]).unwrap() as i32;
                     }
                     let written: [u8; 4] = read.to_le_bytes();
                     for (i, b) in written.into_iter().enumerate() {

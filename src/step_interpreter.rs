@@ -243,6 +243,7 @@ impl StepInterpreter {
                             ident,
                             std::iter::from_fn(|| self.scope.stack.pop()),
                             &mut self.memory,
+                            std::io::stdin(),
                             &mut self.stdout,
                         )?;
                         self.scope.stack.extend(res);

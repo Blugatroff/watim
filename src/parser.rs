@@ -6,6 +6,7 @@ use crate::{
     scanner::{Location, Token, TokenType, TokenWithLocation},
 };
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 pub struct Parser {
     tokens: Vec<TokenWithLocation>,
@@ -34,7 +35,7 @@ impl std::fmt::Display for ParseErrorType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub struct ParseError {
     ty: ParseErrorType,
     token: TokenWithLocation,

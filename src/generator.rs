@@ -50,22 +50,20 @@ impl std::fmt::Display for CheckedFunctionSignature {
     }
 }
 
-impl std::fmt::Display for Param {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ident = &self.ident;
-        let ty = &self.ty;
-        f.write_fmt(format_args!("(param ${ident} {ty})"))
+fn gen_type(ty: &Type) -> &'static str {
+    match ty {
+        Type::I32 => "i32",
+        Type::Bool => "i32",
+        Type::Ptr(_) => "i32",
+        Type::AnyPtr => "i32",
     }
 }
 
-impl std::fmt::Display for Type {
+impl std::fmt::Display for Param {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::I32 => f.write_str("i32"),
-            Type::Bool => f.write_str("i32"),
-            Type::Ptr(_) => f.write_str("i32"),
-            Type::AnyPtr => todo!(),
-        }
+        let ident = &self.ident;
+        let ty = gen_type(&self.ty);
+        f.write_fmt(format_args!("(param ${ident} {ty})"))
     }
 }
 
@@ -169,7 +167,11 @@ impl std::fmt::Display for CheckedFunction {
 
 impl std::fmt::Display for Local {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("(local ${} {})", self.ident, self.ty))
+        f.write_fmt(format_args!(
+            "(local ${} {})",
+            self.ident,
+            gen_type(&self.ty)
+        ))
     }
 }
 

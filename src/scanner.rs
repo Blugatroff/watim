@@ -160,23 +160,12 @@ impl TokenWithLocation {
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ScanError {
+    #[error("{0}: unexpected character!")]
     UnexpectedCharacter(Location),
+    #[error("{0}: unterminated string!")]
     UnterminatedString(Location),
-}
-
-impl std::fmt::Display for ScanError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScanError::UnexpectedCharacter(location) => {
-                f.write_fmt(format_args!("{location}: Unexpected character"))
-            }
-            ScanError::UnterminatedString(location) => {
-                f.write_fmt(format_args!("{location}: Unterminated string"))
-            }
-        }
-    }
 }
 
 pub struct Scanner {
@@ -200,6 +189,31 @@ impl Scanner {
             path,
         }
     }
+    pub fn scan_tokens(
+        source: String,
+        file: impl AsRef<Path>,
+    ) -> Result<Vec<TokenWithLocation>, ScanError> {
+        let mut this = Self::new(source, file);
+        loop {
+            this.start = this.current;
+            match this.scan_token()? {
+                Some(token) => this.tokens.push(token),
+                None => break,
+            }
+        }
+        let column = this.column();
+        this.tokens.push(TokenWithLocation {
+            location: Location {
+                path: this.path.clone(),
+                line: this.line,
+                column,
+                len: 1,
+            },
+            lexeme: "".into(),
+            token: Token::Eof,
+        });
+        Ok(this.tokens)
+    }
     fn column(&self) -> usize {
         let mut column = 0;
         loop {
@@ -213,33 +227,6 @@ impl Scanner {
                     column += 1;
                 }
             }
-        }
-    }
-    pub fn scan_tokens(&mut self) -> Result<&[TokenWithLocation], Vec<ScanError>> {
-        let mut errors = Vec::new();
-        loop {
-            self.start = self.current;
-            match self.scan_token() {
-                Err(e) => errors.push(e),
-                Ok(Some(token)) => self.tokens.push(token),
-                Ok(None) => break,
-            }
-        }
-        let column = self.column();
-        self.tokens.push(TokenWithLocation {
-            location: Location {
-                path: self.path.clone(),
-                line: self.line,
-                column,
-                len: 1,
-            },
-            lexeme: "".into(),
-            token: Token::Eof,
-        });
-        if errors.is_empty() {
-            Ok(&self.tokens)
-        } else {
-            Err(errors)
         }
     }
     fn scan_token(&mut self) -> Result<Option<TokenWithLocation>, ScanError> {

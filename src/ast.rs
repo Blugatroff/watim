@@ -9,6 +9,17 @@ pub enum Type {
     AnyPtr,
 }
 
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::I32 => f.write_str("i32"),
+            Type::Bool => f.write_str("bool"),
+            Type::Ptr(_) => f.write_str(".i32"),
+            Type::AnyPtr => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Intrinsic {
     Add,
