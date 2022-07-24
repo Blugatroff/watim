@@ -3,7 +3,7 @@
 extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .i32, iovs_count: i32, nwritten: .i32) -> i32
 
 fn main "_start" () {
-    memory space 8 4;
+    memory space: i32 8 4;
     local ptr: .i32
     local len: i32
     "Hello World!" #len #ptr

@@ -1,27 +1,54 @@
-use crate::scanner::Location;
-use std::{collections::HashMap, path::PathBuf};
+use crate::scanner::{Location, TokenWithLocation};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
+pub enum UnResolvedType {
     I32,
     Bool,
-    Ptr(Box<Type>),
-    AnyPtr,
+    Ptr(Box<UnResolvedType>),
+    Custom(Ident),
 }
 
-impl std::fmt::Display for Type {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedType {
+    I32,
+    Bool,
+    Ptr(Box<ResolvedType>),
+    AnyPtr,
+    Custom(Arc<Struct<ResolvedType>>),
+}
+
+impl std::fmt::Display for ResolvedType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::I32 => f.write_str("i32"),
-            Type::Bool => f.write_str("bool"),
-            Type::Ptr(_) => f.write_str(".i32"),
-            Type::AnyPtr => todo!(),
+            ResolvedType::I32 => f.write_str("i32"),
+            ResolvedType::Bool => f.write_str("bool"),
+            ResolvedType::Ptr(ty) => f.write_fmt(format_args!(".{ty}")),
+            ResolvedType::Custom(struc) => f.write_fmt(format_args!("{}", &struc.ident.lexeme)),
+            ResolvedType::AnyPtr => f.write_str("AnyPtr"),
+        }
+    }
+}
+
+impl std::fmt::Display for UnResolvedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnResolvedType::I32 => f.write_str("i32"),
+            UnResolvedType::Bool => f.write_str("bool"),
+            UnResolvedType::Ptr(ty) => f.write_fmt(format_args!(".{ty}")),
+            UnResolvedType::Custom(struc) => f.write_fmt(format_args!(
+                "{}",
+                match struc {
+                    Ident::Direct(n) => n,
+                    Ident::Qualified(_, n) => n,
+                }
+            )),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Intrinsic {
+pub enum Intrinsic<Type> {
     Add,
     Store32,
     Store8,
@@ -44,10 +71,10 @@ pub enum Intrinsic {
 }
 
 #[derive(Debug, Clone)]
-pub struct Iff {
+pub struct Iff<Type> {
     pub location: Location,
-    pub body: Vec<Word>,
-    pub el: Option<Vec<Word>>,
+    pub body: Vec<Word<Type>>,
+    pub el: Option<Vec<Word<Type>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,23 +82,23 @@ pub struct CheckedIff {
     pub location: Location,
     pub body: Vec<CheckedWord>,
     pub el: Option<Vec<CheckedWord>>,
-    pub ret: Vec<Type>,
+    pub ret: Vec<ResolvedType>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Loop {
+pub struct Loop<Type> {
     pub location: Location,
-    pub body: Vec<Word>,
+    pub body: Vec<Word<Type>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CheckedLoop {
     pub location: Location,
     pub body: Vec<CheckedWord>,
-    pub ret: Vec<Type>,
+    pub ret: Vec<ResolvedType>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ident {
     Direct(String),
     Qualified(String, String),
@@ -84,7 +111,7 @@ pub struct CheckedIdent {
 }
 
 #[derive(Debug, Clone)]
-pub enum Word {
+pub enum Word<Type> {
     Call {
         location: Location,
         ident: Ident,
@@ -103,16 +130,20 @@ pub enum Word {
     },
     Intrinsic {
         location: Location,
-        intrinsic: Intrinsic,
+        intrinsic: Intrinsic<Type>,
     },
-    If(Iff),
-    Loop(Loop),
+    If(Iff<Type>),
+    Loop(Loop<Type>),
     Break {
         location: Location,
     },
     String {
         location: Location,
         value: String,
+    },
+    FieldDeref {
+        location: Location,
+        field: String,
     },
 }
 
@@ -136,7 +167,7 @@ pub enum CheckedWord {
     },
     Intrinsic {
         location: Location,
-        intrinsic: Intrinsic,
+        intrinsic: Intrinsic<ResolvedType>,
     },
     If(CheckedIff),
     Loop(CheckedLoop),
@@ -147,6 +178,11 @@ pub enum CheckedWord {
         location: Location,
         addr: i32,
         size: i32,
+    },
+    FieldDeref {
+        location: Location,
+        offset: u32,
+        ty: ResolvedType,
     },
 }
 
@@ -162,11 +198,12 @@ impl CheckedWord {
             CheckedWord::Loop(lop) => &lop.location,
             CheckedWord::Break { location } => location,
             CheckedWord::String { location, .. } => location,
+            CheckedWord::FieldDeref { location, .. } => location,
         }
     }
 }
 
-impl Word {
+impl<Type> Word<Type> {
     pub fn location(&self) -> &Location {
         match self {
             Word::Call { location, .. } => location,
@@ -178,36 +215,38 @@ impl Word {
             Word::Loop(lop) => &lop.location,
             Word::Break { location } => location,
             Word::String { location, .. } => location,
+            Word::FieldDeref { location, .. } => location,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Local {
+pub struct Local<Type> {
     pub ident: String,
     pub location: Location,
     pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct Memory {
+pub struct Memory<Type> {
     pub ident: String,
     pub location: Location,
     pub size: i32,
     pub alignment: Option<i32>,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct Param {
+pub struct Param<Type> {
     pub location: Location,
     pub ident: String,
     pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionSignature {
+pub struct FunctionSignature<Type> {
     pub location: Location,
-    pub params: Vec<Param>,
+    pub params: Vec<Param<Type>>,
     pub ret: Vec<Type>,
     pub ident: String,
     pub export: Option<String>,
@@ -216,33 +255,33 @@ pub struct FunctionSignature {
 #[derive(Debug, Clone)]
 pub struct CheckedFunctionSignature {
     pub location: Location,
-    pub params: Vec<Param>,
-    pub ret: Vec<Type>,
+    pub params: Vec<Param<ResolvedType>>,
+    pub ret: Vec<ResolvedType>,
     pub ident: String,
     pub export: Option<String>,
     pub prefix: String,
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
-    pub signature: FunctionSignature,
-    pub locals: Vec<Local>,
-    pub body: Vec<Word>,
-    pub memory: Vec<Memory>,
+pub struct Function<Type> {
+    pub signature: FunctionSignature<Type>,
+    pub locals: Vec<Local<Type>>,
+    pub body: Vec<Word<Type>>,
+    pub memory: Vec<Memory<Type>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CheckedFunction {
     pub signature: CheckedFunctionSignature,
-    pub locals: Vec<Local>,
+    pub locals: Vec<Local<ResolvedType>>,
     pub body: Vec<CheckedWord>,
-    pub memory: Vec<Memory>,
+    pub memory: Vec<Memory<ResolvedType>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Extern {
+pub struct Extern<Type> {
     pub location: Location,
-    pub signature: FunctionSignature,
+    pub signature: FunctionSignature<Type>,
     pub path: (String, String),
 }
 
@@ -257,6 +296,7 @@ pub struct CheckedExtern {
 pub struct Import {
     pub path: String,
     pub ident: String,
+    pub location: Location,
 }
 
 #[derive(Debug, Clone)]
@@ -266,11 +306,12 @@ pub struct CheckedImport {
 }
 
 #[derive(Debug, Clone)]
-pub struct Module {
-    pub externs: Vec<Extern>,
+pub struct Module<Type> {
+    pub externs: Vec<Extern<Type>>,
     pub imports: Vec<Import>,
-    pub functions: Vec<Function>,
+    pub functions: Vec<Function<Type>>,
     pub path: PathBuf,
+    pub structs: Vec<Arc<Struct<Type>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -292,4 +333,10 @@ pub struct Data {
     pub location: Location,
     pub addr: i32,
     pub data: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Struct<Type> {
+    pub ident: TokenWithLocation,
+    pub fields: Vec<(TokenWithLocation, Type)>,
 }

@@ -8,74 +8,14 @@ mod generator;
 mod interpreter;
 mod intrinsics;
 mod parser;
+mod prepass;
 mod scanner;
 mod step_interpreter;
 
 use crate::interpreter::Interpreter;
-use ast::{Module, Program};
-use checker::{ModuleChecker, TypeError};
+use checker::TypeError;
 use parser::ParseError;
-use scanner::Scanner;
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
-};
-
-fn inner_load(
-    modules: &mut BTreeMap<PathBuf, Module>,
-    path: impl AsRef<Path>,
-    input: String,
-) -> Result<(), WatimError> {
-    let path = path.as_ref().to_path_buf();
-    if modules.get(&path).is_some() {
-        return Ok(());
-    }
-    let tokens = Scanner::scan_tokens(input, path.clone())?;
-    let module = parser::Parser::new(tokens).parse(&path)?;
-    let imports = module.imports.clone();
-    modules.insert(path.clone(), module);
-    for import in imports {
-        let path = path.parent().unwrap().join(import.path);
-        let input = std::fs::read_to_string(&path).unwrap();
-        inner_load(modules, path, input)?;
-    }
-    Ok(())
-}
-
-fn load(path: impl AsRef<Path>) -> Result<BTreeMap<PathBuf, Module>, WatimError> {
-    let mut modules = BTreeMap::new();
-    let path = path.as_ref().canonicalize().unwrap();
-    let input = std::fs::read_to_string(&path).unwrap();
-    inner_load(&mut modules, path, input)?;
-    Ok(modules)
-}
-
-fn load_raw(
-    path: impl AsRef<Path>,
-    input: String,
-) -> Result<BTreeMap<PathBuf, Module>, WatimError> {
-    let mut modules = BTreeMap::new();
-    inner_load(&mut modules, path, input)?;
-    Ok(modules)
-}
-
-fn check(modules: BTreeMap<PathBuf, Module>) -> Result<Program, TypeError> {
-    let modules: HashMap<_, _> = modules
-        .into_iter()
-        .enumerate()
-        .map(|(i, (k, v))| (k, (v, format!("{i}"))))
-        .collect();
-    let mut data = Vec::new();
-    let mut checked_modules = HashMap::new();
-    for (path, (module, _)) in &modules {
-        let module = ModuleChecker::check(module.clone(), &modules, &mut data)?;
-        checked_modules.insert(path.clone(), module);
-    }
-    Ok(Program {
-        data,
-        modules: checked_modules,
-    })
-}
+use std::path::PathBuf;
 
 #[derive(thiserror::Error, Debug)]
 pub enum WatimError {
@@ -89,13 +29,19 @@ pub enum WatimError {
     Interpet(#[from] interpreter::Error),
     #[error(transparent)]
     Debug(#[from] debugger::DebuggerError),
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
 }
 
-pub const SEP: &'static str = "================================\n";
+pub const SEP: &str = "================================\n";
 
 fn run(program: &str, input: impl std::io::Read) -> Vec<u8> {
-    match load_raw("test.watim", program.to_string())
-        .and_then(|m| check(m).map_err(WatimError::from))
+    match prepass::UncheckedProgram::load_with_custom_file_loader(
+        &mut |_| Ok(program.to_string()),
+        "test.watim",
+    )
+    .and_then(|p| p.resolve().map_err(WatimError::from))
+    .and_then(|p| p.check().map_err(WatimError::from))
     {
         Ok(program) => {
             match {
@@ -159,8 +105,7 @@ fn main() {
         let file = PathBuf::from(std::env::args().nth(2).unwrap())
             .canonicalize()
             .unwrap();
-        let modules = load(&file)?;
-        let program = check(modules)?;
+        let program = prepass::UncheckedProgram::load(&file)?.resolve()?.check()?;
         match mode {
             "com" => {
                 println!("{program}");

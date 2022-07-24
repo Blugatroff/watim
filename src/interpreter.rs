@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff, CheckedLoop,
-        CheckedWord, Intrinsic, Local, Memory, Param, Program, Type,
+        CheckedWord, Intrinsic, Local, Memory, Param, Program, ResolvedType,
     },
     intrinsics::execute_intrinsic,
     scanner::Location,
@@ -20,23 +20,24 @@ pub struct Interpreter<'stdin, 'stdout> {
 pub enum Value {
     Bool(bool),
     I32(i32),
-    Ptr(i32, Type),
+    Ptr(i32, ResolvedType),
 }
 
 impl Value {
-    pub fn default_of_type(ty: &Type) -> Self {
+    pub fn default_of_type(ty: &ResolvedType) -> Self {
         match ty {
-            Type::I32 => Self::I32(0),
-            Type::Bool => Self::Bool(false),
-            Type::Ptr(ty) => Self::Ptr(0, (**ty).clone()),
-            Type::AnyPtr => Self::Ptr(0, Type::AnyPtr),
+            ResolvedType::I32 => Self::I32(0),
+            ResolvedType::Bool => Self::Bool(false),
+            ResolvedType::Ptr(ty) => Self::Ptr(0, (**ty).clone()),
+            ResolvedType::AnyPtr => Self::Ptr(0, ResolvedType::AnyPtr),
+            ResolvedType::Custom(_) => todo!(),
         }
     }
-    pub fn ty(&self) -> Type {
+    pub fn ty(&self) -> ResolvedType {
         match self {
-            Self::Bool(_) => Type::Bool,
-            Self::I32(_) => Type::I32,
-            Self::Ptr(_, ty) => Type::Ptr(Box::new(ty.clone())),
+            Self::Bool(_) => ResolvedType::Bool,
+            Self::I32(_) => ResolvedType::I32,
+            Self::Ptr(_, ty) => ResolvedType::Ptr(Box::new(ty.clone())),
         }
     }
 }
@@ -67,7 +68,7 @@ pub enum Error {
     #[error("{0}: local `{1}` not found!")]
     LocalNotFound(Location, String),
     #[error("{0}: expected {1:?} but found {2:?}")]
-    ArgsMismatch(Location, Vec<Vec<Type>>, Vec<Option<Type>>),
+    ArgsMismatch(Location, Vec<Vec<ResolvedType>>, Vec<Option<ResolvedType>>),
 }
 
 impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
@@ -133,25 +134,30 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
         match function {
             InterpreterFunction::Normal(function) => {
                 let ostack = self.mem_stack;
-                let mut locals: HashMap<String, Value> = function
-                    .locals
-                    .iter()
-                    .map(|local: &Local| (local.ident.clone(), Value::default_of_type(&local.ty)))
-                    .chain(function.signature.params.iter().rev().map(|p: &Param| {
-                        let v = args.next().unwrap();
-                        (p.ident.clone(), v)
-                    }))
-                    .chain(function.memory.iter().map(|mem: &Memory| {
-                        let ptr = if let Some(alignment) = mem.alignment {
-                            alignment - (self.mem_stack % alignment) + self.mem_stack
-                        } else {
-                            self.mem_stack
-                        };
-                        let value = Value::Ptr(ptr, Type::I32);
-                        self.mem_stack = ptr + mem.size;
-                        (mem.ident.clone(), value)
-                    }))
-                    .collect();
+                let mut locals: HashMap<String, Value> =
+                    function
+                        .locals
+                        .iter()
+                        .map(|local: &Local<ResolvedType>| {
+                            (local.ident.clone(), Value::default_of_type(&local.ty))
+                        })
+                        .chain(function.signature.params.iter().rev().map(
+                            |p: &Param<ResolvedType>| {
+                                let v = args.next().unwrap();
+                                (p.ident.clone(), v)
+                            },
+                        ))
+                        .chain(function.memory.iter().map(|mem: &Memory<ResolvedType>| {
+                            let ptr = if let Some(alignment) = mem.alignment {
+                                alignment - (self.mem_stack % alignment) + self.mem_stack
+                            } else {
+                                self.mem_stack
+                            };
+                            let value = Value::Ptr(ptr, mem.ty.clone());
+                            self.mem_stack = ptr + mem.size;
+                            (mem.ident.clone(), value)
+                        }))
+                        .collect();
                 let mut stack: Vec<Value> = Vec::new();
                 for word in &function.body {
                     self.execute_word(word, &mut locals, &mut stack)?;
@@ -224,15 +230,21 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
             }
             CheckedWord::Break { .. } => return Ok(true),
             CheckedWord::String { addr, size, .. } => {
-                stack.push(Value::Ptr(*addr, Type::I32));
+                stack.push(Value::Ptr(*addr, ResolvedType::I32));
                 stack.push(Value::I32(*size));
             }
+            CheckedWord::FieldDeref { offset, ty, .. } => match stack.pop().unwrap() {
+                Value::Ptr(pt, _) => stack.push(Value::Ptr(pt + *offset as i32, ty.clone())),
+                _ => {
+                    todo!()
+                }
+            },
         }
         Ok(false)
     }
     fn execute_intrinsic(
         &mut self,
-        intrinsic: &Intrinsic,
+        intrinsic: &Intrinsic<ResolvedType>,
         location: &Location,
         stack: &mut Vec<Value>,
     ) -> Result<(), Error> {
@@ -275,7 +287,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                 }
             }
             Some(Value::Bool(false)) => {}
-            v => return Err(Error::ArgsMismatch(iff.location.clone(), vec![vec![Type::Bool]], vec![v.as_ref().map(Value::ty)])),
+            v => return Err(Error::ArgsMismatch(iff.location.clone(), vec![vec![ResolvedType::Bool]], vec![v.as_ref().map(Value::ty)])),
         }
         Ok(false)
     }

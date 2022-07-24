@@ -1,7 +1,7 @@
 import "./util.watim" as U
 
 fn print_alphabet() {
-    memory buf 27; // 26 letters + \n
+    memory buf: i32 27; // 26 letters + \n
     local i: i32
     loop {
         $i 26 = if { break }

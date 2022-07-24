@@ -1,9 +1,4 @@
-use crate::{
-    ast::Program,
-    interpreter::{self},
-    scanner::Location,
-    step_interpreter::StepInterpreter,
-};
+use crate::{ast::Program, interpreter, scanner::Location, step_interpreter::StepInterpreter};
 use crossterm::{
     cursor::{MoveTo, MoveToColumn, MoveToNextLine},
     event::{Event, KeyCode, KeyModifiers},
@@ -35,32 +30,29 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
         stdout
             .execute(Clear(ClearType::All))?
             .execute(MoveTo(0, 0))?;
-        match debugger.current_word() {
-            Some(word) => {
-                let location = word.location();
-                let line = file_lookup.get_line(location);
-                let location = word.location();
-                let (lines_before, lines_after) = file_lookup.get_surrounding(location, 5);
-                let lines_before = lines_before;
-                let lines_after = lines_after;
-                let (before, after) = line.split_at(location.column - 1);
-                let (word, after) = after.split_at(location.len);
+        if let Some(word) = debugger.current_word() {
+            let location = word.location();
+            let line = file_lookup.get_line(location);
+            let location = word.location();
+            let (lines_before, lines_after) = file_lookup.get_surrounding(location, 5);
+            let lines_before = lines_before;
+            let lines_after = lines_after;
+            let (before, after) = line.split_at(location.column - 1);
+            let (word, after) = after.split_at(location.len);
 
-                for line in lines_before {
-                    stdout.execute(Print(line))?.execute(MoveToNextLine(1))?;
-                }
-                stdout
-                    .execute(Print(before))?
-                    .execute(SetColors(Colors::new(Color::Yellow, Color::Reset)))?
-                    .execute(Print(word))?
-                    .execute(SetColors(Colors::new(Color::White, Color::Reset)))?
-                    .execute(Print(after))?
-                    .execute(MoveToNextLine(1))?;
-                for line in lines_after {
-                    stdout.execute(Print(line))?.execute(MoveToNextLine(1))?;
-                }
+            for line in lines_before {
+                stdout.execute(Print(line))?.execute(MoveToNextLine(1))?;
             }
-            None => {}
+            stdout
+                .execute(Print(before))?
+                .execute(SetColors(Colors::new(Color::Yellow, Color::Reset)))?
+                .execute(Print(word))?
+                .execute(SetColors(Colors::new(Color::White, Color::Reset)))?
+                .execute(Print(after))?
+                .execute(MoveToNextLine(1))?;
+            for line in lines_after {
+                stdout.execute(Print(line))?.execute(MoveToNextLine(1))?;
+            }
         }
         let line: String = (0..80).map(|_| '#').collect();
         stdout

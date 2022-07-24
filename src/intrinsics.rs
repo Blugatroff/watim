@@ -1,10 +1,13 @@
 use crate::{
-    ast::{Intrinsic, Type},
+    ast::{Intrinsic, ResolvedType},
     interpreter::{Error, Value},
     scanner::Location,
 };
 
-type Signature<'a, R, const L: usize> = ([Type; L], &'a mut dyn FnMut(&[Value; L]) -> Option<R>);
+type Signature<'a, R, const L: usize> = (
+    [ResolvedType; L],
+    &'a mut dyn FnMut(&[Value; L]) -> Option<R>,
+);
 fn expect_args<R: IntoIterator<Item = Value>, const O: usize, const L: usize>(
     location: &Location,
     stack: &mut Vec<Value>,
@@ -35,12 +38,9 @@ fn expect_args<R: IntoIterator<Item = Value>, const O: usize, const L: usize>(
     let mut args: [Value; L] = args.try_into().unwrap();
     args.reverse();
     for f in overloads {
-        match f(&args) {
-            Some(ret) => {
-                stack.extend(ret);
-                return Ok(());
-            }
-            None => {}
+        if let Some(ret) = f(&args) {
+            stack.extend(ret);
+            return Ok(());
         }
     }
     Err(Error::ArgsMismatch(
@@ -51,7 +51,7 @@ fn expect_args<R: IntoIterator<Item = Value>, const O: usize, const L: usize>(
 }
 
 pub fn execute_intrinsic(
-    intrinsic: &Intrinsic,
+    intrinsic: &Intrinsic<ResolvedType>,
     location: &Location,
     stack: &mut Vec<Value>,
     memory: &mut [u8],
@@ -61,115 +61,162 @@ pub fn execute_intrinsic(
             location,
             stack,
             [
-                ([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a + b)]),
-                    _ => None,
-                }),
-                ([Type::AnyPtr, Type::I32], &mut |[a, b]| match (a, b) {
-                    (Value::Ptr(a, ty), Value::I32(b)) => Some([Value::Ptr(a + b, ty.clone())]),
-                    _ => None,
-                }),
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I32(a), Value::I32(b)) => Some([Value::I32(a + b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::AnyPtr, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::Ptr(a, ty), Value::I32(b)) => Some([Value::Ptr(a + b, ty.clone())]),
+                        _ => None,
+                    },
+                ),
             ],
         ),
         Intrinsic::Sub => expect_args(
             location,
             stack,
             [
-                ([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a - b)]),
-                    _ => None,
-                }),
-                ([Type::AnyPtr, Type::I32], &mut |[a, b]| match (a, b) {
-                    (Value::Ptr(a, ty), Value::I32(b)) => Some([Value::Ptr(a - b, ty.clone())]),
-                    _ => None,
-                }),
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I32(a), Value::I32(b)) => Some([Value::I32(a - b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::AnyPtr, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::Ptr(a, ty), Value::I32(b)) => Some([Value::Ptr(a - b, ty.clone())]),
+                        _ => None,
+                    },
+                ),
             ],
         ),
         Intrinsic::Eq => expect_args(
             location,
             stack,
             [
-                ([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                    (Value::I32(a), Value::I32(b)) => Some([Value::Bool(a == b)]),
-                    _ => None,
-                }),
-                ([Type::AnyPtr, Type::AnyPtr], &mut |[a, b]| match (a, b) {
-                    (Value::Ptr(a, _), Value::Ptr(b, _)) => Some([Value::Bool(a == b)]),
-                    _ => None,
-                }),
-                ([Type::Bool, Type::Bool], &mut |[a, b]| match (a, b) {
-                    (Value::Bool(a), Value::Bool(b)) => Some([Value::Bool(a == b)]),
-                    _ => None,
-                }),
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I32(a), Value::I32(b)) => Some([Value::Bool(a == b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::AnyPtr, ResolvedType::AnyPtr],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::Ptr(a, _), Value::Ptr(b, _)) => Some([Value::Bool(a == b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::Bool, ResolvedType::Bool],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::Bool(a), Value::Bool(b)) => Some([Value::Bool(a == b)]),
+                        _ => None,
+                    },
+                ),
             ],
         ),
         Intrinsic::NotEq => expect_args(
             location,
             stack,
             [
-                ([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                    (Value::I32(a), Value::I32(b)) => Some([Value::Bool(a != b)]),
-                    _ => None,
-                }),
-                ([Type::AnyPtr, Type::AnyPtr], &mut |[a, b]| match (a, b) {
-                    (Value::Ptr(a, _), Value::Ptr(b, _)) => Some([Value::Bool(a != b)]),
-                    _ => None,
-                }),
-                ([Type::Bool, Type::Bool], &mut |[a, b]| match (a, b) {
-                    (Value::Bool(a), Value::Bool(b)) => Some([Value::Bool(a != b)]),
-                    _ => None,
-                }),
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I32(a), Value::I32(b)) => Some([Value::Bool(a != b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::AnyPtr, ResolvedType::AnyPtr],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::Ptr(a, _), Value::Ptr(b, _)) => Some([Value::Bool(a != b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::Bool, ResolvedType::Bool],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::Bool(a), Value::Bool(b)) => Some([Value::Bool(a != b)]),
+                        _ => None,
+                    },
+                ),
             ],
         ),
         Intrinsic::Mod => expect_args(
             location,
             stack,
-            [([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                (Value::I32(a), Value::I32(b)) => Some([Value::I32(a % b)]),
-                _ => None,
-            })],
-        ),
-        Intrinsic::Div => expect_args(
-            location,
-            stack,
-            [([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                (Value::I32(a), Value::I32(b)) => Some([Value::I32(a / b)]),
-                _ => None,
-            })],
-        ),
-        Intrinsic::Mul => expect_args(
-            location,
-            stack,
-            [([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                (Value::I32(a), Value::I32(b)) => Some([Value::I32(a * b)]),
-                _ => None,
-            })],
-        ),
-        Intrinsic::Store32 => expect_args(
-            location,
-            stack,
             [(
-                [Type::Ptr(Box::new(Type::I32)), Type::I32],
+                [ResolvedType::I32, ResolvedType::I32],
                 &mut |[a, b]| match (a, b) {
-                    (&Value::Ptr(addr, Type::I32), Value::I32(value)) => {
-                        let addr = addr as usize;
-                        let bytes = value.to_le_bytes();
-                        for (i, v) in bytes.into_iter().enumerate() {
-                            memory[addr + i] = v;
-                        }
-                        Some([])
-                    }
+                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a % b)]),
                     _ => None,
                 },
             )],
         ),
+        Intrinsic::Div => expect_args(
+            location,
+            stack,
+            [(
+                [ResolvedType::I32, ResolvedType::I32],
+                &mut |[a, b]| match (a, b) {
+                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a / b)]),
+                    _ => None,
+                },
+            )],
+        ),
+        Intrinsic::Mul => expect_args(
+            location,
+            stack,
+            [(
+                [ResolvedType::I32, ResolvedType::I32],
+                &mut |[a, b]| match (a, b) {
+                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a * b)]),
+                    _ => None,
+                },
+            )],
+        ),
+        Intrinsic::Store32 => {
+            let b = stack.pop().unwrap();
+            let a = stack.pop().unwrap();
+            match (a, b) {
+                (Value::Ptr(addr, ty), v) if ty == v.ty() => {
+                    let value = match v {
+                        Value::Bool(b) => b as i32,
+                        Value::I32(v) => v,
+                        Value::Ptr(v, _) => v,
+                    };
+                    let addr = addr as usize;
+                    let bytes = value.to_le_bytes();
+                    for (i, v) in bytes.into_iter().enumerate() {
+                        memory[addr + i] = v;
+                    }
+                    Ok(())
+                }
+                a => {
+                    dbg!(a);
+                    todo!()
+                }
+            }
+        }
         Intrinsic::Store8 => expect_args(
             location,
             stack,
             [(
-                [Type::Ptr(Box::new(Type::I32)), Type::I32],
+                [
+                    ResolvedType::Ptr(Box::new(ResolvedType::I32)),
+                    ResolvedType::I32,
+                ],
                 &mut |[a, b]| match (a, b) {
-                    (&Value::Ptr(addr, Type::I32), Value::I32(value)) => {
+                    (&Value::Ptr(addr, ResolvedType::I32), Value::I32(value)) => {
                         let addr = addr as usize;
                         let byte = value.to_le_bytes()[0];
                         memory[addr] = byte;
@@ -182,40 +229,46 @@ pub fn execute_intrinsic(
         Intrinsic::Load32 => expect_args(
             location,
             stack,
-            [([Type::Ptr(Box::new(Type::I32))], &mut |[a]| match a {
-                &Value::Ptr(addr, Type::I32) => {
-                    let addr = addr as usize;
-                    let bytes: [u8; 4] = memory[addr..addr + 4].try_into().unwrap();
-                    Some([Value::I32(i32::from_le_bytes(bytes))])
-                }
-                _ => None,
-            })],
+            [(
+                [ResolvedType::Ptr(Box::new(ResolvedType::I32))],
+                &mut |[a]| match a {
+                    &Value::Ptr(addr, ResolvedType::I32) => {
+                        let addr = addr as usize;
+                        let bytes: [u8; 4] = memory[addr..addr + 4].try_into().unwrap();
+                        Some([Value::I32(i32::from_le_bytes(bytes))])
+                    }
+                    _ => None,
+                },
+            )],
         ),
         Intrinsic::Load8 => expect_args(
             location,
             stack,
-            [([Type::Ptr(Box::new(Type::I32))], &mut |[a]| match a {
-                &Value::Ptr(addr, Type::I32) => {
-                    let addr = addr as usize;
-                    let byte = memory[addr];
-                    Some([Value::I32(byte as i32)])
-                }
-                _ => None,
-            })],
+            [(
+                [ResolvedType::Ptr(Box::new(ResolvedType::I32))],
+                &mut |[a]| match a {
+                    &Value::Ptr(addr, ResolvedType::I32) => {
+                        let addr = addr as usize;
+                        let byte = memory[addr];
+                        Some([Value::I32(byte as i32)])
+                    }
+                    _ => None,
+                },
+            )],
         ),
         Intrinsic::Drop => expect_args(
             location,
             stack,
             [
-                ([Type::AnyPtr], &mut |[a]| match a {
+                ([ResolvedType::AnyPtr], &mut |[a]| match a {
                     &Value::Ptr(_, _) => Some([]),
                     _ => None,
                 }),
-                ([Type::I32], &mut |[a]| match a {
+                ([ResolvedType::I32], &mut |[a]| match a {
                     &Value::I32(_) => Some([]),
                     _ => None,
                 }),
-                ([Type::Bool], &mut |[a]| match a {
+                ([ResolvedType::Bool], &mut |[a]| match a {
                     &Value::Bool(_) => Some([]),
                     _ => None,
                 }),
@@ -224,53 +277,63 @@ pub fn execute_intrinsic(
         Intrinsic::And => expect_args(
             location,
             stack,
-            [([Type::Bool, Type::Bool], &mut |[a, b]| match (a, b) {
-                (&Value::Bool(a), &Value::Bool(b)) => Some([Value::Bool(a && b)]),
-                _ => None,
-            })],
+            [(
+                [ResolvedType::Bool, ResolvedType::Bool],
+                &mut |[a, b]| match (a, b) {
+                    (&Value::Bool(a), &Value::Bool(b)) => Some([Value::Bool(a && b)]),
+                    _ => None,
+                },
+            )],
         ),
         Intrinsic::LE => expect_args(
             location,
             stack,
-            [([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                (&Value::I32(a), &Value::I32(b)) => Some([Value::Bool(a <= b)]),
-                _ => None,
-            })],
+            [(
+                [ResolvedType::I32, ResolvedType::I32],
+                &mut |[a, b]| match (a, b) {
+                    (&Value::I32(a), &Value::I32(b)) => Some([Value::Bool(a <= b)]),
+                    _ => None,
+                },
+            )],
         ),
         Intrinsic::GE => expect_args(
             location,
             stack,
-            [([Type::I32, Type::I32], &mut |[a, b]| match (a, b) {
-                (&Value::I32(a), &Value::I32(b)) => Some([Value::Bool(a >= b)]),
-                _ => None,
-            })],
+            [(
+                [ResolvedType::I32, ResolvedType::I32],
+                &mut |[a, b]| match (a, b) {
+                    (&Value::I32(a), &Value::I32(b)) => Some([Value::Bool(a >= b)]),
+                    _ => None,
+                },
+            )],
         ),
         Intrinsic::Or => todo!(),
         Intrinsic::L => todo!(),
         Intrinsic::G => todo!(),
-        Intrinsic::Cast(Type::I32) => expect_args(
+        Intrinsic::Cast(ResolvedType::I32) => expect_args(
             location,
             stack,
-            [([Type::AnyPtr], &mut |[v]| match v {
+            [([ResolvedType::AnyPtr], &mut |[v]| match v {
                 &Value::Ptr(v, _) => Some([Value::I32(v)]),
                 _ => None,
             })],
         ),
-        Intrinsic::Cast(Type::Ptr(ty)) => expect_args(
+        Intrinsic::Cast(ResolvedType::Ptr(ty)) => expect_args(
             location,
             stack,
             [
-                ([Type::I32], &mut |[v]| match v {
+                ([ResolvedType::I32], &mut |[v]| match v {
                     &Value::I32(v) => Some([Value::Ptr(v, (**ty).clone())]),
                     _ => None,
                 }),
-                ([Type::AnyPtr], &mut |[v]| match v {
+                ([ResolvedType::AnyPtr], &mut |[v]| match v {
                     &Value::Ptr(v, _) => Some([Value::Ptr(v, (**ty).clone())]),
                     _ => None,
                 }),
             ],
         ),
-        Intrinsic::Cast(Type::Bool) => todo!(),
-        Intrinsic::Cast(Type::AnyPtr) => todo!(),
+        Intrinsic::Cast(ResolvedType::Bool) => todo!(),
+        Intrinsic::Cast(ResolvedType::AnyPtr) => todo!(),
+        Intrinsic::Cast(ResolvedType::Custom(_)) => todo!(),
     }
 }

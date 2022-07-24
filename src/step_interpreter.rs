@@ -1,5 +1,5 @@
 use crate::{
-    ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program, Type},
+    ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program, ResolvedType},
     interpreter::{execute_extern, Error, InterpreterFunction, Value},
     intrinsics::execute_intrinsic,
     scanner::Location,
@@ -82,7 +82,7 @@ impl StepInterpreter {
                     mem_stack
                 };
                 mem_stack = ptr + mem.size;
-                locals.insert(mem.ident.clone(), Value::Ptr(ptr, Type::I32));
+                locals.insert(mem.ident.clone(), Value::Ptr(ptr, ResolvedType::I32));
             }
             Scope {
                 words,
@@ -225,7 +225,7 @@ impl StepInterpreter {
                                 self.mem_stack
                             };
                             self.mem_stack = ptr + mem.size;
-                            locals.insert(mem.ident.clone(), Value::Ptr(ptr, Type::I32));
+                            locals.insert(mem.ident.clone(), Value::Ptr(ptr, ResolvedType::I32));
                         }
                         self.scope = Scope {
                             words,
@@ -345,10 +345,19 @@ impl StepInterpreter {
                 Ok(())
             }
             CheckedWord::String { addr, size, .. } => {
-                self.scope.stack.push(Value::Ptr(addr, Type::I32));
+                self.scope.stack.push(Value::Ptr(addr, ResolvedType::I32));
                 self.scope.stack.push(Value::I32(size));
                 Ok(())
             }
+            CheckedWord::FieldDeref { offset, ty, .. } => match self.scope.stack.pop().unwrap() {
+                Value::Ptr(ptr, _) => {
+                    self.scope.stack.push(Value::Ptr(ptr + offset as i32, ty));
+                    Ok(())
+                }
+                _ => {
+                    todo!()
+                }
+            },
         }
     }
 }

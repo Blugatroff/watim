@@ -2,7 +2,7 @@ use crate::{
     ast::{
         CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
         CheckedImport, CheckedLoop, CheckedModule, CheckedWord, Function, FunctionSignature, Ident,
-        Iff, Import, Intrinsic, Local, Loop, Module, Type, Word,
+        Iff, Import, Intrinsic, Local, Loop, Module, ResolvedType, Word,
     },
     scanner::Location,
 };
@@ -12,13 +12,6 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
-
-pub struct ModuleChecker<'a> {
-    functions: HashMap<String, FunctionSignature>,
-    modules: &'a HashMap<PathBuf, (Module, String)>,
-    imports: HashMap<String, CheckedImport>,
-    prefix: String,
-}
 
 fn display_maybe_list<T: std::fmt::Display>(items: &[T], sep: &'static str) -> String {
     match items.first() {
@@ -40,14 +33,20 @@ pub enum TypeError {
     RedefinedLocal(String, Location),
     LocalNotFound(String, Location),
     FunctionNotFound(String, Location),
-    ArgsMismatch(Word, Vec<Vec<Type>>, Vec<Option<Type>>),
-    IfBlocksMismatch(Location, Vec<Type>, Vec<Type>),
+    ArgsMismatch(
+        Word<ResolvedType>,
+        Vec<Vec<ResolvedType>>,
+        Vec<Option<ResolvedType>>,
+    ),
+    IfBlocksMismatch(Location, Vec<ResolvedType>, Vec<ResolvedType>),
     BreakTypeMismatch(Location, Vec<BreakStack>),
-    ReturnTypeMismatch(Location, Vec<Type>, Vec<Type>),
-    ValuesLeftInLoop(Location, Vec<Type>),
+    ReturnTypeMismatch(Location, Vec<ResolvedType>, Vec<ResolvedType>),
+    ValuesLeftInLoop(Location, Vec<ResolvedType>),
     Io(#[from] Arc<std::io::Error>),
     FunctionInModuleNotFound(String, Location, PathBuf),
     ModuleNotFound(String, Location),
+    StructNotFound(String, Location),
+    StoreArgs(Location, Option<ResolvedType>, Option<ResolvedType>),
 }
 
 impl std::fmt::Display for TypeError {
@@ -65,13 +64,16 @@ impl std::fmt::Display for TypeError {
             TypeError::FunctionNotFound(function, loc) => {
                 write!(f, "{loc}: function `{function}` not found!")
             }
+            TypeError::StructNotFound(struc, loc) => {
+                write!(f, "{loc}: struct `{struc}` not found!")
+            }
             TypeError::ArgsMismatch(word, expected, got) => {
                 let expected: Vec<_> = expected
-                    .into_iter()
-                    .map(|t| display_maybe_list(&t, ", "))
+                    .iter()
+                    .map(|t| display_maybe_list(t, ", "))
                     .collect();
                 let got = display_maybe_list(
-                    &got.into_iter()
+                    &got.iter()
                         .map(|t| match t {
                             Some(t) => format!("{t}"),
                             None => String::from("_"),
@@ -83,28 +85,28 @@ impl std::fmt::Display for TypeError {
                 write!(f, "{}: expected: {expected}, got: {got}!", word.location())
             }
             TypeError::IfBlocksMismatch(loc, iff, el) => {
-                let iff = display_maybe_list(&iff, ", ");
-                let el = display_maybe_list(&el, ", ");
+                let iff = display_maybe_list(iff, ", ");
+                let el = display_maybe_list(el, ", ");
                 write!(f, "{loc}: {iff} {el}!")
             }
             TypeError::BreakTypeMismatch(loc, stack) => {
                 let stack = stack
-                    .into_iter()
+                    .iter()
                     .map(|s| display_maybe_list(&s.stack, ", "))
                     .collect::<Vec<_>>();
                 let stack = display_maybe_list(&stack, ", ");
                 write!(f, "{loc}: break types mismatch {stack}!")
             }
             TypeError::ReturnTypeMismatch(loc, expected, got) => {
-                let expected = display_maybe_list(&expected, ", ");
-                let got = display_maybe_list(&got, ", ");
+                let expected = display_maybe_list(expected, ", ");
+                let got = display_maybe_list(got, ", ");
                 write!(
                     f,
                     "{loc}: return types mismatch expected: {expected}, got: {got}!"
                 )
             }
             TypeError::ValuesLeftInLoop(loc, vals) => {
-                let vals = display_maybe_list(&vals, ", ");
+                let vals = display_maybe_list(vals, ", ");
                 write!(f, "{loc}: values left in loop: {vals}!")
             }
             TypeError::Io(e) => e.fmt(f),
@@ -114,15 +116,30 @@ impl std::fmt::Display for TypeError {
             TypeError::ModuleNotFound(mo, loc) => {
                 write!(f, "{loc}: module `{mo}` not found!")
             }
+            TypeError::StoreArgs(loc, a, b) => {
+                let items: Vec<&ResolvedType> = [a, b].into_iter().flatten().collect();
+                write!(
+                    f,
+                    "{loc}: expected [.T, T], got: {}",
+                    display_maybe_list(&items, ", ")
+                )
+            }
         }
     }
+}
+
+pub struct ModuleChecker<'a, Type> {
+    functions: HashMap<String, FunctionSignature<Type>>,
+    modules: &'a HashMap<PathBuf, (Module<Type>, String)>,
+    imports: HashMap<String, CheckedImport>,
+    prefix: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct BreakStack {
     #[allow(dead_code)]
-    location: Location,
-    stack: Vec<Type>,
+    pub location: Location,
+    pub stack: Vec<ResolvedType>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -131,15 +148,15 @@ enum Returns {
     No,
 }
 
-type Signature<'a, T, const L: usize> = ([Type; L], &'a dyn Fn([Type; L]) -> T);
+type Signature<'a, T, const L: usize> = ([ResolvedType; L], &'a dyn Fn([ResolvedType; L]) -> T);
 
-impl<'a> ModuleChecker<'a> {
+impl<'a> ModuleChecker<'a, ResolvedType> {
     pub fn check(
-        module: Module,
-        modules: &'a HashMap<PathBuf, (Module, String)>,
+        module: Module<ResolvedType>,
+        modules: &'a HashMap<PathBuf, (Module<ResolvedType>, String)>,
         data: &mut Vec<u8>,
     ) -> Result<CheckedModule, TypeError> {
-        let mut functions: HashMap<String, FunctionSignature> = HashMap::new();
+        let mut functions: HashMap<String, FunctionSignature<ResolvedType>> = HashMap::new();
         for ext in &module.externs {
             if functions
                 .insert(ext.signature.ident.clone(), ext.signature.clone())
@@ -204,7 +221,7 @@ impl<'a> ModuleChecker<'a> {
     }
     fn check_function(
         &self,
-        function: Function,
+        function: Function<ResolvedType>,
         data: &mut Vec<u8>,
     ) -> Result<CheckedFunction, TypeError> {
         let mut locals = HashMap::new();
@@ -223,7 +240,7 @@ impl<'a> ModuleChecker<'a> {
                     Local {
                         ident: mem.ident.clone(),
                         location: mem.location.clone(),
-                        ty: Type::Ptr(Box::new(Type::I32)),
+                        ty: ResolvedType::Ptr(Box::new(mem.ty.clone())),
                     },
                 )
                 .is_some()
@@ -252,7 +269,7 @@ impl<'a> ModuleChecker<'a> {
                 ));
             }
         }
-        let mut stack: Vec<Type> = Vec::new();
+        let mut stack: Vec<ResolvedType> = Vec::new();
         let mut checked_words = Vec::new();
         for word in function.body {
             let (_, _, checked_word) = self.check_word(word, &mut stack, &locals, data)?;
@@ -292,9 +309,9 @@ impl<'a> ModuleChecker<'a> {
     }
     fn check_word(
         &self,
-        word: Word,
-        stack: &mut Vec<Type>,
-        locals: &HashMap<String, Local>,
+        word: Word<ResolvedType>,
+        stack: &mut Vec<ResolvedType>,
+        locals: &HashMap<String, Local<ResolvedType>>,
         data: &mut Vec<u8>,
     ) -> Result<(Returns, Vec<BreakStack>, CheckedWord), TypeError> {
         match word {
@@ -399,7 +416,7 @@ impl<'a> ModuleChecker<'a> {
                 ))
             }
             Word::Number { number, location } => {
-                stack.push(Type::I32);
+                stack.push(ResolvedType::I32);
                 Ok((
                     Returns::Yes,
                     Vec::new(),
@@ -415,8 +432,10 @@ impl<'a> ModuleChecker<'a> {
                         stack,
                         &word,
                         [
-                            ([Type::I32, Type::I32], &|_| Type::I32),
-                            ([Type::AnyPtr, Type::I32], &|[a, _]| a),
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::AnyPtr, ResolvedType::I32], &|[a, _]| a),
                         ],
                     )?;
                     stack.push(ret);
@@ -430,11 +449,10 @@ impl<'a> ModuleChecker<'a> {
                     ))
                 }
                 intrinsic @ Intrinsic::Store32 => {
-                    self.expect_stack(
-                        stack,
-                        &word,
-                        [([Type::Ptr(Box::new(Type::I32)), Type::I32], &|_| ())],
-                    )?;
+                    match (stack.pop(), stack.pop()) {
+                        (Some(v_ty), Some(ResolvedType::Ptr(ty))) if *ty == v_ty => {}
+                        (b, a) => return Err(TypeError::StoreArgs(location.clone(), a, b)),
+                    }
                     Ok((
                         Returns::Yes,
                         Vec::new(),
@@ -448,7 +466,13 @@ impl<'a> ModuleChecker<'a> {
                     self.expect_stack(
                         stack,
                         &word,
-                        [([Type::Ptr(Box::new(Type::I32)), Type::I32], &|_| ())],
+                        [(
+                            [
+                                ResolvedType::Ptr(Box::new(ResolvedType::I32)),
+                                ResolvedType::I32,
+                            ],
+                            &|_| (),
+                        )],
                     )?;
                     Ok((
                         Returns::Yes,
@@ -463,7 +487,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::Ptr(Box::new(Type::I32))], &|_| Type::I32)],
+                        [([ResolvedType::Ptr(Box::new(ResolvedType::I32))], &|_| {
+                            ResolvedType::I32
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -479,7 +505,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::Ptr(Box::new(Type::I32))], &|_| Type::I32)],
+                        [([ResolvedType::Ptr(Box::new(ResolvedType::I32))], &|_| {
+                            ResolvedType::I32
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -496,9 +524,9 @@ impl<'a> ModuleChecker<'a> {
                         stack,
                         &word,
                         [
-                            ([Type::I32], &|_| ()),
-                            ([Type::AnyPtr], &|_| ()),
-                            ([Type::Bool], &|_| ()),
+                            ([ResolvedType::I32], &|_| ()),
+                            ([ResolvedType::AnyPtr], &|_| ()),
+                            ([ResolvedType::Bool], &|_| ()),
                         ],
                     )?;
                     Ok((
@@ -514,7 +542,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::I32
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -530,7 +560,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -546,7 +578,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::I32
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -562,7 +596,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::I32
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -578,7 +614,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::Bool, Type::Bool], &|_| Type::Bool)],
+                        [([ResolvedType::Bool, ResolvedType::Bool], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -594,7 +632,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::Bool, Type::Bool], &|_| Type::Bool)],
+                        [([ResolvedType::Bool, ResolvedType::Bool], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -610,7 +650,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -626,7 +668,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -642,7 +686,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -658,7 +704,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::Bool)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::Bool
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -674,7 +722,9 @@ impl<'a> ModuleChecker<'a> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([Type::I32, Type::I32], &|_| Type::I32)],
+                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
+                            ResolvedType::I32
+                        })],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -688,22 +738,28 @@ impl<'a> ModuleChecker<'a> {
                 }
                 intrinsic @ Intrinsic::Cast(ty) => {
                     match ty {
-                        Type::I32 => match stack.pop() {
-                            Some(Type::Ptr(_)) => stack.push(Type::I32),
+                        ResolvedType::I32 => match stack.pop() {
+                            Some(ResolvedType::Ptr(_)) => stack.push(ResolvedType::I32),
                             _ => {
                                 todo!()
                             }
                         },
-                        Type::Ptr(ty) => {
+                        ResolvedType::Ptr(ty) => {
                             let ret = self.expect_stack(
                                 stack,
                                 &word,
-                                [([Type::I32], &|_| Type::Ptr(ty.clone()))],
+                                [
+                                    ([ResolvedType::I32], &|_| ResolvedType::Ptr(ty.clone())),
+                                    ([ResolvedType::AnyPtr], &|_| ResolvedType::Ptr(ty.clone())),
+                                ],
                             )?;
                             stack.push(ret);
                         }
-                        Type::Bool => todo!(),
-                        Type::AnyPtr => todo!(),
+                        ResolvedType::Custom(_) => {
+                            todo!()
+                        }
+                        ResolvedType::Bool => todo!(),
+                        ResolvedType::AnyPtr => todo!(),
                     };
                     Ok((
                         Returns::Yes,
@@ -721,11 +777,11 @@ impl<'a> ModuleChecker<'a> {
                 ref el,
             }) => {
                 match stack.pop() {
-                    Some(Type::Bool) => {}
+                    Some(ResolvedType::Bool) => {}
                     ty => {
                         return Err(TypeError::ArgsMismatch(
                             word.clone(),
-                            vec![vec![Type::Bool]],
+                            vec![vec![ResolvedType::Bool]],
                             vec![ty],
                         ))
                     }
@@ -892,8 +948,8 @@ impl<'a> ModuleChecker<'a> {
                 let addr = data.len() as i32;
                 let size = value.as_bytes().len() as i32;
                 data.extend(value.as_bytes());
-                stack.push(Type::Ptr(Box::new(Type::I32)));
-                stack.push(Type::I32);
+                stack.push(ResolvedType::Ptr(Box::new(ResolvedType::I32)));
+                stack.push(ResolvedType::I32);
                 Ok((
                     Returns::Yes,
                     Vec::new(),
@@ -904,25 +960,63 @@ impl<'a> ModuleChecker<'a> {
                     },
                 ))
             }
+            Word::FieldDeref { location, field } => {
+                let (ty, offset) = match stack.pop() {
+                    Some(ResolvedType::Ptr(ty)) => match &*ty {
+                        ResolvedType::Custom(struc) => {
+                            let mut offset: u32 = 0;
+                            let mut fields = struc.fields.iter();
+                            loop {
+                                match fields.next() {
+                                    Some((n, t)) => {
+                                        if n.lexeme == field {
+                                            break (t.clone(), offset);
+                                        }
+                                    }
+                                    None => {
+                                        todo!()
+                                    }
+                                }
+                                offset += 4;
+                            }
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                };
+                stack.push(ResolvedType::Ptr(Box::new(ty.clone())));
+                Ok((
+                    Returns::Yes,
+                    Vec::new(),
+                    CheckedWord::FieldDeref {
+                        location,
+                        offset,
+                        ty,
+                    },
+                ))
+            }
         }
     }
     fn expect_stack<T, const L: usize, const O: usize>(
         &self,
-        stack: &mut Vec<Type>,
-        word: &Word,
+        stack: &mut Vec<ResolvedType>,
+        word: &Word<ResolvedType>,
         expected: [Signature<T, L>; O],
     ) -> Result<T, TypeError> {
         assert!(!expected.is_empty());
-        let expected_types: Vec<Vec<Type>> = expected.iter().map(|(tys, _)| tys.to_vec()).collect();
+        let expected_types: Vec<Vec<ResolvedType>> =
+            expected.iter().map(|(tys, _)| tys.to_vec()).collect();
         let res = expected.into_iter().map(|(overload, f)| {
-            let mut stack = stack.clone();
+            let mut stack: Vec<ResolvedType> = stack.clone();
             let mut overloads = overload.into_iter().rev();
             let mut popped = Vec::new();
             loop {
                 match overloads.next() {
                     Some(expected_ty) => match stack.pop() {
                         Some(ty) if ty == expected_ty => popped.push(ty),
-                        Some(ty @ Type::Ptr(_)) if expected_ty == Type::AnyPtr => popped.push(ty),
+                        Some(ty @ ResolvedType::Ptr(_)) if expected_ty == ResolvedType::AnyPtr => {
+                            popped.push(ty)
+                        }
                         ty => {
                             popped.extend(ty.clone());
                             break Err(TypeError::ArgsMismatch(
@@ -933,7 +1027,7 @@ impl<'a> ModuleChecker<'a> {
                         }
                     },
                     None => {
-                        let mut popped: [Type; L] = popped.try_into().unwrap();
+                        let mut popped: [ResolvedType; L] = popped.try_into().unwrap();
                         popped.reverse();
                         let ret = f(popped);
                         break Ok((stack, ret));

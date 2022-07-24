@@ -60,6 +60,7 @@ pub enum Token {
     Import,
     As,
     Bang,
+    Struct,
 }
 
 impl Token {
@@ -98,6 +99,7 @@ pub enum TokenType {
     Import,
     As,
     Bang,
+    Struct,
 }
 
 impl From<&Token> for TokenType {
@@ -131,6 +133,7 @@ impl From<&Token> for TokenType {
             Token::Import => Self::Import,
             Token::As => Self::As,
             Token::Bang => Self::Bang,
+            Token::Struct => Self::Struct,
         }
     }
 }
@@ -363,6 +366,7 @@ impl Scanner {
                 "bool" => Token::Bool,
                 "import" => Token::Import,
                 "as" => Token::As,
+                "struct" => Token::Struct,
                 _ => Token::Identifier(ident),
             },
         ))

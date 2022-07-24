@@ -1,11 +1,14 @@
 use crate::{
     ast::{
         Extern, Function, FunctionSignature, Ident, Iff, Import, Intrinsic, Local, Loop, Memory,
-        Module, Param, Type, Word,
+        Module, Param, Struct, UnResolvedType, Word,
     },
     scanner::{Location, Token, TokenType, TokenWithLocation},
 };
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use thiserror::Error;
 
 pub struct Parser {
@@ -103,7 +106,7 @@ impl Parser {
             Some(t) => Ok(t),
         }
     }
-    fn ext(&mut self) -> Result<Extern, ParseError> {
+    fn ext(&mut self) -> Result<Extern<UnResolvedType>, ParseError> {
         let ext = self.expect(TokenType::Extern)?;
         let path = self.expect(TokenType::String)?;
         let path_0 = {
@@ -130,7 +133,7 @@ impl Parser {
         })
     }
     fn import(&mut self) -> Result<Import, ParseError> {
-        self.expect(TokenType::Import)?;
+        let location = self.expect(TokenType::Import)?.location;
         match self.advance() {
             Some(TokenWithLocation {
                 token: Token::String(path),
@@ -141,6 +144,7 @@ impl Parser {
                 Ok(Import {
                     path,
                     ident: ident.lexeme,
+                    location,
                 })
             }
             _ => Err(ParseError::new(
@@ -149,7 +153,25 @@ impl Parser {
             )),
         }
     }
-    fn function(&mut self) -> Result<Function, ParseError> {
+    fn struc(&mut self) -> Result<Struct<UnResolvedType>, ParseError> {
+        self.expect(TokenType::Struct)?;
+        let ident = self.ident()?;
+        self.expect(TokenType::LeftBrace)?;
+        let mut fields = Vec::new();
+        while self
+            .peek()
+            .map(|t| t.ty() != TokenType::RightBrace)
+            .unwrap_or(false)
+        {
+            let ident = self.ident()?;
+            self.expect(TokenType::Colon)?;
+            let ty = self.ty()?;
+            fields.push((ident, ty));
+        }
+        self.expect(TokenType::RightBrace)?;
+        Ok(Struct { ident, fields })
+    }
+    fn function(&mut self) -> Result<Function<UnResolvedType>, ParseError> {
         let signature = self.function_signature()?;
         self.expect(TokenType::LeftBrace)?;
         let mut locals = Vec::new();
@@ -177,7 +199,7 @@ impl Parser {
             memory,
         })
     }
-    fn body(&mut self) -> Result<Vec<Word>, ParseError> {
+    fn body(&mut self) -> Result<Vec<Word<UnResolvedType>>, ParseError> {
         let mut words = Vec::new();
         let is_start_of_word = |t: TokenWithLocation| {
             let ty = t.ty();
@@ -190,6 +212,7 @@ impl Parser {
                 || ty == TokenType::Hash
                 || ty == TokenType::String
                 || ty == TokenType::Bang
+                || ty == TokenType::Dot
         };
         while self.peek().map(is_start_of_word).unwrap_or(false) {
             let word = self.word()?;
@@ -197,7 +220,7 @@ impl Parser {
         }
         Ok(words)
     }
-    fn iff(&mut self) -> Result<Iff, ParseError> {
+    fn iff(&mut self) -> Result<Iff<UnResolvedType>, ParseError> {
         let location = self.expect(TokenType::If)?.location;
         self.expect(TokenType::LeftBrace)?;
         let body = self.body()?;
@@ -212,14 +235,14 @@ impl Parser {
         };
         Ok(Iff { location, body, el })
     }
-    fn lop(&mut self) -> Result<Loop, ParseError> {
+    fn lop(&mut self) -> Result<Loop<UnResolvedType>, ParseError> {
         let location = self.expect(TokenType::Loop)?.location;
         self.expect(TokenType::LeftBrace)?;
         let body = self.body()?;
         self.expect(TokenType::RightBrace)?;
         Ok(Loop { location, body })
     }
-    fn word(&mut self) -> Result<Word, ParseError> {
+    fn word(&mut self) -> Result<Word<UnResolvedType>, ParseError> {
         if self
             .peek()
             .map(|t| t.ty() == TokenType::If)
@@ -253,6 +276,13 @@ impl Parser {
             return Ok(Word::Intrinsic {
                 location: t.location,
                 intrinsic: Intrinsic::Cast(ty),
+            });
+        }
+        if let Some(t) = self.matsch(TokenType::Dot) {
+            let field = self.ident()?;
+            return Ok(Word::FieldDeref {
+                location: t.location,
+                field: field.lexeme,
             });
         }
         match self.advance() {
@@ -388,7 +418,7 @@ impl Parser {
             None => unreachable!(),
         }
     }
-    fn local(&mut self) -> Result<Local, ParseError> {
+    fn local(&mut self) -> Result<Local<UnResolvedType>, ParseError> {
         self.expect(TokenType::Local)?;
         let ident = self.ident()?;
         self.expect(TokenType::Colon)?;
@@ -399,9 +429,11 @@ impl Parser {
             ty,
         })
     }
-    fn memory(&mut self) -> Result<Memory, ParseError> {
+    fn memory(&mut self) -> Result<Memory<UnResolvedType>, ParseError> {
         let location = self.expect(TokenType::Memory)?.location;
         let ident = self.ident()?;
+        self.expect(TokenType::Colon)?;
+        let ty = self.ty()?;
         match self.advance() {
             Some(TokenWithLocation {
                 token: Token::Number(size),
@@ -425,6 +457,7 @@ impl Parser {
                     location,
                     size,
                     alignment,
+                    ty,
                 })
             }
             _ => Err(ParseError::new(
@@ -433,7 +466,7 @@ impl Parser {
             )),
         }
     }
-    fn function_signature(&mut self) -> Result<FunctionSignature, ParseError> {
+    fn function_signature(&mut self) -> Result<FunctionSignature<UnResolvedType>, ParseError> {
         self.expect(TokenType::Fn)?;
         let ident = self.ident()?;
         let export = if let Some(Token::String(export)) = self.peek().map(|t| t.token) {
@@ -476,7 +509,7 @@ impl Parser {
             )),
         }
     }
-    fn params(&mut self) -> Result<Vec<Param>, ParseError> {
+    fn params(&mut self) -> Result<Vec<Param<UnResolvedType>>, ParseError> {
         let mut params = Vec::new();
         while self
             .peek()
@@ -490,7 +523,7 @@ impl Parser {
         }
         Ok(params)
     }
-    fn param(&mut self) -> Result<Param, ParseError> {
+    fn param(&mut self) -> Result<Param<UnResolvedType>, ParseError> {
         let ident = self.ident()?;
         if self.matsch(TokenType::Colon).is_none() {
             return Err(ParseError::new(
@@ -505,17 +538,31 @@ impl Parser {
             ty,
         })
     }
-    fn ty(&mut self) -> Result<Type, ParseError> {
+    fn ty(&mut self) -> Result<UnResolvedType, ParseError> {
         match self
-            .matsch_any([TokenType::I32, TokenType::Bool, TokenType::Dot])
+            .matsch_any([
+                TokenType::I32,
+                TokenType::Bool,
+                TokenType::Dot,
+                TokenType::Identifier,
+            ])
             .as_deref()
         {
-            Some(Token::I32) => return Ok(Type::I32),
-            Some(Token::Bool) => return Ok(Type::Bool),
+            Some(Token::I32) => return Ok(UnResolvedType::I32),
+            Some(Token::Bool) => return Ok(UnResolvedType::Bool),
             Some(Token::Dot) => {
                 let ty = self.ty()?;
-                return Ok(Type::Ptr(Box::new(ty)));
+                return Ok(UnResolvedType::Ptr(Box::new(ty)));
             }
+            Some(Token::Identifier(ident_1)) => match self.matsch(TokenType::Dot) {
+                Some(ident_2) => {
+                    return Ok(UnResolvedType::Custom(Ident::Qualified(
+                        ident_1.clone(),
+                        ident_2.lexeme,
+                    )))
+                }
+                None => return Ok(UnResolvedType::Custom(Ident::Direct(ident_1.clone()))),
+            },
             _ => {}
         }
         Err(ParseError::new(
@@ -523,29 +570,28 @@ impl Parser {
             ParseErrorType::ExpectedType,
         ))
     }
-    pub fn parse(&mut self, path: impl AsRef<Path>) -> Result<Module, ParseError> {
+    pub fn parse(&mut self, path: impl AsRef<Path>) -> Result<Module<UnResolvedType>, ParseError> {
         let mut externs = Vec::new();
         let mut functions = Vec::new();
         let mut imports = Vec::new();
-        while self
-            .peek()
-            .map(|t| t.ty() != TokenType::Eof)
-            .unwrap_or(false)
-        {
-            if self
-                .peek()
-                .map(|t| t.ty() == TokenType::Extern)
-                .unwrap_or(false)
-            {
-                externs.push(self.ext()?);
-            } else if self
-                .peek()
-                .map(|t| t.ty() == TokenType::Import)
-                .unwrap_or(false)
-            {
-                imports.push(self.import()?);
-            } else {
-                functions.push(self.function()?);
+        let mut structs = Vec::new();
+        while let Some(next) = self.peek().map(|t| t.ty()) {
+            match next {
+                TokenType::Extern => {
+                    externs.push(self.ext()?);
+                }
+                TokenType::Import => {
+                    imports.push(self.import()?);
+                }
+                TokenType::Struct => {
+                    structs.push(Arc::new(self.struc()?));
+                }
+                TokenType::Eof => {
+                    break;
+                }
+                _ => {
+                    functions.push(self.function()?);
+                }
             }
         }
         Ok(Module {
@@ -553,6 +599,7 @@ impl Parser {
             functions,
             path: PathBuf::from(path.as_ref()),
             imports,
+            structs,
         })
     }
 }

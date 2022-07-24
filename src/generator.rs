@@ -1,6 +1,6 @@
 use crate::ast::{
     CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
-    CheckedLoop, CheckedWord, Data, Intrinsic, Local, Param, Program, Type,
+    CheckedLoop, CheckedWord, Data, Intrinsic, Local, Param, Program, ResolvedType,
 };
 
 fn indent(input: &str) -> String {
@@ -36,7 +36,7 @@ impl std::fmt::Display for CheckedFunctionSignature {
         let ret = self
             .ret
             .iter()
-            .map(|t| format!("{t}"))
+            .map(|t| gen_type(t).to_string())
             .intersperse(String::from(" "))
             .reduce(|a, b| a + &b)
             .map(|r| format!(" (result {r})"))
@@ -50,16 +50,17 @@ impl std::fmt::Display for CheckedFunctionSignature {
     }
 }
 
-fn gen_type(ty: &Type) -> &'static str {
+fn gen_type(ty: &ResolvedType) -> &'static str {
     match ty {
-        Type::I32 => "i32",
-        Type::Bool => "i32",
-        Type::Ptr(_) => "i32",
-        Type::AnyPtr => "i32",
+        ResolvedType::I32 => "i32",
+        ResolvedType::Bool => "i32",
+        ResolvedType::Ptr(_) => "i32",
+        ResolvedType::AnyPtr => "i32",
+        ResolvedType::Custom(_) => todo!(),
     }
 }
 
-impl std::fmt::Display for Param {
+impl std::fmt::Display for Param<ResolvedType> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ident = &self.ident;
         let ty = gen_type(&self.ty);
@@ -106,7 +107,7 @@ impl std::fmt::Display for CheckedFunction {
             .chain(self.memory.iter().cloned().map(|m| Local {
                 ident: m.ident,
                 location: m.location,
-                ty: Type::I32,
+                ty: ResolvedType::I32,
             }))
             .map(|local| format!("{local}"))
             .intersperse(String::from("\n"))
@@ -165,7 +166,7 @@ impl std::fmt::Display for CheckedFunction {
     }
 }
 
-impl std::fmt::Display for Local {
+impl std::fmt::Display for Local<ResolvedType> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "(local ${} {})",
@@ -188,6 +189,9 @@ impl std::fmt::Display for CheckedWord {
             CheckedWord::Set { ident, .. } => f.write_fmt(format_args!("local.set ${ident}")),
             CheckedWord::String { addr, size, .. } => {
                 f.write_fmt(format_args!("i32.const {addr}\ni32.const {size}"))
+            }
+            CheckedWord::FieldDeref { offset, .. } => {
+                f.write_fmt(format_args!("i32.const {offset} i32.add"))
             }
         }
     }
@@ -257,7 +261,7 @@ impl std::fmt::Display for CheckedLoop {
     }
 }
 
-impl std::fmt::Display for Intrinsic {
+impl std::fmt::Display for Intrinsic<ResolvedType> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Intrinsic::Add => "i32.add",
