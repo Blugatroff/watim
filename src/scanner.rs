@@ -43,6 +43,7 @@ pub enum Token {
     Identifier(String),
     Fn,
     I32,
+    I64,
     Arrow,
     Extern,
     Local,
@@ -82,6 +83,7 @@ pub enum TokenType {
     Identifier,
     Fn,
     I32,
+    I64,
     Arrow,
     Extern,
     Local,
@@ -134,6 +136,7 @@ impl From<&Token> for TokenType {
             Token::As => Self::As,
             Token::Bang => Self::Bang,
             Token::Struct => Self::Struct,
+            Token::I64 => Self::I64,
         }
     }
 }
@@ -357,6 +360,7 @@ impl Scanner {
                 "fn" => Token::Fn,
                 "local" => Token::Local,
                 "i32" => Token::I32,
+                "i64" => Token::I64,
                 "extern" => Token::Extern,
                 "if" => Token::If,
                 "else" => Token::Else,

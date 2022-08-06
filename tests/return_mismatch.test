@@ -5,4 +5,4 @@ fn main "_start" () {
     0 !.i32 foo drop
 }
 ================================
-test.watim:1:4: return types mismatch expected: bool, got: []!
+/home/jasper/projects/rust/watim/test.watim:1:4: return types mismatch expected: bool, got: []!

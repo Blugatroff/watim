@@ -1,6 +1,3 @@
-#![feature(iter_intersperse)]
-#![feature(if_let_guard)]
-
 mod ast;
 mod checker;
 mod debugger;
@@ -35,39 +32,41 @@ pub enum WatimError {
 
 pub const SEP: &str = "================================\n";
 
-fn run(program: &str, input: impl std::io::Read) -> Vec<u8> {
-    match prepass::UncheckedProgram::load_with_custom_file_loader(
-        &mut |_| Ok(program.to_string()),
-        "test.watim",
-    )
-    .and_then(|p| p.resolve().map_err(WatimError::from))
-    .and_then(|p| p.check().map_err(WatimError::from))
-    {
-        Ok(program) => {
-            match {
-                let mut output = Vec::new();
-                let res = Interpreter::interpret_program(program, input, &mut output);
-                res.map(|_| output)
-            } {
-                Ok(output) => output,
-                Err(e) => format!("{e}").into_bytes(),
-            }
-        }
-        Err(e) => format!("{e}").into_bytes(),
-    }
+fn run(program: &str, mut input: impl std::io::Read) -> Vec<u8> {
+    let file_path = "./test.watim";
+    let mut file = std::fs::File::create(file_path).unwrap();
+
+    let mut buf = Vec::new();
+    input.read_to_end(&mut buf).unwrap();
+    file.write_all(program.as_bytes()).unwrap();
+    let mut command = std::process::Command::new("./run.sh");
+    let command = command
+        .arg(&file_path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    use std::io::Write;
+    child.stdin.as_mut().unwrap().write_all(&buf).unwrap();
+    let mut out = child.wait_with_output().unwrap();
+    out.stdout.append(&mut out.stderr);
+    out.stdout
 }
 
 #[test]
 fn test() {
+    env_logger::init();
     let dir = std::fs::read_dir("./tests").unwrap();
     for entry in dir {
         let entry = entry.unwrap();
+        log::info!("Testing {}", entry.path().display());
         let test = std::fs::read_to_string(entry.path()).unwrap();
         let (input, program) = test.split_once(SEP).unwrap();
         let (program, output) = program.split_once(SEP).unwrap();
+        let output = std::borrow::Cow::Borrowed(output);
         let out = run(program, input.as_bytes());
         let out = String::from_utf8_lossy(&out);
-        let output = std::borrow::Cow::Borrowed(output);
+        let out = std::borrow::Cow::Borrowed(&out);
         assert_eq!(output, out);
     }
 }
@@ -76,6 +75,7 @@ fn regen_tests() {
     let dir = std::fs::read_dir("./tests").unwrap();
     for entry in dir {
         let entry = entry.unwrap();
+        log::info!("Generating Test {}", entry.path().display());
         let input = std::fs::read_to_string(entry.path()).unwrap();
         let (input, program) = input.split_once(SEP).unwrap();
         let (program, _) = program.split_once(SEP).unwrap();
@@ -87,6 +87,7 @@ fn regen_tests() {
 }
 
 fn main() {
+    env_logger::init();
     fn inner() -> Result<(), WatimError> {
         let mode = std::env::args().nth(1).unwrap();
         let mode = match mode.as_str() {

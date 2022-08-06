@@ -1,10 +1,13 @@
 use crate::{
     ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program, ResolvedType},
-    interpreter::{execute_extern, Error, InterpreterFunction, Value},
+    interpreter::{Error, InterpreterFunction, Value, execute_extern},
     intrinsics::execute_intrinsic,
     scanner::Location,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 #[derive(Clone)]
 enum ScopeKind {
@@ -18,7 +21,7 @@ struct Scope {
     parent: Option<Box<Scope>>,
     kind: ScopeKind,
     words: Arc<Vec<CheckedWord>>,
-    locals: HashMap<String, Value>,
+    locals: BTreeMap<String, Value>,
     stack: Vec<Value>,
     word: usize,
 }
@@ -70,7 +73,7 @@ impl StepInterpreter {
         };
         let scope = {
             let words = Arc::new(function.body.clone());
-            let mut locals = HashMap::new();
+            let mut locals = BTreeMap::new();
             for local in &function.locals {
                 locals.insert(local.ident.clone(), Value::default_of_type(&local.ty));
             }
@@ -137,7 +140,7 @@ impl StepInterpreter {
         }
         inner(&self.scope)
     }
-    pub fn locals(&self) -> &HashMap<String, Value> {
+    pub fn locals(&self) -> &BTreeMap<String, Value> {
         &self.scope.locals
     }
     pub fn stack(&self) -> &[Value] {
@@ -210,7 +213,7 @@ impl StepInterpreter {
                     Some(InterpreterFunction::Normal(function)) => {
                         let function = Arc::new(function.clone());
                         let words = Arc::new(function.body.clone());
-                        let mut locals = HashMap::new();
+                        let mut locals = BTreeMap::new();
                         for param in function.signature.params.iter().rev() {
                             locals.insert(param.ident.clone(), self.scope.stack.pop().unwrap());
                         }
@@ -279,12 +282,7 @@ impl StepInterpreter {
                 intrinsic,
                 location,
                 ..
-            } => execute_intrinsic(
-                &intrinsic,
-                &location,
-                &mut self.scope.stack,
-                &mut self.memory,
-            ),
+            } => execute_intrinsic(&intrinsic, &location, &mut self.scope.stack, &mut self.memory),
             CheckedWord::If(CheckedIff { body, el, .. }) => {
                 let condition = match self.scope.stack.pop() {
                     Some(Value::Bool(v)) => v,

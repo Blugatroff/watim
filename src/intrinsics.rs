@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Intrinsic, ResolvedType},
+    ast::{CheckedIntrinsic, ResolvedType},
     interpreter::{Error, Value},
     scanner::Location,
 };
@@ -51,13 +51,13 @@ fn expect_args<R: IntoIterator<Item = Value>, const O: usize, const L: usize>(
 }
 
 pub fn execute_intrinsic(
-    intrinsic: &Intrinsic<ResolvedType>,
+    intrinsic: &CheckedIntrinsic,
     location: &Location,
     stack: &mut Vec<Value>,
     memory: &mut [u8],
 ) -> Result<(), Error> {
     match intrinsic {
-        Intrinsic::Add => expect_args(
+        CheckedIntrinsic::Add => expect_args(
             location,
             stack,
             [
@@ -77,7 +77,7 @@ pub fn execute_intrinsic(
                 ),
             ],
         ),
-        Intrinsic::Sub => expect_args(
+        CheckedIntrinsic::Sub => expect_args(
             location,
             stack,
             [
@@ -97,7 +97,7 @@ pub fn execute_intrinsic(
                 ),
             ],
         ),
-        Intrinsic::Eq => expect_args(
+        CheckedIntrinsic::Eq(_) => expect_args(
             location,
             stack,
             [
@@ -105,6 +105,13 @@ pub fn execute_intrinsic(
                     [ResolvedType::I32, ResolvedType::I32],
                     &mut |[a, b]| match (a, b) {
                         (Value::I32(a), Value::I32(b)) => Some([Value::Bool(a == b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::I64, ResolvedType::I64],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I64(a), Value::I64(b)) => Some([Value::Bool(a == b)]),
                         _ => None,
                     },
                 ),
@@ -124,7 +131,7 @@ pub fn execute_intrinsic(
                 ),
             ],
         ),
-        Intrinsic::NotEq => expect_args(
+        CheckedIntrinsic::NotEq(_) => expect_args(
             location,
             stack,
             [
@@ -151,29 +158,47 @@ pub fn execute_intrinsic(
                 ),
             ],
         ),
-        Intrinsic::Mod => expect_args(
+        CheckedIntrinsic::Mod(_) => expect_args(
             location,
             stack,
-            [(
-                [ResolvedType::I32, ResolvedType::I32],
-                &mut |[a, b]| match (a, b) {
-                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a % b)]),
-                    _ => None,
-                },
-            )],
+            [
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I32(a), Value::I32(b)) => Some([Value::I32(a % b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::I64, ResolvedType::I64],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I64(a), Value::I64(b)) => Some([Value::I64(a % b)]),
+                        _ => None,
+                    },
+                ),
+            ],
         ),
-        Intrinsic::Div => expect_args(
+        CheckedIntrinsic::Div(_) => expect_args(
             location,
             stack,
-            [(
-                [ResolvedType::I32, ResolvedType::I32],
-                &mut |[a, b]| match (a, b) {
-                    (Value::I32(a), Value::I32(b)) => Some([Value::I32(a / b)]),
-                    _ => None,
-                },
-            )],
+            [
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I32(a), Value::I32(b)) => Some([Value::I32(a / b)]),
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::I64, ResolvedType::I64],
+                    &mut |[a, b]| match (a, b) {
+                        (Value::I64(a), Value::I64(b)) => Some([Value::I64(a / b)]),
+                        _ => None,
+                    },
+                ),
+            ],
         ),
-        Intrinsic::Mul => expect_args(
+        CheckedIntrinsic::Mul => expect_args(
             location,
             stack,
             [(
@@ -184,7 +209,7 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        Intrinsic::Store32 => {
+        CheckedIntrinsic::Store32 => {
             let b = stack.pop().unwrap();
             let a = stack.pop().unwrap();
             match (a, b) {
@@ -193,6 +218,7 @@ pub fn execute_intrinsic(
                         Value::Bool(b) => b as i32,
                         Value::I32(v) => v,
                         Value::Ptr(v, _) => v,
+                        Value::I64(_) => todo!(),
                     };
                     let addr = addr as usize;
                     let bytes = value.to_le_bytes();
@@ -207,7 +233,7 @@ pub fn execute_intrinsic(
                 }
             }
         }
-        Intrinsic::Store8 => expect_args(
+        CheckedIntrinsic::Store8 => expect_args(
             location,
             stack,
             [(
@@ -226,7 +252,7 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        Intrinsic::Load32 => expect_args(
+        CheckedIntrinsic::Load32 => expect_args(
             location,
             stack,
             [(
@@ -234,14 +260,15 @@ pub fn execute_intrinsic(
                 &mut |[a]| match a {
                     &Value::Ptr(addr, ResolvedType::I32) => {
                         let addr = addr as usize;
-                        let bytes: [u8; 4] = memory[addr..addr + 4].try_into().unwrap();
+                        let bytes: [u8; 4] =
+                            [addr, addr + 1, addr + 2, addr + 3].map(|i| memory[i]);
                         Some([Value::I32(i32::from_le_bytes(bytes))])
                     }
                     _ => None,
                 },
             )],
         ),
-        Intrinsic::Load8 => expect_args(
+        CheckedIntrinsic::Load8 => expect_args(
             location,
             stack,
             [(
@@ -256,7 +283,7 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        Intrinsic::Drop => expect_args(
+        CheckedIntrinsic::Drop => expect_args(
             location,
             stack,
             [
@@ -274,7 +301,7 @@ pub fn execute_intrinsic(
                 }),
             ],
         ),
-        Intrinsic::And => expect_args(
+        CheckedIntrinsic::And => expect_args(
             location,
             stack,
             [(
@@ -285,7 +312,7 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        Intrinsic::LE => expect_args(
+        CheckedIntrinsic::LE => expect_args(
             location,
             stack,
             [(
@@ -296,7 +323,7 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        Intrinsic::GE => expect_args(
+        CheckedIntrinsic::GE => expect_args(
             location,
             stack,
             [(
@@ -307,18 +334,62 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        Intrinsic::Or => todo!(),
-        Intrinsic::L => todo!(),
-        Intrinsic::G => todo!(),
-        Intrinsic::Cast(ResolvedType::I32) => expect_args(
+        CheckedIntrinsic::Or => todo!(),
+        CheckedIntrinsic::L => todo!(),
+        CheckedIntrinsic::G => todo!(),
+        CheckedIntrinsic::Cast(_, ResolvedType::I32) => expect_args(
             location,
             stack,
-            [([ResolvedType::AnyPtr], &mut |[v]| match v {
-                &Value::Ptr(v, _) => Some([Value::I32(v)]),
-                _ => None,
-            })],
+            [
+                ([ResolvedType::AnyPtr], &mut |[v]| match v {
+                    &Value::Ptr(v, _) => Some([Value::I32(v)]),
+                    _ => None,
+                }),
+                ([ResolvedType::I64], &mut |[v]| match v {
+                    &Value::I64(v) => Some([Value::I32((v & 0x00000000FFFFFFFF) as i32)]),
+                    _ => None,
+                }),
+            ],
         ),
-        Intrinsic::Cast(ResolvedType::Ptr(ty)) => expect_args(
+        CheckedIntrinsic::Cast(_, ResolvedType::I64) => expect_args(
+            location,
+            stack,
+            [
+                ([ResolvedType::AnyPtr], &mut |[v]| match v {
+                    &Value::Ptr(v, _) => Some([Value::I64(v as i64)]),
+                    _ => None,
+                }),
+                ([ResolvedType::I32], &mut |[v]| match v {
+                    &Value::I32(v) => Some([Value::I64(v as i64)]),
+                    _ => None,
+                }),
+            ],
+        ),
+        CheckedIntrinsic::Rotr(_) => expect_args(
+            location,
+            stack,
+            [
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[v, shift]| match (v, shift) {
+                        (&Value::I32(v), Value::I32(shift)) => {
+                            Some([Value::I32(v.rotate_right(*shift as u32))])
+                        }
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::I64, ResolvedType::I32],
+                    &mut |[v, shift]| match (v, shift) {
+                        (&Value::I64(v), Value::I32(shift)) => {
+                            Some([Value::I64(v.rotate_right(*shift as u32))])
+                        }
+                        _ => None,
+                    },
+                ),
+            ],
+        ),
+        CheckedIntrinsic::Cast(_, ResolvedType::Ptr(ty)) => expect_args(
             location,
             stack,
             [
@@ -332,8 +403,8 @@ pub fn execute_intrinsic(
                 }),
             ],
         ),
-        Intrinsic::Cast(ResolvedType::Bool) => todo!(),
-        Intrinsic::Cast(ResolvedType::AnyPtr) => todo!(),
-        Intrinsic::Cast(ResolvedType::Custom(_)) => todo!(),
+        CheckedIntrinsic::Cast(_, ResolvedType::Bool) => todo!(),
+        CheckedIntrinsic::Cast(_, ResolvedType::AnyPtr) => todo!(),
+        CheckedIntrinsic::Cast(_, ResolvedType::Custom(_)) => todo!(),
     }
 }

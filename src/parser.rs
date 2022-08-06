@@ -327,7 +327,7 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Eq,
                     })
-                } else if &ident.lexeme == "!=" {
+                } else if &ident.lexeme == "/=" {
                     Ok(Word::Intrinsic {
                         location: ident.location,
                         intrinsic: Intrinsic::NotEq,
@@ -376,6 +376,11 @@ impl Parser {
                     Ok(Word::Intrinsic {
                         location: ident.location,
                         intrinsic: Intrinsic::Mul,
+                    })
+                } else if &ident.lexeme == "rotr" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Rotr,
                     })
                 } else if self.matsch(TokenType::Dot).is_some() {
                     let ident_2 = self.ident()?;
@@ -542,6 +547,7 @@ impl Parser {
         match self
             .matsch_any([
                 TokenType::I32,
+                TokenType::I64,
                 TokenType::Bool,
                 TokenType::Dot,
                 TokenType::Identifier,
@@ -549,17 +555,19 @@ impl Parser {
             .as_deref()
         {
             Some(Token::I32) => return Ok(UnResolvedType::I32),
+            Some(Token::I64) => return Ok(UnResolvedType::I64),
             Some(Token::Bool) => return Ok(UnResolvedType::Bool),
             Some(Token::Dot) => {
                 let ty = self.ty()?;
                 return Ok(UnResolvedType::Ptr(Box::new(ty)));
             }
             Some(Token::Identifier(ident_1)) => match self.matsch(TokenType::Dot) {
-                Some(ident_2) => {
+                Some(_) => {
+                    let ident_2 = self.ident()?;
                     return Ok(UnResolvedType::Custom(Ident::Qualified(
                         ident_1.clone(),
                         ident_2.lexeme,
-                    )))
+                    )));
                 }
                 None => return Ok(UnResolvedType::Custom(Ident::Direct(ident_1.clone()))),
             },

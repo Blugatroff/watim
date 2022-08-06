@@ -1,9 +1,10 @@
-use crate::scanner::{Location, TokenWithLocation};
+use crate::{scanner::{Location, TokenWithLocation}, checker::Returns};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnResolvedType {
     I32,
+    I64,
     Bool,
     Ptr(Box<UnResolvedType>),
     Custom(Ident),
@@ -12,6 +13,7 @@ pub enum UnResolvedType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedType {
     I32,
+    I64,
     Bool,
     Ptr(Box<ResolvedType>),
     AnyPtr,
@@ -26,6 +28,7 @@ impl std::fmt::Display for ResolvedType {
             ResolvedType::Ptr(ty) => f.write_fmt(format_args!(".{ty}")),
             ResolvedType::Custom(struc) => f.write_fmt(format_args!("{}", &struc.ident.lexeme)),
             ResolvedType::AnyPtr => f.write_str("AnyPtr"),
+            ResolvedType::I64 => f.write_str("i64"),
         }
     }
 }
@@ -34,6 +37,7 @@ impl std::fmt::Display for UnResolvedType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnResolvedType::I32 => f.write_str("i32"),
+            UnResolvedType::I64 => f.write_str("i64"),
             UnResolvedType::Bool => f.write_str("bool"),
             UnResolvedType::Ptr(ty) => f.write_fmt(format_args!(".{ty}")),
             UnResolvedType::Custom(struc) => f.write_fmt(format_args!(
@@ -67,7 +71,32 @@ pub enum Intrinsic<Type> {
     LE,
     GE,
     Mul,
+    Rotr,
     Cast(Type),
+}
+
+#[derive(Debug, Clone)]
+pub enum CheckedIntrinsic {
+    Add,
+    Store32,
+    Store8,
+    Load32,
+    Load8,
+    Drop,
+    Sub,
+    Eq(ResolvedType),
+    NotEq(ResolvedType),
+    Mod(ResolvedType),
+    Div(ResolvedType),
+    And,
+    Or,
+    L,
+    G,
+    LE,
+    GE,
+    Mul,
+    Rotr(ResolvedType),
+    Cast(ResolvedType, ResolvedType),
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +112,7 @@ pub struct CheckedIff {
     pub body: Vec<CheckedWord>,
     pub el: Option<Vec<CheckedWord>>,
     pub ret: Vec<ResolvedType>,
+    pub param: Vec<ResolvedType>,
 }
 
 #[derive(Debug, Clone)]
@@ -167,7 +197,7 @@ pub enum CheckedWord {
     },
     Intrinsic {
         location: Location,
-        intrinsic: Intrinsic<ResolvedType>,
+        intrinsic: CheckedIntrinsic,
     },
     If(CheckedIff),
     Loop(CheckedLoop),
@@ -276,6 +306,7 @@ pub struct CheckedFunction {
     pub locals: Vec<Local<ResolvedType>>,
     pub body: Vec<CheckedWord>,
     pub memory: Vec<Memory<ResolvedType>>,
+    pub returns: Returns
 }
 
 #[derive(Debug, Clone)]

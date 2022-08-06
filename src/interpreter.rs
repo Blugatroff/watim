@@ -1,25 +1,18 @@
 use crate::{
     ast::{
-        CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff, CheckedLoop,
-        CheckedWord, Intrinsic, Local, Memory, Param, Program, ResolvedType,
+        CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff, CheckedIntrinsic,
+        CheckedLoop, CheckedWord, Local, Memory, Param, Program, ResolvedType,
     },
     intrinsics::execute_intrinsic,
     scanner::Location,
 };
 use std::collections::HashMap;
 
-pub struct Interpreter<'stdin, 'stdout> {
-    memory: [u8; 2usize.pow(16)],
-    functions: HashMap<String, HashMap<String, InterpreterFunction>>,
-    mem_stack: i32,
-    stdout: Box<dyn std::io::Write + 'stdin>,
-    stdin: Box<dyn std::io::Read + 'stdout>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Bool(bool),
     I32(i32),
+    I64(i64),
     Ptr(i32, ResolvedType),
 }
 
@@ -27,6 +20,7 @@ impl Value {
     pub fn default_of_type(ty: &ResolvedType) -> Self {
         match ty {
             ResolvedType::I32 => Self::I32(0),
+            ResolvedType::I64 => Self::I64(0),
             ResolvedType::Bool => Self::Bool(false),
             ResolvedType::Ptr(ty) => Self::Ptr(0, (**ty).clone()),
             ResolvedType::AnyPtr => Self::Ptr(0, ResolvedType::AnyPtr),
@@ -37,7 +31,30 @@ impl Value {
         match self {
             Self::Bool(_) => ResolvedType::Bool,
             Self::I32(_) => ResolvedType::I32,
+            Self::I64(_) => ResolvedType::I64,
             Self::Ptr(_, ty) => ResolvedType::Ptr(Box::new(ty.clone())),
+        }
+    }
+}
+
+impl TryFrom<Value> for i32 {
+    type Error = &'static str;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::I32(v) => Ok(v),
+            _ => Err("tried to unwrap non-I32 Value into i32"),
+        }
+    }
+}
+
+impl TryFrom<Value> for usize {
+    type Error = &'static str;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Ptr(v, _) => Ok(v as usize),
+            _ => Err("tried to unwrap non-Ptr Value into usize"),
         }
     }
 }
@@ -48,6 +65,7 @@ impl std::fmt::Display for Value {
             Value::Bool(true) => f.write_str("True"),
             Value::Bool(false) => f.write_str("False"),
             Value::I32(n) => n.fmt(f),
+            Value::I64(n) => n.fmt(f),
             Value::Ptr(ptr, ty) => f.write_fmt(format_args!(".{ty}={ptr}")),
         }
     }
@@ -71,6 +89,14 @@ pub enum Error {
     ArgsMismatch(Location, Vec<Vec<ResolvedType>>, Vec<Option<ResolvedType>>),
 }
 
+pub struct Interpreter<'stdin, 'stdout> {
+    functions: HashMap<String, HashMap<String, InterpreterFunction>>,
+    mem_stack: i32,
+    stdout: Box<dyn std::io::Write + 'stdin>,
+    stdin: Box<dyn std::io::Read + 'stdout>,
+    memory: [u8; 2usize.pow(16)],
+}
+
 impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
     pub fn interpret_program(
         program: Program,
@@ -81,6 +107,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
         for (i, b) in program.data.iter().enumerate() {
             memory[i] = *b;
         }
+
         let mut functions: HashMap<String, HashMap<String, InterpreterFunction>> = HashMap::new();
         for (_, module) in program.modules {
             for function in module.functions {
@@ -103,16 +130,17 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
             }
         }
         let mem_stack = program.data.len() as i32;
+
         let mut this = Self {
-            memory,
             functions,
             mem_stack,
             stdout: Box::new(stdout),
             stdin: Box::new(stdin),
+            memory,
         };
         let entry = match this.find_entry_point() {
             Some(entry) => entry.clone(),
-            None => return Err(Error::NoEntryPoint),
+            None => return Ok(()),
         };
         this.execute_fn(&entry, std::iter::empty())?;
         Ok(())
@@ -165,14 +193,9 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                 self.mem_stack = ostack;
                 Ok(stack)
             }
-            InterpreterFunction::Extern((path_0, path_1), ..) => execute_extern(
-                path_0,
-                path_1,
-                args,
-                &mut self.memory,
-                &mut self.stdin,
-                &mut self.stdout,
-            ),
+            InterpreterFunction::Extern((path_0, path_1), ..) => {
+                execute_extern(path_0, path_1, args, &mut self.memory, &mut self.stdin, &mut self.stdout)
+            }
         }
     }
     fn execute_word(
@@ -244,7 +267,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
     }
     fn execute_intrinsic(
         &mut self,
-        intrinsic: &Intrinsic<ResolvedType>,
+        intrinsic: &CheckedIntrinsic,
         location: &Location,
         stack: &mut Vec<Value>,
     ) -> Result<(), Error> {
@@ -275,19 +298,26 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
             Some(Value::Bool(true)) => {
                 for word in &iff.body {
                     if self.execute_word(word, locals, stack)? {
-                        return Ok(true)
+                        return Ok(true);
                     }
                 }
             }
-            Some(Value::Bool(false)) if let Some(el) = &iff.el => {
-                for word in el {
-                    if self.execute_word(word, locals, stack)? {
-                        return Ok(true)
+            Some(Value::Bool(false)) => {
+                if let Some(el) = &iff.el {
+                    for word in el {
+                        if self.execute_word(word, locals, stack)? {
+                            return Ok(true);
+                        }
                     }
                 }
             }
-            Some(Value::Bool(false)) => {}
-            v => return Err(Error::ArgsMismatch(iff.location.clone(), vec![vec![ResolvedType::Bool]], vec![v.as_ref().map(Value::ty)])),
+            v => {
+                return Err(Error::ArgsMismatch(
+                    iff.location.clone(),
+                    vec![vec![ResolvedType::Bool]],
+                    vec![v.as_ref().map(Value::ty)],
+                ))
+            }
         }
         Ok(false)
     }

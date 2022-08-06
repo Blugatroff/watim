@@ -1,11 +1,12 @@
 use crate::{
     ast::{
         CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
-        CheckedImport, CheckedLoop, CheckedModule, CheckedWord, Function, FunctionSignature, Ident,
-        Iff, Import, Intrinsic, Local, Loop, Module, ResolvedType, Word,
+        CheckedImport, CheckedIntrinsic, CheckedLoop, CheckedModule, CheckedWord, Function,
+        FunctionSignature, Ident, Iff, Import, Intrinsic, Local, Loop, Module, ResolvedType, Word,
     },
     scanner::Location,
 };
+use itertools::Itertools;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -17,10 +18,7 @@ fn display_maybe_list<T: std::fmt::Display>(items: &[T], sep: &'static str) -> S
     match items.first() {
         Some(v) if items.len() == 1 => format!("{v}"),
         _ => {
-            let a = items
-                .iter()
-                .map(|t| format!("{t}"))
-                .intersperse(String::from(sep))
+            let a = Itertools::intersperse(items.iter().map(|t| format!("{t}")), String::from(sep))
                 .fold(String::new(), |a, b| a + &b);
             format!("[{a}]")
         }
@@ -142,8 +140,8 @@ pub struct BreakStack {
     pub stack: Vec<ResolvedType>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum Returns {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Returns {
     Yes,
     No,
 }
@@ -271,11 +269,18 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         }
         let mut stack: Vec<ResolvedType> = Vec::new();
         let mut checked_words = Vec::new();
+        let mut returns: Returns = Returns::Yes;
         for word in function.body {
-            let (_, _, checked_word) = self.check_word(word, &mut stack, &locals, data)?;
+            let (returns_, _, checked_word) = self.check_word(word, &mut stack, &locals, data)?;
+            returns = if returns_ == Returns::No {
+                Returns::No
+            } else {
+                returns
+            };
             checked_words.push(checked_word);
         }
-        if stack != function.signature.ret {
+
+        if returns == Returns::Yes && stack != function.signature.ret {
             return Err(TypeError::ReturnTypeMismatch(
                 function.signature.location.clone(),
                 function.signature.ret,
@@ -294,6 +299,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
             locals: function.locals,
             body: checked_words,
             memory: function.memory,
+            returns
         })
     }
     pub fn check_import(import: Import, path: &Path) -> Result<CheckedImport, TypeError> {
@@ -435,6 +441,9 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             ([ResolvedType::I32, ResolvedType::I32], &|_| {
                                 ResolvedType::I32
                             }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                ResolvedType::I64
+                            }),
                             ([ResolvedType::AnyPtr, ResolvedType::I32], &|[a, _]| a),
                         ],
                     )?;
@@ -443,12 +452,12 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Returns::Yes,
                         Vec::new(),
                         CheckedWord::Intrinsic {
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Add,
                             location: location.clone(),
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Store32 => {
+                Intrinsic::Store32 => {
                     match (stack.pop(), stack.pop()) {
                         (Some(v_ty), Some(ResolvedType::Ptr(ty))) if *ty == v_ty => {}
                         (b, a) => return Err(TypeError::StoreArgs(location.clone(), a, b)),
@@ -458,11 +467,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Store32,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Store8 => {
+                Intrinsic::Store8 => {
                     self.expect_stack(
                         stack,
                         &word,
@@ -479,11 +488,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Store8,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Load32 => {
+                Intrinsic::Load32 => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -497,11 +506,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Load32,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Load8 => {
+                Intrinsic::Load8 => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -515,11 +524,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Load8,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Drop => {
+                Intrinsic::Drop => {
                     self.expect_stack(
                         stack,
                         &word,
@@ -534,11 +543,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Drop,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Sub => {
+                Intrinsic::Sub => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -552,17 +561,22 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Sub,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Eq | intrinsic @ Intrinsic::NotEq => {
-                    let ret = self.expect_stack(
+                Intrinsic::Eq => {
+                    let (ty, ret) = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
-                            ResolvedType::Bool
-                        })],
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                (ResolvedType::I32, ResolvedType::Bool)
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                (ResolvedType::I64, ResolvedType::Bool)
+                            }),
+                        ],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -570,17 +584,22 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Eq(ty),
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Mod => {
-                    let ret = self.expect_stack(
+                Intrinsic::NotEq => {
+                    let (ty, ret) = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
-                            ResolvedType::I32
-                        })],
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                (ResolvedType::I32, ResolvedType::Bool)
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                (ResolvedType::I32, ResolvedType::Bool)
+                            }),
+                        ],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -588,29 +607,57 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::NotEq(ty),
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Div => {
+                Intrinsic::Mod => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
-                            ResolvedType::I32
-                        })],
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                ResolvedType::I64
+                            }),
+                        ],
                     )?;
-                    stack.push(ret);
+                    stack.push(ret.clone());
                     Ok((
                         Returns::Yes,
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Mod(ret),
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::And => {
+                Intrinsic::Div => {
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                ResolvedType::I64
+                            }),
+                        ],
+                    )?;
+                    stack.push(ret.clone());
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            location: location.clone(),
+                            intrinsic: CheckedIntrinsic::Div(ret),
+                        },
+                    ))
+                }
+                Intrinsic::And => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -624,11 +671,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::And,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Or => {
+                Intrinsic::Or => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -642,11 +689,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Or,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::L => {
+                Intrinsic::L => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -660,11 +707,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::L,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::G => {
+                Intrinsic::G => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -678,11 +725,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::G,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::LE => {
+                Intrinsic::LE => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -696,11 +743,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::LE,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::GE => {
+                Intrinsic::GE => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -714,11 +761,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::GE,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Mul => {
+                Intrinsic::Mul => {
                     let ret = self.expect_stack(
                         stack,
                         &word,
@@ -732,14 +779,39 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Mul,
                         },
                     ))
                 }
-                intrinsic @ Intrinsic::Cast(ty) => {
+                Intrinsic::Rotr => {
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I32], &|_| {
+                                ResolvedType::I64
+                            }),
+                        ],
+                    )?;
+                    stack.push(ret.clone());
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            location: location.clone(),
+                            intrinsic: CheckedIntrinsic::Rotr(ret),
+                        },
+                    ))
+                }
+                Intrinsic::Cast(ty) => {
+                    let from = stack.last().unwrap().clone();
                     match ty {
                         ResolvedType::I32 => match stack.pop() {
                             Some(ResolvedType::Ptr(_)) => stack.push(ResolvedType::I32),
+                            Some(ResolvedType::I64) => stack.push(ResolvedType::I32),
                             _ => {
                                 todo!()
                             }
@@ -760,13 +832,24 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         }
                         ResolvedType::Bool => todo!(),
                         ResolvedType::AnyPtr => todo!(),
+                        ResolvedType::I64 => {
+                            let ret = self.expect_stack(
+                                stack,
+                                &word,
+                                [
+                                    ([ResolvedType::I32], &|_| ResolvedType::I64),
+                                    ([ResolvedType::AnyPtr], &|_| ResolvedType::I64),
+                                ],
+                            )?;
+                            stack.push(ret);
+                        }
                     };
                     Ok((
                         Returns::Yes,
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: intrinsic.clone(),
+                            intrinsic: CheckedIntrinsic::Cast(from, ty.clone()),
                         },
                     ))
                 }
@@ -790,6 +873,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                 let mut break_stacks = Vec::new();
                 let mut if_block_stack = stack.clone();
                 let mut if_block_checked_words = Vec::new();
+                let mut min = stack.len();
                 for word in body {
                     let (t, break_stack, checked_word) =
                         self.check_word(word.clone(), &mut if_block_stack, locals, data)?;
@@ -798,11 +882,14 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     }
                     if_block_checked_words.push(checked_word);
                     break_stacks.extend(break_stack);
+                    min = min.min(if_block_stack.len());
                 }
+                let param = stack[min..stack.len()].to_vec();
                 let mut else_block_termination = Returns::Yes;
                 let mut else_block_stack = stack.clone();
                 let else_block_checked_words = match el {
                     Some(block) => {
+                        let mut min = stack.len();
                         let mut else_block_checked_words = Vec::new();
                         for word in block {
                             let (t, break_stack, checked_word) =
@@ -812,7 +899,10 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 else_block_termination = Returns::No;
                             }
                             break_stacks.extend(break_stack);
+                            min = min.min(if_block_stack.len());
                         }
+                        let else_param = stack[min..stack.len()].to_vec();
+                        assert_eq!(&param, &else_param);
                         Some(else_block_checked_words)
                     }
                     None => None,
@@ -840,6 +930,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 body: if_block_checked_words,
                                 el: else_block_checked_words,
                                 ret,
+                                param,
                             }),
                         ))
                     }
@@ -858,6 +949,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 body: if_block_checked_words,
                                 el: else_block_checked_words,
                                 ret,
+                                param,
                             }),
                         ))
                     }
@@ -876,6 +968,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 body: if_block_checked_words,
                                 el: else_block_checked_words,
                                 ret,
+                                param,
                             }),
                         ))
                     }
@@ -887,6 +980,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             body: if_block_checked_words,
                             el: else_block_checked_words,
                             ret: Vec::new(),
+                            param,
                         }),
                     )),
                 }

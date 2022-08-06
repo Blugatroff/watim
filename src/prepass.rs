@@ -194,8 +194,9 @@ impl UncheckedProgram<UnResolvedType> {
                                     Intrinsic::LE => Intrinsic::LE,
                                     Intrinsic::GE => Intrinsic::GE,
                                     Intrinsic::Mul => Intrinsic::Mul,
-                                    Intrinsic::Cast(t) => Intrinsic::Cast(resolve_ty(
-                                        &t,
+                                    Intrinsic::Rotr => Intrinsic::Rotr,
+                                    Intrinsic::Cast(ty) => Intrinsic::Cast(resolve_ty(
+                                        &ty,
                                         structs,
                                         modules_idents,
                                         current_module,
@@ -320,6 +321,7 @@ fn resolve_ty(
 ) -> Result<ResolvedType, WatimError> {
     match ty {
         UnResolvedType::I32 => Ok(ResolvedType::I32),
+        UnResolvedType::I64 => Ok(ResolvedType::I64),
         UnResolvedType::Bool => Ok(ResolvedType::Bool),
         UnResolvedType::Ptr(t) => Ok(ResolvedType::Ptr(Box::new(resolve_ty(
             t,

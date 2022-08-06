@@ -6,6 +6,7 @@ use crossterm::{
     terminal::{Clear, ClearType},
     ExecutableCommand,
 };
+use itertools::Itertools;
 use std::{
     collections::HashMap,
     io::Write,
@@ -143,12 +144,11 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
                     }
                 })
                 .collect();
-            let data: String = data
+            let data: String = Itertools::intersperse(data
                 .iter()
                 .flat_map(|b| [*b >> 4, *b & 0b00001111].map(nibble_to_hex))
                 .collect::<Vec<char>>()
-                .chunks(4)
-                .intersperse(&[' '])
+                .chunks(4), &[' '])
                 .flatten()
                 .collect();
             stdout

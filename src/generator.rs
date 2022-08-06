@@ -1,7 +1,11 @@
-use crate::ast::{
-    CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
-    CheckedLoop, CheckedWord, Data, Intrinsic, Local, Param, Program, ResolvedType,
+use crate::{
+    ast::{
+        CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
+        CheckedIntrinsic, CheckedLoop, CheckedWord, Data, Local, Param, Program, ResolvedType,
+    },
+    checker::Returns,
 };
+use itertools::Itertools;
 
 fn indent(input: &str) -> String {
     let mut res = input
@@ -26,21 +30,19 @@ impl std::fmt::Display for CheckedExtern {
 impl std::fmt::Display for CheckedFunctionSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ident = format!("{}:{}", &self.prefix, &self.ident);
-        let params = self
-            .params
-            .iter()
-            .map(|p| format!("{p}"))
-            .intersperse(String::from(" "))
-            .reduce(|a, b| a + &b)
-            .unwrap_or_default();
-        let ret = self
-            .ret
-            .iter()
-            .map(|t| gen_type(t).to_string())
-            .intersperse(String::from(" "))
-            .reduce(|a, b| a + &b)
-            .map(|r| format!(" (result {r})"))
-            .unwrap_or_default();
+        let params = Itertools::intersperse(
+            self.params.iter().map(|p| format!("{p}")),
+            String::from(" "),
+        )
+        .reduce(|a, b| a + &b)
+        .unwrap_or_default();
+        let ret = Itertools::intersperse(
+            self.ret.iter().map(|t| gen_type(t).to_string()),
+            String::from(" "),
+        )
+        .reduce(|a, b| a + &b)
+        .map(|r| format!(" (result {r})"))
+        .unwrap_or_default();
         let export = self
             .export
             .as_ref()
@@ -53,6 +55,7 @@ impl std::fmt::Display for CheckedFunctionSignature {
 fn gen_type(ty: &ResolvedType) -> &'static str {
     match ty {
         ResolvedType::I32 => "i32",
+        ResolvedType::I64 => "i64",
         ResolvedType::Bool => "i32",
         ResolvedType::Ptr(_) => "i32",
         ResolvedType::AnyPtr => "i32",
@@ -70,22 +73,24 @@ impl std::fmt::Display for Param<ResolvedType> {
 
 impl std::fmt::Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let externs = self
-            .modules
-            .iter()
-            .flat_map(|a| &a.1.externs)
-            .map(|e| format!("{e}"))
-            .intersperse(String::from("\n"))
-            .reduce(|a, b| a + &b)
-            .unwrap_or_default();
-        let functions = self
-            .modules
-            .iter()
-            .flat_map(|a| &a.1.functions)
-            .map(|f| format!("{f}"))
-            .intersperse(String::from("\n"))
-            .reduce(|a, b| a + &b)
-            .unwrap_or_default();
+        let externs = Itertools::intersperse(
+            self.modules
+                .iter()
+                .flat_map(|a| &a.1.externs)
+                .map(|e| format!("{e}")),
+            String::from("\n"),
+        )
+        .reduce(|a, b| a + &b)
+        .unwrap_or_default();
+        let functions = Itertools::intersperse(
+            self.modules
+                .iter()
+                .flat_map(|a| &a.1.functions)
+                .map(|f| format!("{f}")),
+            String::from("\n"),
+        )
+        .reduce(|a, b| a + &b)
+        .unwrap_or_default();
         let data = String::from_utf8(self.data.clone()).unwrap();
         let data = format!("(data (i32.const 0) \"{data}\")");
         let module = format!("\n{functions}");
@@ -100,26 +105,24 @@ impl std::fmt::Display for Program {
 
 impl std::fmt::Display for CheckedFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let locals = self
-            .locals
-            .iter()
-            .cloned()
-            .chain(self.memory.iter().cloned().map(|m| Local {
-                ident: m.ident,
-                location: m.location,
-                ty: ResolvedType::I32,
-            }))
-            .map(|local| format!("{local}"))
-            .intersperse(String::from("\n"))
-            .reduce(|a, b| a + &b)
-            .unwrap_or_default();
-        let body = self
-            .body
-            .iter()
-            .map(|w| format!("{w}"))
-            .intersperse(String::from("\n"))
-            .reduce(|a, b| a + &b)
-            .unwrap_or_default();
+        let locals = Itertools::intersperse(
+            self.locals
+                .iter()
+                .cloned()
+                .chain(self.memory.iter().cloned().map(|m| Local {
+                    ident: m.ident,
+                    location: m.location,
+                    ty: ResolvedType::I32,
+                }))
+                .map(|local| format!("{local}")),
+            String::from("\n"),
+        )
+        .reduce(|a, b| a + &b)
+        .unwrap_or_default();
+        let body =
+            Itertools::intersperse(self.body.iter().map(|w| format!("{w}")), String::from("\n"))
+                .reduce(|a, b| a + &b)
+                .unwrap_or_default();
         let locals = if locals.is_empty() {
             locals
         } else {
@@ -155,13 +158,31 @@ impl std::fmt::Display for CheckedFunction {
         } else {
             String::from("local.get $stac:k\nglobal.set $stac:k\n")
         };
+        let unreachable_filler = match self.returns {
+            Returns::Yes => String::new(),
+            Returns::No => Itertools::intersperse(self
+                .signature
+                .ret
+                .iter()
+                .map(|t| match t {
+                    ResolvedType::I32 => "i32.const 0",
+                    ResolvedType::I64 => "i64.const 0",
+                    ResolvedType::Bool => "i32.const 0",
+                    ResolvedType::Ptr(_) => "i32.const 0",
+                    ResolvedType::AnyPtr => "i32.const 0",
+                    ResolvedType::Custom(_) => "i32.const 0",
+                }), " ")
+                .flat_map(|s| s.chars())
+                .collect(),
+        };
         f.write_fmt(format_args!(
-            "({}{}{}{}{})",
+            "({}{}{}{}{}{})",
             &self.signature,
             indent(&locals),
             indent(&mem_str),
             indent(&body),
             indent(&drop),
+            indent(&unreachable_filler)
         ))
     }
 }
@@ -209,31 +230,31 @@ impl std::fmt::Display for CheckedIdent {
 
 impl std::fmt::Display for CheckedIff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let body = self
-            .body
-            .iter()
-            .map(|w| format!("{w}"))
-            .intersperse(String::from("\n"))
-            .reduce(|a, b| a + &b)
-            .unwrap_or_default();
-        let el = match &self.el {
-            Some(el) => el
-                .iter()
-                .map(|w| format!("{w}"))
-                .intersperse(String::from("\n"))
+        let body =
+            Itertools::intersperse(self.body.iter().map(|w| format!("{w}")), String::from("\n"))
                 .reduce(|a, b| a + &b)
-                .map(|el| format!("\n(else\n{}\n)", indent(&el)))
-                .unwrap_or_default(),
+                .unwrap_or_default();
+        let el = match &self.el {
+            Some(el) => {
+                Itertools::intersperse(el.iter().map(|w| format!("{w}")), String::from("\n"))
+                    .reduce(|a, b| a + &b)
+                    .map(|el| format!("\n(else\n{}\n)", indent(&el)))
+                    .unwrap_or_default()
+            }
             None => String::new(),
         };
-        let ret = self
-            .ret
-            .iter()
-            .map(|t| format!("(result {t})"))
-            .intersperse(String::from(" "))
-            .fold(String::from(" "), |a, b| a + &b);
+        let param = Itertools::intersperse(
+            self.param.iter().map(|t| format!("(param {t})")),
+            String::from(" "),
+        )
+        .fold(String::from(" "), |a, b| a + &b);
+        let ret = Itertools::intersperse(
+            self.ret.iter().map(|t| format!("(result {t})")),
+            String::from(" "),
+        )
+        .fold(String::from(" "), |a, b| a + &b);
         f.write_fmt(format_args!(
-            "(if{ret}\n\t(then\n{}\n\t){}\n)",
+            "(if {param} {ret}\n\t(then\n{}\n\t){}\n)",
             indent(&indent(&body)),
             indent(&el)
         ))
@@ -248,12 +269,11 @@ impl std::fmt::Display for CheckedLoop {
             .map(|w| format!("{w}\n"))
             .reduce(|a, b| a + &b)
             .unwrap_or_default();
-        let ret = self
-            .ret
-            .iter()
-            .map(|t| format!("(result {t})"))
-            .intersperse(String::from(" "))
-            .fold(String::from(" "), |a, b| a + &b);
+        let ret = Itertools::intersperse(
+            self.ret.iter().map(|t| format!("(result {})", gen_type(t))),
+            String::from(" "),
+        )
+        .fold(String::from(" "), |a, b| a + &b);
         f.write_fmt(format_args!(
             "(block $block{ret}\n\t(loop $loop{ret}\n{}\t\tbr $loop\n\t)\n)",
             indent(&indent(&body)),
@@ -261,28 +281,42 @@ impl std::fmt::Display for CheckedLoop {
     }
 }
 
-impl std::fmt::Display for Intrinsic<ResolvedType> {
+impl std::fmt::Display for CheckedIntrinsic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Intrinsic::Add => "i32.add",
-            Intrinsic::Store32 => "i32.store",
-            Intrinsic::Store8 => "i32.store8",
-            Intrinsic::Load32 => "i32.load",
-            Intrinsic::Load8 => "i32.load8_u",
-            Intrinsic::Drop => "drop",
-            Intrinsic::Sub => "i32.sub",
-            Intrinsic::Eq => "i32.eq",
-            Intrinsic::Div => "i32.div_u",
-            Intrinsic::Mod => "i32.rem_u",
-            Intrinsic::And => "i32.and",
-            Intrinsic::Or => "i32.or",
-            Intrinsic::L => "i32.lt_u",
-            Intrinsic::G => "i32.gt_u",
-            Intrinsic::LE => "i32.le_u",
-            Intrinsic::GE => "i32.ge_u",
-            Intrinsic::Mul => "i32.mul",
-            Intrinsic::NotEq => "i32.ne",
-            Intrinsic::Cast(_) => "",
+            CheckedIntrinsic::Add => "i32.add",
+            CheckedIntrinsic::Store32 => "i32.store",
+            CheckedIntrinsic::Store8 => "i32.store8",
+            CheckedIntrinsic::Load32 => "i32.load",
+            CheckedIntrinsic::Load8 => "i32.load8_u",
+            CheckedIntrinsic::Drop => "drop",
+            CheckedIntrinsic::Sub => "i32.sub",
+            CheckedIntrinsic::Eq(ty) => return write!(f, "{ty}.eq"),
+            CheckedIntrinsic::Div(ty) => return write!(f, "{ty}.div_u"),
+            CheckedIntrinsic::Mod(ty) => return write!(f, "{ty}.rem_u"),
+            CheckedIntrinsic::And => "i32.and",
+            CheckedIntrinsic::Or => "i32.or",
+            CheckedIntrinsic::L => "i32.lt_u",
+            CheckedIntrinsic::G => "i32.gt_u",
+            CheckedIntrinsic::LE => "i32.le_u",
+            CheckedIntrinsic::GE => "i32.ge_u",
+            CheckedIntrinsic::Mul => "i32.mul",
+            CheckedIntrinsic::NotEq(ty) => return write!(f, "{ty}.ne"),
+            CheckedIntrinsic::Rotr(ResolvedType::I32) => "i32.rotr",
+            CheckedIntrinsic::Rotr(ResolvedType::I64) => "i64.extend_i32_s i64.rotr",
+            CheckedIntrinsic::Rotr(_) => todo!(),
+            CheckedIntrinsic::Cast(from, to) => match (from, to) {
+                (from, to) if from == to => "",
+                (ResolvedType::Ptr(_), ResolvedType::Ptr(_)) => "",
+                (ResolvedType::Ptr(_), ResolvedType::I32) => "",
+                (ResolvedType::Bool, ResolvedType::I32) => "",
+                (ResolvedType::I32, ResolvedType::I64) => "i64.extend_i32_s",
+                (ResolvedType::I64, ResolvedType::I32) => "i32.wrap_i64",
+                (ResolvedType::I32, ResolvedType::Ptr(_)) => "",
+                _ => {
+                    todo!()
+                }
+            },
         })
     }
 }

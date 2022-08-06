@@ -16,7 +16,7 @@ endif
 syntax keyword watimTodos TODO
 
 " Language keywords
-syntax keyword watimKeywords if extern loop local fn memory data break else import as
+syntax keyword watimKeywords struct if extern loop local fn memory data break else import as
 
 " Comments
 syntax region watimCommentLine start="//" end="$" contains=watimTodos
@@ -34,7 +34,7 @@ syntax match watimVariable "\$[0-9,a-z,A-Z,\-,*,_,!,@]*"
 syntax match watimAssign "\#[0-9,a-z,A-Z,\-,*,_,!,@]*"
 
 " Type names the compiler recognizes
-syntax keyword watimTypeNames i32 bool
+syntax keyword watimTypeNames i64 i32 bool
 
 " Set highlights
 highlight default link watimTodos Todo
