@@ -372,6 +372,11 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Or,
                     })
+                } else if &ident.lexeme == "not" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Not,
+                    })
                 } else if &ident.lexeme == "*" {
                     Ok(Word::Intrinsic {
                         location: ident.location,
@@ -382,7 +387,7 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Rotr,
                     })
-                } else if self.matsch(TokenType::Dot).is_some() {
+                } else if self.matsch(TokenType::Colon).is_some() {
                     let ident_2 = self.ident()?;
                     Ok(Word::Call {
                         location: ident.location,
@@ -561,7 +566,7 @@ impl Parser {
                 let ty = self.ty()?;
                 return Ok(UnResolvedType::Ptr(Box::new(ty)));
             }
-            Some(Token::Identifier(ident_1)) => match self.matsch(TokenType::Dot) {
+            Some(Token::Identifier(ident_1)) => match self.matsch(TokenType::Colon) {
                 Some(_) => {
                     let ident_2 = self.ident()?;
                     return Ok(UnResolvedType::Custom(Ident::Qualified(
@@ -583,6 +588,7 @@ impl Parser {
         let mut functions = Vec::new();
         let mut imports = Vec::new();
         let mut structs = Vec::new();
+        let mut memory = Vec::new();
         while let Some(next) = self.peek().map(|t| t.ty()) {
             match next {
                 TokenType::Extern => {
@@ -593,6 +599,9 @@ impl Parser {
                 }
                 TokenType::Struct => {
                     structs.push(Arc::new(self.struc()?));
+                }
+                TokenType::Memory => {
+                    memory.push(self.memory()?);
                 }
                 TokenType::Eof => {
                     break;
@@ -608,6 +617,8 @@ impl Parser {
             path: PathBuf::from(path.as_ref()),
             imports,
             structs,
+            memory
         })
     }
 }
+

@@ -1,4 +1,7 @@
-use crate::{scanner::{Location, TokenWithLocation}, checker::Returns};
+use crate::{
+    checker::Returns,
+    scanner::{Location, TokenWithLocation},
+};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +68,7 @@ pub enum Intrinsic<Type> {
     Mod,
     Div,
     And,
+    Not,
     Or,
     L,
     G,
@@ -89,6 +93,7 @@ pub enum CheckedIntrinsic {
     Mod(ResolvedType),
     Div(ResolvedType),
     And,
+    Not,
     Or,
     L,
     G,
@@ -183,9 +188,13 @@ pub enum CheckedWord {
         location: Location,
         ident: CheckedIdent,
     },
-    Var {
+    Local {
         location: Location,
         ident: String,
+    },
+    Global {
+        location: Location,
+        ident: CheckedIdent,
     },
     Set {
         location: Location,
@@ -220,7 +229,7 @@ impl CheckedWord {
     pub fn location(&self) -> &Location {
         match self {
             CheckedWord::Call { location, .. } => location,
-            CheckedWord::Var { location, .. } => location,
+            CheckedWord::Local { location, .. } => location,
             CheckedWord::Set { location, .. } => location,
             CheckedWord::Number { location, .. } => location,
             CheckedWord::Intrinsic { location, .. } => location,
@@ -229,6 +238,7 @@ impl CheckedWord {
             CheckedWord::Break { location } => location,
             CheckedWord::String { location, .. } => location,
             CheckedWord::FieldDeref { location, .. } => location,
+            CheckedWord::Global { location, .. } => location,
         }
     }
 }
@@ -258,8 +268,8 @@ pub struct Local<Type> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Memory<Type> {
-    pub ident: String,
+pub struct Memory<Type, Ident = String> {
+    pub ident: Ident,
     pub location: Location,
     pub size: i32,
     pub alignment: Option<i32>,
@@ -306,7 +316,7 @@ pub struct CheckedFunction {
     pub locals: Vec<Local<ResolvedType>>,
     pub body: Vec<CheckedWord>,
     pub memory: Vec<Memory<ResolvedType>>,
-    pub returns: Returns
+    pub returns: Returns,
 }
 
 #[derive(Debug, Clone)]
@@ -343,6 +353,7 @@ pub struct Module<Type> {
     pub functions: Vec<Function<Type>>,
     pub path: PathBuf,
     pub structs: Vec<Arc<Struct<Type>>>,
+    pub memory: Vec<Memory<Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -351,6 +362,7 @@ pub struct CheckedModule {
     pub imports: HashMap<String, CheckedImport>,
     pub functions: Vec<CheckedFunction>,
     pub path: PathBuf,
+    pub globals: Vec<Memory<ResolvedType, CheckedIdent>>
 }
 
 #[derive(Debug, Clone)]

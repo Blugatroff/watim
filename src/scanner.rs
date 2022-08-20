@@ -378,7 +378,7 @@ impl Scanner {
 }
 
 fn allowed_in_ident(char: char) -> bool {
-    let disallowed = ['{', '}', '(', ')', ' ', ';', '\t', '\n', ':', ',', '.'];
+    let disallowed = ['{', '}', '(', ')', ' ', ';', '\t', '\n', ':', ',', '.', '!'];
     for c in disallowed {
         if char == c {
             return false;

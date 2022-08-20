@@ -2,6 +2,8 @@ extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .i32, iovs_count: 
 extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
 extern "wasi_unstable" "proc_exit" fn raw_exit(code: i32)
 
+import "./alloc.watim" as A
+
 struct Iov {
     ptr: .i32
     len: i32
@@ -58,7 +60,7 @@ fn print_i64_fallible(n: i64) -> i32 {
     local i: i32
     0 #l
     $n 0 !i64 = if {
-        1 #l // length = 1ksys
+        1 #l // length = 1
         $buf 48 store8 // put '0' in buf
     } else {
         loop {
@@ -90,12 +92,64 @@ fn print(n: i32) {
     $n !i64 print_i64
 }
 
-fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32 {
+fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     memory space: i32 8 4;
+    memory writ: i32 4 4;
+    local code: i32
     $space $buf_addr !i32 store32 
     $space !i32 4 + !.i32 $buf_size store32 
-    $file $space 1 $space raw_read check
-    $space load32
+    $file $space 1 $writ raw_read #code
+    $writ load32 $code
+}
+
+fn read_all(file: i32) -> .i32, i32, i32 {
+    local buf: .i32
+    local old-buf: .i32
+    local buf-size: i32
+    local read: i32
+    local code: i32
+    local r: i32
+    0 #read
+    0 #r
+    64 #buf-size
+    $buf-size A:alloc #buf
+
+    loop {
+        $buf-size $read = if {
+            $buf #old-buf
+            $buf-size 2 * A:alloc #buf
+            $buf !i32 0 = if {
+                $old-buf A:free
+                // 48 Error code = Not enough space
+                0 !.i32 0 48 break
+            }
+            $old-buf $buf $buf-size copy
+            $buf-size 2 * #buf-size
+            $old-buf A:free
+        }
+        $file 
+        $buf $read + 
+        $buf-size $read -
+        read #code #r
+        $code 0 /= if {
+            0 !.i32 0 $code break
+        }
+        $r 0 = if {
+            $buf $read 0 break
+        } else {
+            $read $r + #read
+        }
+    }
+}
+
+fn copy(a: .i32, b: .i32, len: i32) {
+    loop {
+        $len 0 = if { break }
+        $b $a load8 store8
+        $len 1 - #len
+        $a 1 + #a
+        $b 1 + #b
+    }
 }
 
 fn parse(pt: .i32, len: i32) -> i32 {
@@ -138,3 +192,32 @@ fn check(code: i32) {
         1 exit
     }
 }
+
+fn print_alloc_list(start: .i32) {
+    local block: .i32
+    local next: .i32
+    local size: i32
+    local used: bool
+    $start #block
+    1 "BLOCK LIST STARTING AT: " write_all check $block !i32 print 1 10 write_byte check
+    loop {
+        $block !i32 0 = if { break }
+        $block load32 !.i32 #next
+        $block 4 + load32 #size
+        $block 8 + load32 0 > #used
+
+        1 9 write_byte check 
+        $block !i32 print
+        1 ": " write_all check
+        1 " " write_all check
+        $next !i32 print
+        1 " " write_all check
+        $size print
+        1 " " write_all check
+        $used !i32 print
+        1 10 write_byte check 
+
+        $next #block
+    }
+}
+

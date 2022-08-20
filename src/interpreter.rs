@@ -1,4 +1,5 @@
 use crate::{
+    align_to,
     ast::{
         CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff, CheckedIntrinsic,
         CheckedLoop, CheckedWord, Local, Memory, Param, Program, ResolvedType,
@@ -91,6 +92,7 @@ pub enum Error {
 
 pub struct Interpreter<'stdin, 'stdout> {
     functions: HashMap<String, HashMap<String, InterpreterFunction>>,
+    globals: HashMap<String, HashMap<String, (i32, ResolvedType)>>,
     mem_stack: i32,
     stdout: Box<dyn std::io::Write + 'stdin>,
     stdin: Box<dyn std::io::Read + 'stdout>,
@@ -108,6 +110,8 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
             memory[i] = *b;
         }
 
+        let mut globals: HashMap<String, HashMap<String, (i32, ResolvedType)>> = HashMap::new();
+        let mut global_mem_addr = program.data.len() as i32;
         let mut functions: HashMap<String, HashMap<String, InterpreterFunction>> = HashMap::new();
         for (_, module) in program.modules {
             for function in module.functions {
@@ -128,15 +132,25 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                         InterpreterFunction::Extern(ex.path, ex.signature),
                     );
             }
+            for mem in module.globals {
+                if let Some(alignment) = mem.alignment {
+                    global_mem_addr = align_to(global_mem_addr, alignment);
+                }
+                globals
+                    .entry(mem.ident.module_prefix.clone())
+                    .or_default()
+                    .insert(mem.ident.ident.clone(), (global_mem_addr, mem.ty.clone()));
+                global_mem_addr += mem.size;
+            }
         }
-        let mem_stack = program.data.len() as i32;
-
+        let mem_stack = global_mem_addr;
         let mut this = Self {
             functions,
             mem_stack,
             stdout: Box::new(stdout),
             stdin: Box::new(stdin),
             memory,
+            globals,
         };
         let entry = match this.find_entry_point() {
             Some(entry) => entry.clone(),
@@ -193,9 +207,14 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                 self.mem_stack = ostack;
                 Ok(stack)
             }
-            InterpreterFunction::Extern((path_0, path_1), ..) => {
-                execute_extern(path_0, path_1, args, &mut self.memory, &mut self.stdin, &mut self.stdout)
-            }
+            InterpreterFunction::Extern((path_0, path_1), ..) => execute_extern(
+                path_0,
+                path_1,
+                args,
+                &mut self.memory,
+                &mut self.stdin,
+                &mut self.stdout,
+            ),
         }
     }
     fn execute_word(
@@ -219,7 +238,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                     None => return Err(Error::FunctionNotFound(location.clone(), ident.clone())),
                 }
             }
-            CheckedWord::Var { location, ident } => match locals.get(ident) {
+            CheckedWord::Local { location, ident } => match locals.get(ident) {
                 Some(value) => {
                     stack.push(value.clone());
                 }
@@ -262,6 +281,18 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                     todo!()
                 }
             },
+            CheckedWord::Global { ident, .. } => {
+                match self
+                    .globals
+                    .get(&ident.module_prefix)
+                    .and_then(|m| m.get(&ident.ident))
+                {
+                    Some((value, ty)) => {
+                        stack.push(Value::Ptr(*value, ty.clone()))
+                    }
+                    None => todo!(),
+                }
+            }
         }
         Ok(false)
     }
@@ -372,11 +403,11 @@ pub fn execute_extern(
                         stdout.write_all(data).unwrap();
                         stdout.flush().unwrap();
                     }
-                    let res = Value::I32(written);
                     let written: [u8; 4] = written.to_le_bytes();
                     for (i, b) in written.into_iter().enumerate() {
                         memory[nwritten + i] = b;
                     }
+                    let res = Value::I32(0);
                     Ok(vec![res])
                 }
                 file => {
@@ -426,7 +457,7 @@ pub fn execute_extern(
                     for (i, b) in written.into_iter().enumerate() {
                         memory[nwritten + i] = b;
                     }
-                    Ok(vec![Value::I32(read)])
+                    Ok(vec![Value::I32(0)])
                 }
                 file => {
                     todo!("unhandled fd_write for file: {file}")

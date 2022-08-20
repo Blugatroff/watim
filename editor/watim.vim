@@ -30,8 +30,8 @@ syntax match watimEscapes display contained "\\[nr\"']"
 " Number literals
 syn match watimNumber "\<\d\+\>"
 
-syntax match watimVariable "\$[0-9,a-z,A-Z,\-,*,_,!,@]*"
-syntax match watimAssign "\#[0-9,a-z,A-Z,\-,*,_,!,@]*"
+syntax match watimVariable "\$[0-9,a-z,A-Z,\-,*,_,@]*"
+syntax match watimAssign "\#[0-9,a-z,A-Z,\-,*,_,@]*"
 
 " Type names the compiler recognizes
 syntax keyword watimTypeNames i64 i32 bool

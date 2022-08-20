@@ -2,7 +2,8 @@ use crate::{
     ast::{
         CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
         CheckedImport, CheckedIntrinsic, CheckedLoop, CheckedModule, CheckedWord, Function,
-        FunctionSignature, Ident, Iff, Import, Intrinsic, Local, Loop, Module, ResolvedType, Word,
+        FunctionSignature, Ident, Iff, Import, Intrinsic, Local, Loop, Memory, Module,
+        ResolvedType, Word,
     },
     scanner::Location,
 };
@@ -131,6 +132,7 @@ pub struct ModuleChecker<'a, Type> {
     modules: &'a HashMap<PathBuf, (Module<Type>, String)>,
     imports: HashMap<String, CheckedImport>,
     prefix: String,
+    globals: HashMap<String, Local<Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -182,12 +184,24 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
             let import = Self::check_import(import, &module.path)?;
             imports.insert(import.ident.clone(), import);
         }
+        let mut globals = HashMap::new();
+        for global in &module.memory {
+            globals.insert(
+                global.ident.clone(),
+                Local {
+                    ident: global.ident.clone(),
+                    location: global.location.clone(),
+                    ty: global.ty.clone(),
+                },
+            );
+        }
         let prefix = { modules.get(&module.path).unwrap().1.clone() };
         let this = Self {
             functions,
             modules,
             imports: imports.clone(),
             prefix: prefix.clone(),
+            globals,
         };
         let mut checked_functions = Vec::new();
         for function in module.functions {
@@ -210,11 +224,25 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                 }
             });
         }
+        let mut globals = Vec::new();
+        for global in module.memory {
+            globals.push(Memory {
+                ident: CheckedIdent {
+                    ident: global.ident.clone(),
+                    module_prefix: prefix.clone(),
+                },
+                location: global.location.clone(),
+                size: global.size,
+                alignment: global.alignment,
+                ty: global.ty,
+            });
+        }
         Ok(CheckedModule {
             externs: checked_externs,
             functions: checked_functions,
             path: module.path,
             imports,
+            globals,
         })
     }
     fn check_function(
@@ -271,7 +299,8 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         let mut checked_words = Vec::new();
         let mut returns: Returns = Returns::Yes;
         for word in function.body {
-            let (returns_, _, checked_word) = self.check_word(word, &mut stack, &locals, data)?;
+            let (returns_, _, checked_word) =
+                self.check_word(word, &mut stack, &locals, &self.globals, data)?;
             returns = if returns_ == Returns::No {
                 Returns::No
             } else {
@@ -299,7 +328,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
             locals: function.locals,
             body: checked_words,
             memory: function.memory,
-            returns
+            returns,
         })
     }
     pub fn check_import(import: Import, path: &Path) -> Result<CheckedImport, TypeError> {
@@ -318,6 +347,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         word: Word<ResolvedType>,
         stack: &mut Vec<ResolvedType>,
         locals: &HashMap<String, Local<ResolvedType>>,
+        globals: &HashMap<String, Local<ResolvedType>>,
         data: &mut Vec<u8>,
     ) -> Result<(Returns, Vec<BreakStack>, CheckedWord), TypeError> {
         match word {
@@ -389,14 +419,25 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
             Word::Var { location, ident } => {
                 if let Some(local) = locals.get(&ident) {
                     stack.push(local.ty.clone());
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Local { location, ident },
+                    ))
+                } else if let Some(global) = globals.get(&ident) {
+                    stack.push(ResolvedType::Ptr(Box::new(global.ty.clone())));
+                    let ident = CheckedIdent {
+                        module_prefix: self.prefix.clone(),
+                        ident,
+                    };
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Global { location, ident },
+                    ))
                 } else {
-                    return Err(TypeError::LocalNotFound(ident.clone(), location));
+                    Err(TypeError::LocalNotFound(ident.clone(), location))
                 }
-                Ok((
-                    Returns::Yes,
-                    Vec::new(),
-                    CheckedWord::Var { location, ident },
-                ))
             }
             Word::Set { ident, location } => {
                 if let Some(local) = locals.get(&ident) {
@@ -457,6 +498,18 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         },
                     ))
                 }
+                Intrinsic::Not => {
+                    let ret = self.expect_stack(stack, &word, [([ResolvedType::Bool], &|[t]| t)])?;
+                    stack.push(ret);
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            intrinsic: CheckedIntrinsic::Not,
+                            location: location.clone(),
+                        },
+                    ))
+                }
                 Intrinsic::Store32 => {
                     match (stack.pop(), stack.pop()) {
                         (Some(v_ty), Some(ResolvedType::Ptr(ty))) if *ty == v_ty => {}
@@ -496,9 +549,13 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::Ptr(Box::new(ResolvedType::I32))], &|_| {
-                            ResolvedType::I32
-                        })],
+                        [(
+                            [ResolvedType::Ptr(Box::new(ResolvedType::AnyPtr))],
+                            &|[ty]| match ty {
+                                ResolvedType::Ptr(ty) => *ty,
+                                _ => unreachable!(),
+                            },
+                        )],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -551,9 +608,14 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::I32, ResolvedType::I32], &|_| {
-                            ResolvedType::I32
-                        })],
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::AnyPtr, ResolvedType::I32], &|[pt_ty, _]| {
+                                pt_ty
+                            }),
+                        ],
                     )?;
                     stack.push(ret);
                     Ok((
@@ -575,6 +637,9 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             }),
                             ([ResolvedType::I64, ResolvedType::I64], &|_| {
                                 (ResolvedType::I64, ResolvedType::Bool)
+                            }),
+                            ([ResolvedType::AnyPtr, ResolvedType::AnyPtr], &|[ty, _]| {
+                                (ty, ResolvedType::Bool)
                             }),
                         ],
                     )?;
@@ -812,6 +877,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         ResolvedType::I32 => match stack.pop() {
                             Some(ResolvedType::Ptr(_)) => stack.push(ResolvedType::I32),
                             Some(ResolvedType::I64) => stack.push(ResolvedType::I32),
+                            Some(ResolvedType::Bool) => stack.push(ResolvedType::I32),
                             _ => {
                                 todo!()
                             }
@@ -876,7 +942,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                 let mut min = stack.len();
                 for word in body {
                     let (t, break_stack, checked_word) =
-                        self.check_word(word.clone(), &mut if_block_stack, locals, data)?;
+                        self.check_word(word.clone(), &mut if_block_stack, locals, globals, data)?;
                     if t == Returns::No {
                         if_block_termination = Returns::No
                     }
@@ -892,8 +958,13 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         let mut min = stack.len();
                         let mut else_block_checked_words = Vec::new();
                         for word in block {
-                            let (t, break_stack, checked_word) =
-                                self.check_word(word.clone(), &mut else_block_stack, locals, data)?;
+                            let (t, break_stack, checked_word) = self.check_word(
+                                word.clone(),
+                                &mut else_block_stack,
+                                locals,
+                                globals,
+                                data,
+                            )?;
                             else_block_checked_words.push(checked_word);
                             if t == Returns::No {
                                 else_block_termination = Returns::No;
@@ -991,7 +1062,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                 let mut checked_words = Vec::new();
                 for word in body {
                     let (_, break_stack, checked_word) =
-                        self.check_word(word, &mut loop_stack, locals, data)?;
+                        self.check_word(word, &mut loop_stack, locals, globals, data)?;
                     checked_words.push(checked_word);
                     break_stacks.extend(break_stack);
                 }
@@ -1068,6 +1139,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                         }
                                     }
                                     None => {
+                                        dbg!(&struc.fields, &field);
                                         todo!()
                                     }
                                 }
@@ -1108,7 +1180,10 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                 match overloads.next() {
                     Some(expected_ty) => match stack.pop() {
                         Some(ty) if ty == expected_ty => popped.push(ty),
-                        Some(ty @ ResolvedType::Ptr(_)) if expected_ty == ResolvedType::AnyPtr => {
+                        Some(ty @ ResolvedType::Ptr(_))
+                            if expected_ty == ResolvedType::AnyPtr
+                                || matches!(expected_ty, ResolvedType::Ptr(_)) =>
+                        {
                             popped.push(ty)
                         }
                         ty => {

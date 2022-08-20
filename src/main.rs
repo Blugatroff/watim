@@ -30,6 +30,10 @@ pub enum WatimError {
     IO(#[from] std::io::Error),
 }
 
+pub fn align_to(value: i32, alignment: i32) -> i32 {
+    (value % alignment > 0) as i32 * (alignment - (value % alignment)) + value
+}
+
 pub const SEP: &str = "================================\n";
 
 fn run(program: &str, mut input: impl std::io::Read) -> Vec<u8> {

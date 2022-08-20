@@ -255,7 +255,7 @@ impl StepInterpreter {
                     None => todo!(),
                 }
             }
-            CheckedWord::Var { ident, .. } => match self.scope.locals.get(&ident) {
+            CheckedWord::Local { ident, .. } => match self.scope.locals.get(&ident) {
                 Some(local) => {
                     self.scope.stack.push(local.clone());
                     Ok(())
@@ -355,6 +355,9 @@ impl StepInterpreter {
                 _ => {
                     todo!()
                 }
+            },
+            CheckedWord::Global { .. } => {
+                todo!()
             },
         }
     }

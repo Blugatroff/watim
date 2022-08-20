@@ -3,7 +3,7 @@ use crate::{
         CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
         CheckedIntrinsic, CheckedLoop, CheckedWord, Data, Local, Param, Program, ResolvedType,
     },
-    checker::Returns,
+    checker::Returns, align_to,
 };
 use itertools::Itertools;
 
@@ -91,13 +91,31 @@ impl std::fmt::Display for Program {
         )
         .reduce(|a, b| a + &b)
         .unwrap_or_default();
+        let mut global_mem_addr = self.data.len() as i32;
+        let mut global_mems = Vec::new();
+        for global_mem in self.modules.iter().flat_map(|(_, m)| &m.globals) {
+            if let Some(alignment) = global_mem.alignment {
+                global_mem_addr = align_to(global_mem_addr, alignment);
+            }
+            global_mems.push((global_mem.ident.clone(), global_mem_addr));
+            global_mem_addr += global_mem.size;
+        }
+        let globals = Itertools::intersperse(
+            global_mems
+                .into_iter()
+                .map(|(ident, addr)| format!("(global ${ident} (mut i32) (i32.const {addr}))")),
+            String::from("\n"),
+        )
+        .reduce(|a, b| a + &b)
+        .unwrap_or_default();
         let data = String::from_utf8(self.data.clone()).unwrap();
         let data = format!("(data (i32.const 0) \"{data}\")");
         let module = format!("\n{functions}");
         let externs = indent(&externs);
-        let stack_start = self.data.len();
+        let stack_start = global_mem_addr;
         f.write_fmt(format_args!(
-            "(module\n{externs}\n\n\t(memory 1)\n\t(export \"memory\" (memory 0))\n\t(global $stac:k (mut i32) (i32.const {stack_start}))\n\t{data}\n{}\n)",
+            "(module\n{externs}\n\n\t(memory 1)\n\t(export \"memory\" (memory 0))\n\t(global $stac:k (mut i32) (i32.const {stack_start}))\n{}\n\t{data}\n{}\n)",
+            indent(&globals),
             indent(&module)
         ))
     }
@@ -160,20 +178,19 @@ impl std::fmt::Display for CheckedFunction {
         };
         let unreachable_filler = match self.returns {
             Returns::Yes => String::new(),
-            Returns::No => Itertools::intersperse(self
-                .signature
-                .ret
-                .iter()
-                .map(|t| match t {
+            Returns::No => Itertools::intersperse(
+                self.signature.ret.iter().map(|t| match t {
                     ResolvedType::I32 => "i32.const 0",
                     ResolvedType::I64 => "i64.const 0",
                     ResolvedType::Bool => "i32.const 0",
                     ResolvedType::Ptr(_) => "i32.const 0",
                     ResolvedType::AnyPtr => "i32.const 0",
                     ResolvedType::Custom(_) => "i32.const 0",
-                }), " ")
-                .flat_map(|s| s.chars())
-                .collect(),
+                }),
+                " ",
+            )
+            .flat_map(|s| s.chars())
+            .collect(),
         };
         f.write_fmt(format_args!(
             "({}{}{}{}{}{})",
@@ -201,7 +218,7 @@ impl std::fmt::Display for CheckedWord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CheckedWord::Call { ident, .. } => f.write_fmt(format_args!("call ${ident}")),
-            CheckedWord::Var { ident, .. } => f.write_fmt(format_args!("local.get ${ident}")),
+            CheckedWord::Local { ident, .. } => f.write_fmt(format_args!("local.get ${ident}")),
             CheckedWord::Number { number, .. } => f.write_fmt(format_args!("i32.const {number}")),
             CheckedWord::Intrinsic { intrinsic, .. } => intrinsic.fmt(f),
             CheckedWord::If(iff) => iff.fmt(f),
@@ -214,6 +231,7 @@ impl std::fmt::Display for CheckedWord {
             CheckedWord::FieldDeref { offset, .. } => {
                 f.write_fmt(format_args!("i32.const {offset} i32.add"))
             }
+            CheckedWord::Global { ident, .. } => f.write_fmt(format_args!("global.get ${}", ident)),
         }
     }
 }
@@ -249,7 +267,7 @@ impl std::fmt::Display for CheckedIff {
         )
         .fold(String::from(" "), |a, b| a + &b);
         let ret = Itertools::intersperse(
-            self.ret.iter().map(|t| format!("(result {t})")),
+            self.ret.iter().map(|t| format!("(result {})", gen_type(t))),
             String::from(" "),
         )
         .fold(String::from(" "), |a, b| a + &b);
@@ -291,10 +309,11 @@ impl std::fmt::Display for CheckedIntrinsic {
             CheckedIntrinsic::Load8 => "i32.load8_u",
             CheckedIntrinsic::Drop => "drop",
             CheckedIntrinsic::Sub => "i32.sub",
-            CheckedIntrinsic::Eq(ty) => return write!(f, "{ty}.eq"),
+            CheckedIntrinsic::Eq(ty) => return write!(f, "{}.eq", gen_type(ty)),
             CheckedIntrinsic::Div(ty) => return write!(f, "{ty}.div_u"),
             CheckedIntrinsic::Mod(ty) => return write!(f, "{ty}.rem_u"),
             CheckedIntrinsic::And => "i32.and",
+            CheckedIntrinsic::Not => "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and",
             CheckedIntrinsic::Or => "i32.or",
             CheckedIntrinsic::L => "i32.lt_u",
             CheckedIntrinsic::G => "i32.gt_u",

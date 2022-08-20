@@ -3,7 +3,7 @@ import "./util.watim" as U
 fn main "_start" () {
     memory buf: i32 32;
     local nread: i32
-    0 $buf 32 U.read #nread
-    $buf $nread 1 - U.parse
-    U.dup U.print U.exit
+    0 $buf 32 U:read #nread
+    $buf $nread 1 - U:parse
+    U:dup U:print U:exit
 }

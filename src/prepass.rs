@@ -188,6 +188,7 @@ impl UncheckedProgram<UnResolvedType> {
                                     Intrinsic::Mod => Intrinsic::Mod,
                                     Intrinsic::Div => Intrinsic::Div,
                                     Intrinsic::And => Intrinsic::And,
+                                    Intrinsic::Not => Intrinsic::Not,
                                     Intrinsic::Or => Intrinsic::Or,
                                     Intrinsic::L => Intrinsic::L,
                                     Intrinsic::G => Intrinsic::G,
@@ -268,6 +269,23 @@ impl UncheckedProgram<UnResolvedType> {
                     path: ext.path.clone(),
                 })
             }
+            let mut memory = Vec::new();
+            for mem in &module.memory {
+                let ty = resolve_ty(
+                    &mem.ty,
+                    structs,
+                    &modules_idents,
+                    current_module,
+                    &mem.location,
+                )?;
+                memory.push(Memory {
+                    alignment: mem.alignment,
+                    ident: mem.ident.clone(),
+                    location: mem.location.clone(),
+                    size: mem.size,
+                    ty,
+                });
+            }
             resolved_modules.insert(
                 module.path.clone(),
                 Module {
@@ -276,6 +294,7 @@ impl UncheckedProgram<UnResolvedType> {
                     imports: module.imports.clone(),
                     structs: resolved_structs,
                     path: module.path.clone(),
+                    memory,
                 },
             );
             Ok(())

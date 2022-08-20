@@ -1,0 +1,38 @@
+
+================================
+extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .i32, iovs_count: i32, nwritten: .i32) -> i32
+import "./samples/alloc.watim" as A
+import "./samples/util.watim" as U
+
+fn main "_start" () {
+    local a: .i32
+    local b: .i32
+    local i: i32
+
+    A:init
+
+    100 A:alloc #a
+    100 A:alloc #b
+
+    $a $b = !i32 U:print 1 10 U:write_byte U:check
+    
+    loop {
+        $i 256 = if { break }
+        $b $i + $a $i + load8 store8
+        $i 1 + #i
+    }
+    0 #i
+    loop {
+        $i 256 = if { break }
+        $b $i + 8 store8
+        $i 1 + #i
+    }
+    $a 85 + load8 U:print 1 10 U:write_byte U:check
+    $b load8 U:print 1 10 U:write_byte U:check
+    $b 90 + load8 U:print 1 10 U:write_byte U:check
+}
+================================
+0
+0
+8
+8

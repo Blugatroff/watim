@@ -312,6 +312,14 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
+        CheckedIntrinsic::Not => expect_args(
+            location,
+            stack,
+            [([ResolvedType::Bool], &mut |[a]| match a {
+                Value::Bool(a) => Some([Value::Bool(!a)]),
+                _ => None,
+            })],
+        ),
         CheckedIntrinsic::LE => expect_args(
             location,
             stack,
