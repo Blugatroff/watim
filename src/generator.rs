@@ -1,9 +1,10 @@
 use crate::{
+    align_to,
     ast::{
         CheckedExtern, CheckedFunction, CheckedFunctionSignature, CheckedIdent, CheckedIff,
         CheckedIntrinsic, CheckedLoop, CheckedWord, Data, Local, Param, Program, ResolvedType,
     },
-    checker::Returns, align_to,
+    checker::Returns,
 };
 use itertools::Itertools;
 
@@ -108,7 +109,7 @@ impl std::fmt::Display for Program {
         )
         .reduce(|a, b| a + &b)
         .unwrap_or_default();
-        let data = String::from_utf8(self.data.clone()).unwrap();
+        let data = String::from_utf8(self.data.escape_ascii().collect()).unwrap();
         let data = format!("(data (i32.const 0) \"{data}\")");
         let module = format!("\n{functions}");
         let externs = indent(&externs);

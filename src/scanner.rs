@@ -315,15 +315,26 @@ impl Scanner {
     fn string(&mut self) -> Result<TokenWithLocation, ScanError> {
         let mut string: String = String::new();
         loop {
-            match self.peek() {
+            match self.advance() {
                 None => return Err(ScanError::UnterminatedString(self.location())),
                 Some('"') => break,
                 Some('\n') => {
                     self.line += 1;
+                    string.push('\n');
                 }
-                _ => {}
+                Some('\\') => match self.advance() {
+                    Some('n') => {
+                        string.push('\n');
+                    }
+                    Some(c) => {
+                        string.push(c);
+                    }
+                    None => return Err(ScanError::UnterminatedString(self.location())),
+                },
+                Some(c) => {
+                    string.push(c);
+                }
             }
-            string.push(self.advance().unwrap());
         }
         self.advance(); // the closing "
         Ok(TokenWithLocation::new(

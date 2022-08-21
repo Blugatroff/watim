@@ -4,5 +4,5 @@
 fn inf_loop() -> .i32, i32 {
     loop {}
 }
-fn main "_start"() {}
+fn main "_start" () {}
 ================================

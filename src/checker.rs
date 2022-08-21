@@ -499,7 +499,8 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     ))
                 }
                 Intrinsic::Not => {
-                    let ret = self.expect_stack(stack, &word, [([ResolvedType::Bool], &|[t]| t)])?;
+                    let ret =
+                        self.expect_stack(stack, &word, [([ResolvedType::Bool], &|[t]| t)])?;
                     stack.push(ret);
                     Ok((
                         Returns::Yes,

@@ -1,5 +1,7 @@
-import "./util.watim" as U
-import "./alloc.watim" as A
+import "../std/util.watim" as U
+import "../std/io.watim" as IO
+import "../std/core.watim" as CORE
+import "../std/alloc.watim" as A
 
 extern "wasi_unstable" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .i32) -> i32
 extern "wasi_unstable" "fd_filestat_get" fn fd_filestat_get(fd: i32, filestat: .i32) -> i32
@@ -30,11 +32,11 @@ fn prestat(fd: i32) {
     local len: i32
     $fd $filestat fd_prestat_get #code
     $code 0 /= if {
-        1 "Prestat Error Code: " U:write_all U:check $code U:print
+        1 "Prestat Error Code: " IO:write_all IO:check $code IO:print
     } else {
         $filestat 4 + load32 #len
-        $fd $path $len fd_prestat_dir_name U:check
-        1 $path $len U:write_all U:check 1 10 U:write_byte U:check
+        $fd $path $len fd_prestat_dir_name IO:check
+        1 $path $len IO:write_all IO:check 1 10 IO:write_byte IO:check
     }
 }
 
@@ -75,12 +77,12 @@ fn print_args() {
     $arg_number_ptr $arg_sizes_ptr args_sizes_get 
     $arg_number_ptr load32 #arg_number
     $arg_sizes_ptr load32 #arg_sizes
-    U:check
+    IO:check
 
     $buf $arg_number 4 * + #arg_buf_start
-    $buf !..i32 $arg_buf_start args_get U:check
+    $buf !..i32 $arg_buf_start args_get IO:check
 
-    1 "Args: " U:write_all U:check 1 10 U:write_byte U:check
+    1 "Args: \n" IO:write_all IO:check
     loop {
         $i $arg_number >= if { break }
 
@@ -92,7 +94,7 @@ fn print_args() {
             $j 1 + #j
         }
 
-        1 $ptr $j U:write_all U:check 1 10 U:write_byte U:check
+        1 $ptr $j IO:write_all IO:check 1 10 IO:write_byte IO:check
 
         $i 1 + #i
     }
@@ -112,10 +114,10 @@ fn get_arg(n: i32) -> .i32, i32 {
     $arg_number_ptr $arg_sizes_ptr args_sizes_get 
     $arg_number_ptr load32 #arg_number
     $arg_sizes_ptr load32 #arg_sizes
-    U:check
+    IO:check
 
     $buf $arg_number 4 * + #arg_buf_start
-    $buf !..i32 $arg_buf_start args_get U:check
+    $buf !..i32 $arg_buf_start args_get IO:check
 
     loop {
         $i $arg_number >= if { 
@@ -136,23 +138,24 @@ fn get_arg(n: i32) -> .i32, i32 {
     }
 }
 
+memory MEM: i32 16384 4;
 fn main "_start" () {
     local fd: i32
     local len: i32
     local ptr: .i32
 
-    A:init
+    $MEM 16384 A:init
 
     find_fds
     3 2 get_arg 
-    open_file U:check #fd
-    $fd U:read_all U:check #len #ptr
+    open_file IO:check #fd
+    $fd U:read_all IO:check #len #ptr
 
-    1 $ptr $len U:write_all U:check
+    1 $ptr $len IO:write_all IO:check
 
     $ptr A:free
 
-    1 10 U:write_byte U:check
+    1 10 IO:write_byte IO:check
 }
 
 fn main2 "_start2" () {
@@ -161,14 +164,14 @@ fn main2 "_start2" () {
     local read: i32 
 
     find_fds 
-    3 2 get_arg open_file U:check #fd
+    3 2 get_arg open_file IO:check #fd
 
     loop {
-        $fd $buf 64 U:read U:check #read
+        $fd $buf 64 IO:read IO:check #read
         $read 0 = if { break }
-        1 $buf $read U:write_all U:check
+        1 $buf $read IO:write_all IO:check
     }
 
-    1 10 U:write_byte U:check
+    1 10 IO:write_byte IO:check
 }
 

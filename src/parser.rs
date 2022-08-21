@@ -614,11 +614,10 @@ impl Parser {
         Ok(Module {
             externs,
             functions,
-            path: PathBuf::from(path.as_ref()),
+            path: PathBuf::from(path.as_ref()).canonicalize().unwrap(),
             imports,
             structs,
-            memory
+            memory,
         })
     }
 }
-

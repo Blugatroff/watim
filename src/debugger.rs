@@ -144,13 +144,15 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
                     }
                 })
                 .collect();
-            let data: String = Itertools::intersperse(data
-                .iter()
-                .flat_map(|b| [*b >> 4, *b & 0b00001111].map(nibble_to_hex))
-                .collect::<Vec<char>>()
-                .chunks(4), &[' '])
-                .flatten()
-                .collect();
+            let data: String = Itertools::intersperse(
+                data.iter()
+                    .flat_map(|b| [*b >> 4, *b & 0b00001111].map(nibble_to_hex))
+                    .collect::<Vec<char>>()
+                    .chunks(4),
+                &[' '],
+            )
+            .flatten()
+            .collect();
             stdout
                 .execute(MoveTo(81, y as u16 + 1))?
                 .execute(Print(format_args!("{start:08x}: {data}  {text}")))?;

@@ -1,9 +1,11 @@
-import "./util.watim" as U
+import "../std/io.watim" as IO
+import "../std/util.watim" as U
+import "../std/core.watim" as CORE
 
 fn main "_start" () {
     memory buf: i32 32;
     local nread: i32
-    0 $buf 32 U:read #nread
+    0 $buf 32 IO:read IO:check #nread
     $buf $nread 1 - U:parse
-    U:dup U:print U:exit
+    CORE:dup IO:print CORE:exit
 }

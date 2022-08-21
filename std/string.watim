@@ -1,0 +1,87 @@
+import "./alloc.watim" as A
+import "./core.watim" as CORE
+
+struct Str {
+    ptr: .i32
+    len: i32
+}
+fn Str-free(str: .Str) {
+    $str.ptr load32 A:free
+    $str !.i32 A:free
+}
+fn Str-new(ptr: .i32, len: i32) -> .Str {
+    local buf: .i32
+    local s: .Str
+    $len A:alloc #buf
+    $ptr $buf $len CORE:copy
+    8 A:alloc !.Str #s
+    $s.ptr $buf store32
+    $s.len $len store32
+    $s
+}
+fn Str-copy(str: .Str) -> .Str {
+    $str.ptr load32 $str.len load32 Str-new
+}
+fn Str-len(str: .Str) -> i32 {
+    $str.len load32
+}
+fn Str-get(str: .Str) -> .i32, i32 {
+    $str.ptr load32 $str.len load32
+}
+
+struct StrVec {
+    ptr: ..Str
+    len: i32
+    cap: i32
+}
+fn StrVec-new() -> .StrVec {
+    local vec: .StrVec
+    12 A:alloc !.StrVec #vec
+    $vec.ptr 0 !..Str store32
+    $vec.len 0 store32
+    $vec.cap 0 store32
+    $vec
+}
+fn StrVec-len(vec: .StrVec) -> i32 {
+    $vec.len load32
+}
+fn StrVec-get(vec: .StrVec, index: i32) -> .i32, i32 {
+    $vec.ptr load32 $index 4 * + load32 Str-get
+}
+fn StrVec-free(vec: .StrVec) {
+    local i: i32
+    local ptr: ..Str
+    local s: .Str
+    $vec.ptr load32 #ptr
+    loop {
+        $i $vec.len load32 = if { break }
+        $ptr $i 4 * + load32 #s
+        $s Str-free
+        $i 1 + #i
+    }
+    $vec.ptr load32 !.i32 A:free
+    $vec !.i32 A:free
+}
+fn StrVec-push(vec: .StrVec, str: .Str) {
+    local new-buf: ..Str
+    local size: i32
+    $vec.len load32 1 + $vec.cap load32 <= if {
+        $vec.ptr load32 $vec.len load32 4 * + $str store32
+        // increment len
+        $vec.len $vec.len load32 1 + store32
+    } else {
+        $vec.cap load32 2 CORE:max 2 * #size
+        $size 4 * A:alloc !..Str #new-buf
+        $vec.ptr load32 !.i32
+        $new-buf !.i32
+        $vec.len load32 4 * 
+        CORE:copy
+        $vec.cap $size store32
+        $vec.len load32 0 > if {
+            $vec.ptr load32 !.i32 A:free
+        }
+        $vec.ptr $new-buf store32
+        $vec $str StrVec-push
+    }
+}
+

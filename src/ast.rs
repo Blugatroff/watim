@@ -362,7 +362,7 @@ pub struct CheckedModule {
     pub imports: HashMap<String, CheckedImport>,
     pub functions: Vec<CheckedFunction>,
     pub path: PathBuf,
-    pub globals: Vec<Memory<ResolvedType, CheckedIdent>>
+    pub globals: Vec<Memory<ResolvedType, CheckedIdent>>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,26 +1,48 @@
-memory MEM: i32 16384 4;
+import "./io.watim" as IO
+import "./core.watim" as CORE
 
-fn init() {
-    local root: .i32
+memory LOGGING: bool 4 4;
+fn enable-logging() {
+    $LOGGING 0 0 = store32
+}
+fn disable-logging() {
+    $LOGGING 0 1 = store32
+}
+fn logging() -> bool {
+    $LOGGING !.i32 load32 0 /=
+}
+memory ROOT: .i32 4 4;
+memory BUF_SIZE: i32 4 4;
+fn root() -> .i32 {
+    $ROOT load32
+}
+fn set-root(root: .i32) {
+    $ROOT $root store32
+}
+fn buf-size() -> i32 {
+    $BUF_SIZE load32
+}
+fn set-buf-size(size: i32) {
+    $BUF_SIZE $size store32
+}
+
+fn init(mem: .i32, size: i32) {
     local next: .i32
-    local size: i32
     
-    $MEM 4 + #root
+    logging if { 1 "ALLOC RESET: \n" IO:write_all IO:check }
+    $mem set-root
+    $size set-buf-size
     // Set the next pointer of the init block to 0 since there is only this block. 
     0 !.i32 #next
     // Store the next pointer in the block.
-    $root $next !i32 store32
-    // MEM_CAPACITY - root_ptr
-    16384 4 - #size
-    $root 4 + $size store32
+    root $next !i32 store32
+    // Store the size of the block.
+    root 4 + $size store32
     // Mark this block as unused.
-    $root 8 + 0 store32
-    // Make the root point to this block.
-    $MEM !.i32 $root !i32 store32
+    root 8 + 0 store32
 }
 
 fn alloc(size: i32) -> .i32 {
-    local root: .i32
     local prev: .i32
     local block: .i32
     local next: .i32
@@ -28,10 +50,10 @@ fn alloc(size: i32) -> .i32 {
     local new-block: .i32
     local n: i32
     local unused: bool
-
-    $MEM !.i32 load32 !.i32 #root
-    $root #prev
-    $root #block
+    
+    $size 4 CORE:align-to #size
+    root #prev
+    root #block
 
     loop {
         $block load32 !.i32 #next
@@ -59,16 +81,17 @@ fn alloc(size: i32) -> .i32 {
             $block 4 + $size 12 + store32
             $block 8 + 1 store32
 
-            $root $prev = if {
+            root $prev = if {
                 $new-block !i32 0 = if {
-                    $MEM !.i32 $block !i32 store32
+                    $block set-root
                 } else {
-                    $MEM !.i32 $new-block !i32 store32
+                    $new-block set-root
                 }
             } else {
                 $prev $new-block !i32 store32
             }
 
+            logging if { 1 "ALLOCED ptr: " IO:write_all IO:check $block 12 + !i32 IO:print 1 " size: " IO:write_all IO:check $size IO:print 1 "\n" IO:write_all IO:check }
             $block 12 + break
         }
         $next !i32 0 = if {
@@ -89,44 +112,47 @@ fn find_next_free(block: .i32) -> .i32 {
     }
 }
 
+fn find_prev_free(block: .i32) -> .i32 {
+    local b: .i32
+    root #b
+    loop {
+        $b load32 $block !i32 >= if {
+            $b break
+        }
+        $b load32 !.i32 #b
+    }
+}
+
 fn free(ptr: .i32) {
     local block: .i32
     local next: .i32
     local next_free: .i32
-    local root: .i32
     local b: .i32
-
+    local size: i32
+    
     $ptr 12 - #block
     $block load32 !.i32 #next
     $next find_next_free #next_free
-
+    $block 4 + load32 12 - #size
+    logging if { 1 "FREEING ptr: " IO:write_all IO:check $ptr !i32 IO:print 1 " size: " IO:write_all IO:check $size IO:print 1 "\n" IO:write_all IO:check }
     $block $next_free !i32 store32
     $block 8 + 0 store32
 
-    $MEM load32 !.i32 #root
-    $root !i32 $block !i32 > if {
-        $MEM $block !i32 store32
+    root !i32 $block !i32 > if {
+        $block set-root
     } else {
-        $block $root = $root load32 0 = and if {
+        $block root = root load32 0 = and if {
             // The last block is being freed, therefore 
             // everything is free and we can simply reset.
-            init
+            root buf-size init
         } else {
-            $root #b
-            loop {
-                $b $b 4 + load32 + $block = if {
-                    $b !..i32 $block store32 
-                    break
-                }
-                $b load32 !.i32 #b
-            }
-        }
+            $block find_prev_free !..i32 $block store32
+       }
     }
     merge
 }
 
 fn merge() {
-    local root: .i32
     local block: .i32
     local next: .i32
     local size: i32
@@ -135,8 +161,7 @@ fn merge() {
     local next_size: i32
     local next_used: bool
 
-    $MEM load32 !.i32 #root
-    $root #block
+    root #block
 
     loop {
         $block !i32 0 = if { break }
@@ -156,5 +181,37 @@ fn merge() {
             $next #block
         }
     }
+}
+
+fn print_alloc_list(start: .i32) {
+    local block: .i32
+    local next: .i32
+    local size: i32
+    local used: bool
+    $start #block
+    1 "BLOCK LIST STARTING AT: " IO:write_all IO:check $block !i32 IO:print 1 10 IO:write_byte IO:check
+    loop {
+        $block !i32 0 = if { break }
+        $block load32 !.i32 #next
+        $block 4 + load32 #size
+        $block 8 + load32 0 > #used
+
+        1 9 IO:write_byte IO:check 
+        $block !i32 IO:print
+        1 ": " IO:write_all IO:check
+        1 " " IO:write_all IO:check
+        $next !i32 IO:print
+        1 " " IO:write_all IO:check
+        $size IO:print
+        1 " " IO:write_all IO:check
+        $used !i32 IO:print
+        1 10 IO:write_byte IO:check 
+
+        $next #block
+    }
+}
+
+fn is_empty() -> bool {
+    root 4 + load32 buf-size =
 }
 

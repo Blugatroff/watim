@@ -1,20 +1,23 @@
 
 ================================
-extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .i32, iovs_count: i32, nwritten: .i32) -> i32
-import "./samples/alloc.watim" as A
-import "./samples/util.watim" as U
+import "./std/alloc.watim" as A
+import "./std/util.watim" as U
+import "./std/io.watim" as IO
+import "./std/core.watim" as CORE
+
+memory MEM: i32 1000 4;
 
 fn main "_start" () {
     local a: .i32
     local b: .i32
     local i: i32
 
-    A:init
+    $MEM 1000 A:init
 
     100 A:alloc #a
     100 A:alloc #b
 
-    $a $b = !i32 U:print 1 10 U:write_byte U:check
+    $a $b = !i32 IO:print 1 10 IO:write_byte IO:check
     
     loop {
         $i 256 = if { break }
@@ -27,9 +30,9 @@ fn main "_start" () {
         $b $i + 8 store8
         $i 1 + #i
     }
-    $a 85 + load8 U:print 1 10 U:write_byte U:check
-    $b load8 U:print 1 10 U:write_byte U:check
-    $b 90 + load8 U:print 1 10 U:write_byte U:check
+    $a 85 + load8 IO:print 1 10 IO:write_byte IO:check
+    $b load8 IO:print 1 10 IO:write_byte IO:check
+    $b 90 + load8 IO:print 1 10 IO:write_byte IO:check
 }
 ================================
 0

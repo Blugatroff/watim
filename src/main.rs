@@ -71,6 +71,9 @@ fn test() {
         let out = run(program, input.as_bytes());
         let out = String::from_utf8_lossy(&out);
         let out = std::borrow::Cow::Borrowed(&out);
+        if output != out {
+            log::error!("Test {} FAILED", entry.path().display());
+        }
         assert_eq!(output, out);
     }
 }

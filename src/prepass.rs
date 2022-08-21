@@ -41,7 +41,7 @@ impl UncheckedProgram<UnResolvedType> {
             let tokens = Scanner::scan_tokens(input, path.clone())?;
             let module = parser::Parser::new(tokens).parse(&path)?;
             let imports = module.imports.clone();
-            modules.insert(path.clone(), module);
+            modules.insert(path.canonicalize()?, module);
             for import in imports {
                 let path = path.parent().unwrap().join(import.path);
                 let input = loader(path.as_path())?;
@@ -58,7 +58,7 @@ impl UncheckedProgram<UnResolvedType> {
     pub fn resolve(self) -> Result<UncheckedProgram<ResolvedType>, WatimError> {
         let root = self.modules.get(&self.root).unwrap();
         let mut structs = HashMap::new();
-        fn bla(
+        fn inner(
             module: &Module<UnResolvedType>,
             modules: &BTreeMap<PathBuf, Module<UnResolvedType>>,
             structs: &mut HashMap<PathBuf, HashMap<String, Arc<Struct<ResolvedType>>>>,
@@ -82,7 +82,7 @@ impl UncheckedProgram<UnResolvedType> {
                         )))
                     }
                 };
-                bla(m, modules, structs, resolved_modules)?;
+                inner(m, modules, structs, resolved_modules)?;
                 modules_idents.insert(import.ident.clone(), path);
             }
             let current_module = &module.path;
@@ -287,7 +287,7 @@ impl UncheckedProgram<UnResolvedType> {
                 });
             }
             resolved_modules.insert(
-                module.path.clone(),
+                module.path.canonicalize()?,
                 Module {
                     externs,
                     functions,
@@ -300,7 +300,7 @@ impl UncheckedProgram<UnResolvedType> {
             Ok(())
         }
         let mut resolved_modules = BTreeMap::new();
-        bla(root, &self.modules, &mut structs, &mut resolved_modules)?;
+        inner(root, &self.modules, &mut structs, &mut resolved_modules)?;
         Ok(UncheckedProgram {
             modules: resolved_modules,
             root: self.root,

@@ -1,4 +1,4 @@
-import "./util.watim" as U
+import "../std/io.watim" as IO
 
 fn print_alphabet() {
     memory buf: i32 27; // 26 letters + \n
@@ -8,7 +8,7 @@ fn print_alphabet() {
         $i $buf !i32 + !.i32 97 $i + store8
         $i $buf !i32 + 1 + !.i32 10 store8
 
-        1 $buf $i 2 + U:write_all drop
+        1 $buf $i 2 + IO:write_all IO:check
         
         $i 1 + #i
     }

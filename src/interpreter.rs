@@ -287,9 +287,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
                     .get(&ident.module_prefix)
                     .and_then(|m| m.get(&ident.ident))
                 {
-                    Some((value, ty)) => {
-                        stack.push(Value::Ptr(*value, ty.clone()))
-                    }
+                    Some((value, ty)) => stack.push(Value::Ptr(*value, ty.clone())),
                     None => todo!(),
                 }
             }

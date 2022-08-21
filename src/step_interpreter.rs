@@ -1,6 +1,6 @@
 use crate::{
     ast::{CheckedFunction, CheckedIff, CheckedLoop, CheckedWord, Program, ResolvedType},
-    interpreter::{Error, InterpreterFunction, Value, execute_extern},
+    interpreter::{execute_extern, Error, InterpreterFunction, Value},
     intrinsics::execute_intrinsic,
     scanner::Location,
 };
@@ -282,7 +282,12 @@ impl StepInterpreter {
                 intrinsic,
                 location,
                 ..
-            } => execute_intrinsic(&intrinsic, &location, &mut self.scope.stack, &mut self.memory),
+            } => execute_intrinsic(
+                &intrinsic,
+                &location,
+                &mut self.scope.stack,
+                &mut self.memory,
+            ),
             CheckedWord::If(CheckedIff { body, el, .. }) => {
                 let condition = match self.scope.stack.pop() {
                     Some(Value::Bool(v)) => v,
@@ -358,7 +363,7 @@ impl StepInterpreter {
             },
             CheckedWord::Global { .. } => {
                 todo!()
-            },
+            }
         }
     }
 }

@@ -1,0 +1,36 @@
+extern "wasi_unstable" "proc_exit" fn raw_exit(code: i32)
+
+fn dup(a: i32) -> i32, i32 {
+    $a $a
+}
+
+fn flip(a: i32, b: i32) -> i32, i32 {
+    $b $a
+}
+
+fn max(a: i32, b: i32) -> i32 {
+    $a $b > if { $a } else { $b }
+}
+
+fn min(a: i32, b: i32) -> i32 {
+    $a $b < if { $a } else { $b }
+}
+
+fn align-to(n: i32, to: i32) -> i32 {
+    $n $to $n $to % - $n $to % 0 > !i32 * +
+}
+
+fn copy(a: .i32, b: .i32, len: i32) {
+    loop {
+        $len 0 = if { break }
+        $b $a load8 store8
+        $len 1 - #len
+        $a 1 + #a
+        $b 1 + #b
+    }
+}
+
+fn exit(code: i32) {
+    $code raw_exit
+}
+
