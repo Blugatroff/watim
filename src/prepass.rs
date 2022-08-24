@@ -196,6 +196,7 @@ impl UncheckedProgram<UnResolvedType> {
                                     Intrinsic::GE => Intrinsic::GE,
                                     Intrinsic::Mul => Intrinsic::Mul,
                                     Intrinsic::Rotr => Intrinsic::Rotr,
+                                    Intrinsic::Rotl => Intrinsic::Rotl,
                                     Intrinsic::Cast(ty) => Intrinsic::Cast(resolve_ty(
                                         &ty,
                                         structs,

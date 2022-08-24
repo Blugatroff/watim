@@ -313,9 +313,14 @@ impl std::fmt::Display for CheckedIntrinsic {
             CheckedIntrinsic::Eq(ty) => return write!(f, "{}.eq", gen_type(ty)),
             CheckedIntrinsic::Div(ty) => return write!(f, "{ty}.div_u"),
             CheckedIntrinsic::Mod(ty) => return write!(f, "{ty}.rem_u"),
-            CheckedIntrinsic::And => "i32.and",
+            CheckedIntrinsic::And(ResolvedType::I32) => "i32.and",
+            CheckedIntrinsic::And(ResolvedType::I64) => "i64.and",
+            CheckedIntrinsic::And(ResolvedType::Bool) => "i32.and",
+            CheckedIntrinsic::And(_) => todo!(),
             CheckedIntrinsic::Not => "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and",
-            CheckedIntrinsic::Or => "i32.or",
+            CheckedIntrinsic::Or(ResolvedType::I32) => "i32.or",
+            CheckedIntrinsic::Or(ResolvedType::I64) => "i64.or",
+            CheckedIntrinsic::Or(_) => todo!(),
             CheckedIntrinsic::L => "i32.lt_u",
             CheckedIntrinsic::G => "i32.gt_u",
             CheckedIntrinsic::LE => "i32.le_u",
@@ -325,6 +330,9 @@ impl std::fmt::Display for CheckedIntrinsic {
             CheckedIntrinsic::Rotr(ResolvedType::I32) => "i32.rotr",
             CheckedIntrinsic::Rotr(ResolvedType::I64) => "i64.extend_i32_s i64.rotr",
             CheckedIntrinsic::Rotr(_) => todo!(),
+            CheckedIntrinsic::Rotl(ResolvedType::I32) => "i32.rotl",
+            CheckedIntrinsic::Rotl(ResolvedType::I64) => "i64.extend_i32_s i64.rotl",
+            CheckedIntrinsic::Rotl(_) => todo!(),
             CheckedIntrinsic::Cast(from, to) => match (from, to) {
                 (from, to) if from == to => "",
                 (ResolvedType::Ptr(_), ResolvedType::Ptr(_)) => "",
@@ -333,6 +341,7 @@ impl std::fmt::Display for CheckedIntrinsic {
                 (ResolvedType::I32, ResolvedType::I64) => "i64.extend_i32_s",
                 (ResolvedType::I64, ResolvedType::I32) => "i32.wrap_i64",
                 (ResolvedType::I32, ResolvedType::Ptr(_)) => "",
+                (ResolvedType::Bool, ResolvedType::I64) => "i64.extend_i32_s",
                 _ => {
                     todo!()
                 }

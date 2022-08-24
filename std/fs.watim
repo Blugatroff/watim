@@ -1,0 +1,163 @@
+import "./core.watim" as CORE
+import "./io.watim" as IO
+import "./alloc.watim" as A
+import "./string.watim" as S
+import "./i32vec.watim" as IV
+
+extern "wasi_unstable" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .i32) -> i32
+extern "wasi_unstable" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
+extern "wasi_unstable" "path_open" fn path_open(
+    fd: i32, 
+    dirflags: i32, 
+    path: .i32, 
+    path_len: i32, 
+    oflags: i32, 
+    fs_rights_base: i64, 
+    fs_rights_inheriting: i64, 
+    fd_flags: i32, 
+    res_fd: .i32
+) -> i32
+
+fn create-rights(read: bool, write: bool) -> i64 {
+    $read !i64 1 rotl // 1 << 1
+    $write !i64 5 rotl
+    or
+}
+
+fn open-file(path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> i32, i32 {
+    memory res_fd: i32 4 4;
+    local code: i32
+    local parent-fd: i32
+    find-current-dir #code #parent-fd
+    $code 0 /= if {
+        0 $code
+    } else {
+        $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 $res_fd path_open #code
+        $res_fd load32 $code
+    }
+}
+
+fn read-file(path: .i32, path-len: i32) -> .S:Str, i32 {
+    local code: i32
+    local fd: i32
+    $path $path-len
+    0 0 = 0 1 = create-rights
+    0 1 = 0 1 = create-rights
+    open-file #code #fd
+    $code 0 /= if {
+        0 !.S:Str $code
+    } else {
+        $fd read-all
+    }
+}
+
+fn read-all(file: i32) -> .S:Str, i32 {
+    local buf: .i32
+    local old-buf: .i32
+    local buf-size: i32
+    local read: i32
+    local code: i32
+    local r: i32
+    0 #read
+    0 #r
+    64 #buf-size
+    $buf-size A:alloc #buf
+
+    loop {
+        $buf-size $read = if {
+            $buf #old-buf
+            $buf-size 2 * A:alloc #buf
+            $buf !i32 0 = if {
+                $old-buf A:free
+                // 48 Error code = Not enough space
+                0 !.S:Str 48 break
+            }
+            $old-buf $buf $buf-size CORE:copy
+            $buf-size 2 * #buf-size
+            $old-buf A:free
+        }
+        $file 
+        $buf $read + 
+        $buf-size $read -
+        IO:read #code #r
+        $code 0 /= if {
+            $buf A:free
+            0 !.S:Str $code break
+        }
+        $r 0 = if {
+            $buf $read S:Str-new-from-buf 0 break
+        } else {
+            $read $r + #read
+        }
+    }
+}
+
+struct Prestat {
+    kind: i32
+    path_len: i32
+}
+
+fn get-preopened-fds() -> .IV:I32Vec, .S:StrVec, i32 {
+    memory prestat: Prestat 8 4;
+    local fd: i32
+    local code: i32
+    local buf: .i32
+    local len: i32
+    local fds: .IV:I32Vec
+    local paths: .S:StrVec
+    3 #fd
+    IV:I32Vec-new #fds
+    S:StrVec-new #paths
+    loop {
+        $fd $prestat !.i32 fd_prestat_get #code
+        // 8 = Bad file descriptor
+        $code 8 = if { 
+            $fds $paths 0 break 
+        }
+        $code 0 /= if {
+            $fds IV:I32Vec-free
+            $paths S:StrVec-free $fds $paths $code break
+        }
+        $prestat.path_len load32 #len
+        $len A:alloc #buf
+        $fd $buf $len fd_prestat_dir_name #code
+        $code 0 /= if {
+            $fds IV:I32Vec-free
+            $paths S:StrVec-free
+            $fds $paths $code break
+        }
+        $fds $fd IV:I32Vec-push
+        $paths $buf $len S:Str-new S:StrVec-push
+        $buf A:free
+        $fd 1 + #fd
+    }
+}
+
+// returns 0, 0 if not found
+// returns 0, e if error
+fn find-current-dir() -> i32, i32 {
+    local fds: .IV:I32Vec
+    local paths: .S:StrVec
+    local code: i32
+    local i: i32
+    get-preopened-fds #code #paths #fds
+    $code 0 = if {
+        loop {
+            $i $fds IV:I32Vec-len = if { 
+                $fds IV:I32Vec-free
+                $paths S:StrVec-free
+                // not found
+                0 0 break
+            }
+            $paths $i S:StrVec-get "." S:str-eq if {
+                $fds IV:I32Vec-free
+                $paths S:StrVec-free
+                $fds $i IV:I32Vec-get 0 break
+            }
+            $i 1 + #i 
+        }
+    } else {
+        0 $code
+    }
+}
+

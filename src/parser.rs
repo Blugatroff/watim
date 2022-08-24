@@ -387,6 +387,11 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Rotr,
                     })
+                } else if &ident.lexeme == "rotl" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Rotl,
+                    })
                 } else if self.matsch(TokenType::Colon).is_some() {
                     let ident_2 = self.ident()?;
                     Ok(Word::Call {

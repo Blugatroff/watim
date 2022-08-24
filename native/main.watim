@@ -2,31 +2,32 @@ import "../std/alloc.watim" as A
 import "../std/args.watim" as ARGS
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
-import "../std/core.watim" as CORE
+import "../std/fs.watim" as FS
 
 memory MEM: i32 16384 4;
 
-fn print-args(args: .S:StrVec) {
-    local i: i32
-    loop {
-        $i $args S:StrVec-len = if { break }
-        1 $args $i S:StrVec-get IO:write_all IO:check
-        1 "\n" IO:write_all IO:check
-        $i 1 + #i
-    }
-}
-
 fn main "_start" () {
     local args: .S:StrVec
+    local str: .S:Str
     A:enable-logging
     A:disable-logging
     $MEM 16384 A:init
     ARGS:get-args #args
-    $args print-args
-    $args S:StrVec-free
+    
+    $args S:StrVec-print
+    1 "\n" IO:write-all IO:check
+    1 "\n" IO:write-all IO:check
 
-    A:is_empty not if {
-        1 "MEMORY LEAK DETECTED\n" IO:write_all IO:check
+    $args 1 S:StrVec-get FS:read-file IO:check #str
+    1 $str S:Str-get IO:write-all IO:check
+    1 "\n" IO:write-all IO:check
+    A:report
+    $str S:Str-free
+    $args S:StrVec-free
+    A:report
+    A:is-empty not if {
+        A:root A:print-alloc-list
+        1 "MEMORY LEAK DETECTED\n" IO:write-all IO:check
     }
 }
 

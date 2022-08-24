@@ -1,5 +1,23 @@
 import "./alloc.watim" as A
 import "./core.watim" as CORE
+import "./io.watim" as IO
+
+fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
+    local i: i32
+    $len-a $len-b = if {
+        loop {
+            $i $len-a = if { 0 0 = break }
+            $ptr-a $i + load8
+            $ptr-b $i + load8
+            /= if {
+                0 1 = break
+            }
+            $i 1 + #i
+        }
+    } else {
+        0 1 =
+    }
+}
 
 struct Str {
     ptr: .i32
@@ -14,8 +32,12 @@ fn Str-new(ptr: .i32, len: i32) -> .Str {
     local s: .Str
     $len A:alloc #buf
     $ptr $buf $len CORE:copy
+    $buf $len Str-new-from-buf
+}
+fn Str-new-from-buf(ptr: .i32, len: i32) -> .Str {
+    local s: .Str
     8 A:alloc !.Str #s
-    $s.ptr $buf store32
+    $s.ptr $ptr store32
     $s.len $len store32
     $s
 }
@@ -46,6 +68,10 @@ fn StrVec-len(vec: .StrVec) -> i32 {
     $vec.len load32
 }
 fn StrVec-get(vec: .StrVec, index: i32) -> .i32, i32 {
+    $index $vec StrVec-len >= if { 
+        1 "Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
     $vec.ptr load32 $index 4 * + load32 Str-get
 }
 fn StrVec-free(vec: .StrVec) {
@@ -59,7 +85,7 @@ fn StrVec-free(vec: .StrVec) {
         $s Str-free
         $i 1 + #i
     }
-    $vec.ptr load32 !.i32 A:free
+    $vec StrVec-len 0 > if { $vec.ptr load32 !.i32 A:free }
     $vec !.i32 A:free
 }
 fn StrVec-push(vec: .StrVec, str: .Str) {
@@ -82,6 +108,22 @@ fn StrVec-push(vec: .StrVec, str: .Str) {
         }
         $vec.ptr $new-buf store32
         $vec $str StrVec-push
+    }
+}
+fn StrVec-print(strings: .StrVec) {
+    local i: i32
+    $strings StrVec-len 0 = if {
+        1 "[]" IO:write-all IO:check
+    } else {
+        1 "[\n" IO:write-all IO:check
+        loop {
+            $i $strings StrVec-len = if { break }
+            1 "  \"" IO:write-all IO:check
+            1 $strings $i StrVec-get IO:write-all IO:check
+            1 "\",\n" IO:write-all IO:check
+            $i 1 + #i
+        }
+        1 "]" IO:write-all IO:check
     }
 }
 

@@ -1,6 +1,7 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./alloc.watim" as A
+import "./string.watim" as S
 
 fn parse(pt: .i32, len: i32) -> i32 {
     local n: i32
@@ -14,56 +15,16 @@ fn parse(pt: .i32, len: i32) -> i32 {
         $d 48 >= $d 58 <= and if { // 48 is ascii '0'
             $n $d 48 - + #n
         } else {
-            1 "Failed to parse: '" IO:write_all IO:check
-            1 $original-ptr $original-len IO:write_all IO:check
-            1 "'" IO:write_all IO:check
-            1 10 IO:write_byte IO:check
+            1 "Failed to parse: '" IO:write-all IO:check
+            1 $original-ptr $original-len IO:write-all IO:check
+            1 "'" IO:write-all IO:check
+            1 10 IO:write-byte IO:check
             1 CORE:exit
         }
         $pt 1 + #pt // advance pointer
         $len 1 - #len // reduce length
         $len 0 = if { $n break }
         $n 10 * #n
-    }
-}
-
-fn read_all(file: i32) -> .i32, i32, i32 {
-    local buf: .i32
-    local old-buf: .i32
-    local buf-size: i32
-    local read: i32
-    local code: i32
-    local r: i32
-    0 #read
-    0 #r
-    64 #buf-size
-    $buf-size A:alloc #buf
-
-    loop {
-        $buf-size $read = if {
-            $buf #old-buf
-            $buf-size 2 * A:alloc #buf
-            $buf !i32 0 = if {
-                $old-buf A:free
-                // 48 Error code = Not enough space
-                0 !.i32 0 48 break
-            }
-            $old-buf $buf $buf-size CORE:copy
-            $buf-size 2 * #buf-size
-            $old-buf A:free
-        }
-        $file 
-        $buf $read + 
-        $buf-size $read -
-        IO:read #code #r
-        $code 0 /= if {
-            0 !.i32 0 $code break
-        }
-        $r 0 = if {
-            $buf $read 0 break
-        } else {
-            $read $r + #read
-        }
     }
 }
 

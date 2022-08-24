@@ -76,6 +76,7 @@ pub enum Intrinsic<Type> {
     GE,
     Mul,
     Rotr,
+    Rotl,
     Cast(Type),
 }
 
@@ -92,15 +93,16 @@ pub enum CheckedIntrinsic {
     NotEq(ResolvedType),
     Mod(ResolvedType),
     Div(ResolvedType),
-    And,
+    And(ResolvedType),
     Not,
-    Or,
+    Or(ResolvedType),
     L,
     G,
     LE,
     GE,
     Mul,
     Rotr(ResolvedType),
+    Rotl(ResolvedType),
     Cast(ResolvedType, ResolvedType),
 }
 

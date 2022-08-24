@@ -17,7 +17,7 @@ fn main "_start" () {
     100 A:alloc #a
     100 A:alloc #b
 
-    $a $b = !i32 IO:print 1 10 IO:write_byte IO:check
+    $a $b = !i32 IO:print 1 10 IO:write-byte IO:check
     
     loop {
         $i 256 = if { break }
@@ -30,9 +30,9 @@ fn main "_start" () {
         $b $i + 8 store8
         $i 1 + #i
     }
-    $a 85 + load8 IO:print 1 10 IO:write_byte IO:check
-    $b load8 IO:print 1 10 IO:write_byte IO:check
-    $b 90 + load8 IO:print 1 10 IO:write_byte IO:check
+    $a 85 + load8 IO:print 1 10 IO:write-byte IO:check
+    $b load8 IO:print 1 10 IO:write-byte IO:check
+    $b 90 + load8 IO:print 1 10 IO:write-byte IO:check
 }
 ================================
 0

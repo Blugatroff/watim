@@ -1,177 +1,24 @@
-import "../std/util.watim" as U
-import "../std/io.watim" as IO
-import "../std/core.watim" as CORE
 import "../std/alloc.watim" as A
-
-extern "wasi_unstable" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .i32) -> i32
-extern "wasi_unstable" "fd_filestat_get" fn fd_filestat_get(fd: i32, filestat: .i32) -> i32
-extern "wasi_unstable" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
-extern "wasi_unstable" "path_open" fn path_open(
-    fd: i32, 
-    dirflags: i32, 
-    path: .i32, 
-    path_len: i32, 
-    oflags: i32, 
-    fs_rights_base: i64, 
-    fs_rights_inheriting: i64, 
-    fd_flags: i32, 
-    res_fd: .i32
-) -> i32
-extern "wasi_unstable" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
-extern "wasi_unstable" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
-
-fn fd_is_open(fd: i32) -> i32 {
-    memory filestat: i32 64 8;
-    $fd $filestat fd_filestat_get
-}
-
-fn prestat(fd: i32) {
-    memory filestat: i32 8 4;
-    memory path: i32 512;
-    local code: i32
-    local len: i32
-    $fd $filestat fd_prestat_get #code
-    $code 0 /= if {
-        1 "Prestat Error Code: " IO:write_all IO:check $code IO:print
-    } else {
-        $filestat 4 + load32 #len
-        $fd $path $len fd_prestat_dir_name IO:check
-        1 $path $len IO:write_all IO:check 1 10 IO:write_byte IO:check
-    }
-}
-
-fn find_fds() {
-    local fd: i32
-    local code: i32
-    3 #fd
-    loop {
-        $fd fd_is_open 0 = if {
-            $fd prestat
-        } else {
-            break
-        }
-        $fd 1 + #fd
-    }
-}
-
-fn open_file(parent_fd: i32, path: .i32, path_len: i32) -> i32, i32 {
-    memory res_fd: i32 4 4;
-    local fs_rights_base: i64
-    local code: i32
-    2 !i64 #fs_rights_base
-    $parent_fd 0 $path $path_len 0 $fs_rights_base 0 !i64 0 $res_fd path_open #code
-    $res_fd load32 $code
-}
-
-fn print_args() {
-    memory arg_number_ptr: i32 4 4;
-    memory arg_sizes_ptr: i32 4 4;
-    memory buf: i32 1000;
-    local arg_number: i32
-    local arg_sizes: i32
-    local arg_buf_start: .i32
-    local i: i32
-    local ptr: .i32
-    local j: i32
-
-    $arg_number_ptr $arg_sizes_ptr args_sizes_get 
-    $arg_number_ptr load32 #arg_number
-    $arg_sizes_ptr load32 #arg_sizes
-    IO:check
-
-    $buf $arg_number 4 * + #arg_buf_start
-    $buf !..i32 $arg_buf_start args_get IO:check
-
-    1 "Args: \n" IO:write_all IO:check
-    loop {
-        $i $arg_number >= if { break }
-
-        $buf $i 4 * + load32 !.i32 #ptr
-
-        0 #j
-        loop {
-            $ptr $j + load8 0 = if { break }
-            $j 1 + #j
-        }
-
-        1 $ptr $j IO:write_all IO:check 1 10 IO:write_byte IO:check
-
-        $i 1 + #i
-    }
-}
-
-fn get_arg(n: i32) -> .i32, i32 {
-    memory arg_number_ptr: i32 4 4;
-    memory arg_sizes_ptr: i32 4 4;
-    memory buf: i32 1000;
-    local arg_number: i32
-    local arg_sizes: i32
-    local arg_buf_start: .i32
-    local i: i32
-    local ptr: .i32
-    local j: i32
-
-    $arg_number_ptr $arg_sizes_ptr args_sizes_get 
-    $arg_number_ptr load32 #arg_number
-    $arg_sizes_ptr load32 #arg_sizes
-    IO:check
-
-    $buf $arg_number 4 * + #arg_buf_start
-    $buf !..i32 $arg_buf_start args_get IO:check
-
-    loop {
-        $i $arg_number >= if { 
-            0 !.i32 0 break 
-        }
-        
-        $buf $i 4 * + load32 !.i32 #ptr
-
-        0 #j
-        loop {
-            $ptr $j + load8 0 = if { break }
-            $j 1 + #j
-        }
-        $n $i = if {
-            $ptr $j break
-        }
-        $i 1 + #i
-    }
-}
+import "../std/args.watim" as ARGS
+import "../std/string.watim" as S
+import "../std/io.watim" as IO
+import "../std/fs.watim" as FS
 
 memory MEM: i32 16384 4;
+
 fn main "_start" () {
-    local fd: i32
-    local len: i32
-    local ptr: .i32
+    local args: .S:StrVec
+    local str: .S:Str
 
     $MEM 16384 A:init
 
-    find_fds
-    3 2 get_arg 
-    open_file IO:check #fd
-    $fd U:read_all IO:check #len #ptr
+    ARGS:get-args #args
 
-    1 $ptr $len IO:write_all IO:check
+    $args 1 S:StrVec-get FS:read-file IO:check #str
 
-    $ptr A:free
+    1 $str S:Str-get IO:write-all IO:check
 
-    1 10 IO:write_byte IO:check
-}
-
-fn main2 "_start2" () {
-    memory buf: i32 64;
-    local fd: i32
-    local read: i32 
-
-    find_fds 
-    3 2 get_arg open_file IO:check #fd
-
-    loop {
-        $fd $buf 64 IO:read IO:check #read
-        $read 0 = if { break }
-        1 $buf $read IO:write_all IO:check
-    }
-
-    1 10 IO:write_byte IO:check
+    $str S:Str-free
+    $args S:StrVec-free
 }
 

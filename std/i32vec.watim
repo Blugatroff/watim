@@ -1,0 +1,70 @@
+import "./alloc.watim" as A
+import "./io.watim" as IO
+import "./core.watim" as CORE
+
+struct I32Vec {
+    ptr: .i32
+    len: i32
+    cap: i32
+}
+
+fn I32Vec-new() -> .I32Vec {
+    local vec: .I32Vec
+    12 A:alloc !.I32Vec #vec
+    $vec.ptr 0 !.i32 store32
+    $vec.len 0 store32
+    $vec.cap 0 store32
+    $vec
+}
+fn I32Vec-len(vec: .I32Vec) -> i32 {
+    $vec.len load32
+}
+fn I32Vec-get(vec: .I32Vec, index: i32) -> i32 {
+    $index $vec I32Vec-len >= if { 
+        1 "Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $vec.ptr load32 $index 4 * + load32
+}
+fn I32Vec-free(vec: .I32Vec) {
+    $vec I32Vec-len 0 > if { $vec.ptr load32 A:free }
+    $vec !.i32 A:free
+}
+fn I32Vec-push(vec: .I32Vec, val: i32) {
+    local new-buf: .i32
+    local size: i32
+    $vec.len load32 1 + $vec.cap load32 <= if {
+        $vec.ptr load32 $vec.len load32 4 * + $val store32
+        $vec.len $vec.len load32 1 + store32
+    } else {
+        $vec.cap load32 2 CORE:max 2 * #size
+        $size 4 * A:alloc #new-buf
+        $vec.ptr load32 !.i32
+        $new-buf !.i32
+        $vec.len load32 4 *
+        CORE:copy
+        $vec.cap $size store32
+        $vec.len load32 0 > if {
+            $vec.ptr load32 !.i32 A:free
+        }
+        $vec.ptr $new-buf store32
+        $vec $val I32Vec-push
+    }
+}
+fn I32Vec-print(vec: .I32Vec) {
+    local i: i32
+    $vec I32Vec-len 0 = if { 
+        1 "[]" IO:write-all IO:check
+    } else {
+        1 "[\n" IO:write-all IO:check
+        loop {
+            $i $vec I32Vec-len = if { break }
+            1 "  " IO:write-all IO:check
+            $vec $i I32Vec-get IO:print
+            1 ",\n" IO:write-all IO:check
+            $i 1 + #i
+        }
+        1 "]" IO:write-all IO:check
+    }
+}
+

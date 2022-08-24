@@ -301,7 +301,7 @@ pub fn execute_intrinsic(
                 }),
             ],
         ),
-        CheckedIntrinsic::And => expect_args(
+        CheckedIntrinsic::And(ResolvedType::Bool) => expect_args(
             location,
             stack,
             [(
@@ -312,6 +312,29 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
+        CheckedIntrinsic::And(ResolvedType::I32) => expect_args(
+            location,
+            stack,
+            [(
+                [ResolvedType::I32, ResolvedType::I32],
+                &mut |[a, b]| match (a, b) {
+                    (&Value::I32(a), &Value::I32(b)) => Some([Value::I32(a & b)]),
+                    _ => None,
+                },
+            )],
+        ),
+        CheckedIntrinsic::And(ResolvedType::I64) => expect_args(
+            location,
+            stack,
+            [(
+                [ResolvedType::I64, ResolvedType::I64],
+                &mut |[a, b]| match (a, b) {
+                    (&Value::I64(a), &Value::I64(b)) => Some([Value::I64(a & b)]),
+                    _ => None,
+                },
+            )],
+        ),
+        CheckedIntrinsic::And(_) => todo!(),
         CheckedIntrinsic::Not => expect_args(
             location,
             stack,
@@ -342,7 +365,6 @@ pub fn execute_intrinsic(
                 },
             )],
         ),
-        CheckedIntrinsic::Or => todo!(),
         CheckedIntrinsic::L => todo!(),
         CheckedIntrinsic::G => todo!(),
         CheckedIntrinsic::Cast(_, ResolvedType::I32) => expect_args(
@@ -397,6 +419,31 @@ pub fn execute_intrinsic(
                 ),
             ],
         ),
+        CheckedIntrinsic::Rotl(_) => expect_args(
+            location,
+            stack,
+            [
+                (
+                    [ResolvedType::I32, ResolvedType::I32],
+                    &mut |[v, shift]| match (v, shift) {
+                        (&Value::I32(v), Value::I32(shift)) => {
+                            Some([Value::I32(v.rotate_left(*shift as u32))])
+                        }
+                        _ => None,
+                    },
+                ),
+                (
+                    [ResolvedType::I64, ResolvedType::I32],
+                    &mut |[v, shift]| match (v, shift) {
+                        (&Value::I64(v), Value::I32(shift)) => {
+                            Some([Value::I64(v.rotate_left(*shift as u32))])
+                        }
+                        _ => None,
+                    },
+                ),
+            ],
+        ),
+
         CheckedIntrinsic::Cast(_, ResolvedType::Ptr(ty)) => expect_args(
             location,
             stack,
@@ -414,5 +461,7 @@ pub fn execute_intrinsic(
         CheckedIntrinsic::Cast(_, ResolvedType::Bool) => todo!(),
         CheckedIntrinsic::Cast(_, ResolvedType::AnyPtr) => todo!(),
         CheckedIntrinsic::Cast(_, ResolvedType::Custom(_)) => todo!(),
+        CheckedIntrinsic::Or(_) => todo!(),
+
     }
 }

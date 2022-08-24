@@ -727,17 +727,25 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::Bool, ResolvedType::Bool], &|_| {
-                            ResolvedType::Bool
-                        })],
+                        [
+                            ([ResolvedType::Bool, ResolvedType::Bool], &|_| {
+                                ResolvedType::Bool
+                            }),
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                ResolvedType::I64
+                            }),
+                        ],
                     )?;
-                    stack.push(ret);
+                    stack.push(ret.clone());
                     Ok((
                         Returns::Yes,
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: CheckedIntrinsic::And,
+                            intrinsic: CheckedIntrinsic::And(ret),
                         },
                     ))
                 }
@@ -745,17 +753,25 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     let ret = self.expect_stack(
                         stack,
                         &word,
-                        [([ResolvedType::Bool, ResolvedType::Bool], &|_| {
-                            ResolvedType::Bool
-                        })],
+                        [
+                            ([ResolvedType::Bool, ResolvedType::Bool], &|_| {
+                                ResolvedType::Bool
+                            }),
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I64], &|_| {
+                                ResolvedType::I64
+                            }),
+                        ],
                     )?;
-                    stack.push(ret);
+                    stack.push(ret.clone());
                     Ok((
                         Returns::Yes,
                         Vec::new(),
                         CheckedWord::Intrinsic {
                             location: location.clone(),
-                            intrinsic: CheckedIntrinsic::Or,
+                            intrinsic: CheckedIntrinsic::Or(ret),
                         },
                     ))
                 }
@@ -872,6 +888,29 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         },
                     ))
                 }
+                Intrinsic::Rotl => {
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [
+                            ([ResolvedType::I32, ResolvedType::I32], &|_| {
+                                ResolvedType::I32
+                            }),
+                            ([ResolvedType::I64, ResolvedType::I32], &|_| {
+                                ResolvedType::I64
+                            }),
+                        ],
+                    )?;
+                    stack.push(ret.clone());
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            location: location.clone(),
+                            intrinsic: CheckedIntrinsic::Rotl(ret),
+                        },
+                    ))
+                }
                 Intrinsic::Cast(ty) => {
                     let from = stack.last().unwrap().clone();
                     match ty {
@@ -906,6 +945,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 [
                                     ([ResolvedType::I32], &|_| ResolvedType::I64),
                                     ([ResolvedType::AnyPtr], &|_| ResolvedType::I64),
+                                    ([ResolvedType::Bool], &|_| ResolvedType::I64),
                                 ],
                             )?;
                             stack.push(ret);

@@ -1,5 +1,4 @@
 import "./core.watim" as CORE
-
 extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .i32, iovs_count: i32, read: .i32) -> i32
 extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
 
@@ -19,7 +18,7 @@ fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     $writ load32 $code
 }
 
-fn write_all_inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
+fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     local written: i32
     local code: i32
     $fd $pt $len write #code #written
@@ -30,7 +29,7 @@ fn write_all_inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
             $fd 
             $pt $written + 
             $len $written - 
-            write_all_inner
+            write-all-inner
             CORE:flip $written + CORE:flip
         }
     } else {
@@ -38,14 +37,14 @@ fn write_all_inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     }
 }
 
-fn write_all(fd: i32, pt: .i32, len: i32) -> i32 {
-    $fd $pt $len write_all_inner CORE:flip drop
+fn write-all(fd: i32, pt: .i32, len: i32) -> i32 {
+    $fd $pt $len write-all-inner CORE:flip drop
 }
 
-fn write_byte(file: i32, b: i32) -> i32 {
+fn write-byte(file: i32, b: i32) -> i32 {
     memory buf: i32 1;
     $buf $b store8
-    $file $buf 1 write_all
+    $file $buf 1 write-all
 }
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
@@ -58,7 +57,7 @@ fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     $writ load32 $code
 }
 
-fn print_i64_fallible(n: i64) -> i32 {
+fn print-i64-fallible(n: i64) -> i32 {
     memory buf: i32 24;
     memory buf_reversed: i32 24;
     local l: i32
@@ -86,21 +85,21 @@ fn print_i64_fallible(n: i64) -> i32 {
         $i 1 + #i
         $i $l = if { break }
     }
-    1 $buf_reversed $l write_all
+    1 $buf_reversed $l write-all
 }
 
-fn print_i64(n: i64) {
-    $n print_i64_fallible check
+fn print-i64(n: i64) {
+    $n print-i64-fallible check
 }
 
 fn print(n: i32) {
-    $n !i64 print_i64
+    $n !i64 print-i64
 }
 
 fn check(code: i32) {
     $code 0 /= if {
-        1 "Error Code: " write_all drop $code !i64 print_i64_fallible drop
-        1 10 write_byte drop
+        1 "Error Code: " write-all drop $code !i64 print-i64-fallible drop
+        1 10 write-byte drop
         1 CORE:exit
     }
 }
