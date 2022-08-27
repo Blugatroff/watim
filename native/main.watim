@@ -6,14 +6,14 @@ import "../std/fs.watim" as FS
 import "./lexer.watim" as L
 
 fn f() {
-    memory mem: i32 262144 4;
+    memory mem: i32 4000000 4;
     local args: .S:StrVec
     local str: .S:Str
     local tokens: .L:Tokens
     A:enable-logging
     A:disable-logging
 
-    $mem 262144 A:init
+    $mem 4000000 A:init
     ARGS:get-args #args
     
     $args S:StrVec-print
@@ -41,7 +41,7 @@ fn f() {
 }
 
 fn main "_start" () {
-    4 mem-grow IO:print 1 "\n" IO:write-all IO:check
+    1023 mem-grow IO:print 1 "\n" IO:write-all IO:check
     f
 }
 
