@@ -8,7 +8,7 @@ use crossterm::{
 };
 use itertools::Itertools;
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -235,7 +235,7 @@ pub fn debug(program: Program) -> Result<(), DebuggerError> {
 
 #[derive(Default)]
 struct FileLookup {
-    files: HashMap<PathBuf, Arc<str>>,
+    files: BTreeMap<PathBuf, Arc<str>>,
 }
 
 impl FileLookup {

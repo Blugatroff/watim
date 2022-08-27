@@ -25,7 +25,7 @@ syntax region watimCommentLine start="//" end="$" contains=watimTodos
 syntax region watimString start=/\v"/ skip=/\v\\./ end=/\v"/ contains=watimEscapes
 
 " Escape literals \n, \r, ....
-syntax match watimEscapes display contained "\\[nr\"']"
+syntax match watimEscapes display contained "\\[nr\"', tr\"']"
 
 " Number literals
 syn match watimNumber "\<\d\+\>"

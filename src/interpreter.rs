@@ -7,7 +7,7 @@ use crate::{
     intrinsics::execute_intrinsic,
     scanner::Location,
 };
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
@@ -91,8 +91,8 @@ pub enum Error {
 }
 
 pub struct Interpreter<'stdin, 'stdout> {
-    functions: HashMap<String, HashMap<String, InterpreterFunction>>,
-    globals: HashMap<String, HashMap<String, (i32, ResolvedType)>>,
+    functions: BTreeMap<String, BTreeMap<String, InterpreterFunction>>,
+    globals: BTreeMap<String, BTreeMap<String, (i32, ResolvedType)>>,
     mem_stack: i32,
     stdout: Box<dyn std::io::Write + 'stdin>,
     stdin: Box<dyn std::io::Read + 'stdout>,
@@ -110,9 +110,10 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
             memory[i] = *b;
         }
 
-        let mut globals: HashMap<String, HashMap<String, (i32, ResolvedType)>> = HashMap::new();
+        let mut globals: BTreeMap<String, BTreeMap<String, (i32, ResolvedType)>> = BTreeMap::new();
         let mut global_mem_addr = program.data.len() as i32;
-        let mut functions: HashMap<String, HashMap<String, InterpreterFunction>> = HashMap::new();
+        let mut functions: BTreeMap<String, BTreeMap<String, InterpreterFunction>> =
+            BTreeMap::new();
         for (_, module) in program.modules {
             for function in module.functions {
                 functions
@@ -176,7 +177,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
         match function {
             InterpreterFunction::Normal(function) => {
                 let ostack = self.mem_stack;
-                let mut locals: HashMap<String, Value> =
+                let mut locals: BTreeMap<String, Value> =
                     function
                         .locals
                         .iter()
@@ -220,7 +221,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
     fn execute_word(
         &mut self,
         word: &CheckedWord,
-        locals: &mut HashMap<String, Value>,
+        locals: &mut BTreeMap<String, Value>,
         stack: &mut Vec<Value>,
     ) -> Result<bool, Error> {
         match word {
@@ -305,7 +306,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
     fn execute_loop(
         &mut self,
         lop: &CheckedLoop,
-        locals: &mut HashMap<String, Value>,
+        locals: &mut BTreeMap<String, Value>,
         stack: &mut Vec<Value>,
     ) -> Result<(), Error> {
         'lop: loop {
@@ -320,7 +321,7 @@ impl<'stdin, 'stdout> Interpreter<'stdin, 'stdout> {
     fn execute_if(
         &mut self,
         iff: &CheckedIff,
-        locals: &mut HashMap<String, Value>,
+        locals: &mut BTreeMap<String, Value>,
         stack: &mut Vec<Value>,
     ) -> Result<bool, Error> {
         match stack.pop() {

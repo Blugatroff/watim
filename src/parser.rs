@@ -392,6 +392,11 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::Rotl,
                     })
+                } else if &ident.lexeme == "mem-grow" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::MemGrow,
+                    })
                 } else if self.matsch(TokenType::Colon).is_some() {
                     let ident_2 = self.ident()?;
                     Ok(Word::Call {

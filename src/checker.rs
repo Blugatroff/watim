@@ -9,7 +9,7 @@ use crate::{
 };
 use itertools::Itertools;
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -128,11 +128,11 @@ impl std::fmt::Display for TypeError {
 }
 
 pub struct ModuleChecker<'a, Type> {
-    functions: HashMap<String, FunctionSignature<Type>>,
-    modules: &'a HashMap<PathBuf, (Module<Type>, String)>,
-    imports: HashMap<String, CheckedImport>,
+    functions: BTreeMap<String, FunctionSignature<Type>>,
+    modules: &'a BTreeMap<PathBuf, (Module<Type>, String)>,
+    imports: BTreeMap<String, CheckedImport>,
     prefix: String,
-    globals: HashMap<String, Local<Type>>,
+    globals: BTreeMap<String, Local<Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -153,10 +153,10 @@ type Signature<'a, T, const L: usize> = ([ResolvedType; L], &'a dyn Fn([Resolved
 impl<'a> ModuleChecker<'a, ResolvedType> {
     pub fn check(
         module: Module<ResolvedType>,
-        modules: &'a HashMap<PathBuf, (Module<ResolvedType>, String)>,
+        modules: &'a BTreeMap<PathBuf, (Module<ResolvedType>, String)>,
         data: &mut Vec<u8>,
     ) -> Result<CheckedModule, TypeError> {
-        let mut functions: HashMap<String, FunctionSignature<ResolvedType>> = HashMap::new();
+        let mut functions: BTreeMap<String, FunctionSignature<ResolvedType>> = BTreeMap::new();
         for ext in &module.externs {
             if functions
                 .insert(ext.signature.ident.clone(), ext.signature.clone())
@@ -179,12 +179,12 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                 ));
             }
         }
-        let mut imports = HashMap::new();
+        let mut imports = BTreeMap::new();
         for import in module.imports {
             let import = Self::check_import(import, &module.path)?;
             imports.insert(import.ident.clone(), import);
         }
-        let mut globals = HashMap::new();
+        let mut globals = BTreeMap::new();
         for global in &module.memory {
             globals.insert(
                 global.ident.clone(),
@@ -250,7 +250,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         function: Function<ResolvedType>,
         data: &mut Vec<u8>,
     ) -> Result<CheckedFunction, TypeError> {
-        let mut locals = HashMap::new();
+        let mut locals = BTreeMap::new();
         for local in &function.locals {
             if locals.insert(local.ident.clone(), local.clone()).is_some() {
                 return Err(TypeError::RedefinedLocal(
@@ -346,8 +346,8 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         &self,
         word: Word<ResolvedType>,
         stack: &mut Vec<ResolvedType>,
-        locals: &HashMap<String, Local<ResolvedType>>,
-        globals: &HashMap<String, Local<ResolvedType>>,
+        locals: &BTreeMap<String, Local<ResolvedType>>,
+        globals: &BTreeMap<String, Local<ResolvedType>>,
         data: &mut Vec<u8>,
     ) -> Result<(Returns, Vec<BreakStack>, CheckedWord), TypeError> {
         match word {
@@ -602,6 +602,18 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         CheckedWord::Intrinsic {
                             location: location.clone(),
                             intrinsic: CheckedIntrinsic::Drop,
+                        },
+                    ))
+                }
+                Intrinsic::MemGrow => {
+                    let ret = self.expect_stack(stack, &word, [([ResolvedType::I32], &|_| ResolvedType::I32)])?;
+                    stack.push(ret);
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            location: location.clone(),
+                            intrinsic: CheckedIntrinsic::MemGrow,
                         },
                     ))
                 }
@@ -919,6 +931,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             Some(ResolvedType::I64) => stack.push(ResolvedType::I32),
                             Some(ResolvedType::Bool) => stack.push(ResolvedType::I32),
                             _ => {
+                                dbg!(&location);
                                 todo!()
                             }
                         },
@@ -1142,14 +1155,18 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     ))
                 }
             }
-            Word::Break { location } => Ok((
-                Returns::No,
-                vec![BreakStack {
+            Word::Break { location } => {
+                let break_stack = BreakStack {
                     location: location.clone(),
                     stack: stack.clone(),
-                }],
-                CheckedWord::Break { location },
-            )),
+                };
+                stack.clear();
+                Ok((
+                    Returns::No,
+                    vec![break_stack],
+                    CheckedWord::Break { location },
+                ))
+            }
             Word::String { value, location } => {
                 let addr = data.len() as i32;
                 let size = value.as_bytes().len() as i32;

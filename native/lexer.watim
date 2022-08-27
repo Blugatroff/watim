@@ -1,0 +1,391 @@
+import "../std/string.watim" as S
+import "../std/i32vec.watim" as IV
+import "../std/alloc.watim" as A
+import "../std/io.watim" as IO
+import "../std/core.watim" as CORE
+
+fn TOKEN_FN() -> i32 { 1 }
+fn TOKEN_IDENT() -> i32 { 2 }
+fn TOKEN_LEFT_PAREN() -> i32 { 3 }
+fn TOKEN_RIGHT_PAREN() -> i32 { 4 }
+fn TOKEN_COLON() -> i32 { 5 }
+fn TOKEN_DOT() -> i32 { 6 }
+fn TOKEN_LEFT_CURLY() -> i32 { 7 }
+fn TOKEN_RIGHT_CURLY() -> i32 { 8 }
+fn TOKEN_BANG() -> i32 { 9 }
+fn TOKEN_STRING() -> i32 { 10 }
+fn TOKEN_ARROW() -> i32 { 11 }
+fn TOKEN_I32() -> i32 { 12 }
+fn TOKEN_I64() -> i32 { 13 }
+fn TOKEN_BOOL() -> i32 { 14 }
+fn TOKEN_SEMICOLON() -> i32 { 15 }
+fn TOKEN_COMMA() -> i32 { 16 }
+
+struct Token {
+    ty: i32
+    // borrowed string
+    lexeme: .S:Str
+    string: .S:String
+    line: i32
+    column: i32
+}
+fn Token-new(ty: i32, lexeme: .S:Str, line: i32, column: i32) -> .Token {
+    local self: .Token
+    20 A:alloc !.Token #self
+    $self.ty $ty store32
+    $self.lexeme $lexeme store32
+    $self.string 0 !.S:String store32
+    $self.line $line store32
+    $self.column $column store32
+    $self
+}
+fn Token-ty(token: .Token) -> i32 {
+    $token.ty load32
+}
+fn Token-lexeme(token: .Token) -> .S:Str {
+    $token.lexeme load32
+}
+fn Token-line(token: .Token) -> i32 {
+    $token.line load32
+}
+fn Token-column(token: .Token) -> i32 {
+    $token.column load32
+}
+fn Token-set-string(token: .Token, string: .S:String) {
+    $token.string $string store32
+}
+fn Token-free(token: .Token) {
+    $token.lexeme load32 !.i32 A:free // is a borrowed string so don't free contents
+    $token.string load32 !i32 0 /= if {
+        $token.string load32 S:String-free
+    }
+    $token !.i32 A:free
+}
+
+struct Tokens {
+    inner: .IV:I32Vec
+}
+
+fn Tokens-new() -> .Tokens {
+    local self: .Tokens
+    local inner: .IV:I32Vec
+    4 A:alloc !.Tokens #self
+    IV:I32Vec-new #inner
+    $self.inner $inner store32
+    $self
+}
+fn Tokens-free(tokens: .Tokens) {
+    local i: i32
+    loop {
+        $i $tokens Tokens-len = if { break }
+        $tokens $i Tokens-get Token-free
+        $i 1 + #i
+    }
+    $tokens.inner load32 IV:I32Vec-free
+    $tokens !.i32 A:free
+}
+fn Tokens-push(tokens: .Tokens, token: .Token) {
+    $tokens.inner load32 $token !i32 IV:I32Vec-push
+}
+fn Tokens-get(tokens: .Tokens, index: i32) -> .Token {
+    $tokens.inner load32 $index IV:I32Vec-get !.Token
+}
+fn Tokens-len(tokens: .Tokens) -> i32 {
+    $tokens.inner load32 IV:I32Vec-len
+}
+
+struct Lexer {
+    input: .S:Str
+    index: i32
+    tokens: .Tokens
+    line: i32
+    column: i32
+    start: i32
+}
+fn Lexer-new(input: .S:Str) -> .Lexer {
+    local self: .Lexer
+    24 A:alloc !.Lexer #self
+    $self.input $input store32
+    $self.index 0 store32
+    $self.tokens Tokens-new store32
+    $self.line 1 store32
+    $self.column 1 store32
+    $self.start $self.index load32 store32
+    $self
+}
+// consumes Lexer
+fn Lexer-run(lexer: .Lexer) -> .Tokens {
+    local tokens: .Tokens
+    local token: .Token
+    loop {
+        $lexer Lexer-next #token
+        $token !i32 0 = if { break }
+        $lexer.tokens load32 $token Tokens-push
+    }
+    $lexer.tokens load32 #tokens
+    $lexer !.i32 A:free
+    $tokens
+}
+fn Lexer-next(lexer: .Lexer) -> .Token {
+    local char: i32
+    local lexeme: .S:Str
+    loop {
+        $lexer.input load32 S:Str-len $lexer.index load32 = if { 
+            0 !.Token break 
+        }
+        $lexer.input load32 $lexer.index load32 S:Str-get #char
+        $lexer.input load32 $lexer.index load32 1 S:Str-slice #lexeme
+        $char "\n" drop load8 = if {
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column 1 store32
+            $lexer.line $lexer.line load32 1 + store32
+            $lexeme !.i32 A:free
+            $lexer Lexer-next break
+        } 
+        $char " " drop load8 = if {
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            $lexeme !.i32 A:free
+            $lexer Lexer-next break
+        }
+        $char "\t" drop load8 = if {
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            $lexeme !.i32 A:free
+            $lexer Lexer-next break
+        }
+        $char "\"" drop load8 = if {
+            $lexeme !.i32 A:free
+            $lexer Lexer-lex-string break
+        }
+        $char "(" drop load8 = if {
+            TOKEN_LEFT_PAREN $lexeme $lexer.line load32 $lexer.column load32 Token-new
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char ":" drop load8 = if {
+            TOKEN_COLON $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "." drop load8 = if {
+            TOKEN_DOT $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char ")" drop load8 = if {
+            TOKEN_RIGHT_PAREN $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "{" drop load8 = if {
+            TOKEN_LEFT_CURLY $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "}" drop load8 = if {
+            TOKEN_RIGHT_CURLY $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "!" drop load8 = if {
+            TOKEN_BANG $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char ";" drop load8 = if {
+            TOKEN_SEMICOLON $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "," drop load8 = if {
+            TOKEN_COMMA $lexeme $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char allowed-in-ident if {
+            $lexeme !.i32 A:free
+            $lexer Lexer-lex-ident break
+        }
+        1 "./test.watim:" IO:write-all IO:check
+        $lexer.line load32 IO:print
+        1 ":" IO:write-all IO:check
+        $lexer.column load32 IO:print
+        1 ": Unexpected character \"" IO:write-all IO:check
+        1 $lexeme S:Str-unpack IO:write-all IO:check
+        1 "\"\n" IO:write-all IO:check
+        1 CORE:exit
+
+        $lexeme !.i32 A:free // content is borrowed from $lexer.input
+        0 !.Token break
+    }
+}
+fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
+    local ident: .S:Str
+    local char: i32
+    local line: i32
+    local column: i32
+    loop {
+        $lexer.start $lexer.index load32 store32
+        $lexer.line load32 #line
+        $lexer.column load32 #column
+        loop {
+            $lexer.input load32 S:Str-len $lexer.index load32 = if { 
+                0 1 =
+            } else {
+                $lexer.input load32 $lexer.index load32 S:Str-get #char
+                $char allowed-in-ident not
+            } if { break }
+            $lexer.index $lexer.index load32 1 + store32
+        }
+        $lexer.input load32 
+        $lexer.start load32 
+        $lexer.index load32 $lexer.start load32 - 
+        S:Str-slice #ident
+        $ident S:Str-unpack "fn" S:str-eq if {
+            TOKEN_FN $ident $line $column Token-new break
+        }
+        $ident S:Str-unpack "->" S:str-eq if {
+            TOKEN_ARROW $ident $line $column Token-new break
+        }
+        $ident S:Str-unpack "i32" S:str-eq if {
+            TOKEN_I32 $ident $line $column Token-new break
+        }
+        $ident S:Str-unpack "i64" S:str-eq if {
+            TOKEN_I64 $ident $line $column Token-new break
+        }
+        $ident S:Str-unpack "bool" S:str-eq if {
+            TOKEN_BOOL $ident $line $column Token-new break
+        }
+        TOKEN_IDENT $ident $line $column Token-new break
+    }
+}
+fn Lexer-lex-string(lexer: .Lexer) -> .Token {
+    local char: i32
+    local string: .S:String
+    local token: .Token
+    local line: i32
+    local column: i32
+    S:String-new #string
+    $lexer.start $lexer.index load32 store32
+
+    $lexer.line load32 #line
+    $lexer.column load32 #column
+    $lexer.index $lexer.index load32 1 + store32
+    $lexer.column $lexer.column load32 1 + store32
+
+    loop {
+        $lexer.input load32 S:Str-len $lexer.index load32 = if {
+            1 "Unterminated String\n" IO:write-all IO:check
+            1 CORE:exit
+            break
+        }
+        $lexer.input load32 $lexer.index load32 S:Str-get #char
+        $lexer.index $lexer.index load32 1 + store32
+        $lexer.column $lexer.column load32 1 + store32
+        $char "\"" drop load8 = if {
+            break
+        }
+        $char "\\" drop load8 = if {
+            $lexer.input load32 S:Str-len $lexer.index load32 = if {
+                1 "Unterminated String\n" IO:write-all IO:check
+                1 CORE:exit
+                break
+            }
+            $lexer.input load32 $lexer.index load32 S:Str-get #char
+            loop {
+                $char "\"" drop load8 = if {
+                    $lexer.index $lexer.index load32 1 + store32
+                    $lexer.column $lexer.column load32 1 + store32
+                    $string "\"" drop load8 S:String-push break
+                }
+                $char "n" drop load8 = if {
+                    $lexer.index $lexer.index load32 1 + store32
+                    $lexer.column $lexer.column load32 1 + store32
+                    $string "\n" drop load8 S:String-push break
+                }
+                $string "\\" drop load8 S:String-push
+                $string $char S:String-push
+                break
+            }
+        } else {
+            $string $char S:String-push
+        }
+    }
+    TOKEN_STRING
+    $lexer.input load32
+    $lexer.start load32
+    $lexer.index load32 $lexer.start load32 -
+    S:Str-slice
+    $line
+    $column
+    Token-new
+    #token
+    $token $string Token-set-string
+    $token
+}
+fn allowed-in-ident(char: i32) -> bool {
+    local disallowed: .i32
+    local disallowed-len: i32
+    local res: bool
+    local i: i32
+    0 0 = #res
+    "{}() ;\t\n:,.!" #disallowed-len #disallowed
+    loop {
+        $i $disallowed-len = if { break }
+        $disallowed $i + load8 $char = if { 
+            0 1 = #res break
+        }
+        $i 1 + #i
+    }
+    $res
+}
+
+// input is borrowed
+fn lex(input: .S:Str) -> .Tokens {
+    local lexer: .Lexer
+    $input Lexer-new #lexer
+    $lexer Lexer-run
+}
+
+
+fn print-tokens(tokens: .Tokens) {
+    local i: i32
+    local token: .Token
+    $tokens Tokens-len 0 = if {
+        1 "[]" IO:write-all IO:check
+    } else {
+        1 "[\n" IO:write-all IO:check
+        loop {
+            $tokens Tokens-len $i = if { break }
+            $tokens $i Tokens-get #token
+            1 "  { ty: " IO:write-all IO:check
+            $token Token-ty IO:print
+            1 ", line: " IO:write-all IO:check
+            $token Token-line IO:print
+            1 ", column: " IO:write-all IO:check
+            $token Token-column IO:print
+            1 ", lexeme: \"" IO:write-all IO:check
+            1 $token Token-lexeme S:Str-unpack IO:write-all IO:check
+            1 "\", "  IO:write-all IO:check
+            $token.string load32 !i32 0 /= if {
+                1 "value: \"" IO:write-all IO:check
+                1 $token.string load32 S:String-unpack IO:write-all IO:check
+                1 "\", " IO:write-all IO:check
+            }
+            1 "},\n" IO:write-all IO:check
+            $i 1 + #i
+        }
+        1 "]" IO:write-all IO:check
+    }
+}
+

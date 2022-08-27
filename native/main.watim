@@ -3,15 +3,17 @@ import "../std/args.watim" as ARGS
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
+import "./lexer.watim" as L
 
-memory MEM: i32 16384 4;
-
-fn main "_start" () {
+fn f() {
+    memory mem: i32 262144 4;
     local args: .S:StrVec
     local str: .S:Str
+    local tokens: .L:Tokens
     A:enable-logging
     A:disable-logging
-    $MEM 16384 A:init
+
+    $mem 262144 A:init
     ARGS:get-args #args
     
     $args S:StrVec-print
@@ -19,15 +21,27 @@ fn main "_start" () {
     1 "\n" IO:write-all IO:check
 
     $args 1 S:StrVec-get FS:read-file IO:check #str
-    1 $str S:Str-get IO:write-all IO:check
+    1 $str S:Str-unpack IO:write-all IO:check
+    1 "\n" IO:write-all IO:check
+
+    $str L:lex #tokens
+    $tokens L:print-tokens
     1 "\n" IO:write-all IO:check
     A:report
+    $tokens L:Tokens-free
     $str S:Str-free
     $args S:StrVec-free
+
     A:report
+
     A:is-empty not if {
         A:root A:print-alloc-list
         1 "MEMORY LEAK DETECTED\n" IO:write-all IO:check
     }
+}
+
+fn main "_start" () {
+    4 mem-grow IO:print 1 "\n" IO:write-all IO:check
+    f
 }
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -57,14 +57,14 @@ impl UncheckedProgram<UnResolvedType> {
     }
     pub fn resolve(self) -> Result<UncheckedProgram<ResolvedType>, WatimError> {
         let root = self.modules.get(&self.root).unwrap();
-        let mut structs = HashMap::new();
+        let mut structs = BTreeMap::new();
         fn inner(
             module: &Module<UnResolvedType>,
             modules: &BTreeMap<PathBuf, Module<UnResolvedType>>,
-            structs: &mut HashMap<PathBuf, HashMap<String, Arc<Struct<ResolvedType>>>>,
+            structs: &mut BTreeMap<PathBuf, BTreeMap<String, Arc<Struct<ResolvedType>>>>,
             resolved_modules: &mut BTreeMap<PathBuf, Module<ResolvedType>>,
         ) -> Result<(), WatimError> {
-            let mut modules_idents = HashMap::new();
+            let mut modules_idents = BTreeMap::new();
             for import in &module.imports {
                 let path = module
                     .path
@@ -113,10 +113,10 @@ impl UncheckedProgram<UnResolvedType> {
                 resolved_structs.push(struc);
             }
             fn resolve_signature(
-                structs: &mut HashMap<PathBuf, HashMap<String, Arc<Struct<ResolvedType>>>>,
+                structs: &mut BTreeMap<PathBuf, BTreeMap<String, Arc<Struct<ResolvedType>>>>,
                 signature: &FunctionSignature<UnResolvedType>,
                 current_module: &PathBuf,
-                modules_idents: &HashMap<String, PathBuf>,
+                modules_idents: &BTreeMap<String, PathBuf>,
             ) -> Result<FunctionSignature<ResolvedType>, WatimError> {
                 let mut ret = Vec::new();
                 for t in &signature.ret {
@@ -160,9 +160,9 @@ impl UncheckedProgram<UnResolvedType> {
                 }
                 fn check_body(
                     words: impl IntoIterator<Item = Word<UnResolvedType>>,
-                    structs: &mut HashMap<PathBuf, HashMap<String, Arc<Struct<ResolvedType>>>>,
+                    structs: &mut BTreeMap<PathBuf, BTreeMap<String, Arc<Struct<ResolvedType>>>>,
                     current_module: &PathBuf,
-                    modules_idents: &HashMap<String, PathBuf>,
+                    modules_idents: &BTreeMap<String, PathBuf>,
                 ) -> Result<Vec<Word<ResolvedType>>, WatimError> {
                     let mut body = Vec::new();
                     for w in words {
@@ -197,6 +197,7 @@ impl UncheckedProgram<UnResolvedType> {
                                     Intrinsic::Mul => Intrinsic::Mul,
                                     Intrinsic::Rotr => Intrinsic::Rotr,
                                     Intrinsic::Rotl => Intrinsic::Rotl,
+                                    Intrinsic::MemGrow => Intrinsic::MemGrow,
                                     Intrinsic::Cast(ty) => Intrinsic::Cast(resolve_ty(
                                         &ty,
                                         structs,
@@ -310,15 +311,18 @@ impl UncheckedProgram<UnResolvedType> {
 }
 
 impl UncheckedProgram<ResolvedType> {
-    pub fn check(self) -> Result<Program, TypeError> {
-        fn check(modules: BTreeMap<PathBuf, Module<ResolvedType>>) -> Result<Program, TypeError> {
-            let modules: HashMap<_, _> = modules
+    pub fn check(self, max_pages: u32) -> Result<Program, TypeError> {
+        fn check(
+            modules: BTreeMap<PathBuf, Module<ResolvedType>>,
+            max_pages: u32,
+        ) -> Result<Program, TypeError> {
+            let modules: BTreeMap<_, _> = modules
                 .into_iter()
                 .enumerate()
                 .map(|(i, (k, v))| (k, (v, format!("{i}"))))
                 .collect();
             let mut data = Vec::new();
-            let mut checked_modules = HashMap::new();
+            let mut checked_modules = BTreeMap::new();
             for (path, (module, _)) in &modules {
                 let module = ModuleChecker::check(module.clone(), &modules, &mut data)?;
                 checked_modules.insert(path.clone(), module);
@@ -326,16 +330,17 @@ impl UncheckedProgram<ResolvedType> {
             Ok(Program {
                 data,
                 modules: checked_modules,
+                max_pages,
             })
         }
-        check(self.modules)
+        check(self.modules, max_pages)
     }
 }
 
 fn resolve_ty(
     ty: &UnResolvedType,
-    structs: &HashMap<PathBuf, HashMap<String, Arc<Struct<ResolvedType>>>>,
-    modules: &HashMap<String, PathBuf>,
+    structs: &BTreeMap<PathBuf, BTreeMap<String, Arc<Struct<ResolvedType>>>>,
+    modules: &BTreeMap<String, PathBuf>,
     current_module: &PathBuf,
     location: &Location,
 ) -> Result<ResolvedType, WatimError> {

@@ -108,14 +108,20 @@ fn alloc(size: i32) -> .i32 {
                     }
                 }
             } else {
-                $prev $new-block !i32 store32
+                $new-block !i32 0 = if {
+                    $prev $block find-next-free !i32 store32
+                } else {
+                    $prev $new-block !i32 store32
+                }
             }
-
             logging if { 
                 1 "ALLOCED ptr: " IO:write-all IO:check 
                 $block 12 + !i32 IO:print 
                 1 " size: " IO:write-all IO:check 
-                $size IO:print 1 "\n" IO:write-all IO:check 
+                $size IO:print
+                1 " n-allocs: " IO:write-all IO:check 
+                n-allocs 1 + IO:print 
+                1 "\n" IO:write-all IO:check
             }
             inc-n-allocs
             $block 12 + break
@@ -132,12 +138,17 @@ fn alloc(size: i32) -> .i32 {
 }
 
 fn find-next-free(block: .i32) -> .i32 {
+    local b: .i32
+    root #b
     loop {
-        $block !i32 0 = if { 0 !.i32 break }
-        $block 8 + load32 0 = if {
-            $block break
+        $b !i32 0 = if { 0 !.i32 break }
+        $b 8 + load32 0 =
+        $b !i32 $block !i32 > 
+        and
+        if {
+            $b break
         }
-        $block !..i32 load32 #block
+        $b !..i32 load32 #b
     }
 }
 
@@ -158,10 +169,9 @@ fn free(ptr: .i32) {
     local next-free: .i32
     local b: .i32
     local size: i32
-    
     $ptr 12 - #block
     $block load32 !.i32 #next
-    $next find-next-free #next-free
+    $block find-next-free #next-free
     $block 4 + load32 12 - #size
 
     logging if { 
@@ -169,6 +179,8 @@ fn free(ptr: .i32) {
         $ptr !i32 IO:print 
         1 " size: " IO:write-all IO:check 
         $size IO:print 
+        1 " n-allocs: " IO:write-all IO:check 
+        n-allocs 1 - IO:print 
         1 "\n" IO:write-all IO:check 
     }
     $block $next-free !i32 store32
@@ -188,7 +200,17 @@ fn free(ptr: .i32) {
        }
     }
     dec-n-allocs
+    $ptr $size clear
     merge
+}
+
+fn clear(ptr: .i32, len: i32) {
+    local i: i32
+    loop {
+        $i $len = if { break }
+        $ptr $i + 69 store8
+        $i 1 + #i
+    }
 }
 
 fn merge() {

@@ -462,6 +462,10 @@ pub fn execute_intrinsic(
         CheckedIntrinsic::Cast(_, ResolvedType::AnyPtr) => todo!(),
         CheckedIntrinsic::Cast(_, ResolvedType::Custom(_)) => todo!(),
         CheckedIntrinsic::Or(_) => todo!(),
-
+        CheckedIntrinsic::MemGrow => expect_args(
+            location,
+            stack,
+            [([ResolvedType::I32], &mut |[v]| Some([v.clone()]))],
+        ),
     }
 }

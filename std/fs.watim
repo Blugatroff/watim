@@ -85,7 +85,7 @@ fn read-all(file: i32) -> .S:Str, i32 {
             0 !.S:Str $code break
         }
         $r 0 = if {
-            $buf $read S:Str-new-from-buf 0 break
+            $buf $read S:Str-new-borrowed 0 break
         } else {
             $read $r + #read
         }
@@ -150,9 +150,11 @@ fn find-current-dir() -> i32, i32 {
                 0 0 break
             }
             $paths $i S:StrVec-get "." S:str-eq if {
+                $fds $i IV:I32Vec-get 
                 $fds IV:I32Vec-free
                 $paths S:StrVec-free
-                $fds $i IV:I32Vec-get 0 break
+                0 
+                break
             }
             $i 1 + #i 
         }

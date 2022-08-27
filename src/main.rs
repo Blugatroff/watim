@@ -113,7 +113,16 @@ fn main() {
         let file = PathBuf::from(std::env::args().nth(2).unwrap())
             .canonicalize()
             .unwrap();
-        let program = prepass::UncheckedProgram::load(&file)?.resolve()?.check()?;
+        let max_pages = std::env::args()
+            .nth(3)
+            .map(|a| {
+                let n: u32 = a.parse().unwrap();
+                n
+            })
+            .unwrap_or(1);
+        let program = prepass::UncheckedProgram::load(&file)?
+            .resolve()?
+            .check(max_pages)?;
         match mode {
             "com" => {
                 println!("{program}");

@@ -4,10 +4,7 @@ use crate::{
     intrinsics::execute_intrinsic,
     scanner::Location,
 };
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Clone)]
 enum ScopeKind {
@@ -28,7 +25,7 @@ struct Scope {
 
 pub struct StepInterpreter {
     memory: [u8; 2usize.pow(16)],
-    functions: HashMap<String, HashMap<String, InterpreterFunction>>,
+    functions: BTreeMap<String, BTreeMap<String, InterpreterFunction>>,
     scope: Scope,
     done: bool,
     stdout: Vec<u8>,
@@ -41,7 +38,8 @@ impl StepInterpreter {
         for (i, b) in program.data.iter().enumerate() {
             memory[i] = *b;
         }
-        let mut functions: HashMap<String, HashMap<String, InterpreterFunction>> = HashMap::new();
+        let mut functions: BTreeMap<String, BTreeMap<String, InterpreterFunction>> =
+            BTreeMap::new();
         for (_, module) in program.modules {
             for function in module.functions {
                 functions

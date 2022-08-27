@@ -2,7 +2,7 @@ use crate::{
     checker::Returns,
     scanner::{Location, TokenWithLocation},
 };
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnResolvedType {
@@ -77,6 +77,7 @@ pub enum Intrinsic<Type> {
     Mul,
     Rotr,
     Rotl,
+    MemGrow,
     Cast(Type),
 }
 
@@ -101,6 +102,7 @@ pub enum CheckedIntrinsic {
     LE,
     GE,
     Mul,
+    MemGrow,
     Rotr(ResolvedType),
     Rotl(ResolvedType),
     Cast(ResolvedType, ResolvedType),
@@ -361,7 +363,7 @@ pub struct Module<Type> {
 #[derive(Debug, Clone)]
 pub struct CheckedModule {
     pub externs: Vec<CheckedExtern>,
-    pub imports: HashMap<String, CheckedImport>,
+    pub imports: BTreeMap<String, CheckedImport>,
     pub functions: Vec<CheckedFunction>,
     pub path: PathBuf,
     pub globals: Vec<Memory<ResolvedType, CheckedIdent>>,
@@ -370,7 +372,8 @@ pub struct CheckedModule {
 #[derive(Debug, Clone)]
 pub struct Program {
     pub data: Vec<u8>,
-    pub modules: HashMap<PathBuf, CheckedModule>,
+    pub modules: BTreeMap<PathBuf, CheckedModule>,
+    pub max_pages: u32,
 }
 
 #[derive(Debug, Clone)]

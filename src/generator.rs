@@ -114,8 +114,9 @@ impl std::fmt::Display for Program {
         let module = format!("\n{functions}");
         let externs = indent(&externs);
         let stack_start = global_mem_addr;
+        let max_pages = self.max_pages;
         f.write_fmt(format_args!(
-            "(module\n{externs}\n\n\t(memory 1)\n\t(export \"memory\" (memory 0))\n\t(global $stac:k (mut i32) (i32.const {stack_start}))\n{}\n\t{data}\n{}\n)",
+            "(module\n{externs}\n\n\t(memory 1 {max_pages})\n\t(export \"memory\" (memory 0))\n\t(global $stac:k (mut i32) (i32.const {stack_start}))\n{}\n\t{data}\n{}\n)",
             indent(&globals),
             indent(&module)
         ))
@@ -346,6 +347,7 @@ impl std::fmt::Display for CheckedIntrinsic {
                     todo!()
                 }
             },
+            CheckedIntrinsic::MemGrow => "memory.grow",
         })
     }
 }

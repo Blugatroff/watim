@@ -326,6 +326,9 @@ impl Scanner {
                     Some('n') => {
                         string.push('\n');
                     }
+                    Some('t') => {
+                        string.push('\t');
+                    }
                     Some(c) => {
                         string.push(c);
                     }
