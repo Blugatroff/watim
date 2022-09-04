@@ -182,12 +182,12 @@ fn StringVec-new() -> .StringVec {
 fn StringVec-len(vec: .StringVec) -> i32 {
     $vec.len load32
 }
-fn StringVec-get(vec: .StringVec, index: i32) -> .i32, i32 {
+fn StringVec-get(vec: .StringVec, index: i32) -> .String {
     $index $vec StringVec-len >= if { 
         1 "Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $vec.ptr load32 $index 4 * + load32 String-unpack
+    $vec.ptr load32 $index 4 * + load32
 }
 fn StringVec-free(vec: .StringVec) {
     local i: i32
@@ -234,7 +234,7 @@ fn StringVec-print(strings: .StringVec) {
         loop {
             $i $strings StringVec-len = if { break }
             1 "  \"" IO:write-all IO:check
-            1 $strings $i StringVec-get IO:write-all IO:check
+            1 $strings $i StringVec-get String-unpack IO:write-all IO:check
             1 "\",\n" IO:write-all IO:check
             $i 1 + #i
         }

@@ -149,7 +149,7 @@ fn find-current-dir() -> i32, i32 {
                 // not found
                 0 0 break
             }
-            $paths $i S:StringVec-get "." S:str-eq if {
+            $paths $i S:StringVec-get S:String-unpack "." S:str-eq if {
                 $fds $i IV:I32Vec-get 
                 $fds IV:I32Vec-free
                 $paths S:StringVec-free

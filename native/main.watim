@@ -9,19 +9,32 @@ import "./ast.watim" as AST
 import "./parser.watim" as P
 
 fn f() {
-    memory mem: i32 4000000 4;
+    memory alloc-mem: i32 4000000 4;
     local args: .S:StringVec
     local str: .S:String
     local tokens: .L:Tokens
+    local items: .AST:TopItems
+    local mem: .S:String
+    local formatted: .S:String
+    local types: .AST:Types
 
-    $mem 4000000 A:init
+    $alloc-mem 4000000 A:init
     ARGS:get-args #args
     
-    $args 1 S:StringVec-get FS:read-file IO:check #str
-    $str S:String-unpack L:lex #tokens
+    $args 1 S:StringVec-get S:String-unpack FS:read-file IO:check #str
+    $str $args 1 S:StringVec-get L:lex #tokens
     $tokens L:Tokens-print
     1 "\n" IO:write-all IO:check
-    $tokens P:parse 
+    $tokens P:parse #types #mem #items 
+    $items AST:TopItems-format #formatted
+    1 $formatted S:String-unpack IO:write-all IO:check
+    1 "\n" IO:write-all IO:check
+    A:report
+    $formatted S:String-free
+    $mem S:String-free
+    $items AST:TopItems-free
+    $types AST:Types-free
+
     $tokens L:Tokens-free
     $str S:String-free
     $args S:StringVec-free

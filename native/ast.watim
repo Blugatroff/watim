@@ -236,7 +236,7 @@ fn Type-format(self: .Type) -> .S:String {
             break
         }
         1 $self Type-ty type-ty-name IO:write-all IO:check
-        1 "Type-print: UNIMPLEMENTED" IO:write-all IO:check
+        1 "Type-format: UNIMPLEMENTED" IO:write-all IO:check
         1 CORE:exit
         break
     }
