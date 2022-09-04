@@ -24,17 +24,9 @@ struct Str {
     len: i32
 }
 fn Str-free(str: .Str) {
-    $str.ptr load32 A:free
     $str !.i32 A:free
 }
 fn Str-new(ptr: .i32, len: i32) -> .Str {
-    local buf: .i32
-    local s: .Str
-    $len A:alloc #buf
-    $ptr $buf $len CORE:copy
-    $buf $len Str-new-borrowed
-}
-fn Str-new-borrowed(ptr: .i32, len: i32) -> .Str {
     local s: .Str
     8 A:alloc !.Str #s
     $s.ptr $ptr store32
@@ -62,7 +54,7 @@ fn Str-slice(str: .Str, index: i32, len: i32) -> .Str {
         1 "Str-slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $str.ptr load32 $index + $len Str-new-borrowed
+    $str.ptr load32 $index + $len Str-new
 }
 
 struct String {
@@ -70,7 +62,7 @@ struct String {
     len: i32
     cap: i32
 }
-fn String-new() -> .String {
+fn String-empty() -> .String {
     local self: .String
     12 A:alloc !.String #self
     $self.ptr 0 !.i32 store32
@@ -78,14 +70,24 @@ fn String-new() -> .String {
     $self.cap 0 store32
     $self
 }
-fn copy(a: .i32, b: .i32, len: i32) {
-    loop {
-        $len 0 = if { break }
-        $b $a load8 store8
-        $len 1 - #len
-        $a 1 + #a
-        $b 1 + #b
-    }
+fn String-new(ptr: .i32, len: i32) -> .String {
+    local s: .String
+    local buf: .i32
+    12 A:alloc !.String #s
+    $len A:alloc #buf
+    $ptr $buf $len CORE:copy
+    $s.ptr $buf store32
+    $s.len $len store32
+    $s.cap $len store32
+    $s
+}
+fn String-new-from-buf(ptr: .i32, len: i32) -> .String {
+    local s: .String
+    12 A:alloc !.String #s
+    $s.ptr $ptr store32
+    $s.len $len store32
+    $s.cap $len store32
+    $s
 }
 fn String-push(self: .String, char: i32) {
     local new-buf: .i32
@@ -105,11 +107,23 @@ fn String-push(self: .String, char: i32) {
         $self.len $self.len load32 1 + store32
     }
 }
+fn String-append(self: .String, ptr: .i32, len: i32) {
+    local i: i32
+    loop {
+        $i $len = if { break }
+        $self $ptr $i + load8 String-push
+        $i 1 + #i
+    }
+}
+fn String-merge(self: .String, other: .String) {
+    $self $other String-unpack String-append
+    $other String-free
+}
 fn String-len(self: .String) -> i32 {
     $self.len load32
 }
 fn String-get(self: .String, index: i32) -> i32 {
-    $self String-len $index >= if { 
+    $self String-len $index <= if { 
         1 "String-get Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
@@ -124,46 +138,73 @@ fn String-free(self: .String) {
     }
     $self !.i32 A:free
 }
+fn String-to-Str(self: .String) -> .Str {
+    $self.ptr load32 $self.len load32 Str-new
+}
+fn String-slice(str: .Str, index: i32, len: i32) -> .Str {
+    $index $len + $str Str-len > if { 
+        1 "Str-slice Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $str.ptr load32 $index + $len Str-new
+}
+fn String-indent(self: .String) -> .String {
+    local new: .String
+    local i: i32
+    local char: i32
+    String-empty #new
+    loop {
+        $i $self String-len = if { break }
+        $self $i String-get #char
+        $new $char String-push
+        $char 10 = if {
+            $new "  " String-append
+        }
+        $i 1 + #i
+    }
+    $self String-free
+    $new
+}
 
-struct StrVec {
-    ptr: ..Str
+struct StringVec {
+    ptr: ..String
     len: i32
     cap: i32
 }
-fn StrVec-new() -> .StrVec {
-    local vec: .StrVec
-    12 A:alloc !.StrVec #vec
-    $vec.ptr 0 !..Str store32
+fn StringVec-new() -> .StringVec {
+    local vec: .StringVec
+    12 A:alloc !.StringVec #vec
+    $vec.ptr 0 !..String store32
     $vec.len 0 store32
     $vec.cap 0 store32
     $vec
 }
-fn StrVec-len(vec: .StrVec) -> i32 {
+fn StringVec-len(vec: .StringVec) -> i32 {
     $vec.len load32
 }
-fn StrVec-get(vec: .StrVec, index: i32) -> .i32, i32 {
-    $index $vec StrVec-len >= if { 
+fn StringVec-get(vec: .StringVec, index: i32) -> .i32, i32 {
+    $index $vec StringVec-len >= if { 
         1 "Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $vec.ptr load32 $index 4 * + load32 Str-unpack
+    $vec.ptr load32 $index 4 * + load32 String-unpack
 }
-fn StrVec-free(vec: .StrVec) {
+fn StringVec-free(vec: .StringVec) {
     local i: i32
-    local ptr: ..Str
-    local s: .Str
+    local ptr: ..String
+    local s: .String
     $vec.ptr load32 #ptr
     loop {
         $i $vec.len load32 = if { break }
         $ptr $i 4 * + load32 #s
-        $s Str-free
+        $s String-free
         $i 1 + #i
     }
-    $vec StrVec-len 0 > if { $vec.ptr load32 !.i32 A:free }
+    $vec StringVec-len 0 > if { $vec.ptr load32 !.i32 A:free }
     $vec !.i32 A:free
 }
-fn StrVec-push(vec: .StrVec, str: .Str) {
-    local new-buf: ..Str
+fn StringVec-push(vec: .StringVec, str: .String) {
+    local new-buf: ..String
     local size: i32
     $vec.len load32 1 + $vec.cap load32 <= if {
         $vec.ptr load32 $vec.len load32 4 * + $str store32
@@ -171,7 +212,7 @@ fn StrVec-push(vec: .StrVec, str: .Str) {
         $vec.len $vec.len load32 1 + store32
     } else {
         $vec.cap load32 2 CORE:max 2 * #size
-        $size 4 * A:alloc !..Str #new-buf
+        $size 4 * A:alloc !..String #new-buf
         $vec.ptr load32 !.i32
         $new-buf !.i32
         $vec.len load32 4 * 
@@ -181,19 +222,19 @@ fn StrVec-push(vec: .StrVec, str: .Str) {
             $vec.ptr load32 !.i32 A:free
         }
         $vec.ptr $new-buf store32
-        $vec $str StrVec-push
+        $vec $str StringVec-push
     }
 }
-fn StrVec-print(strings: .StrVec) {
+fn StringVec-print(strings: .StringVec) {
     local i: i32
-    $strings StrVec-len 0 = if {
+    $strings StringVec-len 0 = if {
         1 "[]" IO:write-all IO:check
     } else {
         1 "[\n" IO:write-all IO:check
         loop {
-            $i $strings StrVec-len = if { break }
+            $i $strings StringVec-len = if { break }
             1 "  \"" IO:write-all IO:check
-            1 $strings $i StrVec-get IO:write-all IO:check
+            1 $strings $i StringVec-get IO:write-all IO:check
             1 "\",\n" IO:write-all IO:check
             $i 1 + #i
         }

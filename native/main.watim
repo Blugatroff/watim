@@ -3,45 +3,40 @@ import "../std/args.watim" as ARGS
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
+import "../std/core.watim" as CORE
 import "./lexer.watim" as L
+import "./ast.watim" as AST
+import "./parser.watim" as P
 
 fn f() {
     memory mem: i32 4000000 4;
-    local args: .S:StrVec
-    local str: .S:Str
+    local args: .S:StringVec
+    local str: .S:String
     local tokens: .L:Tokens
-    A:enable-logging
-    A:disable-logging
 
     $mem 4000000 A:init
     ARGS:get-args #args
     
-    $args S:StrVec-print
+    $args 1 S:StringVec-get FS:read-file IO:check #str
+    $str S:String-unpack L:lex #tokens
+    $tokens L:Tokens-print
     1 "\n" IO:write-all IO:check
-    1 "\n" IO:write-all IO:check
-
-    $args 1 S:StrVec-get FS:read-file IO:check #str
-    1 $str S:Str-unpack IO:write-all IO:check
-    1 "\n" IO:write-all IO:check
-
-    $str L:lex #tokens
-    $tokens L:print-tokens
-    1 "\n" IO:write-all IO:check
-    A:report
+    $tokens P:parse 
     $tokens L:Tokens-free
-    $str S:Str-free
-    $args S:StrVec-free
-
-    A:report
+    $str S:String-free
+    $args S:StringVec-free
 
     A:is-empty not if {
         A:root A:print-alloc-list
+        A:report
         1 "MEMORY LEAK DETECTED\n" IO:write-all IO:check
     }
 }
 
 fn main "_start" () {
-    1023 mem-grow IO:print 1 "\n" IO:write-all IO:check
+    1023 mem-grow 1 /= if {
+        1 CORE:exit
+    }
     f
 }
 

@@ -63,7 +63,6 @@ fn alloc(size: i32) -> .i32 {
     local new-block: .i32
     local n: i32
     local unused: bool
-    
     $size 4 CORE:align-to #size
     root #prev
     root #block

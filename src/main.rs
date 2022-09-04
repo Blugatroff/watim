@@ -110,9 +110,8 @@ fn main() {
                 std::process::exit(1)
             }
         };
-        let file = PathBuf::from(std::env::args().nth(2).unwrap())
-            .canonicalize()
-            .unwrap();
+
+        let file = PathBuf::from(std::env::args().nth(2).unwrap()).canonicalize()?;
         let max_pages = std::env::args()
             .nth(3)
             .map(|a| {

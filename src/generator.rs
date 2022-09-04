@@ -321,6 +321,7 @@ impl std::fmt::Display for CheckedIntrinsic {
             CheckedIntrinsic::Not => "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and",
             CheckedIntrinsic::Or(ResolvedType::I32) => "i32.or",
             CheckedIntrinsic::Or(ResolvedType::I64) => "i64.or",
+            CheckedIntrinsic::Or(ResolvedType::Bool) => "i32.or",
             CheckedIntrinsic::Or(_) => todo!(),
             CheckedIntrinsic::L => "i32.lt_u",
             CheckedIntrinsic::G => "i32.gt_u",

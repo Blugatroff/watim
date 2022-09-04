@@ -5,10 +5,10 @@ import "./alloc.watim" as A
 extern "wasi_unstable" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
 extern "wasi_unstable" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
 
-fn get-args() -> .S:StrVec {
+fn get-args() -> .S:StringVec {
     memory arg_number_ptr: i32 4 4;
     memory arg_sizes_ptr: i32 4 4;
-    local strings: .S:StrVec
+    local strings: .S:StringVec
     local ptr_buf: .i32
     local arg_buf: .i32
     local arg_number: i32
@@ -24,12 +24,12 @@ fn get-args() -> .S:StrVec {
 
     $ptr_buf !..i32 $arg_buf args_get IO:check
 
-    S:StrVec-new #strings
+    S:StringVec-new #strings
 
     loop {
         $i $arg_number >= if { break }
         $ptr_buf $i 4 * + load32 !.i32 #ptr
-        $strings $ptr $ptr cstr-len S:Str-new S:StrVec-push
+        $strings $ptr $ptr cstr-len S:String-new S:StringVec-push
         $i 1 + #i
     }
     $ptr_buf A:free

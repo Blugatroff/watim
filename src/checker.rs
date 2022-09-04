@@ -335,7 +335,9 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         let path = path.parent().unwrap().join(import.path);
         let path = match path.canonicalize() {
             Ok(path) => path,
-            Err(e) => return Err(TypeError::Io(Arc::new(e))),
+            Err(e) => {
+                dbg!(&path.display());
+                return Err(TypeError::Io(Arc::new(e)))},
         };
         Ok(CheckedImport {
             path,
@@ -1197,7 +1199,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                         }
                                     }
                                     None => {
-                                        dbg!(&struc.fields, &field);
+                                        dbg!(&struc.fields, &field, location);
                                         todo!()
                                     }
                                 }

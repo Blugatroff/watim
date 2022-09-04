@@ -37,7 +37,7 @@ fn open-file(path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> 
     }
 }
 
-fn read-file(path: .i32, path-len: i32) -> .S:Str, i32 {
+fn read-file(path: .i32, path-len: i32) -> .S:String, i32 {
     local code: i32
     local fd: i32
     $path $path-len
@@ -45,13 +45,13 @@ fn read-file(path: .i32, path-len: i32) -> .S:Str, i32 {
     0 1 = 0 1 = create-rights
     open-file #code #fd
     $code 0 /= if {
-        0 !.S:Str $code
+        0 !.S:String $code
     } else {
         $fd read-all
     }
 }
 
-fn read-all(file: i32) -> .S:Str, i32 {
+fn read-all(file: i32) -> .S:String, i32 {
     local buf: .i32
     local old-buf: .i32
     local buf-size: i32
@@ -70,7 +70,7 @@ fn read-all(file: i32) -> .S:Str, i32 {
             $buf !i32 0 = if {
                 $old-buf A:free
                 // 48 Error code = Not enough space
-                0 !.S:Str 48 break
+                0 !.S:String 48 break
             }
             $old-buf $buf $buf-size CORE:copy
             $buf-size 2 * #buf-size
@@ -82,10 +82,10 @@ fn read-all(file: i32) -> .S:Str, i32 {
         IO:read #code #r
         $code 0 /= if {
             $buf A:free
-            0 !.S:Str $code break
+            0 !.S:String $code break
         }
         $r 0 = if {
-            $buf $read S:Str-new-borrowed 0 break
+            $buf $read S:String-new-from-buf 0 break
         } else {
             $read $r + #read
         }
@@ -97,17 +97,17 @@ struct Prestat {
     path_len: i32
 }
 
-fn get-preopened-fds() -> .IV:I32Vec, .S:StrVec, i32 {
+fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
     memory prestat: Prestat 8 4;
     local fd: i32
     local code: i32
     local buf: .i32
     local len: i32
     local fds: .IV:I32Vec
-    local paths: .S:StrVec
+    local paths: .S:StringVec
     3 #fd
     IV:I32Vec-new #fds
-    S:StrVec-new #paths
+    S:StringVec-new #paths
     loop {
         $fd $prestat !.i32 fd_prestat_get #code
         // 8 = Bad file descriptor
@@ -116,18 +116,18 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StrVec, i32 {
         }
         $code 0 /= if {
             $fds IV:I32Vec-free
-            $paths S:StrVec-free $fds $paths $code break
+            $paths S:StringVec-free $fds $paths $code break
         }
         $prestat.path_len load32 #len
         $len A:alloc #buf
         $fd $buf $len fd_prestat_dir_name #code
         $code 0 /= if {
             $fds IV:I32Vec-free
-            $paths S:StrVec-free
+            $paths S:StringVec-free
             $fds $paths $code break
         }
         $fds $fd IV:I32Vec-push
-        $paths $buf $len S:Str-new S:StrVec-push
+        $paths $buf $len S:String-new S:StringVec-push
         $buf A:free
         $fd 1 + #fd
     }
@@ -137,7 +137,7 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StrVec, i32 {
 // returns 0, e if error
 fn find-current-dir() -> i32, i32 {
     local fds: .IV:I32Vec
-    local paths: .S:StrVec
+    local paths: .S:StringVec
     local code: i32
     local i: i32
     get-preopened-fds #code #paths #fds
@@ -145,14 +145,14 @@ fn find-current-dir() -> i32, i32 {
         loop {
             $i $fds IV:I32Vec-len = if { 
                 $fds IV:I32Vec-free
-                $paths S:StrVec-free
+                $paths S:StringVec-free
                 // not found
                 0 0 break
             }
-            $paths $i S:StrVec-get "." S:str-eq if {
+            $paths $i S:StringVec-get "." S:str-eq if {
                 $fds $i IV:I32Vec-get 
                 $fds IV:I32Vec-free
-                $paths S:StrVec-free
+                $paths S:StringVec-free
                 0 
                 break
             }

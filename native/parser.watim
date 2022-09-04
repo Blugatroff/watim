@@ -1,0 +1,762 @@
+import "./lexer.watim" as L
+import "./ast.watim" as AST
+import "../std/alloc.watim" as A
+import "../std/io.watim" as IO
+import "../std/core.watim" as CORE
+import "../std/string.watim" as S
+
+struct Parser {
+    tokens: .L:Tokens
+    current: i32
+    mem: .S:String
+    types: .AST:Types
+}
+fn Parser-new(tokens: .L:Tokens, mem: .S:String) -> .Parser {
+    local self: .Parser
+    16 A:alloc !.Parser #self
+    $self.tokens $tokens store32
+    $self.current 0 store32
+    $self.mem $mem store32
+    $self.types AST:Types-new store32
+    $self
+} 
+fn Parser-free(self: .Parser) { 
+    $self.types load32 AST:Types-free
+    $self !.i32 A:free
+}
+fn Parser-peek(self: .Parser) -> .L:Token {
+    $self.tokens load32 $self.current load32 L:Tokens-get
+}
+fn Parser-advance(self: .Parser) -> .L:Token {
+    $self Parser-peek
+    $self.current $self.current load32 1 + store32
+}
+
+fn Parser-parse-module(self: .Parser) -> .AST:TopItems {
+    local token: .L:Token
+    local items: .AST:TopItems
+    AST:TopItems-new #items
+    loop {
+        $self.tokens load32 L:Tokens-len $self.current load32 = if {
+            $items break
+        }
+        loop {
+            $self Parser-peek #token
+            $token L:Token-ty L:TOKEN_FN = if {
+                $items $self Parser-parse-function AST:TopItem-new-function AST:TopItems-push
+                break
+            }
+            $token L:Token-ty L:TOKEN_MEMORY = if {
+                $items $self Parser-parse-mem AST:TopItem-new-mem AST:TopItems-push
+                break
+            }
+            $token L:Token-ty L:TOKEN_EXTERN = if {
+                $items $self Parser-parse-ext AST:TopItem-new-ext AST:TopItems-push
+                break
+            }
+            $token L:Token-ty L:TOKEN_IMPORT = if {
+                $items $self Parser-parse-imp AST:TopItem-new-imp AST:TopItems-push
+                break
+            }
+            $token L:Token-ty L:TOKEN_STRUCT = if {
+                $items $self Parser-parse-struc AST:TopItem-new-struc AST:TopItems-push
+                break
+            }
+            1 $token L:Token-ty L:token-ty-name IO:write-all IO:check
+            $token L:Token-location "expected function memory or import" abort-with-location
+            break
+        }
+    }
+}
+fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
+    local token: .L:Token
+    local fields: .AST:Fields
+    local ident: .L:Token
+    AST:Fields-new #fields
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected struct" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_STRUCT /= if {
+        $token L:Token-location "expected struct" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected identifier" abort
+    }
+    $self Parser-advance #ident
+    $ident L:Token-ty L:TOKEN_IDENT /= if {
+        $token L:Token-location "expected identifier" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected {" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+        $token L:Token-location "expected {" abort-with-location
+    }
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if {
+            break
+        }
+        $self Parser-advance #token
+        $token L:Token-ty L:TOKEN_RIGHT_CURLY = if {
+            break
+        }
+        $token L:Token-ty L:TOKEN_IDENT /= if {
+            $token L:Token-location "expected identifier" abort-with-location
+        }
+        $fields
+        $token
+        $self.current load32 $self.tokens load32 L:Tokens-len = if {
+            "expected colon" abort
+        }
+        $self Parser-advance #token
+        $token L:Token-ty L:TOKEN_COLON /= if {
+            $token L:Token-location "expected colon" abort-with-location
+        }
+        $self Parser-parse-type
+        AST:Field-new AST:Fields-push
+    }
+    $ident $fields AST:Struct-new
+}
+fn Parser-parse-imp(self: .Parser) -> .AST:Import {
+    local token: .L:Token
+
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected import" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_IMPORT /= if {
+        $token L:Token-location "expected import" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected string" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_STRING /= if {
+        $token L:Token-location "exected string" abort-with-location
+    }
+    $token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected as" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_AS /= if {
+        $token L:Token-location "exected as" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected identifier" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_IDENT /= if {
+        $token L:Token-location "exected identifier" abort-with-location
+    }
+    $token
+    AST:Import-new
+}
+fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
+    local token: .L:Token
+    local module: .L:Token
+    local name: .L:Token
+    local ident: .L:Token
+    local params: .AST:Parameters
+    local rets: .AST:Types
+    $self.tokens load32 L:Tokens-len $self.current load32 = if {
+        "expected extern" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_EXTERN /= if {
+        $token L:Token-location "expected extern" abort-with-location
+    }
+    $self.tokens load32 L:Tokens-len $self.current load32 = if {
+        "expected string" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_STRING /= if {
+        $token L:Token-location "expected string" abort-with-location
+    }
+    $token #module
+    $self.tokens load32 L:Tokens-len $self.current load32 = if {
+        "expected string" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_STRING /= if {
+        $token L:Token-location "expected string" abort-with-location
+    }
+    $token #name
+    $module
+    $name
+    $self Parser-parse-signature #rets #params drop #ident
+    $ident
+    $params
+    $rets
+    AST:Extern-new
+}
+fn Parser-parse-loc(self: .Parser) -> .AST:Local {
+    local token: .L:Token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected local" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LOCAL /= if {
+        $token L:Token-location "expected local" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected identifier" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_IDENT /= if {
+        $token L:Token-location "expected identifier" abort-with-location
+    }
+    $token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected colon" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_COLON /= if {
+        $token L:Token-location "expected colon" abort-with-location
+    }
+    $self Parser-parse-type
+    AST:Local-new
+}
+fn Parser-parse-mem(self: .Parser) -> .AST:Memory {
+    local token: .L:Token
+    local ident: .L:Token
+    local type: .AST:Type
+    $self.tokens load32 L:Tokens-len $self.current load32 = if {
+        "expected memory found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_MEMORY /= if {
+        $token L:Token-location "expected memory" abort-with-location
+    }
+    $self.tokens load32 L:Tokens-len $self.current load32 = if {
+        "expected identifier found EOF" abort
+    }
+    $self Parser-advance #ident
+    $ident L:Token-ty L:TOKEN_IDENT /= if {
+        $ident L:Token-location "expected identifier" abort-with-location
+    }
+    $self.tokens load32 L:Tokens-len $self.current load32 = if {
+        "expected colon found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_COLON /= if {
+        $token L:Token-location "expected colon" abort-with-location
+    }
+    $self Parser-parse-type #type
+    $ident
+    $type
+    $self Parser-parse-number
+    $self.current load32 $self.tokens load32 L:Tokens-len /= if {
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_NUMBER = if {
+            $self Parser-parse-number
+        } else {
+            1
+        }
+    } else {
+        1
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected semicolon found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_SEMICOLON /= if {
+        $token L:Token-location "expected semicolon" abort-with-location
+    }
+    AST:Memory-new
+}
+fn Parser-parse-body(self: .Parser) -> .AST:Locals, .AST:Memories, .AST:Words {
+    local token: .L:Token
+    local mems: .AST:Memories
+    local locals: .AST:Locals
+    AST:Memories-new #mems
+    AST:Locals-new #locals
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_MEMORY /= if { break }
+        $mems $self Parser-parse-mem AST:Memories-push
+    }
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_LOCAL /= if { break }
+        $locals $self Parser-parse-loc AST:Locals-push
+    }
+    $locals $mems 
+    $self Parser-parse-words
+}
+fn Parser-parse-words(self: .Parser) -> .AST:Words {
+    local words: .AST:Words
+    local token: .L:Token
+    AST:Words-new #words
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+
+        $token is-start-of-word not if { break }
+        $words $self Parser-parse-word AST:Words-push
+    }
+    $words
+}
+fn print-location(line: i32, column: i32) {
+    1 "./test.watim:" IO:write-all IO:check
+    $line IO:print 
+    1 ":" IO:write-all IO:check
+    $column IO:print 
+    1 " " IO:write-all IO:check
+}
+fn abort-with-location(line: i32, column: i32, msg-ptr: .i32, msg-len: i32) {
+    $line $column print-location
+    1 $msg-ptr $msg-len IO:write-all IO:check
+    1 CORE:exit
+}
+fn abort(msg-ptr: .i32, msg-len: i32) {
+    1 $msg-ptr $msg-len IO:write-all IO:check
+    1 CORE:exit
+}
+fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, .AST:Parameters, .AST:Types {
+    local ident: .L:Token
+    local qualifier: .L:Token
+    local token: .L:Token
+    local parameters: .AST:Parameters
+    local ret: .AST:Types
+    local body: .AST:Words
+    $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+        "expected fn found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_FN /= if {
+        $token L:Token-location "expected fn" abort-with-location
+    }
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+            "expected identifier found EOF" abort
+        }
+        $self Parser-advance #ident
+        $ident L:Token-ty L:TOKEN_IDENT /= if {
+            $ident L:Token-location "expected identifier" abort-with-location
+        }
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+            "expected string or ( found EOF" abort
+        }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_STRING /= 
+        $token L:Token-ty L:TOKEN_LEFT_PAREN /= 
+        and if {
+            $ident L:Token-location "expected string or (" abort-with-location
+        }
+        $token L:Token-ty L:TOKEN_STRING = if {
+            $token #qualifier
+            $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+                "expected string or ( found EOF" abort
+            }
+            $self Parser-advance #token
+        }
+        $self Parser-parse-parameters #parameters
+        $self.current load32 $self.tokens load32 L:Tokens-len = if {
+            "expected ) found EOF" abort
+        }
+        $self Parser-advance #token
+        $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
+            $token L:Token-location "expected )" abort-with-location
+        }
+        $self.current load32 $self.tokens load32 L:Tokens-len < if {
+            $self Parser-peek L:Token-ty L:TOKEN_ARROW = if {
+                $self Parser-advance drop
+                0 0 =
+            } else {
+                0 1 =
+            }
+        } else {
+            0 1 =
+        } if {
+            $self Parser-parse-return-types #ret
+        } else {
+            AST:Types-new #ret
+        }
+        
+        $ident
+        $qualifier
+        $parameters
+        $ret
+        break
+    }
+}
+fn Parser-parse-function(self: .Parser) -> .AST:Function {
+    local ident: .L:Token
+    local qualifier: .L:Token
+    local token: .L:Token
+    local parameters: .AST:Parameters
+    local ret: .AST:Types
+    local body: .AST:Words
+    local mems: .AST:Memories
+    local locals: .AST:Locals
+
+    $self Parser-parse-signature #ret #parameters #qualifier #ident
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected { found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+        $token L:Token-location "expected {" abort-with-location
+    }
+    $self Parser-parse-body #body #mems #locals
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected } found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+        $token L:Token-location "expected }" abort-with-location
+    }
+    $ident
+    $qualifier
+    $parameters
+    $ret
+    $mems
+    $locals
+    $body
+    AST:Function-new
+}
+fn Parser-parse-return-types(self: .Parser) -> .AST:Types {
+    local token: .L:Token
+    local rets: .AST:Types
+    AST:Types-new #rets
+    $rets $self Parser-parse-type AST:Types-push
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if {
+            "expected , or { found EOF" abort
+        }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_COMMA /= if {
+            break
+        }
+        $self Parser-advance drop
+        $rets $self Parser-parse-type AST:Types-push
+    }
+    $rets
+}
+fn Parser-parse-parameters(self: .Parser) -> .AST:Parameters {
+    local params: .AST:Parameters
+    local token: .L:Token
+    AST:Parameters-new #params
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected ( found EOF" abort 
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LEFT_PAREN /= if {
+        $token L:Token-location "expected (" abort-with-location
+    }
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
+        $params $self Parser-parse-parameter AST:Parameters-push
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_COMMA /= if {
+            break
+        }
+        $self Parser-advance drop
+    }
+    $params
+}
+fn Parser-parse-parameter(self: .Parser) -> .AST:Parameter {
+    local ident: .L:Token
+    local token: .L:Token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+        "expected identifier found EOF" abort
+    }
+    $self Parser-advance #ident
+    $ident L:Token-ty L:TOKEN_IDENT /= if {
+        $ident L:Token-location "expected identifier" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+        "expected : found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_COLON /= if {
+        $ident L:Token-location "expected colon" abort-with-location
+    }
+    $ident
+    $self Parser-parse-type
+    AST:Parameter-new
+}
+fn Parser-parse-type(self: .Parser) -> .AST:Type {
+    local type: .AST:Type
+    $self Parser-parse-type-inner #type
+    $self.types load32 $type AST:Types-push
+    $type
+}
+fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
+    local token: .L:Token
+    local module: .L:Token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected type found EOF" abort
+    }
+    $self Parser-advance #token
+    loop {
+        $token L:Token-ty L:TOKEN_DOT = if {
+            $self Parser-parse-type AST:Type-new-ptr break
+        }
+        $token L:Token-ty L:TOKEN_I32 = if {
+            AST:Type-new-int32 break
+        }
+        $token L:Token-ty L:TOKEN_I64 = if {
+            AST:Type-new-int64 break
+        }
+        $token L:Token-ty L:TOKEN_BOOL = if {
+            AST:Type-new-boolean break
+        }
+        $token L:Token-ty L:TOKEN_IDENT = if {
+            $self.current load32 $self.tokens load32 L:Tokens-len < if {
+                $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
+                    $self Parser-advance drop
+                    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                        "expected identifier" abort
+                    }
+                    $token #module
+                    $self Parser-advance #token
+                    $token L:Token-ty L:TOKEN_IDENT /= if {
+                        $token L:Token-location "expected identifier" abort-with-location
+                    }
+                    $module $token AST:Type-new-struc break
+                }
+            }
+            0 !.L:Token $token AST:Type-new-struc break
+        }
+        $token L:Token-location "expected type" abort-with-location
+    }
+}
+fn Parser-parse-word(self: .Parser) -> .AST:Word {
+    local token: .L:Token
+    local ty: i32
+    local line: i32
+    local column: i32
+    local word: .AST:Word
+    $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+        "Expected word found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty #ty
+    $token L:Token-line #line
+    $token L:Token-column #column
+    loop {
+        $ty L:TOKEN_IDENT = if {
+            AST:WORD_CALL $line $column AST:Word-new #word
+            $self.current load32 $self.tokens load32 L:Tokens-len < if {
+                $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
+                    $self Parser-advance drop
+                    $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+                        "Expected ident found EOF" abort
+                    }
+                    $word.qualifier $token L:Token-lexeme store32
+                    $self Parser-advance #token
+                    $token L:Token-ty L:TOKEN_IDENT /= if {
+                        $token L:Token-location "expected ident" abort-with-location
+                    }
+                    $word.ident $token L:Token-lexeme store32
+                    $word break
+                }
+            }
+            $word.ident $token L:Token-lexeme store32
+            $word break
+        }
+        $ty L:TOKEN_NUMBER = if {
+            AST:WORD_NUMBER $line $column AST:Word-new #word
+            $word.number $token.number load32 store32
+            $word break
+        }
+        $ty L:TOKEN_STRING = if {
+            AST:WORD_STRING $line $column AST:Word-new #word
+            $word.addr $self.mem load32 S:String-len store32
+            $word.size $token.string load32 S:String-len store32
+            $self.mem load32 $token.string load32 S:String-unpack S:String-append
+            $word break
+        }
+        $ty L:TOKEN_BREAK = if {
+            AST:WORD_BREAK $line $column AST:Word-new break
+        }
+        $ty L:TOKEN_DOLLAR = if {
+            AST:WORD_LOCAL $line $column AST:Word-new #word
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                "Expected identifier found EOF" abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_IDENT /= if {
+                $token L:Token-location "expected identifier" abort-with-location
+            }
+            $word.ident $token L:Token-lexeme store32
+            $word break
+        }
+        $ty L:TOKEN_HASH = if {
+            AST:WORD_SET $line $column AST:Word-new #word
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                "Expected identifier found EOF" abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_IDENT /= if {
+                $token L:Token-location "expected identifier" abort-with-location
+            }
+            $word.ident $token L:Token-lexeme store32
+            $word break
+        }
+        $ty L:TOKEN_IF = if {
+            $self.current $self.current load32 1 - store32
+            AST:WORD_IF $line $column AST:Word-new #word
+            $word.iff $self Parser-parse-iff store32
+            $word break
+        }
+        $ty L:TOKEN_BANG = if {
+            AST:WORD_CAST $line $column AST:Word-new #word
+            $word.type $self Parser-parse-type store32
+            $word break
+        }
+        $ty L:TOKEN_LOOP = if {
+            $self.current $self.current load32 1 - store32
+            AST:WORD_LOOP $line $column AST:Word-new #word
+            $word.lop $self Parser-parse-lop store32
+            $word break
+        }
+        $ty L:TOKEN_DOT = if {
+            AST:WORD_DEREF $line $column AST:Word-new #word
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                "Expected identifier found EOF" abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_IDENT /= if {
+                $token L:Token-location "expected identifier" abort-with-location
+            }
+            $word.ident $token L:Token-lexeme store32
+            $word break
+        }
+        1 "Unexpected Token: " IO:write-all IO:check
+        1 $ty L:token-ty-name IO:write-all IO:check
+        1 "\n" IO:write-all IO:check
+        1 CORE:exit
+        0 !.AST:Word break
+    }
+}
+fn Parser-parse-lop(self: .Parser) -> .AST:Words {
+    local token: .L:Token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected loop" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LOOP /= if {
+        $token L:Token-location "expected loop" abort-with-location
+    }
+
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected {" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+        $token L:Token-location "expected {" abort-with-location
+    }
+    $self Parser-parse-words
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "expected }" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+        $token L:Token-location "expected }" abort-with-location
+    }
+}
+fn Parser-parse-iff(self: .Parser) -> .AST:If {
+    local token: .L:Token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "exected if" abort
+    }
+    $self Parser-advance #token
+    $token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "exected {" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+        $token L:Token-location "expected {" abort-with-location
+    }
+    $self Parser-parse-words
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        "exected }" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+        $token L:Token-location "expected }" abort-with-location
+    }
+    $self.current load32 $self.tokens load32 L:Tokens-len < if {
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_ELSE = if {
+            $self Parser-advance drop
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                "expected {" abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+                $token L:Token-location "expected {" abort-with-location
+            }
+            $self Parser-parse-words
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                "expected }" abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+                $token L:Token-location "expected }" abort-with-location
+            }
+        } else {
+            0 !.AST:Words
+        }
+    } else {
+        0 !.AST:Words
+    }
+    AST:If-new
+}
+fn Parser-parse-number(self: .Parser) -> i32 {
+    local token: .L:Token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+        "expected number found EOF" abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_NUMBER /= if {
+        $token L:Token-location "expected number" abort-with-location
+    }
+    $token.number load32
+}
+fn is-start-of-word(token: .L:Token) -> bool {
+    local ty: i32
+    $token L:Token-ty #ty
+    $ty L:TOKEN_IDENT = 
+    $ty L:TOKEN_DOLLAR = or
+    $ty L:TOKEN_NUMBER = or
+    $ty L:TOKEN_IF = or
+    $ty L:TOKEN_LOOP = or
+    $ty L:TOKEN_BREAK = or
+    $ty L:TOKEN_HASH = or
+    $ty L:TOKEN_STRING = or
+    $ty L:TOKEN_BANG = or
+    $ty L:TOKEN_DOT = or
+}
+
+fn parse(tokens: .L:Tokens) {
+    local parser: .Parser
+    local items: .AST:TopItems
+    local mem: .S:String
+    local formatted: .S:String
+    S:String-empty #mem
+    $tokens $mem Parser-new #parser
+    $parser Parser-parse-module #items
+    $items AST:TopItems-format #formatted
+    1 $formatted S:String-unpack IO:write-all IO:check
+    A:report
+    $formatted S:String-free
+    1 "\n" IO:write-all IO:check
+    $items AST:TopItems-free
+    $parser Parser-free
+    //1 $mem S:String-unpack IO:write-all IO:check
+    //1 "\n" IO:write-all IO:check
+    $mem S:String-free
+}
+

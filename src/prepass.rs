@@ -289,7 +289,7 @@ impl UncheckedProgram<UnResolvedType> {
                 });
             }
             resolved_modules.insert(
-                module.path.canonicalize()?,
+                module.path.canonicalize().unwrap(),
                 Module {
                     externs,
                     functions,
