@@ -163,3 +163,55 @@ fn find-current-dir() -> i32, i32 {
     }
 }
 
+fn normalize(path-ptr: .i32, path-len: i32) -> .S:String {
+    local out: .S:String
+    local new: .S:String
+    local splits: .S:StringVec
+    local outsplits: .S:StringVec
+    local i: i32
+    S:String-empty #out
+    S:StringVec-new #outsplits
+    $path-ptr $path-len "./" S:str-is-prefix not if {
+        $out "./" S:String-append
+    }
+    $out $path-ptr $path-len S:String-append
+    
+    $out S:String-unpack "//" "/" S:str-replace #new
+    $out S:String-free
+    $new #out
+
+
+    $out S:String-unpack "/./" "/" S:str-replace #new
+    $out S:String-free
+    $new #out
+
+    $out S:String-unpack "/" drop load8 S:str-split #splits
+    $out S:String-free
+
+    loop {
+        $i $splits S:StringVec-len = if { break }
+        loop {
+            $i 1 + $splits S:StringVec-len /= if {
+                $splits $i 1 + S:StringVec-get S:String-unpack ".." S:str-eq 
+                $splits $i S:StringVec-get S:String-unpack "." S:str-eq not and
+                $splits $i S:StringVec-get S:String-unpack ".." S:str-eq not and
+                if {
+                    $i 1 + #i break
+                }
+            }
+            $outsplits $splits $i S:StringVec-get S:String-unpack S:String-new S:StringVec-push
+            break
+        }
+        $i 1 + #i
+    }
+    $splits S:StringVec-free
+    $outsplits "/" S:StringVec-join-with #out
+    $outsplits S:StringVec-free
+    $path-ptr $path-len $out S:String-unpack S:str-eq if {
+        $out
+    } else {
+        $out S:String-unpack normalize
+        $out S:String-free
+    }
+}
+

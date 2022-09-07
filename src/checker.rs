@@ -337,7 +337,8 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
             Ok(path) => path,
             Err(e) => {
                 dbg!(&path.display());
-                return Err(TypeError::Io(Arc::new(e)))},
+                return Err(TypeError::Io(Arc::new(e)));
+            }
         };
         Ok(CheckedImport {
             path,
@@ -608,7 +609,11 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                     ))
                 }
                 Intrinsic::MemGrow => {
-                    let ret = self.expect_stack(stack, &word, [([ResolvedType::I32], &|_| ResolvedType::I32)])?;
+                    let ret = self.expect_stack(
+                        stack,
+                        &word,
+                        [([ResolvedType::I32], &|_| ResolvedType::I32)],
+                    )?;
                     stack.push(ret);
                     Ok((
                         Returns::Yes,
@@ -1026,7 +1031,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 else_block_termination = Returns::No;
                             }
                             break_stacks.extend(break_stack);
-                            min = min.min(if_block_stack.len());
+                            min = min.min(else_block_stack.len());
                         }
                         let else_param = stack[min..stack.len()].to_vec();
                         assert_eq!(&param, &else_param);
@@ -1043,11 +1048,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                 else_block_stack,
                             ));
                         }
-                        let ret = if if_block_stack.len() > stack.len() {
-                            if_block_stack[stack.len()..if_block_stack.len()].to_vec()
-                        } else {
-                            Vec::new()
-                        };
+                        let ret = if_block_stack[min..if_block_stack.len()].to_vec();
                         *stack = if_block_stack;
                         Ok((
                             Returns::Yes,
@@ -1062,11 +1063,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         ))
                     }
                     (Returns::Yes, Returns::No) => {
-                        let ret = if if_block_stack.len() > stack.len() {
-                            if_block_stack[stack.len()..if_block_stack.len()].to_vec()
-                        } else {
-                            Vec::new()
-                        };
+                        let ret = if_block_stack[min..if_block_stack.len()].to_vec();
                         *stack = if_block_stack;
                         Ok((
                             Returns::Yes,
@@ -1081,11 +1078,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         ))
                     }
                     (Returns::No, Returns::Yes) => {
-                        let ret = if else_block_stack.len() > stack.len() {
-                            else_block_stack[stack.len()..else_block_stack.len()].to_vec()
-                        } else {
-                            Vec::new()
-                        };
+                        let ret = else_block_stack[min..else_block_stack.len()].to_vec();
                         *stack = else_block_stack;
                         Ok((
                             Returns::Yes,
@@ -1099,17 +1092,20 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             }),
                         ))
                     }
-                    (Returns::No, Returns::No) => Ok((
-                        Returns::No,
-                        break_stacks,
-                        CheckedWord::If(CheckedIff {
-                            location: location.clone(),
-                            body: if_block_checked_words,
-                            el: else_block_checked_words,
-                            ret: Vec::new(),
-                            param,
-                        }),
-                    )),
+                    (Returns::No, Returns::No) => {
+                        *stack = if_block_stack;
+                        Ok((
+                            Returns::No,
+                            break_stacks,
+                            CheckedWord::If(CheckedIff {
+                                location: location.clone(),
+                                body: if_block_checked_words,
+                                el: else_block_checked_words,
+                                ret: Vec::new(),
+                                param,
+                            }),
+                        ))
+                    }
                 }
             }
             Word::Loop(Loop { location, body }) => {
