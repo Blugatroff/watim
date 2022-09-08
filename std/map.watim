@@ -1,0 +1,79 @@
+import "./string.watim" as S
+import "./i32vec.watim" as IV
+import "./io.watim" as IO
+import "./alloc.watim" as A
+import "./util.watim" as U
+
+struct StringMap {
+    keys: .S:StringVec
+    values: .IV:I32Vec
+}
+fn StringMap-new() -> .StringMap {
+    local self: .StringMap
+    8 A:alloc !.StringMap #self
+    $self.keys S:StringVec-new store32
+    $self.values IV:I32Vec-new store32
+    $self
+}
+fn StringMap-free(self: .StringMap) {
+    $self.keys load32 S:StringVec-free
+    $self.values load32 IV:I32Vec-free
+    $self !.i32 A:free
+}
+fn StringMap-insert(self: .StringMap, key: .S:String, value: i32) -> i32, bool {
+    local i: i32
+    loop {
+        $i $self.keys load32 S:StringVec-len = if { 
+            $self.keys load32 $key S:StringVec-push
+            $self.values load32 $value IV:I32Vec-push
+            0 0 1 = break 
+        }
+        $self $i StringMap-get-key S:String-unpack $key S:String-unpack S:str-eq if {
+            $key S:String-free
+            $self.values load32 $i $value IV:I32Vec-set
+            0 0 =
+            break
+        }
+        $i 1 + #i
+    }
+}
+fn StringMap-get(self: .StringMap, key-ptr: .i32, key-len: i32) -> i32, bool {
+    local i: i32
+    loop {
+        $i $self StringMap-len = if {
+            0 0 1 = break
+        }
+        $self $i StringMap-get-key S:String-unpack $key-ptr $key-len S:str-eq if {
+            $self $i StringMap-get-value 0 0 = break
+        }
+        $i 1 + #i
+    }
+}
+fn StringMap-len(self: .StringMap) -> i32 {
+    $self.keys load32 S:StringVec-len
+}
+fn StringMap-get-key(self: .StringMap, index: i32) -> .S:String {
+    $self.keys load32 $index S:StringVec-get
+}
+fn StringMap-get-value(self: .StringMap, index: i32) -> i32 {
+    $self.values load32 $index IV:I32Vec-get
+}
+fn StringMap-format(self: .StringMap) -> .S:String {
+    local out: .S:String
+    local i: i32
+    S:String-empty #out
+    $out "{\n" S:String-append
+    loop {
+        $i $self StringMap-len = if {
+            break
+        }
+        $out "  " S:String-append
+        $out $self $i StringMap-get-key S:String-unpack S:String-append
+        $out ": " S:String-append
+        $out $self $i StringMap-get-value U:format-i32 S:String-merge
+        $out ",\n" S:String-append
+        $i 1 + #i
+    }
+    $out "}" S:String-append
+    $out 
+}

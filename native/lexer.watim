@@ -553,7 +553,7 @@ fn is-ascii-digit(char: i32) -> bool {
     $char 48 >= $char 57 <= and
 }
 
-// input is borrowed
+// input and file is borrowed
 fn lex(input: .S:String, file: .S:String) -> .Tokens {
     local lexer: .Lexer
     local str: .S:Str

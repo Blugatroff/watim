@@ -1,0 +1,18 @@
+import "./ast.watim" as AST
+import "../std/io.watim" as IO
+import "../std/string.watim" as S
+import "../std/alloc.watim" as A
+
+struct Checker {
+
+}
+
+fn Checker-new() -> .Checker {
+    local self: .Checker
+    0 A:alloc !.Checker #self
+    $self
+}
+fn Checker-free(checker: .Checker) {
+    $checker !.i32 A:free
+}
+

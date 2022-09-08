@@ -30,6 +30,19 @@ fn str-find(ptr: .i32, len: i32, char: i32) -> i32, bool {
         $i 1 + #i
     }
 }
+fn str-find-rev(ptr: .i32, len: i32, char: i32) -> i32, bool {
+    local i: i32
+    $len #i
+    loop {
+        $i 0 = if {
+            0 0 1 = break
+        }
+        $ptr $i 1 - + load8 $char = if {
+            $i 0 0 = break
+        }
+        $i 1 - #i
+    }
+}
 fn str-is-prefix(ptr: .i32, len: i32, prefix-ptr: .i32, prefix-len: i32) -> bool {
     $ptr $len $prefix-len CORE:min $prefix-ptr $prefix-len str-eq
 }

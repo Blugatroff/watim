@@ -5,6 +5,7 @@ import "../std/i32vec.watim" as IV
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
+import "../std/map.watim" as M
 
 fn INTRINSIC_ADD() -> i32 { 1 }
 fn INTRINSIC_STORE32() -> i32 { 2 }
@@ -793,12 +794,18 @@ fn Import-ident(self: .Import) -> .L:Token {
 fn Import-format(self: .Import) -> .S:String {
     local out: .S:String
     S:String-empty #out
-    $out "{ path: \"" S:String-append
+    $out "{ path: " S:String-append
     $out $self Import-path L:Token-lexeme S:Str-unpack S:String-append
-    $out "\", ident: \"" S:String-append
+    $out ", ident: \"" S:String-append
     $out $self Import-ident L:Token-lexeme S:Str-unpack S:String-append
     $out "\" }" S:String-append
     $out
+}
+fn Import-path-content(self: .Import) -> .i32, i32 {
+    local ptr: .i32
+    local len: i32
+    $self Import-path L:Token-lexeme S:Str-unpack #len #ptr
+    $ptr 1 + $len 2 -
 }
 
 struct Field {
@@ -1055,6 +1062,57 @@ fn TopItems-format(self: .TopItems) -> .S:String {
         }
         $out "]" S:String-append
     }
+    $out
+}
+
+struct Imports {
+    map: .M:StringMap
+}
+fn Imports-new() -> .Imports {
+    local self: .Imports
+    4 A:alloc !.Imports #self
+    $self.map M:StringMap-new store32
+    $self
+}
+fn Imports-free(self: .Imports) {
+    local i: i32
+    loop {
+        $i $self.map load32 M:StringMap-len = if { break }
+        $self.map load32 $i M:StringMap-get-value !.S:String S:String-free
+        $i 1 + #i
+    }
+    $self.map load32 M:StringMap-free
+    $self !.i32 A:free
+}
+fn Imports-insert(self: .Imports, ident: .S:String, path: .S:String) {
+    $self.map load32 $ident $path !i32 M:StringMap-insert if {
+        1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
+        !.S:String S:String-free
+    } else {
+        drop
+    }
+}
+fn Imports-get-key(self: .Imports, index: i32) -> .S:String {
+    $self.map load32 $index M:StringMap-get-key !.S:String
+}
+fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
+    $self.map load32 $index M:StringMap-get-value !.S:String
+}
+fn Imports-format(self: .Imports) -> .S:String {
+    local out: .S:String
+    local i: i32
+    S:String-empty #out
+    $out "{\n" S:String-append
+    loop {
+        $i $self.map load32 M:StringMap-len = if { break }
+        $out "  " S:String-append
+        $out $self $i Imports-get-key S:String-unpack S:String-append
+        $out ": \"" S:String-append
+        $out $self $i Imports-get-value S:String-unpack S:String-append
+        $out "\",\n" S:String-append
+        $i 1 + #i
+    }
+    $out "}" S:String-append
     $out
 }
 

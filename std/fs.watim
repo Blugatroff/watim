@@ -215,3 +215,12 @@ fn normalize(path-ptr: .i32, path-len: i32) -> .S:String {
     }
 }
 
+fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
+    local index: i32
+    $path-ptr $path-len "/" drop load8 S:str-find-rev if {
+        #index $path-ptr $index
+    } else {
+        drop $path-ptr $path-len
+    }
+}
+

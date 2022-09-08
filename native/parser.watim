@@ -749,14 +749,12 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_DOT = or
 }
 
-fn parse(tokens: .L:Tokens) -> .AST:TopItems, .S:String, .AST:Types {
+fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {
     local parser: .Parser
     local items: .AST:TopItems
-    local mem: .S:String
-    S:String-empty #mem
     $tokens $mem Parser-new #parser
     $parser Parser-parse-module #items
-    $items $mem
+    $items
     $parser Parser-free
 }
 
