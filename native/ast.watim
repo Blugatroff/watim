@@ -1098,6 +1098,9 @@ fn Imports-get-key(self: .Imports, index: i32) -> .S:String {
 fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
     $self.map load32 $index M:StringMap-get-value !.S:String
 }
+fn Imports-len(self: .Imports) -> i32 {
+    $self.map load32 M:StringMap-len
+}
 fn Imports-format(self: .Imports) -> .S:String {
     local out: .S:String
     local i: i32

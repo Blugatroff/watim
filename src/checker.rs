@@ -980,6 +980,28 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         },
                     ))
                 }
+                Intrinsic::MemCopy => {
+                    self.expect_stack(
+                        stack,
+                        &word,
+                        [(
+                            [
+                                ResolvedType::Ptr(Box::new(ResolvedType::I32)),
+                                ResolvedType::Ptr(Box::new(ResolvedType::I32)),
+                                ResolvedType::I32,
+                            ],
+                            &|_| (),
+                        )],
+                    )?;
+                    Ok((
+                        Returns::Yes,
+                        Vec::new(),
+                        CheckedWord::Intrinsic {
+                            location: location.clone(),
+                            intrinsic: CheckedIntrinsic::MemCopy,
+                        },
+                    ))
+                }
             },
             ref word @ Word::If(Iff {
                 ref location,

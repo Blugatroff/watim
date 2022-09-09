@@ -21,13 +21,7 @@ fn align-to(n: i32, to: i32) -> i32 {
 }
 
 fn copy(a: .i32, b: .i32, len: i32) {
-    loop {
-        $len 0 = if { break }
-        $b $a load8 store8
-        $len 1 - #len
-        $a 1 + #a
-        $b 1 + #b
-    }
+    $b $a $len mem-copy
 }
 
 fn exit(code: i32) {

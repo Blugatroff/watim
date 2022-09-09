@@ -264,7 +264,9 @@ impl std::fmt::Display for CheckedIff {
             None => String::new(),
         };
         let param = Itertools::intersperse(
-            self.param.iter().map(|t| format!("(param {t})")),
+            self.param
+                .iter()
+                .map(|t| format!("(param {})", gen_type(t))),
             String::from(" "),
         )
         .fold(String::from(" "), |a, b| a + &b);
@@ -328,6 +330,7 @@ impl std::fmt::Display for CheckedIntrinsic {
             CheckedIntrinsic::LE => "i32.le_u",
             CheckedIntrinsic::GE => "i32.ge_u",
             CheckedIntrinsic::Mul => "i32.mul",
+            CheckedIntrinsic::MemCopy => "memory.copy",
             CheckedIntrinsic::NotEq(ty) => return write!(f, "{ty}.ne"),
             CheckedIntrinsic::Rotr(ResolvedType::I32) => "i32.rotr",
             CheckedIntrinsic::Rotr(ResolvedType::I64) => "i64.extend_i32_s i64.rotr",

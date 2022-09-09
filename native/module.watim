@@ -58,7 +58,7 @@ fn Module-extract-imports(self: .Module, module-path: .S:String) {
             $path $imp AST:Import-path-content S:String-append
             $self.imports load32 
             $item.imp load32 AST:Import-ident L:Token-lexeme S:Str-unpack S:String-new
-            $path 
+            $path S:String-unpack FS:normalize $path S:String-free
             AST:Imports-insert
         }
         $i 1 + #i
@@ -83,7 +83,7 @@ fn Module-format(self: .Module) -> .S:String {
     $out $self.items load32 AST:TopItems-format S:String-indent S:String-merge
     $out ",\n  imports: " S:String-append
     $out $self.imports load32 AST:Imports-format S:String-indent S:String-merge
-    $out "}" S:String-append
+    $out "\n}" S:String-append
     $out
 }
 
@@ -114,5 +114,38 @@ fn Modules-insert(self: .Modules, path: .S:String, module: .Module) {
     } else {
         drop
     }
+}
+fn Modules-get(self: .Modules, path-ptr: .i32, path-len: i32) -> .Module, bool {
+    $self.inner load32 $path-ptr $path-len MAP:StringMap-get if {
+        !.Module 0 0 =
+    } else {
+        !.Module 0 1 =
+    }
+}
+fn Modules-get-key(self: .Modules, index: i32) -> .S:String {
+    $self.inner load32 $index MAP:StringMap-get-key
+}
+fn Modules-get-value(self: .Modules, index: i32) -> .Module {
+    $self.inner load32 $index MAP:StringMap-get-value !.Module
+}
+fn Modules-len(self: .Modules) -> i32 {
+    $self.inner load32 MAP:StringMap-len
+}
+fn Modules-format(self: .Modules) -> .S:String {
+    local out: .S:String
+    local i: i32
+    S:String-empty #out
+    $out "{\n" S:String-append
+    loop {
+        $i $self Modules-len = if { break }
+        $out "  \"" S:String-append
+        $out $self $i Modules-get-key S:String-unpack S:String-append
+        $out "\": " S:String-append
+        $out $self $i Modules-get-value Module-format S:String-indent S:String-merge
+        $out ",\n" S:String-append
+        $i 1 + #i
+    }
+    $out "}" S:String-append
+    $out
 }
 

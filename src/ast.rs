@@ -78,6 +78,7 @@ pub enum Intrinsic<Type> {
     Rotr,
     Rotl,
     MemGrow,
+    MemCopy,
     Cast(Type),
 }
 
@@ -103,6 +104,7 @@ pub enum CheckedIntrinsic {
     GE,
     Mul,
     MemGrow,
+    MemCopy,
     Rotr(ResolvedType),
     Rotl(ResolvedType),
     Cast(ResolvedType, ResolvedType),

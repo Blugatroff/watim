@@ -467,5 +467,13 @@ pub fn execute_intrinsic(
             stack,
             [([ResolvedType::I32], &mut |[v]| Some([v.clone()]))],
         ),
+        CheckedIntrinsic::MemCopy => expect_args(
+            location,
+            stack,
+            [(
+                [ResolvedType::I32, ResolvedType::I32, ResolvedType::I32],
+                &mut |_| Some([]),
+            )],
+        ),
     }
 }
