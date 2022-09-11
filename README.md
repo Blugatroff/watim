@@ -16,13 +16,14 @@ Watim = WAT Improved
 - loop expression with **break** keyword
 - if expression
 - static type checking
+- structs
 
 ## How to run
 First [install wasm3](https://github.com/wasm3/wasm3/blob/main/docs/Installation.md).
 
 Then run:
 ```bash
-./run.sh <source-file>
+./run.sh <source-file> [args]...
 ```
 
 ## Editor Support

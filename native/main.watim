@@ -7,7 +7,7 @@ import "../std/core.watim" as CORE
 import "../std/../native/lexer.watim" as L
 import "./ast.watim" as AST
 import "./parser.watim" as P
-import "./checker.watim" as C
+import "./resolver.watim" as R
 import "../std/map.watim" as MAP
 import "./module.watim" as M
 
@@ -51,6 +51,7 @@ fn f() {
 
     M:Modules-new #modules
     $modules $mem $path load-module-recursive
+    $modules R:resolve
     A:report
     $modules M:Modules-format #formatted
     A:report

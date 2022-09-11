@@ -174,13 +174,13 @@ struct Type {
     // for TYPE_PTR
     child: .i32 // actually of type .Type but recursive type not yet possible
     // for TYPE_STRUCT
-    struc: .L:Token
-    // for TYPE_STRUCT
+    ident: .L:Token
     module: .L:Token
+    struc: .i32 // actually of type .Struct but indirect recursive type not yet possible
 }
 fn Type-new(ty: i32) -> .Type {
     local self: .Type
-    16 A:alloc !.Type #self
+    20 A:alloc !.Type #self
     $self.ty $ty store32
     $self.child 0 !.i32 store32
     $self
@@ -200,12 +200,25 @@ fn Type-new-ptr(child: .Type) -> .Type {
     $self.child $child !.i32 store32
     $self
 }
-fn Type-new-struc(module: .L:Token, struc: .L:Token) -> .Type {
+fn Type-new-struc(module: .L:Token, ident: .L:Token) -> .Type {
     local self: .Type
     TYPE_STRUCT Type-new #self
     $self.module $module store32
-    $self.struc $struc store32
+    $self.ident $ident store32
+    $self.struc 0 !.i32 store32
     $self
+}
+fn Type-set-struc(self: .Type, struc: .Struct) {
+    $self.struc $struc !.i32 store32
+}
+fn Type-module(self: .Type) -> .L:Token {
+    $self.module load32
+}
+fn Type-ident(self: .Type) -> .L:Token {
+    $self.ident load32
+}
+fn Type-struc(self: .Type) -> .Struct {
+    $self.struc load32 !.Struct
 }
 fn Type-free(self: .Type) {
     $self !.i32 A:free
@@ -233,7 +246,7 @@ fn Type-format(self: .Type) -> .S:String {
                 $out $self.module load32 L:Token-lexeme S:Str-unpack S:String-append
                 $out ":" S:String-append
             }
-            $out $self.struc load32 L:Token-lexeme S:Str-unpack S:String-append
+            $out $self Type-struc Struct-ident L:Token-lexeme S:Str-unpack S:String-append
             break
         }
         1 $self Type-ty type-ty-name IO:write-all IO:check
@@ -353,6 +366,12 @@ fn Word-free(self: .Word) {
         $self.lop load32 Words-free
     }
     $self !.i32 A:free
+}
+fn Word-ty(self: .Word) -> i32 {
+    $self.ty load32
+}
+fn Word-type(self: .Word) -> .Type {
+    $self.type load32
 }
 fn Word-format(self: .Word) -> .S:String {
     local out: .S:String
@@ -577,6 +596,9 @@ fn Memory-new(ident: .L:Token, type: .Type, size: i32, alignment: i32) -> .Memor
     $self.alignment $alignment store32
     $self
 }
+fn Memory-type(self: .Memory) -> .Type {
+    $self.type load32
+}
 fn Memory-free(self: .Memory) {
     $self !.i32 A:free
 }
@@ -660,6 +682,21 @@ fn Function-free(self: .Function) {
     $self.mems load32 Memories-free
     $self.locals load32 Locals-free
     $self !.i32 A:free
+}
+fn Function-ret(self: .Function) -> .Types {
+    $self.ret load32
+}
+fn Function-parameters(self: .Function) -> .Parameters {
+    $self.parameters load32
+}
+fn Function-locals(self: .Function) -> .Locals {
+    $self.locals load32
+}
+fn Function-memories(self: .Function) -> .Memories {
+    $self.mems load32
+}
+fn Function-body(self: .Function) -> .Words {
+    $self.body load32
 }
 fn Function-format(self: .Function) -> .S:String {
     local out: .S:String
@@ -748,6 +785,12 @@ fn Extern-new(
     $self.params $params store32
     $self.rets $rets store32
     $self
+}
+fn Extern-rets(self: .Extern) -> .Types {
+    $self.rets load32
+}
+fn Extern-parameters(self: .Extern) -> .Parameters {
+    $self.params load32
 }
 fn Extern-free(self: .Extern) {
     $self.params load32 Parameters-free
@@ -912,6 +955,12 @@ fn Struct-format(self: .Struct) -> .S:String {
     $out "\n}" S:String-append
     $out
 }
+fn Struct-ident(self: .Struct) -> .L:Token {
+    $self.ident load32
+}
+fn Struct-fields(self: .Struct) -> .Fields {
+    $self.fields load32
+}
 
 fn TOP_ITEM_FN() -> i32 { 1 }
 fn TOP_ITEM_MEM() -> i32 { 2 }
@@ -977,6 +1026,15 @@ fn TopItem-new-struc(struc: .Struct) -> .TopItem {
 fn TopItem-ty(self: .TopItem) -> i32 {
     $self.ty load32
 }
+fn TopItem-struc(self: .TopItem) -> .Struct {
+    $self.struc load32
+}
+fn TopItem-function(self: .TopItem) -> .Function {
+    $self.function load32
+}
+fn TopItem-ext(self: .TopItem) -> .Extern {
+    $self.ext load32
+}
 fn TopItem-free(self: .TopItem) {
     $self TopItem-ty TOP_ITEM_FN = if {
         $self.function load32 Function-free
@@ -1012,6 +1070,9 @@ fn TopItem-format(self: .TopItem) -> .S:String {
     }
     $self TopItem-ty TOP_ITEM_IMPORT = if {
         $out $self.imp load32 Import-format S:String-indent S:String-merge
+    }
+    $self TopItem-ty TOP_ITEM_STRUCT = if {
+        $out $self.struc load32 Struct-format S:String-indent S:String-merge
     }
     $out "\n}" S:String-append
     $out
@@ -1097,6 +1158,14 @@ fn Imports-get-key(self: .Imports, index: i32) -> .S:String {
 }
 fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
     $self.map load32 $index M:StringMap-get-value !.S:String
+}
+fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S:String, bool {
+    local v: i32
+    $self.map load32 $ident-ptr $ident-len M:StringMap-get if {
+        #v $v !.S:String 0 0 =
+    } else {
+        drop 0 !.S:String 0 1 =
+    }
 }
 fn Imports-len(self: .Imports) -> i32 {
     $self.map load32 M:StringMap-len

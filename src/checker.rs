@@ -336,7 +336,6 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
         let path = match path.canonicalize() {
             Ok(path) => path,
             Err(e) => {
-                dbg!(&path.display());
                 return Err(TypeError::Io(Arc::new(e)));
             }
         };
@@ -938,7 +937,6 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             Some(ResolvedType::I64) => stack.push(ResolvedType::I32),
                             Some(ResolvedType::Bool) => stack.push(ResolvedType::I32),
                             _ => {
-                                dbg!(&location);
                                 todo!()
                             }
                         },
@@ -1217,7 +1215,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                                         }
                                     }
                                     None => {
-                                        dbg!(&struc.fields, &field, location);
+                                        dbg!(&location);
                                         todo!()
                                     }
                                 }
