@@ -226,8 +226,8 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
         $lexer.input load32 $lexer.index load32 1 S:Str-slice #lexeme
         $char "/" drop load8 = if {
             $lexer.index load32 $lexer.input load32 S:Str-len < if {
-                $lexer.index $lexer.index load32 1 + store32
-                $lexer.input load32 $lexer.index load32 S:Str-get "/" drop load8 = if {
+                $lexer.input load32 $lexer.index load32 1 + S:Str-get "/" drop load8 = if {
+                    $lexer.index $lexer.index load32 1 + store32
                     loop {
                         $lexer.input load32 S:Str-len $lexer.index load32 = if { break }
                         $lexer.input load32 $lexer.index load32 S:Str-get

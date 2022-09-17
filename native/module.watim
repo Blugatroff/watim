@@ -107,6 +107,52 @@ fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Str
         $i 1 + #i
     }
 }
+fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Extern, .AST:Function, bool {
+    local items: .AST:TopItems
+    local item: .AST:TopItem
+    local fun: .AST:Function
+    local ext: .AST:Extern
+    local i: i32
+    $self Module-items #items
+    loop {
+        $i $items AST:TopItems-len = if { 0 !.AST:Extern 0 !.AST:Function 0 1 = break }
+        $items $i AST:TopItems-get #item
+        $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+            $item AST:TopItem-function #fun
+            $fun AST:Function-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
+                0 !.AST:Extern $fun 0 0 = break
+            }
+        }
+        $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
+            $item AST:TopItem-ext #ext
+            $ext AST:Extern-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
+                $ext 0 !.AST:Function 0 0 = break
+            }
+        }
+        $i 1 + #i
+    }
+}
+fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Memory, bool {
+    local items: .AST:TopItems
+    local item: .AST:TopItem
+    local mem: .AST:Memory
+    local i: i32
+    $self Module-items #items
+    loop {
+        $i $items AST:TopItems-len = if { 0 !.AST:Memory 0 1 = break }
+        $items $i AST:TopItems-get #item
+        $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+            $item AST:TopItem-mem #mem
+            $mem AST:Memory-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
+                $mem 0 0 = break 
+            }
+        }
+        $i 1 + #i
+    }
+}
+fn Module-types(self: .Module) -> .AST:Types {
+    $self.types load32
+}
 fn Module-path(self: .Module) -> .S:String {
     $self.path load32
 }

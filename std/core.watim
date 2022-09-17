@@ -4,10 +4,6 @@ fn dup(a: i32) -> i32, i32 {
     $a $a
 }
 
-fn flip(a: i32, b: i32) -> i32, i32 {
-    $b $a
-}
-
 fn max(a: i32, b: i32) -> i32 {
     $a $b > if { $a } else { $b }
 }

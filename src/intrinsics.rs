@@ -475,5 +475,8 @@ pub fn execute_intrinsic(
                 &mut |_| Some([]),
             )],
         ),
+        CheckedIntrinsic::Flip => {
+            todo!();
+        }
     }
 }

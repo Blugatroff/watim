@@ -1,18 +1,423 @@
 import "../std/alloc.watim" as A
-import "./module.watim" as M
+import "../std/io.watim" as IO
+import "../std/map.watim" as MAP
+import "../std/string.watim" as S
+import "../std/core.watim" as CORE
 
-struct Checker {
-    
+import "./module.watim" as M
+import "./ast.watim" as AST
+import "./lexer.watim" as L
+import "./util.watim" as U
+import "./break_stack.watim" as BS
+import "./intrinsic.watim" as INTR
+
+fn check(modules: .M:Modules) {
+    local i: i32
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $modules $modules $i M:Modules-get-value check-module
+        $i 1 + #i
+    }
 }
-fn Checker-new() -> .Checker {
-    local self: .Checker
-    0 A:alloc !.Checker #self
+fn check-module(modules: .M:Modules, module: .M:Module) {
+    local items: .AST:TopItems
+    local i: i32
+    $module M:Module-items #items
+    loop {
+        $i $items AST:TopItems-len = if { break }
+        $modules $module $items $i AST:TopItems-get check-item
+        $i 1 + #i
+    }
+}
+fn check-item(modules: .M:Modules, module: .M:Module, item: .AST:TopItem) {
+    $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+        $modules $module $item AST:TopItem-function check-function
+    }
+}
+
+fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
+    local locals: .LocalsMap
+    local stack: .AST:Types
+    local temp-types: .AST:Types
+    local words: .AST:Words
+    local bs: .BS:BreakStacks
+    AST:Types-new #stack
+    AST:Types-new #temp-types
+
+    $temp-types $function get-locals-in-function #locals
+
+    $function AST:Function-body #words
+
+    BS:BreakStacks-new #bs
+    $temp-types $bs $modules $module $stack $locals $words check-words drop
+    $stack AST:Types-free-container
+    $temp-types AST:Types-free
+    $locals LocalsMap-free
+    $bs BS:BreakStacks-free
+}
+fn check-words(
+    temp-types: .AST:Types, 
+    bs: .BS:BreakStacks, 
+    modules: .M:Modules, 
+    module: .M:Module,
+    stack: .AST:Types,
+    locals: .LocalsMap,
+    words: .AST:Words,
+) -> bool {
+    local i: i32
+    local diverges: bool
+    loop {
+        $i $words AST:Words-len = if { break }
+        $diverges
+        $temp-types $bs $modules $module $stack $locals $words $i AST:Words-get check-word
+        or
+        #diverges
+        $i 1 + #i
+    }
+    $diverges
+}
+
+fn check-word(
+    temp-types: .AST:Types,
+    bs: .BS:BreakStacks,
+    modules: .M:Modules,
+    module: .M:Module,
+    stack: .AST:Types,
+    locals: .LocalsMap,
+    word: .AST:Word
+) -> bool {
+    loop {
+        $word AST:Word-ty AST:WORD_NUMBER = if {
+            $stack $temp-types AST:Type-new-int32 U:push-temp-type AST:Types-push
+            0 1 = break
+        }
+        $word AST:Word-ty AST:WORD_STRING = if {
+            $stack $temp-types $temp-types AST:Type-new-int32 U:push-temp-type AST:Type-new-ptr U:push-temp-type AST:Types-push
+            $stack $temp-types AST:Type-new-int32 U:push-temp-type AST:Types-push
+            0 1 = break
+        }
+        $word AST:Word-ty AST:WORD_CALL = if {
+            $modules $module $stack $word check-call break
+        }
+        $word AST:Word-ty AST:WORD_LOCAL = if {
+            $module $stack $locals $word check-locl break
+        }
+        $word AST:Word-ty AST:WORD_SET = if {
+            $stack $locals $word check-set break
+        }
+        $word AST:Word-ty AST:WORD_LOOP = if {
+            $temp-types $bs $modules $module $stack $locals $word check-lop break
+        }
+        $word AST:Word-ty AST:WORD_BREAK = if {
+            $bs $stack $word check-brek break
+        }
+        $word AST:Word-ty AST:WORD_INTRINSIC = if {
+            $temp-types $stack $word INTR:check-intrinsic break
+        }
+        $word AST:Word-ty AST:WORD_IF = if {
+            $temp-types $bs $modules $module $stack $locals $word check-iff break
+        }
+        $word AST:Word-ty AST:WORD_CAST = if {
+            $stack $word check-cast break
+        }
+        $word AST:Word-ty AST:WORD_DEREF = if {
+            $temp-types $stack $word check-deref break
+        }
+        $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
+        0 0 = break
+    }
+}
+fn report-check-deref-error(stack: .AST:Types, word: .AST:Word) {
+    local formatted: .S:String
+    $word AST:Word-location 
+    "expected a pointer to a struct, got: " S:String-new #formatted
+    $formatted $stack AST:Types-format S:String-merge
+    $formatted S:String-unpack
+    U:abort-with-location
+    $formatted S:String-free
+}
+fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    $stack AST:Types-len 0 = if { 
+        $stack $word report-check-deref-error
+    }
+    $stack AST:Types-pop #type
+    $type AST:Type-ty AST:TYPE_PTR /= if {
+        $stack $word report-check-deref-error
+    }
+    $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT /= if {
+        $stack $word report-check-deref-error
+    }
+    $type AST:Type-child AST:Type-struc 
+    $word AST:Word-ident S:Str-unpack
+    AST:Struct-find-field if {
+        $word.offset flip store32
+        AST:Field-type AST:Type-new-ptr $temp-types flip U:push-temp-type $stack flip AST:Types-push
+    } else {
+        drop drop $word AST:Word-location "field not found" U:abort-with-location
+    }
+    0 1 =
+}
+fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
+    $stack AST:Types-len 0 = if { 
+        $word AST:Word-location "expected [a] got []\n" U:abort-with-location
+    }
+    $stack AST:Types-pop drop
+    $stack $word AST:Word-type AST:Types-push
+    0 1 =
+}
+fn check-iff(
+    temp-types: .AST:Types,
+    bs: .BS:BreakStacks,
+    modules: .M:Modules,
+    module: .M:Module,
+    stack: .AST:Types,
+    locals: .LocalsMap,
+    word: .AST:Word
+) -> bool {
+    local iff: .AST:If
+    local true-branch-diverges: bool
+    local false-branch-diverges: bool
+    local boolean: .AST:Type
+    local iff-stack: .AST:Types
+    local el-stack: .AST:Types
+    local params: .AST:Types
+    local rets: .AST:Types
+
+    AST:Type-new-boolean #boolean
+    $stack $boolean $word U:expect-stack-one
+    $boolean AST:Type-free
+
+    $stack AST:Types-clone-container #iff-stack
+    $stack AST:Types-clone-container #el-stack
+
+    $iff-stack AST:Types-reset-min
+    $el-stack AST:Types-reset-min
+
+    0 1 = #true-branch-diverges
+    0 1 = #false-branch-diverges
+
+    $word AST:Word-iff #iff
+
+    $temp-types $bs $modules $module $iff-stack $locals $iff AST:If-body check-words #true-branch-diverges
+
+    $stack $iff-stack AST:Types-min $stack AST:Types-len AST:Types-clone-slice #params
+    $iff-stack $iff-stack AST:Types-min $iff-stack AST:Types-len AST:Types-clone-slice #rets
+
+    $iff AST:If-el !i32 0 /= if {
+        $temp-types $bs $modules $module $el-stack $locals $iff AST:If-el check-words #false-branch-diverges
+        // TODO: check whether the params of this else block are equal to those of the if block
+    }
+
+    // clear stack
+    loop {
+        $stack AST:Types-len 0 = if { break }
+        $stack AST:Types-pop drop
+    }
+    // and replace with the iff-stack
+    loop {
+        $iff-stack AST:Types-len $stack AST:Types-len = if { break }
+        $stack $iff-stack $stack AST:Types-len AST:Types-get AST:Types-push
+    }
+
+    $iff $params AST:If-set-params 
+    $iff $rets AST:If-set-rets
+    $iff-stack AST:Types-free-container
+    $el-stack !i32 0 /= if {
+        $el-stack AST:Types-free-container
+    }
+
+    $true-branch-diverges $false-branch-diverges or
+}
+fn check-brek(bs: .BS:BreakStacks, stack: .AST:Types, word: .AST:Word) -> bool {
+    local break_stack: .BS:BreakStack
+    $bs $word $stack AST:Types-clone-container BS:BreakStack-new BS:BreakStacks-push
+    loop {
+        0 $stack AST:Types-len = if { break }
+        $stack AST:Types-pop drop
+    }
+    0 1 =
+}
+fn check-lop(
+    temp-types: .AST:Types,
+    bs: .BS:BreakStacks,
+    modules: .M:Modules, 
+    module: .M:Module,
+    stack: .AST:Types,
+    locals: .LocalsMap,
+    word: .AST:Word,
+) -> bool {
+    $temp-types $bs $modules $module $stack $locals $word AST:Word-words check-words
+}
+fn check-set(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
+        $stack flip $word U:expect-stack-one
+    } else {
+        drop $word AST:Word-location "local not found\n" U:abort-with-location
+    }
+    0 1 = 
+}
+fn check-locl(module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
+        $stack flip AST:Types-push
+    } else {
+        drop
+        $module $word AST:Word-ident S:Str-unpack M:Module-find-mem if {
+            AST:Memory-type $stack flip AST:Types-push
+        } else {
+            drop $word AST:Word-location "local not found\n" U:abort-with-location
+        }
+    }
+    0 1 =
+}
+fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
+    local msg: .S:String
+    local function: .AST:Function
+    local ext: .AST:Extern
+    local params: .AST:Types
+    local param-locals: .AST:Locals
+    local ret: .AST:Types
+    local i: i32
+    $modules $module $word.qualifier load32 $word resolve-module #module
+    $module $word AST:Word-ident S:Str-unpack M:Module-find-function not if {
+        drop drop
+        "function: `" S:String-new #msg
+        $msg $word AST:Word-ident S:Str-unpack S:String-append
+        $msg "` not found\n" S:String-append
+        $word AST:Word-location $msg S:String-unpack U:abort-with-location
+        $msg S:String-free
+    } else { 
+        #function #ext
+    }
+
+    $function !i32 0 /= if {
+        $function AST:Function-parameters #param-locals
+        $function AST:Function-ret #ret
+    } else {
+        $ext AST:Extern-parameters #param-locals
+        $ext AST:Extern-rets #ret
+    }
+
+    AST:Types-new #params
+    loop {
+        $i $param-locals AST:Locals-len = if { break }
+        $params $param-locals $i AST:Locals-get AST:Local-type AST:Types-push
+        $i 1 + #i
+    }
+
+    $stack 
+    $params
+    $word U:expect-stack
+    $params AST:Types-free-container
+
+    0 #i
+    loop {
+        $i $ret AST:Types-len = if { break }
+        $stack $ret $i AST:Types-get AST:Types-push
+        $i 1 + #i
+    }
+
+    0 1 = 
+}
+
+fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .S:Str, word: .AST:Word) -> .M:Module {
+    local path: .S:String
+    local b: bool
+    $qualifier !i32 0 = if {
+        $module
+    } else {
+        $module M:Module-imports $qualifier S:Str-unpack AST:Imports-get #b #path 
+        $b if {
+            $modules $path S:String-unpack M:Modules-get if {
+
+            } else {
+                $word AST:Word-location 
+                "failed to find module\n"
+                U:abort-with-location
+            }
+        } else {
+            $word AST:Word-location 
+            "failed to find import\n"
+            U:abort-with-location
+            0 !.M:Module
+        }
+    }
+}
+fn get-locals-in-function(temp-types: .AST:Types, function: .AST:Function) -> .LocalsMap {
+    local map: .LocalsMap
+    local locals: .AST:Locals
+    local i: i32
+    LocalsMap-new #map
+
+    $function AST:Function-locals #locals
+    $map $function AST:Function-locals insert-locals-into-map 
+    $temp-types $map $function AST:Function-memories insert-memories-into-map
+    $map $function AST:Function-parameters insert-locals-into-map 
+
+    $map
+}
+fn insert-locals-into-map(map: .LocalsMap, locals: .AST:Locals) {
+    local i: i32
+    loop {
+        $i $locals AST:Locals-len = if { break }
+        $map 
+        $locals $i AST:Locals-get
+        insert-local-into-map
+        $i 1 + #i
+    }
+}
+fn insert-memories-into-map(temp-types: .AST:Types, map: .LocalsMap, mems: .AST:Memories) {
+    local i: i32
+    local locl: .AST:Local
+    loop {
+        $mems AST:Memories-len $i = if { break }
+        $map 
+        $mems $i AST:Memories-get AST:Memory-local #locl
+        // This replaces the type of the local to be a pointer in place.
+        $locl
+        $temp-types $locl.type load32 AST:Type-new-ptr U:push-temp-type
+        insert-type-into-map
+        $i 1 + #i
+    }
+}
+fn insert-local-into-map(map: .LocalsMap, locl: .AST:Local) {
+    $map $locl $locl AST:Local-type insert-type-into-map
+}
+fn insert-type-into-map(map: .LocalsMap, locl: .AST:Local, type: .AST:Type) {
+    local msg: .S:String
+    $map 
+    $locl AST:Local-ident L:Token-lexeme S:Str-unpack S:String-new
+    $type
+    LocalsMap-insert if {
+        $locl AST:Local-ident L:Token-location 
+        "local `" S:String-new #msg
+        $msg $locl AST:Local-ident L:Token-lexeme S:Str-unpack S:String-append
+        $msg "` already declared\n" S:String-append
+        $msg S:String-unpack U:abort-with-location
+        $msg S:String-free
+    }
+}
+
+struct LocalsMap {
+    inner: .MAP:StringMap
+}
+fn LocalsMap-new() -> .LocalsMap {
+    local self: .LocalsMap
+    4 A:alloc !.LocalsMap #self
+    $self.inner MAP:StringMap-new store32
     $self
 }
-fn Checker-free(self: .Checker) {
+fn LocalsMap-len(self: .LocalsMap) -> i32 {
+    $self.inner load32 MAP:StringMap-len
+}
+fn LocalsMap-free(self: .LocalsMap) {
+    $self.inner load32 MAP:StringMap-free
     $self !.i32 A:free
 }
-fn Checker-check-modules(self: .Checker, modules: .M:Modules) {
-    
+fn LocalsMap-insert(self: .LocalsMap, ident: .S:String, type: .AST:Type) -> bool {
+    $self.inner load32 $ident $type !i32 MAP:StringMap-insert flip drop
+}
+fn LocalsMap-get(self: .LocalsMap, ident-ptr: .i32, ident-len: i32) -> .AST:Type, bool {
+    $self.inner load32 $ident-ptr $ident-len MAP:StringMap-get flip !.AST:Type flip
 }
 

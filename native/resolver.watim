@@ -5,6 +5,7 @@ import "../std/alloc.watim" as A
 import "./module.watim" as M
 import "./lexer.watim" as L
 import "./parser.watim" as P
+import "./util.watim" as U
 
 fn resolve(modules: .M:Modules) {
     local i: i32
@@ -72,6 +73,18 @@ fn resolve-word(modules: .M:Modules, module: .M:Module, word: .AST:Word) {
     $word AST:Word-ty AST:WORD_CAST = if {
         $modules $module $word AST:Word-type resolve-type
     }
+    $word AST:Word-ty AST:WORD_IF = if {
+        $modules $module $word AST:Word-iff resolve-iff
+    }
+    $word AST:Word-ty AST:WORD_LOOP = if {
+        $modules $module $word AST:Word-lop resolve-words
+    }
+}
+fn resolve-iff(modules: .M:Modules, module: .M:Module, iff: .AST:If) {
+    $modules $module $iff AST:If-body resolve-words
+    $iff AST:If-el !i32 0 /= if { 
+        $modules $module $iff AST:If-el resolve-words
+    }
 }
 fn resolve-field(modules: .M:Modules, module: .M:Module, field: .AST:Field) {
     $modules $module $field AST:Field-type resolve-type
@@ -106,16 +119,16 @@ fn resolve-locals(modules: .M:Modules, module: .M:Module, locals: .AST:Locals) {
 fn resolve-local(modules: .M:Modules, module: .M:Module, locl: .AST:Local) {
     $modules $module $locl AST:Local-type resolve-type
 }
-fn resolve-parameters(modules: .M:Modules, module: .M:Module, parameters: .AST:Parameters) {
+fn resolve-parameters(modules: .M:Modules, module: .M:Module, parameters: .AST:Locals) {
     local i: i32
     loop {
-        $parameters AST:Parameters-len $i = if { break }
-        $modules $module $parameters $i AST:Parameters-get resolve-parameter
+        $parameters AST:Locals-len $i = if { break }
+        $modules $module $parameters $i AST:Locals-get resolve-parameter
         $i 1 + #i
     }
 }
-fn resolve-parameter(modules: .M:Modules, module: .M:Module, parameter: .AST:Parameter) {
-    $modules $module $parameter AST:Parameter-type resolve-type
+fn resolve-parameter(modules: .M:Modules, module: .M:Module, parameter: .AST:Local) {
+    $modules $module $parameter AST:Local-type resolve-type
 }
 fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
     local ident: .S:Str
@@ -135,7 +148,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
                     #path
                 } else {
                     drop
-                    $module-token L:Token-location "module not found" P:abort-with-location
+                    $module-token L:Token-location "module not found" U:abort-with-location
                 }
             } else {
                 $module M:Module-path #path
@@ -143,7 +156,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
             $modules $path S:String-unpack $ident S:Str-unpack M:Modules-find-struc if {
                 #struc $type $struc AST:Type-set-struc
             } else {
-                drop $module-token L:Token-location "struct not found" P:abort-with-location
+                drop $module-token L:Token-location "struct not found" U:abort-with-location
             }
             break
         }

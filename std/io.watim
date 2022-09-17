@@ -30,7 +30,7 @@ fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
             $pt $written + 
             $len $written - 
             write-all-inner
-            CORE:flip $written + CORE:flip
+            flip $written + flip
         }
     } else {
         0 $code
@@ -38,7 +38,7 @@ fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
 }
 
 fn write-all(fd: i32, pt: .i32, len: i32) -> i32 {
-    $fd $pt $len write-all-inner CORE:flip drop
+    $fd $pt $len write-all-inner flip drop
 }
 
 fn write-byte(file: i32, b: i32) -> i32 {

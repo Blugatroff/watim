@@ -402,6 +402,11 @@ impl Parser {
                         location: ident.location,
                         intrinsic: Intrinsic::MemCopy,
                     })
+                } else if &ident.lexeme == "flip" {
+                    Ok(Word::Intrinsic {
+                        location: ident.location,
+                        intrinsic: Intrinsic::Flip,
+                    })
                 } else if self.matsch(TokenType::Colon).is_some() {
                     let ident_2 = self.ident()?;
                     Ok(Word::Call {

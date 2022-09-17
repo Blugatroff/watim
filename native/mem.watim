@@ -1,0 +1,50 @@
+import "../std/string.watim" as S
+import "../std/core.watim" as CORE
+
+import "./module.watim" as M
+import "./ast.watim" as AST
+import "./util.watim" as U
+
+fn process(global-mem-start: i32, modules: .M:Modules) -> i32 {
+    memory mem-start: i32 4 4;
+    local i: i32
+    $mem-start $global-mem-start store32
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $mem-start $modules $i M:Modules-get-value process-module
+        $i 1 + #i
+    }
+    $mem-start load32
+}
+
+fn process-module(global-mem-address: .i32, module: .M:Module) {
+    local items: .AST:TopItems
+    local i: i32
+    $module M:Module-items #items
+    loop {
+        $i $items AST:TopItems-len = if { break }
+        $module M:Module-types $global-mem-address $items $i AST:TopItems-get process-item
+        $i 1 + #i
+    }
+}
+
+fn process-item(temp-types: .AST:Types, global-mem-address: .i32, item: .AST:TopItem) {
+    $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+        $temp-types $global-mem-address $item AST:TopItem-mem process-mem
+    }
+}
+
+fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Memory) {
+    local address: i32
+    local size: i32
+    local alignment: i32
+    $global-mem-address load32 #address
+    $mem AST:Memory-size #size
+    $mem AST:Memory-alignment #alignment
+    $address $alignment CORE:align-to #address
+    $global-mem-address $address $size + store32
+    $mem $size AST:Memory-set-address
+
+    $mem $temp-types $mem AST:Memory-type AST:Type-new-ptr U:push-temp-type AST:Memory-set-type
+}
+

@@ -1000,6 +1000,16 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                         },
                     ))
                 }
+                Intrinsic::Flip => {
+                    let a = stack.pop().unwrap();
+                    let b = stack.pop().unwrap();
+                    stack.push(a);
+                    stack.push(b);
+                    Ok((Returns::Yes, Vec::new(), CheckedWord::Intrinsic {
+                        location: location.clone(),
+                        intrinsic: CheckedIntrinsic::Flip,
+                    }))
+                },
             },
             ref word @ Word::If(Iff {
                 ref location,
@@ -1147,10 +1157,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             return Err(TypeError::BreakTypeMismatch(location, break_stacks));
                         }
                     }
-                    let ret = break_stacks
-                        .first()
-                        .map(|s| s.stack.clone())
-                        .unwrap_or_default();
+                    let ret = first.stack.clone();
                     stack.extend(ret.clone());
                     Ok((
                         Returns::Yes,

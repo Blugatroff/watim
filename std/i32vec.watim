@@ -35,7 +35,7 @@ fn I32Vec-set(self: .I32Vec, index: i32, value: i32) -> i32 {
     $self.ptr load32 $index 4 * + $value store32
 }
 fn I32Vec-free(vec: .I32Vec) {
-    $vec I32Vec-len 0 > if { $vec.ptr load32 A:free }
+    $vec.cap load32 0 > if { $vec.ptr load32 A:free }
     $vec !.i32 A:free
 }
 fn I32Vec-push(vec: .I32Vec, val: i32) {
@@ -59,6 +59,14 @@ fn I32Vec-push(vec: .I32Vec, val: i32) {
         $vec $val I32Vec-push
     }
 }
+fn I32Vec-pop(self: .I32Vec) -> i32 {
+    $self I32Vec-len 0 = if { 
+        1 "Cannot pop from emtpy I32Vec" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self $self I32Vec-len 1 - I32Vec-get
+    $self.len $self.len load32 1 - store32
+}
 fn I32Vec-print(vec: .I32Vec) {
     local i: i32
     $vec I32Vec-len 0 = if { 
@@ -74,5 +82,16 @@ fn I32Vec-print(vec: .I32Vec) {
         }
         1 "]" IO:write-all IO:check
     }
+}
+fn I32Vec-clone(self: .I32Vec) -> .I32Vec {
+    local new: .I32Vec
+    local i: i32
+    I32Vec-new #new
+    loop {
+        $i $self I32Vec-len = if { break }
+        $new $self $i I32Vec-get I32Vec-push
+        $i 1 + #i
+    }
+    $new
 }
 

@@ -4,12 +4,15 @@ import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/core.watim" as CORE
-import "../std/../native/lexer.watim" as L
+import "../std/map.watim" as MAP
+
+import "./lexer.watim" as L
 import "./ast.watim" as AST
 import "./parser.watim" as P
 import "./resolver.watim" as R
-import "../std/map.watim" as MAP
 import "./module.watim" as M
+import "./checker.watim" as C
+import "./mem.watim" as MEM
 
 fn load-module-recursive(modules: .M:Modules, mem: .S:String, path: .S:String) {
     local module: .M:Module
@@ -52,6 +55,8 @@ fn f() {
     M:Modules-new #modules
     $modules $mem $path load-module-recursive
     $modules R:resolve
+    $mem S:String-len $modules MEM:process drop
+    $modules C:check
     A:report
     $modules M:Modules-format #formatted
     A:report

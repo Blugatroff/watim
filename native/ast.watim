@@ -29,7 +29,41 @@ fn INTRINSIC_MUL() -> i32 { 19 }
 fn INTRINSIC_ROTR() -> i32 { 20 }
 fn INTRINSIC_ROTL() -> i32 { 21 }
 fn INTRINSIC_MEM_GROW() -> i32 { 22 }
-fn INTRINSIC_MEM_CAST() -> i32 { 23 }
+fn INTRINSIC_MEM_COPY() -> i32 { 23 }
+fn INTRINSIC_FLIP() -> i32 { 24 }
+
+fn intrinsic-name(intrinsic: i32) -> .i32, i32 {
+    loop {
+        $intrinsic INTRINSIC_ADD = if { "INTRINSIC_ADD" break }
+        $intrinsic INTRINSIC_STORE32 = if { "INTRINSIC_STORE32" break }
+        $intrinsic INTRINSIC_STORE8 = if { "INTRINSIC_STORE8" break }
+        $intrinsic INTRINSIC_LOAD32 = if { "INTRINSIC_LOAD32" break }
+        $intrinsic INTRINSIC_LOAD8 = if { "INTRINSIC_LOAD8" break }
+        $intrinsic INTRINSIC_DROP = if { "INTRINSIC_DROP" break }
+        $intrinsic INTRINSIC_SUB = if { "INTRINSIC_SUB" break }
+        $intrinsic INTRINSIC_EQ = if { "INTRINSIC_EQ" break }
+        $intrinsic INTRINSIC_NOT_EQ = if { "INTRINSIC_NOT_EQ" break }
+        $intrinsic INTRINSIC_MOD = if { "INTRINSIC_MOD" break }
+        $intrinsic INTRINSIC_DIV = if { "INTRINSIC_DIV" break }
+        $intrinsic INTRINSIC_AND = if { "INTRINSIC_AND" break }
+        $intrinsic INTRINSIC_NOT = if { "INTRINSIC_NOT" break }
+        $intrinsic INTRINSIC_OR = if { "INTRINSIC_OR" break }
+        $intrinsic INTRINSIC_LESS = if { "INTRINSIC_LESS" break }
+        $intrinsic INTRINSIC_GREATER = if { "INTRINSIC_GREATER" break }
+        $intrinsic INTRINSIC_LESS_EQ = if { "INTRINSIC_LESS_EQ" break }
+        $intrinsic INTRINSIC_GREATER_EQ = if { "INTRINSIC_GREATER_EQ" break }
+        $intrinsic INTRINSIC_MUL = if { "INTRINSIC_MUL" break }
+        $intrinsic INTRINSIC_ROTR = if { "INTRINSIC_ROTR" break }
+        $intrinsic INTRINSIC_ROTL = if { "INTRINSIC_ROTL" break }
+        $intrinsic INTRINSIC_MEM_GROW = if { "INTRINSIC_MEM_GROW" break }
+        $intrinsic INTRINSIC_MEM_COPY = if { "INTRINSIC_MEM_COPY" break }
+        $intrinsic INTRINSIC_FLIP = if { "INTRINSIC_FLIP" break }
+
+        2 "INVALID INTRINSIC " IO:write-all IO:check
+        $intrinsic IO:print
+        1 CORE:exit
+    }
+}
 
 fn WORD_CALL() -> i32 { 1 }
 fn WORD_LOCAL() -> i32 { 2 }
@@ -114,44 +148,6 @@ fn Words-format(self: .Words) -> .S:String {
     $out
 }
 
-struct If {
-    token: .L:Token
-    body: .Words
-    el: .Words
-}
-fn If-new(token: .L:Token, body: .Words, el: .Words) -> .If {
-    local self: .If
-    12 A:alloc !.If #self
-    $self.token $token store32
-    $self.body $body store32
-    $self.el $el store32
-    $self
-}
-fn If-free(self: .If) {
-    $self.body load32 Words-free
-    $self.el load32 !i32 0 /= if {
-        $self.el load32 Words-free
-    }
-    $self !.i32 A:free
-}
-fn If-token(self: .If) -> .L:Token {
-    $self.token load32
-}
-fn If-body(self: .If) -> .Words {
-    $self.body load32
-}
-fn If-el(self: .If) -> .Words {
-    $self.el load32
-}
-fn If-format(self: .If) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  body: " S:String-append
-    $out $self.body load32 Words-format S:String-indent S:String-merge
-    $out "\n}" S:String-append
-    $out
-}
-
 fn TYPE_I32() -> i32 { 1 }
 fn TYPE_I64() -> i32 { 2 }
 fn TYPE_BOOL() -> i32 { 3 }
@@ -178,12 +174,30 @@ struct Type {
     module: .L:Token
     struc: .i32 // actually of type .Struct but indirect recursive type not yet possible
 }
+fn Type-eq(a: .Type, b: .Type) -> bool {
+    loop {
+        $a.ty load32 $b.ty load32 /= if { 0 1 = break }
+        $a.ty load32 TYPE_PTR = if {
+            $a Type-child $b Type-child Type-eq break
+        }
+        $a.ty load32 TYPE_STRUCT = if {
+            $a.struc load32 $b.struc load32 = break
+        }
+        0 0 = break
+    }
+}
 fn Type-new(ty: i32) -> .Type {
     local self: .Type
     20 A:alloc !.Type #self
     $self.ty $ty store32
     $self.child 0 !.i32 store32
     $self
+}
+fn Type-clone(self: .Type) -> .Type {
+    local new: .Type
+    20 A:alloc !.Type #new
+    $self !.i32 $new !.i32 20 CORE:copy
+    $new
 }
 fn Type-new-int32() -> .Type {
     TYPE_I32 Type-new
@@ -259,10 +273,11 @@ fn Type-format(self: .Type) -> .S:String {
 
 struct Types {
     inner: .IV:I32Vec
+    min-size: i32
 }
 fn Types-new() -> .Types {
     local self: .Types
-    4 A:alloc !.Types #self
+    8 A:alloc !.Types #self
     $self.inner IV:I32Vec-new store32
     $self
 }
@@ -275,12 +290,39 @@ fn Types-free(self: .Types) {
     }
     $self Types-free-container
 }
+fn Types-reset-min(self: .Types) {
+    $self.min-size $self Types-len store32
+}
+fn Types-min(self: .Types) -> i32 {
+    $self.min-size load32
+}
+fn Types-clone-container(self: .Types) -> .Types {
+    local new: .Types
+    8 A:alloc !.Types #new
+    $new.inner $self.inner load32 IV:I32Vec-clone store32
+    $new.min-size $self Types-min store32
+    $new
+}
 fn Types-free-container(self: .Types) {
     $self.inner load32 IV:I32Vec-free
     $self !.i32 A:free
 }
 fn Types-push(self: .Types, f: .Type) {
     $self.inner load32 $f !i32 IV:I32Vec-push
+}
+fn Types-pop(self: .Types) -> .Type {
+    $self.inner load32 IV:I32Vec-pop !.Type
+    $self.min-size $self Types-min $self Types-len CORE:min store32
+}
+fn Types-clone-slice(self: .Types, start: i32, end: i32) -> .Types {
+    local new: .Types
+    Types-new #new
+    loop {
+        $start $end = if { break }
+        $new $self $start Types-get Type-clone Types-push
+        $start 1 + #start
+    }
+    $new
 }
 fn Types-len(self: .Types) -> i32 {
     $self.inner load32 IV:I32Vec-len
@@ -308,14 +350,77 @@ fn Types-format(self: .Types) -> .S:String {
     $out
 }
 
+struct If {
+    token: .L:Token
+    body: .Words
+    el: .Words
+    params: .Types
+    rets: .Types
+}
+fn If-new(token: .L:Token, body: .Words, el: .Words) -> .If {
+    local self: .If
+    20 A:alloc !.If #self
+    $self.token $token store32
+    $self.body $body store32
+    $self.el $el store32
+    $self.params 0 !.Types store32
+    $self.rets 0 !.Types store32
+    $self
+}
+fn If-free(self: .If) {
+    $self.body load32 Words-free
+    $self.el load32 !i32 0 /= if {
+        $self.el load32 Words-free
+    }
+    $self.params load32 !i32 0 /= if {
+        $self.params load32 Types-free
+    }
+    $self.rets load32 !i32 0 /= if {
+        $self.rets load32 Types-free
+    }
+    $self !.i32 A:free
+}
+fn If-token(self: .If) -> .L:Token {
+    $self.token load32
+}
+fn If-body(self: .If) -> .Words {
+    $self.body load32
+}
+fn If-el(self: .If) -> .Words {
+    $self.el load32
+}
+fn If-params(self: .If) -> .Types {
+    $self.params load32
+}
+fn If-set-params(self: .If, params: .Types) {
+    $self.params $params store32
+}
+fn If-rets(self: .If) -> .Types {
+    $self.rets load32
+}
+fn If-set-rets(self: .If, params: .Types) {
+    $self.rets $params store32
+}
+fn If-format(self: .If) -> .S:String {
+    local out: .S:String
+    S:String-empty #out
+    $out "{\n  body: " S:String-append
+    $out $self.body load32 Words-format S:String-indent S:String-merge
+    $out "\n}" S:String-append
+    $out
+}
+
 
 
 struct Word {
+    file: .S:String
     ty: i32
     line: i32
     column: i32
     // for WORD_CALL, WORD_LOCAL, WORD_GLOBAL_MEM, WORD_SET, WORD_DEREF
     ident: .S:Str
+    // for WORD_DEREF
+    offset: i32
     // for WORD_CALL, WORD_GLOBAL_MEM
     qualifier: .S:Str
     // for WORD_NUMBER
@@ -339,9 +444,10 @@ struct Word {
     // for WORD_CAST
     type: .Type
 }
-fn Word-new(ty: i32, line: i32, column: i32) -> .Word {
+fn Word-new(ty: i32, file: .S:String, line: i32, column: i32) -> .Word {
     local self: .Word
-    52 A:alloc !.Word #self
+    60 A:alloc !.Word #self
+    $self.file $file store32
     $self.ty $ty store32
     $self.line $line store32
     $self.column $column store32
@@ -356,6 +462,7 @@ fn Word-new(ty: i32, line: i32, column: i32) -> .Word {
     $self.lop 0 !.Words store32
     $self.iff 0 !.If store32
     $self.type 0 !.Type store32
+    $self.offset 0 store32
     $self
 }
 fn Word-free(self: .Word) {
@@ -367,11 +474,29 @@ fn Word-free(self: .Word) {
     }
     $self !.i32 A:free
 }
+fn Word-location(self: .Word) -> .S:String, i32, i32 {
+    $self.file load32 $self.line load32 $self.column load32
+}
 fn Word-ty(self: .Word) -> i32 {
     $self.ty load32
 }
 fn Word-type(self: .Word) -> .Type {
     $self.type load32
+}
+fn Word-iff(self: .Word) -> .If {
+    $self.iff load32 
+}
+fn Word-lop(self: .Word) -> .Words {
+    $self.lop load32
+}
+fn Word-ident(self: .Word) -> .S:Str {
+    $self.ident load32
+}
+fn Word-words(self: .Word) -> .Words {
+    $self.lop load32
+}
+fn Word-intrinsic(self: .Word) -> i32 {
+    $self.intrinsic load32
 }
 fn Word-format(self: .Word) -> .S:String {
     local out: .S:String
@@ -418,86 +543,15 @@ fn Word-format(self: .Word) -> .S:String {
         $out ", lop: " S:String-append
         $out $self.lop load32 Words-format S:String-indent S:String-merge
     }
+    $self.ty load32 WORD_INTRINSIC = if {
+        $out ", kind: " S:String-append
+        $out $self.intrinsic load32 intrinsic-name S:String-append
+    }
+    $self.ty load32 WORD_CAST = if {
+        $out ", type: " S:String-append
+        $out $self.type load32 Type-format S:String-merge
+    }
     $out ", }" S:String-append
-    $out
-}
-
-struct Parameter {
-    ident: .L:Token
-    type: .Type
-}
-fn Parameter-new(ident: .L:Token, type: .Type) -> .Parameter {
-    local self: .Parameter
-    8 A:alloc !.Parameter #self
-    $self.ident $ident store32
-    $self.type $type store32
-    $self
-}
-fn Parameter-type(self: .Parameter) -> .Type {
-    $self.type load32
-}
-fn Parameter-ident(self: .Parameter) -> .L:Token {
-    $self.ident load32
-}
-fn Parameter-free(self: .Parameter) {
-    $self !.i32 A:free
-}
-fn Parameter-format(self: .Parameter) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{ ident: " S:String-append
-    $out $self Parameter-ident L:Token-lexeme S:Str-unpack S:String-append
-    $out ", type: " S:String-append
-    $out $self Parameter-type Type-format S:String-merge
-    $out " }" S:String-append
-    $out
-}
-
-struct Parameters {
-    inner: .IV:I32Vec
-}
-fn Parameters-new() -> .Parameters {
-    local self: .Parameters
-    4 A:alloc !.Parameters #self 
-    $self.inner IV:I32Vec-new store32
-    $self
-}
-fn Parameters-free(self: .Parameters) {
-    local i: i32
-    loop {
-        $i $self.inner load32 IV:I32Vec-len = if { break }
-        $self.inner load32 $i IV:I32Vec-get !.Parameter Parameter-free
-        $i 1 + #i
-    }
-    $self.inner load32 IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Parameters-push(self: .Parameters, f: .Parameter) {
-    $self.inner load32 $f !i32 IV:I32Vec-push
-}
-fn Parameters-len(self: .Parameters) -> i32 {
-    $self.inner load32 IV:I32Vec-len
-}
-fn Parameters-get(self: .Parameters, index: i32) -> .Parameter {
-    $self.inner load32 $index IV:I32Vec-get !.Parameter
-}
-fn Parameters-format(self: .Parameters) -> .S:String {
-    local out: .S:String
-    local i: i32
-    S:String-empty #out
-    $self Parameters-len 0 = if { 
-        $out "[]" S:String-append
-    } else {
-        $out "[\n" S:String-append
-        loop {
-            $i $self Parameters-len = if { break }
-            $out "  " S:String-append
-            $out $self $i Parameters-get Parameter-format S:String-indent S:String-merge
-            $out ",\n" S:String-append
-            $i 1 + #i
-        }
-        $out "]" S:String-append
-    }
     $out
 }
 
@@ -517,6 +571,9 @@ fn Local-ident(self: .Local) -> .L:Token {
 }
 fn Local-type(self: .Local) -> .Type {
     $self.type load32
+}
+fn Local-set-type(self: .Local, type: .Type) {
+    $self.type $type store32
 }
 fn Local-format(self: .Local) -> .S:String {
     local out: .S:String
@@ -582,33 +639,55 @@ fn Locals-format(self: .Locals) -> .S:String {
 }
 
 struct Memory {
-    ident: .L:Token
-    type: .Type
+    locl: .Local
     size: i32
     alignment: i32
+    address: i32
 }
 fn Memory-new(ident: .L:Token, type: .Type, size: i32, alignment: i32) -> .Memory {
     local self: .Memory
     16 A:alloc !.Memory #self
-    $self.ident $ident store32
-    $self.type $type store32
+    $self.locl $ident $type Local-new store32
     $self.size $size store32
     $self.alignment $alignment store32
+    $self.address 0 store32
     $self
 }
-fn Memory-type(self: .Memory) -> .Type {
-    $self.type load32
-}
 fn Memory-free(self: .Memory) {
+    $self.locl load32 Local-free
     $self !.i32 A:free
+}
+fn Memory-ident(self: .Memory) -> .L:Token {
+    $self.locl load32 Local-ident
+}
+fn Memory-type(self: .Memory) -> .Type {
+    $self.locl load32 Local-type
+}
+fn Memory-set-type(self: .Memory, type: .Type) {
+    $self.locl load32 $type Local-set-type
+}
+fn Memory-local(self: .Memory) -> .Local {
+    $self.locl load32
+}
+fn Memory-address(self: .Memory) -> i32 {
+    $self.address load32
+}
+fn Memory-set-address(self: .Memory, address: i32) {
+    $self.address $address store32
+}
+fn Memory-size(self: .Memory) -> i32 {
+    $self.size load32
+}
+fn Memory-alignment(self: .Memory) -> i32 {
+    $self.alignment load32
 }
 fn Memory-format(self: .Memory) -> .S:String {
     local out: .S:String
     S:String-empty #out
     $out "{ ident: " S:String-append
-    $out $self.ident load32 L:Token-lexeme S:Str-unpack S:String-append
+    $out $self Memory-ident L:Token-lexeme S:Str-unpack S:String-append
     $out ", type: " S:String-append
-    $out $self.type load32 Type-format S:String-merge
+    $out $self Memory-type Type-format S:String-merge
     $out ", size: " S:String-append
     $out $self.size load32 U:format-i32 S:String-merge
     $out ", alignment: " S:String-append
@@ -649,7 +728,7 @@ fn Memories-len(self: .Memories) -> i32 {
 struct Function {
     ident: .L:Token
     qualifier: .L:Token
-    parameters: .Parameters
+    parameters: .Locals
     ret: .Types
     mems: .Memories
     locals: .Locals
@@ -658,7 +737,7 @@ struct Function {
 fn Function-new(
     ident: .L:Token, 
     qualifier: .L:Token, 
-    parameters: .Parameters,
+    parameters: .Locals,
     ret: .Types,
     mems: .Memories,
     locals: .Locals,
@@ -676,7 +755,7 @@ fn Function-new(
     $self
 }
 fn Function-free(self: .Function) {
-    $self.parameters load32 Parameters-free
+    $self.parameters load32 Locals-free
     $self.ret load32 Types-free-container
     $self.body load32 Words-free
     $self.mems load32 Memories-free
@@ -686,7 +765,7 @@ fn Function-free(self: .Function) {
 fn Function-ret(self: .Function) -> .Types {
     $self.ret load32
 }
-fn Function-parameters(self: .Function) -> .Parameters {
+fn Function-parameters(self: .Function) -> .Locals {
     $self.parameters load32
 }
 fn Function-locals(self: .Function) -> .Locals {
@@ -698,13 +777,16 @@ fn Function-memories(self: .Function) -> .Memories {
 fn Function-body(self: .Function) -> .Words {
     $self.body load32
 }
+fn Function-ident(self: .Function) -> .L:Token {
+    $self.ident load32
+}
 fn Function-format(self: .Function) -> .S:String {
     local out: .S:String
     S:String-empty #out
     $out "{\n  ident: \"" S:String-append
     $out $self.ident load32 .lexeme load32 S:Str-unpack S:String-append
     $out "\",\n  params: " S:String-append
-    $out $self.parameters load32 Parameters-format S:String-indent S:String-merge
+    $out $self.parameters load32 Locals-format S:String-indent S:String-merge
     $out ",\n  rets: " S:String-append
     $out $self.ret load32 Types-format S:String-indent S:String-merge
     $out ",\n  locals: " S:String-append
@@ -767,14 +849,14 @@ struct Extern {
     module: .L:Token
     name: .L:Token
     ident: .L:Token
-    params: .Parameters
+    params: .Locals
     rets: .Types
 }
 fn Extern-new(
     module: .L:Token,
     name: .L:Token,
     ident: .L:Token,
-    params: .Parameters,
+    params: .Locals,
     rets: .Types
 ) -> .Extern {
     local self: .Extern
@@ -789,11 +871,14 @@ fn Extern-new(
 fn Extern-rets(self: .Extern) -> .Types {
     $self.rets load32
 }
-fn Extern-parameters(self: .Extern) -> .Parameters {
+fn Extern-parameters(self: .Extern) -> .Locals {
     $self.params load32
 }
+fn Extern-ident(self: .Extern) -> .L:Token {
+    $self.ident load32
+}
 fn Extern-free(self: .Extern) {
-    $self.params load32 Parameters-free
+    $self.params load32 Locals-free
     $self.rets load32 Types-free-container
     $self !.i32 A:free
 }
@@ -807,7 +892,7 @@ fn Extern-format(self: .Extern) -> .S:String {
     $out "\",\n  ident: \"" S:String-append
     $out $self.ident load32 L:Token-lexeme S:Str-unpack S:String-append
     $out "\",\n  params: " S:String-append
-    $out $self.params load32 Parameters-format S:String-indent S:String-merge
+    $out $self.params load32 Locals-format S:String-indent S:String-merge
     $out ",\n  rets: " S:String-append
     $out $self.rets load32 Types-format S:String-indent S:String-merge
     $out "\n}" S:String-append
@@ -961,6 +1046,19 @@ fn Struct-ident(self: .Struct) -> .L:Token {
 fn Struct-fields(self: .Struct) -> .Fields {
     $self.fields load32
 }
+fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, i32, bool {
+    local i: i32
+    local fields: .Fields
+    $self Struct-fields #fields
+    loop {
+        $i $fields Fields-len = if { 0 !.Field 0 0 1 = break }
+        $fields $i Fields-get Field-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
+            $fields $i Fields-get
+            $i 4 * 0 0 = break
+        }
+        $i 1 + #i
+    }
+}
 
 fn TOP_ITEM_FN() -> i32 { 1 }
 fn TOP_ITEM_MEM() -> i32 { 2 }
@@ -1034,6 +1132,9 @@ fn TopItem-function(self: .TopItem) -> .Function {
 }
 fn TopItem-ext(self: .TopItem) -> .Extern {
     $self.ext load32
+}
+fn TopItem-mem(self: .TopItem) -> .Memory {
+    $self.mem load32
 }
 fn TopItem-free(self: .TopItem) {
     $self TopItem-ty TOP_ITEM_FN = if {
