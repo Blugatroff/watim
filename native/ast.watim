@@ -1,4 +1,3 @@
-import "./lexer.watim" as L
 import "../std/alloc.watim" as A
 import "../std/string.watim" as S
 import "../std/i32vec.watim" as IV
@@ -6,6 +5,9 @@ import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/map.watim" as M
+import "../std/format.watim" as FMT
+
+import "./lexer.watim" as L
 
 fn INTRINSIC_ADD() -> i32 { 1 }
 fn INTRINSIC_STORE32() -> i32 { 2 }
@@ -128,24 +130,24 @@ fn Words-push(self: .Words, word: .Word) {
 fn Words-len(self: .Words) -> i32 {
     $self.inner load32 IV:I32Vec-len
 }
-fn Words-format(self: .Words) -> .S:String {
-    local out: .S:String
+fn Words-format(self: .Words, formatter: .FMT:Formatter) {
     local i: i32
-    S:String-empty #out
     $self Words-len 0 = if {
-        $out "[]" S:String-append
+        $formatter "[]" FMT:Formatter-write
     } else {
-        $out "[\n" S:String-append
+        $formatter "[\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
         loop {
             $self Words-len $i = if { break }
-            $out "  " S:String-append
-            $out $self $i Words-get Word-format S:String-merge
-            $out "\n" S:String-append
+            $formatter FMT:Formatter-write-indent
+            $self $i Words-get $formatter Word-format2
+            $formatter "\n" FMT:Formatter-write
             $i 1 + #i
         }
-        $out "]" S:String-append
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter "]" FMT:Formatter-write
     }
-    $out
 }
 
 fn TYPE_I32() -> i32 { 1 }
@@ -243,32 +245,27 @@ fn Type-ty(self: .Type) -> i32 {
 fn Type-child(self: .Type) -> .Type {
     $self.child load32 !.Type
 }
-fn Type-format(self: .Type) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
+fn Type-format(self: .Type, formatter: .FMT:Formatter) {
     loop {
-        $self Type-ty TYPE_I32 = if { $out "i32" S:String-append break }
-        $self Type-ty TYPE_I64 = if { $out "i64" S:String-append break }
-        $self Type-ty TYPE_BOOL = if { $out "bool" S:String-append break }
+        $self Type-ty TYPE_I32 = if { $formatter "i32" FMT:Formatter-write break }
+        $self Type-ty TYPE_I64 = if { $formatter "i64" FMT:Formatter-write break }
+        $self Type-ty TYPE_BOOL = if { $formatter "bool" FMT:Formatter-write break }
         $self Type-ty TYPE_PTR = if { 
-            $out "." S:String-append
-            $out $self Type-child Type-format S:String-merge
+            $formatter "." FMT:Formatter-write
+            $self Type-child $formatter Type-format
             break
         }
         $self Type-ty TYPE_STRUCT = if {
-            $self.module load32 !i32 0 /= if {
-                $out $self.module load32 L:Token-lexeme S:Str-unpack S:String-append
-                $out ":" S:String-append
+             $self.module load32 !i32 0 /= if {
+                $formatter $self.module load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+                $formatter ":" FMT:Formatter-write
             }
-            $out $self Type-struc Struct-ident L:Token-lexeme S:Str-unpack S:String-append
+            $formatter $self Type-struc Struct-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
             break
         }
-        1 $self Type-ty type-ty-name IO:write-all IO:check
-        1 "Type-format: UNIMPLEMENTED" IO:write-all IO:check
+        2 "invalid Type-ty" IO:write-all IO:check
         1 CORE:exit
-        break
     }
-    $out
 }
 
 struct Types {
@@ -330,24 +327,24 @@ fn Types-len(self: .Types) -> i32 {
 fn Types-get(self: .Types, index: i32) -> .Type {
     $self.inner load32 $index IV:I32Vec-get !.Type
 }
-fn Types-format(self: .Types) -> .S:String {
-    local out: .S:String
+fn Types-format(self: .Types, formatter: .FMT:Formatter) {
     local i: i32
-    S:String-empty #out
     0 $self Types-len = if {
-        $out "[]" S:String-append
+        $formatter "[]" FMT:Formatter-write
     } else {
-        $out "[\n" S:String-append
+        $formatter "[\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
         loop {
             $i $self Types-len = if { break }
-            $out "  " S:String-append
-            $out $self $i Types-get Type-format S:String-indent S:String-merge
-            $out "\n" S:String-append
+            $formatter FMT:Formatter-write-indent
+            $self $i Types-get $formatter Type-format
+            $formatter ",\n" FMT:Formatter-write
             $i 1 + #i
         }
-        $out "]" S:String-append
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter "]" FMT:Formatter-write
     }
-    $out
 }
 
 struct If {
@@ -401,16 +398,25 @@ fn If-rets(self: .If) -> .Types {
 fn If-set-rets(self: .If, params: .Types) {
     $self.rets $params store32
 }
-fn If-format(self: .If) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  body: " S:String-append
-    $out $self.body load32 Words-format S:String-indent S:String-merge
-    $out "\n}" S:String-append
-    $out
+fn If-format(self: .If, formatter: .FMT:Formatter) {
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "body: " FMT:Formatter-write
+    $self.body load32 $formatter Words-format
+    $formatter FMT:Formatter-dedent
+    $self.el load32 !i32 0 /= if {
+        $formatter FMT:Formatter-indent
+        $formatter "\n" FMT:Formatter-write
+        $formatter FMT:Formatter-write-indent
+        $formatter "else: " FMT:Formatter-write
+        $self.el load32 $formatter Words-format
+        $formatter FMT:Formatter-dedent
+    }
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
-
-
 
 struct Word {
     file: .S:String
@@ -499,60 +505,63 @@ fn Word-intrinsic(self: .Word) -> i32 {
     $self.intrinsic load32
 }
 fn Word-format(self: .Word) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{ ty: " S:String-append
-    $out $self.ty load32 word-ty-name S:String-append
+    local formatter: .FMT:Formatter
+    FMT:Formatter-new #formatter
+    $self $formatter Word-format2
+    $formatter FMT:Formatter-into-string
+}
+
+fn Word-format2(self: .Word, formatter: .FMT:Formatter) {
+    $formatter "{ ty: " FMT:Formatter-write
+    $formatter $self.ty load32 word-ty-name FMT:Formatter-write
     $self.ty load32 WORD_NUMBER = if {
-        $out ", " S:String-append
-        $out "value: " S:String-append
-        $out $self.number load32 U:format-i32 S:String-merge
+        $formatter ", " FMT:Formatter-write
+        $formatter "value: " FMT:Formatter-write
+        $self.number load32 $formatter U:i32-format
     }
     $self.ty load32 WORD_STRING = if {
-        $out ", " S:String-append
-        $out "addr: " S:String-append
-        $out $self.addr load32 U:format-i32 S:String-merge
-        $out ", size: " S:String-append
-        $out $self.size load32 U:format-i32 S:String-merge
+        $formatter ", " FMT:Formatter-write
+        $formatter "addr: " FMT:Formatter-write
+        $self.addr load32 $formatter U:i32-format
+        $formatter ", size: " FMT:Formatter-write
+        $self.size load32 $formatter U:i32-format
     }
     $self.ty load32 WORD_CALL = if {
-        $out ", " S:String-append
-        $out "ident: \"" S:String-append
-        $out $self.ident load32 S:Str-unpack S:String-append
-        $out "\"" S:String-append
+        $formatter ", ident: \"" FMT:Formatter-write
+        $formatter $self.ident load32 S:Str-unpack FMT:Formatter-write
+        $formatter "\"" FMT:Formatter-write
         $self.qualifier load32 !i32 0 /= if {
-            $out ", qualifier: \"" S:String-append
-            $out $self.qualifier load32 S:Str-unpack S:String-append
-            $out "\"" S:String-append
+            $formatter ", qualifier: \"" FMT:Formatter-write
+            $formatter $self.qualifier load32 S:Str-unpack FMT:Formatter-write
+            $formatter "\"" FMT:Formatter-write
         }
     }
     $self.ty load32 WORD_LOCAL = 
     $self.ty load32 WORD_SET = or 
     $self.ty load32 WORD_DEREF = or 
     if {
-        $out ", " S:String-append
-        $out "ident: \"" S:String-append
-        $out $self.ident load32 S:Str-unpack S:String-append
-        $out "\"" S:String-append
+        $formatter ", " FMT:Formatter-write
+        $formatter "ident: \"" FMT:Formatter-write
+        $formatter $self.ident load32 S:Str-unpack FMT:Formatter-write
+        $formatter "\"" FMT:Formatter-write
     }
     $self.ty load32 WORD_IF = if {
-        $out ", iff: " S:String-append
-        $out $self.iff load32 If-format S:String-indent S:String-merge
+        $formatter ", iff: " FMT:Formatter-write
+        $self.iff load32 $formatter If-format
     }
     $self.ty load32 WORD_LOOP = if {
-        $out ", lop: " S:String-append
-        $out $self.lop load32 Words-format S:String-indent S:String-merge
+        $formatter ", lop: " FMT:Formatter-write
+        $self.lop load32 $formatter Words-format
     }
     $self.ty load32 WORD_INTRINSIC = if {
-        $out ", kind: " S:String-append
-        $out $self.intrinsic load32 intrinsic-name S:String-append
+        $formatter ", kind: " FMT:Formatter-write
+        $formatter $self.intrinsic load32 intrinsic-name FMT:Formatter-write
     }
     $self.ty load32 WORD_CAST = if {
-        $out ", type: " S:String-append
-        $out $self.type load32 Type-format S:String-merge
+        $formatter ", type: " FMT:Formatter-write
+        $self.type load32 $formatter Type-format
     }
-    $out ", }" S:String-append
-    $out
+    $formatter ", }" FMT:Formatter-write
 }
 
 struct Local {
@@ -575,15 +584,12 @@ fn Local-type(self: .Local) -> .Type {
 fn Local-set-type(self: .Local, type: .Type) {
     $self.type $type store32
 }
-fn Local-format(self: .Local) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{ ident: \"" S:String-append
-    $out $self.ident load32 L:Token-lexeme S:Str-unpack S:String-append
-    $out "\", type: " S:String-append
-    $out $self.type load32 Type-format S:String-merge
-    $out " }" S:String-append
-    $out
+fn Local-format(self: .Local, formatter: .FMT:Formatter) {
+    $formatter "{ ident: \"" FMT:Formatter-write
+    $formatter $self.ident load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\", type: " FMT:Formatter-write
+    $self.type load32 $formatter Type-format
+    $formatter " }" FMT:Formatter-write
 }
 fn Local-free(self: .Local) {
     $self !.i32 A:free
@@ -617,25 +623,24 @@ fn Locals-push(self: .Locals, mem: .Local) {
 fn Locals-len(self: .Locals) -> i32 {
     $self.inner load32 IV:I32Vec-len
 }
-fn Locals-format(self: .Locals) -> .S:String {
-    local out: .S:String
+fn Locals-format(self: .Locals, formatter: .FMT:Formatter) {
     local i: i32
-    S:String-empty #out
     $self Locals-len 0 = if { 
-        $out "[]" S:String-append
+        $formatter "[]" FMT:Formatter-write
     } else {
-        $out "[\n" S:String-append
+        $formatter "[\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
         loop {
             $i $self Locals-len = if { break }
-            $out "  " S:String-append
-            $out $self $i Locals-get Local-format S:String-indent S:String-merge
-            $out ",\n" S:String-append
+            $formatter FMT:Formatter-write-indent
+            $self $i Locals-get $formatter Local-format
+            $formatter ",\n" FMT:Formatter-write
             $i 1 + #i
         }
-        $out "]" S:String-append
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter "]" FMT:Formatter-write
     }
-    $out
-
 }
 
 struct Memory {
@@ -681,19 +686,16 @@ fn Memory-size(self: .Memory) -> i32 {
 fn Memory-alignment(self: .Memory) -> i32 {
     $self.alignment load32
 }
-fn Memory-format(self: .Memory) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{ ident: " S:String-append
-    $out $self Memory-ident L:Token-lexeme S:Str-unpack S:String-append
-    $out ", type: " S:String-append
-    $out $self Memory-type Type-format S:String-merge
-    $out ", size: " S:String-append
-    $out $self.size load32 U:format-i32 S:String-merge
-    $out ", alignment: " S:String-append
-    $out $self.alignment load32 U:format-i32 S:String-merge
-    $out " }" S:String-append
-    $out
+fn Memory-format(self: .Memory, formatter: .FMT:Formatter) {
+    $formatter "{ ident: " FMT:Formatter-write
+    $formatter $self Memory-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter ", type: " FMT:Formatter-write
+    $self Memory-type $formatter Type-format
+    $formatter ", size: " FMT:Formatter-write
+    $self.size load32 $formatter U:i32-format
+    $formatter ", alignment: " FMT:Formatter-write
+    $self.alignment load32 $formatter U:i32-format
+    $formatter " }" FMT:Formatter-write
 }
 
 struct Memories {
@@ -780,21 +782,32 @@ fn Function-body(self: .Function) -> .Words {
 fn Function-ident(self: .Function) -> .L:Token {
     $self.ident load32
 }
-fn Function-format(self: .Function) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  ident: \"" S:String-append
-    $out $self.ident load32 .lexeme load32 S:Str-unpack S:String-append
-    $out "\",\n  params: " S:String-append
-    $out $self.parameters load32 Locals-format S:String-indent S:String-merge
-    $out ",\n  rets: " S:String-append
-    $out $self.ret load32 Types-format S:String-indent S:String-merge
-    $out ",\n  locals: " S:String-append
-    $out $self.locals load32 Locals-format S:String-indent S:String-merge
-    $out ",\n  body: " S:String-append
-    $out $self.body load32 Words-format S:String-indent S:String-merge
-    $out "\n}" S:String-append
-    $out
+fn Function-format(self: .Function, formatter: .FMT:Formatter) {
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "indent: \"" FMT:Formatter-write
+    $formatter $self.ident load32 .lexeme load32 S:Str-unpack FMT:Formatter-write
+    $formatter "\",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "params: " FMT:Formatter-write
+    $self.parameters load32 $formatter Locals-format
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "rets: " FMT:Formatter-write
+    $self.ret load32 $formatter Types-format
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "locals: " FMT:Formatter-write
+    $self.locals load32 $formatter Locals-format
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "body: " FMT:Formatter-write
+    $self.body load32 $formatter Words-format
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
 
 struct Functions {
@@ -825,24 +838,24 @@ fn Functions-len(self: .Functions) -> i32 {
 fn Functions-get(self: .Functions, index: i32) -> .Function {
     $self.inner load32 $index IV:I32Vec-get !.Function
 }
-fn Functions-format(self: .Functions) -> .S:String {
-    local out: .S:String
+fn Functions-format(self: .Functions, formatter: .FMT:Formatter) {
     local i: i32
-    S:String-empty #out
     $self Functions-len 0 = if { 
-        $out "[]" S:String-append
+        $formatter "[]" FMT:Formatter-write
     } else {
-        $out "[\n" S:String-append
+        $formatter "[\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
         loop {
             $i $self Functions-len = if { break }
-            $out "  " S:String-append
-            $out $self $i Functions-get Function-format S:String-indent S:String-merge
-            $out ",\n" S:String-append
+            $formatter FMT:Formatter-write-indent
+            $self $i Functions-get $formatter Function-format
+            $formatter ",\n" FMT:Formatter-write
             $i 1 + #i
         }
-        $out "]" S:String-append
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter "]" FMT:Formatter-write
     }
-    $out
 }
 
 struct Extern {
@@ -882,21 +895,32 @@ fn Extern-free(self: .Extern) {
     $self.rets load32 Types-free-container
     $self !.i32 A:free
 }
-fn Extern-format(self: .Extern) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  module: \"" S:String-append
-    $out $self.module load32 L:Token-lexeme S:Str-unpack S:String-append
-    $out "\",\n  name: \"" S:String-append
-    $out $self.name load32 L:Token-lexeme S:Str-unpack S:String-append
-    $out "\",\n  ident: \"" S:String-append
-    $out $self.ident load32 L:Token-lexeme S:Str-unpack S:String-append
-    $out "\",\n  params: " S:String-append
-    $out $self.params load32 Locals-format S:String-indent S:String-merge
-    $out ",\n  rets: " S:String-append
-    $out $self.rets load32 Types-format S:String-indent S:String-merge
-    $out "\n}" S:String-append
-    $out
+fn Extern-format(self: .Extern, formatter: .FMT:Formatter) {
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "module: \"" FMT:Formatter-write 
+    $formatter $self.module load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "name: \"" FMT:Formatter-write
+    $formatter $self.name load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "ident: \"" FMT:Formatter-write
+    $formatter $self.ident load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "params: " FMT:Formatter-write
+    $self.params load32 $formatter Locals-format
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "rets: " FMT:Formatter-write
+    $self.rets load32 $formatter Types-format
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
 
 struct Import {
@@ -919,15 +943,12 @@ fn Import-path(self: .Import) -> .L:Token {
 fn Import-ident(self: .Import) -> .L:Token {
     $self.ident load32
 }
-fn Import-format(self: .Import) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{ path: " S:String-append
-    $out $self Import-path L:Token-lexeme S:Str-unpack S:String-append
-    $out ", ident: \"" S:String-append
-    $out $self Import-ident L:Token-lexeme S:Str-unpack S:String-append
-    $out "\" }" S:String-append
-    $out
+fn Import-format(self: .Import, formatter: .FMT:Formatter) {
+    $formatter "{ path: " FMT:Formatter-write
+    $formatter $self Import-path L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter ", ident: \"" FMT:Formatter-write
+    $formatter $self Import-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\" }" FMT:Formatter-write
 }
 fn Import-path-content(self: .Import) -> .i32, i32 {
     local ptr: .i32
@@ -956,15 +977,12 @@ fn Field-ident(self: .Field) -> .L:Token {
 fn Field-type(self: .Field) -> .Type {
     $self.type load32
 }
-fn Field-format(self: .Field) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{ ident: \"" S:String-append
-    $out $self Field-ident L:Token-lexeme S:Str-unpack S:String-append
-    $out "\", type: " S:String-append
-    $out $self Field-type Type-format S:String-merge
-    $out " }" S:String-append
-    $out
+fn Field-format(self: .Field, formatter: .FMT:Formatter) {
+    $formatter "{ ident: \"" FMT:Formatter-write
+    $formatter $self Field-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\", type: " FMT:Formatter-write
+    $self Field-type $formatter Type-format
+    $formatter " }" FMT:Formatter-write
 }
 
 struct Fields {
@@ -995,24 +1013,24 @@ fn Fields-len(self: .Fields) -> i32 {
 fn Fields-get(self: .Fields, index: i32) -> .Field {
     $self.inner load32 $index IV:I32Vec-get !.Field
 }
-fn Fields-format(self: .Fields) -> .S:String {
+fn Fields-format(self: .Fields, formatter: .FMT:Formatter) {
     local i: i32
-    local out: .S:String
-    S:String-empty #out
     0 $self Fields-len = if {
-        $out "[]" S:String-append
+        $formatter "[]" FMT:Formatter-write
     } else {
-        $out "[\n" S:String-append
+        $formatter "[\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
         loop {
             $i $self Fields-len = if { break }
-            $out "  " S:String-append
-            $out $self $i Fields-get Field-format S:String-indent S:String-merge
-            $out ",\n" S:String-append
+            $formatter FMT:Formatter-write-indent
+            $self $i Fields-get $formatter Field-format
+            $formatter ",\n" FMT:Formatter-write
             $i 1 + #i 
         }
-        $out "]" S:String-append
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter "]" FMT:Formatter-write
     }
-    $out
 }
 
 struct Struct {
@@ -1030,15 +1048,20 @@ fn Struct-free(self: .Struct) {
     $self.fields load32 Fields-free
     $self !.i32 A:free
 }
-fn Struct-format(self: .Struct) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  ident: \"" S:String-append
-    $out $self.ident load32 L:Token-lexeme S:Str-unpack S:String-append
-    $out "\"\n  fields: " S:String-append
-    $out $self.fields load32 Fields-format S:String-indent S:String-merge
-    $out "\n}" S:String-append
-    $out
+fn Struct-format(self: .Struct, formatter: .FMT:Formatter) {
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "ident: \"" FMT:Formatter-write
+    $formatter $self.ident load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter "\"\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "fields: " FMT:Formatter-write
+    $self.fields load32 $formatter Fields-format
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
 fn Struct-ident(self: .Struct) -> .L:Token {
     $self.ident load32
@@ -1154,29 +1177,34 @@ fn TopItem-free(self: .TopItem) {
     }
     $self !.i32 A:free
 }
-fn TopItem-format(self: .TopItem) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  ty: " S:String-append
-    $out $self TopItem-ty top-item-ty-name S:String-append
-    $out ",\n  value: " S:String-append
+fn TopItem-format(self: .TopItem, formatter: .FMT:Formatter) {
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "ty: " FMT:Formatter-write
+    $formatter $self TopItem-ty top-item-ty-name FMT:Formatter-write
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "value: " FMT:Formatter-write
     $self TopItem-ty TOP_ITEM_FN = if {
-        $out $self.function load32 Function-format S:String-indent S:String-merge
+        $self.function load32 $formatter Function-format
     }
     $self TopItem-ty TOP_ITEM_MEM = if {
-        $out $self.mem load32 Memory-format S:String-indent S:String-merge
+        $self.mem load32 $formatter Memory-format
     }
     $self TopItem-ty TOP_ITEM_EXT = if {
-        $out $self.ext load32 Extern-format S:String-indent S:String-merge
+        $self.ext load32 $formatter Extern-format
     }
     $self TopItem-ty TOP_ITEM_IMPORT = if {
-        $out $self.imp load32 Import-format S:String-indent S:String-merge
+        $self.imp load32 $formatter Import-format
     }
     $self TopItem-ty TOP_ITEM_STRUCT = if {
-        $out $self.struc load32 Struct-format S:String-indent S:String-merge
+        $self.struc load32 $formatter Struct-format
     }
-    $out "\n}" S:String-append
-    $out
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
  }
 
 struct TopItems {
@@ -1207,24 +1235,24 @@ fn TopItems-len(self: .TopItems) -> i32 {
 fn TopItems-get(self: .TopItems, index: i32) -> .TopItem {
     $self.inner load32 $index IV:I32Vec-get !.TopItem
 }
-fn TopItems-format(self: .TopItems) -> .S:String {
+fn TopItems-format(self: .TopItems, formatter: .FMT:Formatter) {
     local i: i32
-    local out: .S:String
-    S:String-empty #out
     0 $self TopItems-len = if {
-        $out "[]" S:String-append
+        $formatter "[]" FMT:Formatter-write
     } else {
-        $out "[\n" S:String-append
+        $formatter "[\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
         loop {
             $i $self TopItems-len = if { break }
-            $out "  " S:String-append
-            $out $self $i TopItems-get TopItem-format S:String-indent S:String-merge
-            $out ",\n" S:String-append
+            $formatter FMT:Formatter-write-indent
+            $self $i TopItems-get $formatter TopItem-format
+            $formatter ",\n" FMT:Formatter-write
             $i 1 + #i 
         }
-        $out "]" S:String-append
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter "]" FMT:Formatter-write
     }
-    $out
 }
 
 struct Imports {
@@ -1271,21 +1299,21 @@ fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S:String, bo
 fn Imports-len(self: .Imports) -> i32 {
     $self.map load32 M:StringMap-len
 }
-fn Imports-format(self: .Imports) -> .S:String {
-    local out: .S:String
+fn Imports-format(self: .Imports, formatter: .FMT:Formatter) {
     local i: i32
-    S:String-empty #out
-    $out "{\n" S:String-append
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
     loop {
         $i $self.map load32 M:StringMap-len = if { break }
-        $out "  " S:String-append
-        $out $self $i Imports-get-key S:String-unpack S:String-append
-        $out ": \"" S:String-append
-        $out $self $i Imports-get-value S:String-unpack S:String-append
-        $out "\",\n" S:String-append
+        $formatter FMT:Formatter-write-indent
+        $formatter $self $i Imports-get-key S:String-unpack FMT:Formatter-write
+        $formatter ": \"" FMT:Formatter-write
+        $formatter $self $i Imports-get-value S:String-unpack FMT:Formatter-write
+        $formatter "\",\n" FMT:Formatter-write
         $i 1 + #i
     }
-    $out "}" S:String-append
-    $out
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
 

@@ -1,11 +1,13 @@
-import "./ast.watim" as AST
-import "./lexer.watim" as L
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
-import "./parser.watim" as P
 import "../std/map.watim" as MAP
 import "../std/fs.watim" as FS
 import "../std/alloc.watim" as A
+import "../std/format.watim" as FMT
+
+import "./ast.watim" as AST
+import "./lexer.watim" as L
+import "./parser.watim" as P
 
 struct Module {
     items: .AST:TopItems
@@ -76,15 +78,20 @@ fn Module-free(self: .Module) {
     $self.imports load32 AST:Imports-free
     $self !.i32 A:free
 }
-fn Module-format(self: .Module) -> .S:String {
-    local out: .S:String
-    S:String-empty #out
-    $out "{\n  items: " S:String-append
-    $out $self.items load32 AST:TopItems-format S:String-indent S:String-merge
-    $out ",\n  imports: " S:String-append
-    $out $self.imports load32 AST:Imports-format S:String-indent S:String-merge
-    $out "\n}" S:String-append
-    $out
+fn Module-format(self: .Module, formatter: .FMT:Formatter) {
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "items: " FMT:Formatter-write
+    $self.items load32 $formatter AST:TopItems-format
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "imports: " FMT:Formatter-write
+    $self.imports load32 $formatter AST:Imports-format
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
 fn Module-items(self: .Module) -> .AST:TopItems {
     $self.items load32
@@ -201,22 +208,23 @@ fn Modules-get-value(self: .Modules, index: i32) -> .Module {
 fn Modules-len(self: .Modules) -> i32 {
     $self.inner load32 MAP:StringMap-len
 }
-fn Modules-format(self: .Modules) -> .S:String {
-    local out: .S:String
+fn Modules-format(self: .Modules, formatter: .FMT:Formatter) {
     local i: i32
-    S:String-empty #out
-    $out "{\n" S:String-append
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
     loop {
         $i $self Modules-len = if { break }
-        $out "  \"" S:String-append
-        $out $self $i Modules-get-key S:String-unpack S:String-append
-        $out "\": " S:String-append
-        $out $self $i Modules-get-value Module-format S:String-indent S:String-merge
-        $out ",\n" S:String-append
+        $formatter FMT:Formatter-write-indent
+        $formatter "\"" FMT:Formatter-write
+        $formatter $self $i Modules-get-key S:String-unpack FMT:Formatter-write
+        $formatter "\": " FMT:Formatter-write
+        $self $i Modules-get-value $formatter Module-format
+        $formatter ",\n" FMT:Formatter-write
         $i 1 + #i
     }
-    $out "}" S:String-append
-    $out
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
 }
 fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {
     local i: i32

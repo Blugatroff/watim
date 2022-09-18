@@ -33,6 +33,9 @@ fn resolve-module(modules: .M:Modules, module: .M:Module) {
         $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
             $modules $module $item AST:TopItem-ext resolve-extern
         }
+        $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+            $modules $module $item AST:TopItem-mem resolve-memory
+        }
         $i 1 + #i
     }
 }

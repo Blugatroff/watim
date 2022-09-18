@@ -97,40 +97,53 @@ struct Prestat {
     path_len: i32
 }
 
+memory PREOPENED_FDS: .IV:I32Vec 4 4;
+memory PREOPENED_PATHS: .S:StringVec 4 4;
+
+fn init() {
+    $PREOPENED_FDS 0 !.IV:I32Vec store32
+    $PREOPENED_PATHS 0 !.S:StringVec store32
+}
+fn uninit() {
+    $PREOPENED_FDS load32 !i32 0 /= if {
+        $PREOPENED_FDS load32 IV:I32Vec-free
+        $PREOPENED_PATHS load32 S:StringVec-free
+    }
+}
+
 fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
     memory prestat: Prestat 8 4;
     local fd: i32
     local code: i32
     local buf: .i32
     local len: i32
-    local fds: .IV:I32Vec
-    local paths: .S:StringVec
-    3 #fd
-    IV:I32Vec-new #fds
-    S:StringVec-new #paths
-    loop {
-        $fd $prestat !.i32 fd_prestat_get #code
-        // 8 = Bad file descriptor
-        $code 8 = if { 
-            $fds $paths 0 break 
+    $PREOPENED_FDS load32 !i32 0 = if {
+        3 #fd
+        $PREOPENED_FDS IV:I32Vec-new store32
+        $PREOPENED_PATHS S:StringVec-new store32
+        loop {
+            $fd $prestat !.i32 fd_prestat_get #code
+            // 8 = Bad file descriptor
+            $code 8 = if { 
+                0 #code
+                break 
+            }
+            $code 0 /= if {
+                break
+            }
+            $prestat.path_len load32 #len
+            $len A:alloc #buf
+            $fd $buf $len fd_prestat_dir_name #code
+            $code 0 /= if {
+                break
+            }
+            $PREOPENED_FDS load32 $fd IV:I32Vec-push
+            $PREOPENED_PATHS load32 $buf $len S:String-new S:StringVec-push
+            $buf A:free
+            $fd 1 + #fd
         }
-        $code 0 /= if {
-            $fds IV:I32Vec-free
-            $paths S:StringVec-free $fds $paths $code break
-        }
-        $prestat.path_len load32 #len
-        $len A:alloc #buf
-        $fd $buf $len fd_prestat_dir_name #code
-        $code 0 /= if {
-            $fds IV:I32Vec-free
-            $paths S:StringVec-free
-            $fds $paths $code break
-        }
-        $fds $fd IV:I32Vec-push
-        $paths $buf $len S:String-new S:StringVec-push
-        $buf A:free
-        $fd 1 + #fd
     }
+    $PREOPENED_FDS load32 $PREOPENED_PATHS load32 $code
 }
 
 // returns 0, 0 if not found
@@ -144,15 +157,14 @@ fn find-current-dir() -> i32, i32 {
     $code 0 = if {
         loop {
             $i $fds IV:I32Vec-len = if { 
-                $fds IV:I32Vec-free
-                $paths S:StringVec-free
                 // not found
+                2 "failed to find preopened current directory\n" IO:write-all IO:check
+                1 CORE:exit
                 0 0 break
             }
-            $paths $i S:StringVec-get S:String-unpack "." S:str-eq if {
+            $paths $i S:StringVec-get S:String-unpack "." S:str-is-prefix
+            if {
                 $fds $i IV:I32Vec-get 
-                $fds IV:I32Vec-free
-                $paths S:StringVec-free
                 0 
                 break
             }
@@ -182,6 +194,10 @@ fn normalize(path-ptr: .i32, path-len: i32) -> .S:String {
 
 
     $out S:String-unpack "/./" "/" S:str-replace #new
+    $out S:String-free
+    $new #out
+
+    $out S:String-unpack "./." "." S:str-replace #new
     $out S:String-free
     $new #out
 

@@ -2,6 +2,7 @@ import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./alloc.watim" as A
 import "./string.watim" as S
+import "./format.watim" as FMT
 
 fn parse(pt: .i32, len: i32) -> i32 {
     local n: i32
@@ -26,6 +27,14 @@ fn parse(pt: .i32, len: i32) -> i32 {
         $len 0 = if { $n break }
         $n 10 * #n
     }
+}
+
+fn i64-format(self: i64, formatter: .FMT:Formatter) {
+    memory buf-reversed: i32 24;
+    $formatter $buf-reversed $self $buf-reversed IO:print-i64-into FMT:Formatter-write
+}
+fn i32-format(self: i32, formatter: .FMT:Formatter) {
+    $self !i64 $formatter i64-format
 }
 
 fn format-i64(n: i64) -> .S:String {

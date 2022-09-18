@@ -1,5 +1,6 @@
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
+import "../std/format.watim" as FMT
 
 import "./ast.watim" as AST
 import "./util.watim" as U
@@ -71,10 +72,13 @@ fn check-intrinsic(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -
     0 1 =
 }
 fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32) {
+    local formatter: .FMT:Formatter
     local formatted: .S:String
+    FMT:Formatter-new #formatter
     $word AST:Word-location
     $msg-ptr $msg-len S:String-new #formatted
-    $formatted $stack AST:Types-format S:String-merge
+    $stack $formatter AST:Types-format
+    $formatter FMT:Formatter-into-string #formatted
     $formatted S:String-unpack 
     U:abort-with-location
     $formatted S:String-free

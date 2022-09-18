@@ -5,6 +5,7 @@ import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/core.watim" as CORE
 import "../std/map.watim" as MAP
+import "../std/format.watim" as FMT
 
 import "./lexer.watim" as L
 import "./ast.watim" as AST
@@ -43,10 +44,12 @@ fn f() {
     local args: .S:StringVec
     local mem: .S:String
     local path: .S:String
+    local formatter: .FMT:Formatter
     local formatted: .S:String
     local modules: .M:Modules
 
     $alloc-mem 10000000 A:init
+    FS:init
     ARGS:get-args #args
     S:String-empty #mem
     
@@ -58,7 +61,9 @@ fn f() {
     $mem S:String-len $modules MEM:process drop
     $modules C:check
     A:report
-    $modules M:Modules-format #formatted
+    FMT:Formatter-new #formatter
+    $modules $formatter M:Modules-format 
+    $formatter FMT:Formatter-into-string #formatted
     A:report
     1 $formatted S:String-unpack IO:write-all IO:check
     1 "\n" IO:write-all IO:check
@@ -68,7 +73,7 @@ fn f() {
 
     $args S:StringVec-free
     $mem S:String-free
-
+    FS:uninit
     A:is-empty not if {
         A:root A:print-alloc-list
         A:report

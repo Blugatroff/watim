@@ -1,6 +1,8 @@
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/string.watim" as S
+import "../std/format.watim" as FMT
+
 import "./ast.watim" as AST
 
 fn print-location(file: .S:String, line: i32, column: i32) {
@@ -69,11 +71,14 @@ fn expect-stack(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
     }
 }
 fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
+    local formatter: .FMT:Formatter
     local msg: .S:String
-    "expected stack: " S:String-new #msg
-    $msg $expected AST:Types-format S:String-merge
-    $msg " got: " S:String-append
-    $msg $stack AST:Types-format S:String-merge
+    FMT:Formatter-new #formatter
+    $formatter "expected stack: " FMT:Formatter-write
+    $expected $formatter AST:Types-format
+    $formatter " got: " FMT:Formatter-write
+    $stack $formatter AST:Types-format
+    $formatter FMT:Formatter-into-string #msg
     $word AST:Word-location $msg S:String-unpack abort-with-location
     $msg S:String-free
 }

@@ -3,6 +3,7 @@ import "../std/io.watim" as IO
 import "../std/map.watim" as MAP
 import "../std/string.watim" as S
 import "../std/core.watim" as CORE
+import "../std/format.watim" as FMT
 
 import "./module.watim" as M
 import "./ast.watim" as AST
@@ -128,13 +129,16 @@ fn check-word(
     }
 }
 fn report-check-deref-error(stack: .AST:Types, word: .AST:Word) {
-    local formatted: .S:String
-    $word AST:Word-location 
-    "expected a pointer to a struct, got: " S:String-new #formatted
-    $formatted $stack AST:Types-format S:String-merge
-    $formatted S:String-unpack
+    local formatter: .FMT:Formatter
+    local msg: .S:String
+    FMT:Formatter-new #formatter
+    $formatter "expected a pointer to a struct, got: " FMT:Formatter-write
+    $stack $formatter AST:Types-format
+    $formatter FMT:Formatter-into-string #msg
+    $word AST:Word-location
+    $msg S:String-unpack
     U:abort-with-location
-    $formatted S:String-free
+    $msg S:String-free
 }
 fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type

@@ -1,0 +1,41 @@
+import "./alloc.watim" as A
+import "./string.watim" as S
+
+struct Formatter {
+    out: .S:String
+    indent-level: i32
+}
+
+fn Formatter-new() -> .Formatter {
+    local self: .Formatter
+    8 A:alloc !.Formatter #self
+    $self.out S:String-empty store32
+    $self.indent-level 0 store32
+    $self
+}
+fn Formatter-free(self: .Formatter) {
+    $self.out load32 S:String-free
+    $self !.i32 A:free
+}
+fn Formatter-into-string(self: .Formatter) -> .S:String {
+    $self.out load32
+    $self !.i32 A:free
+}
+fn Formatter-write(self: .Formatter, ptr: .i32, len: i32) {
+    $self.out load32 $ptr $len S:String-append
+}
+fn Formatter-write-indent(self: .Formatter) {
+    local i: i32
+    loop {
+        $i $self.indent-level load32 = if { break }
+        $self.out load32 "  " S:String-append
+        $i 1 + #i
+    }
+}
+fn Formatter-indent(self: .Formatter) {
+    $self.indent-level $self.indent-level load32 1 + store32
+}
+fn Formatter-dedent(self: .Formatter) {
+    $self.indent-level $self.indent-level load32 1 - store32
+}
+
