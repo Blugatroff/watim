@@ -401,6 +401,17 @@ fn If-set-rets(self: .If, params: .Types) {
 fn If-format(self: .If, formatter: .FMT:Formatter) {
     $formatter "{\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "params: " FMT:Formatter-write
+    $self If-params $formatter Types-format
+    $formatter "\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "rets: " FMT:Formatter-write
+    $self If-rets $formatter Types-format
+    $formatter "\n" FMT:Formatter-write
+
     $formatter FMT:Formatter-write-indent
     $formatter "body: " FMT:Formatter-write
     $self.body load32 $formatter Words-format

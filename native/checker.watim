@@ -36,12 +36,27 @@ fn check-item(modules: .M:Modules, module: .M:Module, item: .AST:TopItem) {
     }
 }
 
+fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
+    local formatter: .FMT:Formatter
+    local msg: .S:String
+    FMT:Formatter-new #formatter
+    $formatter "return type mismatch expected: " FMT:Formatter-write
+    $function AST:Function-ret $formatter AST:Types-format
+    $formatter " got: " FMT:Formatter-write
+    $stack $formatter AST:Types-format
+    $formatter FMT:Formatter-into-string #msg
+    $function AST:Function-ident L:Token-location
+    $msg S:String-unpack
+    U:abort-with-location
+    $msg S:String-free
+}
 fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
     local locals: .LocalsMap
     local stack: .AST:Types
     local temp-types: .AST:Types
     local words: .AST:Words
     local bs: .BS:BreakStacks
+    local i: i32
     AST:Types-new #stack
     AST:Types-new #temp-types
 
@@ -50,7 +65,23 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     $function AST:Function-body #words
 
     BS:BreakStacks-new #bs
-    $temp-types $bs $modules $module $stack $locals $words check-words drop
+    $temp-types $bs $modules $module $stack $locals $words check-words not if {
+        // if the function does not diverge, aka does return
+        // then check wheter the remaining stack matches the return type
+        $stack AST:Types-len $function AST:Function-ret AST:Types-len /= if {
+            $stack $function report-return-type-mismatch
+        }
+        loop {
+            $i $function AST:Function-ret AST:Types-len = if { break }
+            $stack $stack AST:Types-len 1 - $i - AST:Types-get 
+            $function AST:Function-ret $function AST:Function-ret AST:Types-len 1 - $i - AST:Types-get 
+            AST:Type-eq not if {
+                $stack $function report-return-type-mismatch
+            }
+            $i 1 + #i
+        }
+    }
+
     $stack AST:Types-free-container
     $temp-types AST:Types-free
     $locals LocalsMap-free
@@ -107,7 +138,7 @@ fn check-word(
             $stack $locals $word check-set break
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $temp-types $bs $modules $module $stack $locals $word check-lop break
+            $temp-types $modules $module $stack $locals $word check-lop break
         }
         $word AST:Word-ty AST:WORD_BREAK = if {
             $bs $stack $word check-brek break
@@ -244,14 +275,29 @@ fn check-brek(bs: .BS:BreakStacks, stack: .AST:Types, word: .AST:Word) -> bool {
 }
 fn check-lop(
     temp-types: .AST:Types,
-    bs: .BS:BreakStacks,
     modules: .M:Modules, 
     module: .M:Module,
     stack: .AST:Types,
     locals: .LocalsMap,
     word: .AST:Word,
 ) -> bool {
-    $temp-types $bs $modules $module $stack $locals $word AST:Word-words check-words
+    local bs: .BS:BreakStacks
+    local i: i32
+    BS:BreakStacks-new #bs
+    $temp-types $bs $modules $module $stack $locals $word AST:Word-words check-words drop
+    // TODO: check whether all breakstacks in `bs` are equal
+
+    $bs BS:BreakStacks-len 0 = if {
+        0 0 = 
+    } else {
+        loop {
+            $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-len $i = if { break }
+            $stack $bs 0 BS:BreakStacks-get BS:BreakStack-types $i AST:Types-get AST:Types-push
+            $i 1 + #i
+        }
+        0 1 =
+    }
+    $bs BS:BreakStacks-free
 }
 fn check-set(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
