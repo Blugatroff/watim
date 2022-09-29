@@ -14,15 +14,16 @@ import "./resolver.watim" as R
 import "./module.watim" as M
 import "./checker.watim" as C
 import "./mem.watim" as MEM
+import "./wat_gen.watim" as GEN
 
 fn load-module-recursive(modules: .M:Modules, mem: .S:String, path: .S:String) {
     local module: .M:Module
     local imps: .AST:Imports
     local i: i32
 
-    1 "Loading module: " IO:write-all IO:check
-    1 $path S:String-unpack IO:write-all IO:check
-    1 "\n" IO:write-all IO:check
+    //2 "Loading module: " IO:write-all IO:check
+    //2 $path S:String-unpack IO:write-all IO:check
+    //2 "\n" IO:write-all IO:check
     $path S:String-unpack $mem M:Module-load #module
     $module M:Module-imports #imps
     $modules $path S:String-unpack S:String-new $module M:Modules-insert
@@ -47,6 +48,7 @@ fn f() {
     local formatter: .FMT:Formatter
     local formatted: .S:String
     local modules: .M:Modules
+    local stack-start: i32
 
     $alloc-mem 10000000 A:init
     FS:init
@@ -58,19 +60,17 @@ fn f() {
     M:Modules-new #modules
     $modules $mem $path load-module-recursive
     $modules R:resolve
-    $mem S:String-len $modules MEM:process drop
+    $mem S:String-len $modules MEM:process #stack-start
     $modules C:check
-    A:report
+
     FMT:Formatter-new #formatter
-    $modules $formatter M:Modules-format 
+    $formatter $stack-start $mem $modules GEN:generate
     $formatter FMT:Formatter-into-string #formatted
-    A:report
     1 $formatted S:String-unpack IO:write-all IO:check
     1 "\n" IO:write-all IO:check
     $formatted S:String-free
 
     $modules M:Modules-free
-
     $args S:StringVec-free
     $mem S:String-free
     FS:uninit

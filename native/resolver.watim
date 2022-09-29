@@ -159,7 +159,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
             $modules $path S:String-unpack $ident S:Str-unpack M:Modules-find-struc if {
                 #struc $type $struc AST:Type-set-struc
             } else {
-                drop $module-token L:Token-location "struct not found" U:abort-with-location
+                drop $type AST:Type-ident L:Token-location "struct not found" U:abort-with-location
             }
             break
         }

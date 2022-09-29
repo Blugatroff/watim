@@ -1,9 +1,11 @@
 import "../std/string.watim" as S
 import "../std/core.watim" as CORE
+import "../std/io.watim" as IO
 
 import "./module.watim" as M
 import "./ast.watim" as AST
 import "./util.watim" as U
+import "./lexer.watim" as L
 
 fn process(global-mem-start: i32, modules: .M:Modules) -> i32 {
     memory mem-start: i32 4 4;
@@ -43,7 +45,7 @@ fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Memor
     $mem AST:Memory-alignment #alignment
     $address $alignment CORE:align-to #address
     $global-mem-address $address $size + store32
-    $mem $size AST:Memory-set-address
+    $mem $address AST:Memory-set-address
 
     $mem $temp-types $mem AST:Memory-type AST:Type-new-ptr U:push-temp-type AST:Memory-set-type
 }

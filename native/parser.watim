@@ -641,6 +641,11 @@ fn parse-intrinsic(token: .L:Token) -> .AST:Word, bool {
             $word.intrinsic AST:INTRINSIC_ROTL store32
             $word 0 0 = break
         }
+        $token L:Token-lexeme S:Str-unpack "rotr" S:str-eq if {
+            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            $word.intrinsic AST:INTRINSIC_ROTR store32
+            $word 0 0 = break
+        }
         $token L:Token-lexeme S:Str-unpack "or" S:str-eq if {
             AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
             $word.intrinsic AST:INTRINSIC_OR store32
@@ -698,6 +703,10 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
             AST:WORD_STRING $file $line $column AST:Word-new #word
             $word.addr $self.mem load32 S:String-len store32
             $word.size $token.string load32 S:String-len store32
+            //2 "token.string: " IO:write-all IO:check
+            //$token.string load32 S:String-unpack U:print-bytes
+            //2 $token.string load32 S:String-unpack IO:write-all IO:check
+            //2 "\n" IO:write-all IO:check
             $self.mem load32 $token.string load32 S:String-unpack S:String-append
             $word break
         }

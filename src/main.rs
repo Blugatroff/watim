@@ -43,7 +43,7 @@ fn run(program: &str, mut input: impl std::io::Read) -> Vec<u8> {
     let mut buf = Vec::new();
     input.read_to_end(&mut buf).unwrap();
     file.write_all(program.as_bytes()).unwrap();
-    let mut command = std::process::Command::new("./run.sh");
+    let mut command = std::process::Command::new("./run_native.sh");
     let command = command
         .arg(&file_path)
         .stdin(std::process::Stdio::piped())
@@ -59,6 +59,7 @@ fn run(program: &str, mut input: impl std::io::Read) -> Vec<u8> {
 
 #[test]
 fn test() {
+    use pretty_assertions::assert_eq;
     env_logger::init();
     let dir = std::fs::read_dir("./tests").unwrap();
     for entry in dir {
@@ -66,7 +67,10 @@ fn test() {
         log::info!("Testing {}", entry.path().display());
         let test = std::fs::read_to_string(entry.path()).unwrap();
         let (input, program) = test.split_once(SEP).unwrap();
-        let (program, output) = program.split_once(SEP).unwrap();
+        let (program, mut output): (&str, &str) = program.split_once(SEP).unwrap();
+        if output.ends_with('\n') {
+            output = &output[0..output.len() - 1];
+        }
         let output = std::borrow::Cow::Borrowed(output);
         let out = run(program, input.as_bytes());
         let out = String::from_utf8_lossy(&out);

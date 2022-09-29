@@ -57,26 +57,26 @@ fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     $writ load32 $code
 }
 
-fn print-i64-fallible(n: i64) -> i32 {
+fn print-to-fd-i32-fallible(fd: i32, n: i32) -> i32 {
     memory buf-reversed: i32 24;
-    1 $buf-reversed $n $buf-reversed print-i64-into write-all
+    $fd $buf-reversed $n $buf-reversed print-i32-into write-all
 }
-fn print-i64-into(n: i64, buf-reversed: .i32) -> i32 {
+fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
     memory buf: i32 24;
     local l: i32
     local i: i32
     0 #l
-    $n 0 !i64 = if {
+    $n 0 = if {
         1 #l // length = 1
         $buf 48 store8 // put '0' in buf
     } else {
         loop {
-            $n 0 !i64 = if { break }
-            $buf !i32 $l + !.i32
-            $n 10 !i64 % !i32 // rightmost digit
+            $n 0 = if { break }
+            $buf $l + !.i32
+            $n 10 % // rightmost digit
             48 + // + ascii 'a'
             store8
-            $n 10 !i64 / #n // shift right in decimal
+            $n 10 / #n // shift right in decimal
             $l 1 + #l
         }
     }
@@ -91,18 +91,17 @@ fn print-i64-into(n: i64, buf-reversed: .i32) -> i32 {
     $l
 }
 
-fn print-i64(n: i64) {
-    $n print-i64-fallible check
-}
-
 fn print(n: i32) {
-    $n !i64 print-i64
+    1 $n print-to-fd-i32-fallible check
+}
+fn print-to-fd(fd: i32, n: i32) {
+    $fd $n print-to-fd-i32-fallible check
 }
 
 fn check(code: i32) {
     $code 0 /= if {
-        1 "Error Code: " write-all drop $code !i64 print-i64-fallible drop
-        1 10 write-byte drop
+        2 1 "Error Code: " write-all drop $code print-to-fd-i32-fallible drop
+        2 10 write-byte drop
         1 CORE:exit
     }
 }

@@ -937,6 +937,7 @@ impl<'a> ModuleChecker<'a, ResolvedType> {
                             Some(ResolvedType::I64) => stack.push(ResolvedType::I32),
                             Some(ResolvedType::Bool) => stack.push(ResolvedType::I32),
                             _ => {
+                                dbg!(&location);
                                 todo!()
                             }
                         },

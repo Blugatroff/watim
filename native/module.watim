@@ -4,6 +4,7 @@ import "../std/map.watim" as MAP
 import "../std/fs.watim" as FS
 import "../std/alloc.watim" as A
 import "../std/format.watim" as FMT
+import "../std/core.watim" as CORE
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -233,6 +234,19 @@ fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: 
         #module $module $ident-ptr $ident-len Module-find-struc
     } else {
         drop 0 !.AST:Struct 0 1 = 
+    }
+}
+fn Modules-find-index(self: .Modules, module: .Module) -> i32 {
+    local i: i32
+    loop {
+        $i $self Modules-len = if { 
+            2 "Modules-find-index: NOT FOUND" IO:write-all IO:check
+            1 CORE:exit
+        }
+        $module $self $i Modules-get-value = if { 
+            $i break 
+        }
+        $i 1 + #i
     }
 }
 

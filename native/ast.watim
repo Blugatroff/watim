@@ -80,6 +80,7 @@ fn WORD_STRING() -> i32 { 10 }
 fn WORD_FIELD() -> i32 { 11 }
 fn WORD_CAST() -> i32 { 12 }
 fn WORD_DEREF() -> i32 { 13 }
+fn WORD_GLOBAL() -> i32 { 14 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -96,6 +97,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_FIELD = if { "WORD_FIELD" break }
         $ty WORD_CAST = if { "WORD_CAST" break }
         $ty WORD_DEREF = if { "WORD_DEREF" break }
+        $ty WORD_GLOBAL = if { "WORD_GLOBAL" break }
         "INVALID WORD TY" break
     }
 }
@@ -140,7 +142,7 @@ fn Words-format(self: .Words, formatter: .FMT:Formatter) {
         loop {
             $self Words-len $i = if { break }
             $formatter FMT:Formatter-write-indent
-            $self $i Words-get $formatter Word-format2
+            $self $i Words-get $formatter Word-format
             $formatter "\n" FMT:Formatter-write
             $i 1 + #i
         }
@@ -450,20 +452,26 @@ struct Word {
     size: i32
     // for WORD_FIELD
     offset: i32
+    // for WORD_CALL, WORD_LOCAL
+    module: i32
 
 
     // for WORD_LOOP
     lop: .Words
+    // for WORD_LOOP
+    rets: .Types
 
     // for WORD_IF
     iff: .If
 
-    // for WORD_CAST
+    // for WORD_CAST, WORD_INTRINSIC
     type: .Type
+    // for WORD_CAST
+    src-type: .Type
 }
 fn Word-new(ty: i32, file: .S:String, line: i32, column: i32) -> .Word {
     local self: .Word
-    60 A:alloc !.Word #self
+    72 A:alloc !.Word #self
     $self.file $file store32
     $self.ty $ty store32
     $self.line $line store32
@@ -480,6 +488,9 @@ fn Word-new(ty: i32, file: .S:String, line: i32, column: i32) -> .Word {
     $self.iff 0 !.If store32
     $self.type 0 !.Type store32
     $self.offset 0 store32
+    $self.module 0 store32
+    $self.rets 0 !.Types store32
+    $self.src-type 0 !.Type store32
     $self
 }
 fn Word-free(self: .Word) {
@@ -488,6 +499,9 @@ fn Word-free(self: .Word) {
     }
     $self.lop load32 !i32 0 /= if {
         $self.lop load32 Words-free
+    }
+    $self.rets load32 !i32 0 /= if {
+        $self.rets load32 Types-free-container
     }
     $self !.i32 A:free
 }
@@ -512,17 +526,16 @@ fn Word-ident(self: .Word) -> .S:Str {
 fn Word-words(self: .Word) -> .Words {
     $self.lop load32
 }
+fn Word-rets(self: .Word) -> .Types {
+    $self.rets load32
+}
 fn Word-intrinsic(self: .Word) -> i32 {
     $self.intrinsic load32
 }
-fn Word-format(self: .Word) -> .S:String {
-    local formatter: .FMT:Formatter
-    FMT:Formatter-new #formatter
-    $self $formatter Word-format2
-    $formatter FMT:Formatter-into-string
+fn Word-module(self: .Word) -> i32 {
+    $self.module load32
 }
-
-fn Word-format2(self: .Word, formatter: .FMT:Formatter) {
+fn Word-format(self: .Word, formatter: .FMT:Formatter) {
     $formatter "{ ty: " FMT:Formatter-write
     $formatter $self.ty load32 word-ty-name FMT:Formatter-write
     $self.ty load32 WORD_NUMBER = if {
@@ -746,6 +759,7 @@ struct Function {
     mems: .Memories
     locals: .Locals
     body: .Words
+    diverges: bool
 }
 fn Function-new(
     ident: .L:Token, 
@@ -757,7 +771,7 @@ fn Function-new(
     body: .Words
 ) -> .Function {
     local self: .Function
-    28 A:alloc !.Function #self
+    32 A:alloc !.Function #self
     $self.ident $ident store32
     $self.qualifier $qualifier store32
     $self.parameters $parameters store32
@@ -765,6 +779,7 @@ fn Function-new(
     $self.mems $mems store32
     $self.locals $locals store32
     $self.body $body store32
+    $self.diverges 0 1 = store32
     $self
 }
 fn Function-free(self: .Function) {
@@ -792,6 +807,9 @@ fn Function-body(self: .Function) -> .Words {
 }
 fn Function-ident(self: .Function) -> .L:Token {
     $self.ident load32
+}
+fn Function-diverges(self: .Function) -> bool {
+    $self.diverges load32
 }
 fn Function-format(self: .Function, formatter: .FMT:Formatter) {
     $formatter "{\n" FMT:Formatter-write
@@ -891,6 +909,12 @@ fn Extern-new(
     $self.params $params store32
     $self.rets $rets store32
     $self
+}
+fn Extern-module(self: .Extern) -> .L:Token {
+    $self.module load32
+}
+fn Extern-name(self: .Extern) -> .L:Token {
+    $self.name load32
 }
 fn Extern-rets(self: .Extern) -> .Types {
     $self.rets load32

@@ -1,0 +1,540 @@
+import "../std/format.watim" as FMT
+import "../std/io.watim" as IO
+import "../std/core.watim" as CORE
+import "../std/util.watim" as U
+import "../std/string.watim" as S
+
+import "./ast.watim" as AST
+import "./lexer.watim" as L
+import "./module.watim" as M
+
+fn generate-type(formatter: .FMT:Formatter, self: .AST:Type) {
+     loop {
+        $self AST:Type-ty AST:TYPE_I32 = 
+        $self AST:Type-ty AST:TYPE_BOOL = or
+        $self AST:Type-ty AST:TYPE_PTR = or
+        if { 
+            $formatter "i32" FMT:Formatter-write break
+        }
+
+        $self AST:Type-ty AST:TYPE_I64 = if { 
+            $formatter "i64" FMT:Formatter-write break 
+        }
+        
+        $self AST:Type-ty AST:TYPE_STRUCT = if {
+            2 "cannot generate WAT for TYPE_STRUCT" IO:write-all IO:check
+            1 CORE:exit
+            break
+        }
+        2 "invalid Type-ty" IO:write-all IO:check
+        1 CORE:exit
+    }
+}
+fn generate-lop(formatter: .FMT:Formatter, lop: .AST:Words, rets: .AST:Types) {
+    $formatter "(block $block " FMT:Formatter-write
+    $rets !i32 0 /= if {
+        $formatter $rets generate-rets
+    }
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "(loop $loop " FMT:Formatter-write
+    $rets !i32 0 /= if {
+        $formatter $rets generate-rets
+    }
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter $lop generate-words
+    $formatter FMT:Formatter-write-indent
+    $formatter "br $loop\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter ")\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter ")" FMT:Formatter-write
+}
+fn generate-word(formatter: .FMT:Formatter, self: .AST:Word) {
+    loop {
+        $self.ty load32 AST:WORD_NUMBER = if {
+            $formatter "i32.const " FMT:Formatter-write
+            $self.number load32 $formatter U:i32-format
+            break
+        }
+        $self.ty load32 AST:WORD_STRING = if {
+            $formatter "i32.const " FMT:Formatter-write
+            $self.addr load32 $formatter U:i32-format
+            $formatter " i32.const " FMT:Formatter-write
+            $self.size load32 $formatter U:i32-format
+            break
+        }
+        $self.ty load32 AST:WORD_CALL = if {
+            $formatter "call $" FMT:Formatter-write
+            $self AST:Word-module $formatter U:i32-format
+            $formatter ":" FMT:Formatter-write
+            $formatter $self AST:Word-ident S:Str-unpack FMT:Formatter-write
+            break
+        }
+        $self.ty load32 AST:WORD_LOCAL = if {
+            $formatter "local.get $" FMT:Formatter-write
+            $formatter $self AST:Word-ident S:Str-unpack FMT:Formatter-write
+            break
+        }
+        $self.ty load32 AST:WORD_GLOBAL = if {
+            $formatter "global.get $" FMT:Formatter-write
+            $self AST:Word-module $formatter U:i32-format
+            $formatter ":" FMT:Formatter-write
+            $formatter $self AST:Word-ident S:Str-unpack FMT:Formatter-write
+            break
+        }
+        $self.ty load32 AST:WORD_LOOP = if {
+            $formatter $self AST:Word-lop $self AST:Word-rets generate-lop
+            break
+        }
+        $self.ty load32 AST:WORD_BREAK = if {
+            $formatter "br $block" FMT:Formatter-write
+            break    
+        }
+        $self.ty load32 AST:WORD_IF = if {
+            $formatter $self AST:Word-iff generate-iff
+            break
+        }
+        $self.ty load32 AST:WORD_SET = if {
+            $formatter "local.set $" FMT:Formatter-write
+            $formatter $self AST:Word-ident S:Str-unpack FMT:Formatter-write
+            break
+        }
+        $self.ty load32 AST:WORD_INTRINSIC = if {
+            $formatter $self generate-intrinsic
+            break
+        }
+        $self.ty load32 AST:WORD_CAST = if {
+            $self.type load32 AST:Type-ty AST:TYPE_I64 =
+            $self.src-type load32 AST:Type-ty AST:TYPE_I32 = 
+            $self.src-type load32 AST:Type-ty AST:TYPE_BOOL = or and
+            if {
+                $formatter "i64.extend_i32_s" FMT:Formatter-write
+            }
+            $self.type load32 AST:Type-ty AST:TYPE_I32 =
+            $self.type load32 AST:Type-ty AST:TYPE_BOOL = or
+            $self.src-type load32 AST:Type-ty AST:TYPE_I64 = and
+            if {
+                $formatter "i32.wrap_i64" FMT:Formatter-write
+            }
+            break
+        }
+        $self.ty load32 AST:WORD_DEREF = if {
+            $formatter "i32.const " FMT:Formatter-write
+            $self.offset load32 $formatter U:i32-format
+            $formatter " i32.add" FMT:Formatter-write
+            break
+        }
+        $formatter $self AST:Word-ty AST:word-ty-name FMT:Formatter-write
+        break
+    } 
+}
+fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
+    loop {
+        $word.intrinsic load32 AST:INTRINSIC_ADD = if {
+            $formatter "i32.add" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_SUB = if {
+            $formatter "i32.sub" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_EQ = if {
+            $formatter "i32.eq" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_DROP = if {
+            $formatter "drop" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_NOT = if {
+            $formatter "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_MEM_GROW = if {
+            $formatter "memory.grow" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_NOT_EQ = if {
+            $formatter "i32.ne" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_STORE32 = if {
+            $formatter "i32.store" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_LOAD32 = if {
+            $formatter "i32.load" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_GREATER_EQ = if {
+            $formatter "i32.ge_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_AND = if {
+            $formatter "i32.and" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_GREATER = if {
+            $formatter "i32.gt_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_STORE8 = if {
+            $formatter "i32.store8" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_FLIP = if {
+            $formatter "call $intrinsic:flip" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_MOD = if {
+            $formatter "i32.rem_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_DIV = if {
+            $formatter "i32.div_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_LOAD8 = if {
+            $formatter "i32.load8_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_LESS = if {
+            $formatter "i32.lt_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_MUL = if {
+            $formatter "i32.mul" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_MEM_COPY = if {
+            $formatter "memory.copy" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_LESS_EQ = if {
+            $formatter "i32.le_u" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_ROTR = if {
+            $formatter "i32.rotr" FMT:Formatter-write break
+        }
+        $word.intrinsic load32 AST:INTRINSIC_ROTL = if {
+            $word.type load32 AST:Type-ty AST:TYPE_I32 = if {
+                $formatter "i32.rotl" FMT:Formatter-write break
+            }
+            $word.type load32 AST:Type-ty AST:TYPE_I64 = if {
+                $formatter "i64.extend_i32_s i64.rotl" FMT:Formatter-write break
+            }
+            2 "Unexpted type in INTRINSIC_ROTL" IO:write-all IO:check
+            1 CORE:exit
+        }
+        $word.intrinsic load32 AST:INTRINSIC_OR = if {
+            $word.type load32 !i32 0 /= if {
+                $formatter $word.type load32 generate-type
+                $formatter ".or" FMT:Formatter-write break
+            } else {
+                $formatter "i32.or" FMT:Formatter-write break
+            }
+        }
+        1 $word.intrinsic load32 AST:intrinsic-name IO:write-all IO:check
+        1 CORE:exit
+        $formatter $word.intrinsic load32 AST:intrinsic-name FMT:Formatter-write
+        break
+    }
+}
+fn generate-iff-params(formatter: .FMT:Formatter, params: .AST:Types) {
+    local i: i32
+    loop {
+        $i $params AST:Types-len = if { break }
+        $formatter "(param " FMT:Formatter-write
+        $formatter $params $i AST:Types-get generate-type
+        $formatter ") " FMT:Formatter-write
+        $i 1 + #i
+    }
+}
+fn generate-iff(formatter: .FMT:Formatter, iff: .AST:If) {
+    $formatter "(if " FMT:Formatter-write
+    $formatter $iff AST:If-params generate-iff-params
+    $formatter $iff AST:If-rets generate-rets
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter FMT:Formatter-write-indent
+    $formatter "(then\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter $iff AST:If-body generate-words 
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter ")" FMT:Formatter-write
+    $iff AST:If-el !i32 0 /= if {
+        $formatter " (else\n" FMT:Formatter-write
+        $formatter FMT:Formatter-indent
+        $formatter $iff AST:If-el generate-words
+        $formatter FMT:Formatter-dedent
+        $formatter FMT:Formatter-write-indent
+        $formatter ")" FMT:Formatter-write
+    }
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter ")" FMT:Formatter-write
+}
+fn generate-param(formatter: .FMT:Formatter, param: .AST:Local) {
+    $formatter "(param $" FMT:Formatter-write
+    $formatter $param AST:Local-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter " " FMT:Formatter-write
+    $formatter $param AST:Local-type generate-type
+    $formatter ")" FMT:Formatter-write
+}
+fn generate-params(formatter: .FMT:Formatter, params: .AST:Locals) {
+    local i: i32
+    loop {
+        $i $params AST:Locals-len = if { break }
+        $formatter $params $i AST:Locals-get generate-param
+        $i 1 + $params AST:Locals-len < if { 
+            $formatter " " FMT:Formatter-write
+        }
+        $i 1 + #i
+    }
+}
+fn generate-ret(formatter: .FMT:Formatter, ret: .AST:Type) {
+    $formatter "(result " FMT:Formatter-write
+    $formatter $ret generate-type
+    $formatter ")" FMT:Formatter-write
+}
+fn generate-rets(formatter: .FMT:Formatter, rets: .AST:Types) {
+    local i: i32
+    loop {
+        $i $rets AST:Types-len = if { break }
+        $formatter $rets $i AST:Types-get generate-ret
+        $i 1 + $rets AST:Types-len < if {
+            $formatter " " FMT:Formatter-write
+        }
+        $i 1 + #i
+    }
+}
+fn generate-signature(formatter: .FMT:Formatter, module: i32, ident: .L:Token, qualifier: .L:Token, params: .AST:Locals, rets: .AST:Types) {
+    $formatter "func $" FMT:Formatter-write
+    $module $formatter U:i32-format
+    $formatter ":" FMT:Formatter-write
+    $formatter $ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter " " FMT:Formatter-write
+    $qualifier !i32 0 /= if {
+        $formatter "(export " FMT:Formatter-write
+        $formatter $qualifier L:Token-lexeme S:Str-unpack FMT:Formatter-write
+        $formatter ")" FMT:Formatter-write
+    }
+    $formatter $params generate-params
+    $formatter " " FMT:Formatter-write
+    $formatter $rets generate-rets
+}
+
+fn generate-ext(formatter: .FMT:Formatter, module: i32, ext: .AST:Extern) {
+    $formatter FMT:Formatter-write-indent
+    $formatter "(import " FMT:Formatter-write
+    $formatter $ext AST:Extern-module L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter " " FMT:Formatter-write
+    $formatter $ext AST:Extern-name L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter " (" FMT:Formatter-write
+    $formatter $module $ext AST:Extern-ident 0 !.L:Token $ext AST:Extern-parameters $ext AST:Extern-rets generate-signature
+    $formatter "))\n" FMT:Formatter-write
+}
+
+fn generate-externs(formatter: .FMT:Formatter, modules: .M:Modules) {
+    local i: i32
+    local j: i32
+    local module: .M:Module
+    local item: .AST:TopItem
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $modules $i M:Modules-get-value #module
+        0 #j
+        loop {
+            $j $module M:Module-items AST:TopItems-len = if { break }
+            $module M:Module-items $j AST:TopItems-get #item
+            $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
+                $formatter $i $item AST:TopItem-ext generate-ext
+            }
+            $j 1 + #j
+        }
+        $i 1 + #i
+    }
+}
+
+fn generate-global-mem(formatter: .FMT:Formatter, module: i32, statics-len: i32, mem: .AST:Memory) {
+    $formatter FMT:Formatter-write-indent
+    $formatter "(global $" FMT:Formatter-write
+    $module $formatter U:i32-format
+    $formatter ":" FMT:Formatter-write
+    $formatter $mem AST:Memory-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter " (mut i32) (i32.const " FMT:Formatter-write
+    $mem AST:Memory-address $mem AST:Memory-alignment CORE:align-to $formatter U:i32-format
+    $formatter "))\n" FMT:Formatter-write
+}
+
+fn generate-global-mems(formatter: .FMT:Formatter, statics-len: i32, modules: .M:Modules) {
+    local i: i32
+    local j: i32
+    local module: .M:Module
+    local item: .AST:TopItem
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $modules $i M:Modules-get-value #module
+        0 #j
+        loop {
+            $j $module M:Module-items AST:TopItems-len = if { break }
+            $module M:Module-items $j AST:TopItems-get #item
+            $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+                $formatter $i $statics-len $item AST:TopItem-mem generate-global-mem
+            }
+            $j 1 + #j
+        }
+        $i 1 + #i
+    }
+}
+fn generate-static-mem(formatter: .FMT:Formatter, mem: .S:String) {
+    memory buf: i32 4 4;
+    local i: i32
+    $formatter FMT:Formatter-write-indent
+    $formatter "(data (i32.const 0) \"" FMT:Formatter-write
+    loop {
+        $mem S:String-len $i = if { break }
+        $formatter $mem S:String-unpack drop $i + load8 $buf CORE:escape
+        $buf flip FMT:Formatter-write
+        $i 1 + #i
+    }
+    $formatter "\")" FMT:Formatter-write
+}
+
+fn generate-words(formatter: .FMT:Formatter, words: .AST:Words) {
+    local i: i32 
+    loop {
+        $i $words AST:Words-len = if { break }
+        $formatter FMT:Formatter-write-indent
+        $formatter $words $i AST:Words-get generate-word
+        $formatter "\n" FMT:Formatter-write
+        $i 1 + #i
+    }
+}
+
+fn generate-locl(formatter: .FMT:Formatter, locl: .AST:Local) {
+    $formatter FMT:Formatter-write-indent
+    $formatter "(local $" FMT:Formatter-write
+    $formatter $locl AST:Local-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter " " FMT:Formatter-write
+    $formatter $locl AST:Local-type generate-type
+    $formatter ")" FMT:Formatter-write
+}
+
+fn generate-locals(formatter: .FMT:Formatter, locals: .AST:Locals) {
+    local i: i32
+    loop {
+        $locals AST:Locals-len $i = if { break }
+        $formatter $locals $i AST:Locals-get generate-locl
+        $formatter "\n" FMT:Formatter-write
+        $i 1 + #i
+    }
+}
+fn generate-mem(formatter: .FMT:Formatter, mem: .AST:Memory) {
+    $formatter "global.get $stac:k i32.const " FMT:Formatter-write
+    $mem AST:Memory-alignment $formatter U:i32-format
+    $formatter " global.get $stac:k i32.const " FMT:Formatter-write
+    $mem AST:Memory-alignment $formatter U:i32-format
+    $formatter " i32.rem_u i32.sub global.get $stac:k i32.const " FMT:Formatter-write
+    $mem AST:Memory-alignment $formatter U:i32-format
+    $formatter " i32.rem_u i32.const 0 i32.gt_u i32.mul i32.add global.set $stac:k" FMT:Formatter-write
+    $formatter " global.get $stac:k global.get $stac:k i32.const " FMT:Formatter-write
+    $mem AST:Memory-size $formatter U:i32-format
+    $formatter " i32.add global.set $stac:k local.set $" FMT:Formatter-write
+    $formatter $mem AST:Memory-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+}
+fn generate-memories(formatter: .FMT:Formatter, memories: .AST:Memories) {
+    local i: i32
+    local mem: .AST:Memory
+    loop {
+        $i $memories AST:Memories-len = if { break }
+        $memories $i AST:Memories-get #mem
+        $formatter FMT:Formatter-write-indent
+        $formatter $mem generate-mem
+        $formatter "\n" FMT:Formatter-write
+        $i 1 + #i
+    }
+}
+fn generate-mem-locals(formatter: .FMT:Formatter, memories: .AST:Memories) {
+    local i: i32
+    local mem: .AST:Memory
+    loop {
+        $i $memories AST:Memories-len = if { break }
+        $memories $i AST:Memories-get #mem
+        $formatter FMT:Formatter-write-indent
+        $formatter "(local $" FMT:Formatter-write
+        $formatter $mem AST:Memory-local AST:Local-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+        $formatter " i32)\n" FMT:Formatter-write
+        $i 1 + #i
+    }
+}
+fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Function) {
+    local i: i32
+    $formatter FMT:Formatter-write-indent
+    $formatter "(" FMT:Formatter-write
+    $formatter $module $function AST:Function-ident $function.qualifier load32 $function AST:Function-parameters $function AST:Function-ret generate-signature
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter $function AST:Function-locals generate-locals
+    $formatter $function AST:Function-memories generate-mem-locals
+    $function AST:Function-memories AST:Memories-len 0 > if {
+        $formatter FMT:Formatter-write-indent
+        $formatter "(local $stac:k i32)\n" FMT:Formatter-write
+        $formatter FMT:Formatter-write-indent
+        $formatter "global.get $stac:k local.set $stac:k\n" FMT:Formatter-write
+    }
+    $formatter $function AST:Function-memories generate-memories
+    $formatter $function AST:Function-body generate-words
+    $function AST:Function-memories AST:Memories-len 0 > if {
+        $formatter FMT:Formatter-write-indent
+        $formatter "local.get $stac:k global.set $stac:k\n" FMT:Formatter-write
+    }
+    $function AST:Function-diverges if {
+        loop {
+            $i $function AST:Function-ret AST:Types-len = if { break }
+            $formatter FMT:Formatter-write-indent
+            $formatter "i32.const 0\n" FMT:Formatter-write
+            $i 1 + #i
+        }
+    }
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter ")\n" FMT:Formatter-write
+}
+
+fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
+    local i: i32
+    local j: i32
+    local module: .M:Module
+    local item: .AST:TopItem
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $modules $i M:Modules-get-value #module
+        0 #j
+        loop {
+            $j $module M:Module-items AST:TopItems-len = if { break }
+            $module M:Module-items $j AST:TopItems-get #item
+            $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+                $formatter $i $item AST:TopItem-function generate-function
+            }
+            $j 1 + #j
+        }
+        $i 1 + #i
+    }
+}
+
+fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules: .M:Modules) {
+    $formatter "(module\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+
+    $formatter $modules generate-externs
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "(memory 1 1024)\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+	$formatter "(export \"memory\" (memory 0))\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "(global $stac:k (mut i32) (i32.const " FMT:Formatter-write
+    $stack-start $formatter U:i32-format
+    $formatter "))\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)\n" FMT:Formatter-write
+
+    $formatter $mem S:String-len $modules generate-global-mems
+
+    $formatter $mem generate-static-mem
+    $formatter "\n" FMT:Formatter-write
+
+    $formatter $modules generate-functions
+
+    $formatter FMT:Formatter-dedent
+    $formatter ")" FMT:Formatter-write
+}
+

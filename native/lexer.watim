@@ -474,6 +474,11 @@ fn Lexer-lex-string(lexer: .Lexer) -> .Token {
                     $lexer.column $lexer.column load32 1 + store32
                     $string "\t" drop load8 S:String-push break
                 }
+                $char "r" drop load8 = if {
+                    $lexer.index $lexer.index load32 1 + store32
+                    $lexer.column $lexer.column load32 1 + store32
+                    $string "\r" drop load8 S:String-push break
+                }
                 $char "\\" drop load8 = if {
                     $lexer.index $lexer.index load32 1 + store32
                     $lexer.column $lexer.column load32 1 + store32

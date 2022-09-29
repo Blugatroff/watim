@@ -162,7 +162,7 @@ impl std::fmt::Display for CheckedFunction {
         for mem in &self.memory {
             let size = mem.size;
             let ident = &mem.ident;
-            let align = match mem.alignment {
+            let align = match Some(mem.alignment.unwrap_or(1)) {
                 Some(alignment) => {
                     // align = (n, alignment) => n + (alignment - (n % alignment)) * (n % alignment > 0)
                     // n alignment n alignment % - n alignment % 0 > * +

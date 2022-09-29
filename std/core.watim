@@ -24,3 +24,23 @@ fn exit(code: i32) {
     $code raw_exit
 }
 
+fn escape(char: i32, dest: .i32) -> i32 {
+    local hex-digits-ptr: .i32
+    local hex-digits-len: i32
+    "0123456789abcdef" #hex-digits-len #hex-digits-ptr
+    loop {
+        $char "\t" drop load8 = if { "\\t" $dest flip copy 2 break }
+        $char "\r" drop load8 = if { "\\r" $dest flip copy 2 break }
+        $char "\n" drop load8 = if { "\\n" $dest flip copy 2 break }
+        $char "\\" drop load8 = if { "\\\\" $dest flip copy 2 break }
+        $char "\"" drop load8 = if { "\\\"" $dest flip copy 2 break}
+        $char 32 >= $char 126 <= and if { $dest $char store8 1 break }
+        "\\x" $dest flip copy
+        $dest 2 + #dest
+        $dest $hex-digits-ptr $char 4 rotr 255 and + load8 store8
+        $dest 1 + #dest
+        $dest $hex-digits-ptr $char 255 and + load8 store8
+        4 break
+    }
+}
+

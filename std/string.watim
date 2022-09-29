@@ -75,6 +75,18 @@ fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, 
         }
     }
 }
+fn str-escape(str-ptr: .i32, str-len: i32) -> .String {
+    memory buf: i32 4 4;
+    local out: .String
+    local i: i32
+    String-empty #out
+    loop {
+        $str-len $i = if { break }
+        $out $buf $str-ptr $i + load8 $buf CORE:escape String-append
+        $i 1 + #i
+    }
+    $out
+}
 fn str-replace(str-ptr: .i32, str-len: i32, old-ptr: .i32, old-len: i32, new-ptr: .i32, new-len: i32) -> .String {
     local out: .String
     local index: i32

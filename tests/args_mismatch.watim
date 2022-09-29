@@ -5,4 +5,8 @@ fn main "_start" () {
     0 foo
 }
 ================================
-/home/jasper/projects/rust/watim/test.watim:3:7: expected: .i32, got: i32!
+./test.watim:3:7 expected stack: [
+  .i32,
+] got: [
+  i32,
+]

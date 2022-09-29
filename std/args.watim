@@ -15,7 +15,6 @@ fn get-args() -> .S:StringVec {
     local arg_sizes: i32
     local i: i32
     local ptr: .i32
-
     $arg_number_ptr $arg_sizes_ptr args_sizes_get IO:check
     $arg_number_ptr load32 #arg_number
     $arg_sizes_ptr load32 #arg_sizes

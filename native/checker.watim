@@ -80,10 +80,19 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
             }
             $i 1 + #i
         }
+    } else {
+        $function.diverges 0 0 = store32
     }
 
     $stack AST:Types-free-container
-    $temp-types AST:Types-free
+    0 #i 
+    loop {
+        $i $temp-types AST:Types-len = if { break }
+        $module.types load32 $temp-types $i AST:Types-get AST:Types-push
+        $i 1 + #i
+    }
+    $temp-types AST:Types-free-container
+    
     $locals LocalsMap-free
     $bs BS:BreakStacks-free
 }
@@ -132,7 +141,7 @@ fn check-word(
             $modules $module $stack $word check-call break
         }
         $word AST:Word-ty AST:WORD_LOCAL = if {
-            $module $stack $locals $word check-locl break
+            $modules $module $stack $locals $word check-locl break
         }
         $word AST:Word-ty AST:WORD_SET = if {
             $stack $locals $word check-set break
@@ -197,6 +206,7 @@ fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 0 = if { 
         $word AST:Word-location "expected [a] got []\n" U:abort-with-location
     }
+    $word.src-type $stack $stack AST:Types-len 1 - AST:Types-get store32
     $stack AST:Types-pop drop
     $stack $word AST:Word-type AST:Types-push
     0 1 =
@@ -295,6 +305,7 @@ fn check-lop(
             $stack $bs 0 BS:BreakStacks-get BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
+        $word.rets $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container store32
         0 1 =
     }
     $bs BS:BreakStacks-free
@@ -307,12 +318,14 @@ fn check-set(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     }
     0 1 = 
 }
-fn check-locl(module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
         $stack flip AST:Types-push
     } else {
         drop
         $module $word AST:Word-ident S:Str-unpack M:Module-find-mem if {
+            $word.module $modules $module M:Modules-find-index store32
+            $word.ty AST:WORD_GLOBAL store32
             AST:Memory-type $stack flip AST:Types-push
         } else {
             drop $word AST:Word-location "local not found\n" U:abort-with-location
@@ -354,7 +367,7 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
         $params $param-locals $i AST:Locals-get AST:Local-type AST:Types-push
         $i 1 + #i
     }
-
+    $word.module $modules $module M:Modules-find-index store32
     $stack 
     $params
     $word U:expect-stack
