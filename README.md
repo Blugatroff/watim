@@ -36,13 +36,13 @@ Or just use the provided script:
 ./run.sh <watim-source-file> [args]...
 ```
 
+For example:
+```bash
+./run.sh ./samples/cat.watim ./README.md
+```
+
 ## Editor Support
 VIM syntax highlighting in [./editor/watim.vim](https://github.com/Blugatroff/watim/tree/main/editor/watim.vim)
-
-## Debugger
-```bash
-cargo run -- debug <source-file>
-```
 
 ## Example Program
 This program exits with the exit code read from stdin.

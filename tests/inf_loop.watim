@@ -1,8 +1,0 @@
-
-================================
-// this should typecheck just fine since the function will never actually return
-fn inf_loop() -> .i32, i32 {
-    loop {}
-}
-fn main "_start" () {}
-================================
