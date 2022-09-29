@@ -25,9 +25,18 @@ fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> .Module {
     local items: .AST:TopItems
     local types: .AST:Types
     local path: .S:String
+    local code: i32
 
     $path-ptr $path-len S:String-new #path
-    $path S:String-unpack FS:read-file IO:check #str
+    $path S:String-unpack FS:read-file #code #str 
+    $code 0 /= if {
+        2 "Failed to read file: \"" IO:write-all IO:check
+        2 $path-ptr $path-len IO:write-all IO:check
+        2 "\" Error Code: " IO:write-all IO:check
+        2 $code IO:print-to-fd
+        2 "\n" IO:write-all IO:check
+        1 CORE:exit
+    }
     $str $path L:lex #tokens
     $mem $tokens P:parse #types #items 
     

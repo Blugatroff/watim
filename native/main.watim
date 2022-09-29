@@ -1,47 +1,31 @@
 import "../std/alloc.watim" as A
 import "../std/args.watim" as ARGS
-import "../std/string.watim" as S
-import "../std/io.watim" as IO
-import "../std/fs.watim" as FS
 import "../std/core.watim" as CORE
-import "../std/map.watim" as MAP
 import "../std/format.watim" as FMT
+import "../std/fs.watim" as FS
+import "../std/io.watim" as IO
+import "../std/map.watim" as MAP
+import "../std/string.watim" as S
 
-import "./lexer.watim" as L
 import "./ast.watim" as AST
+import "./checker.watim" as C
+import "./wat_gen.watim" as GEN
+import "./lexer.watim" as L
+import "./mem.watim" as MEM
+import "./module.watim" as M
 import "./parser.watim" as P
 import "./resolver.watim" as R
-import "./module.watim" as M
-import "./checker.watim" as C
-import "./mem.watim" as MEM
-import "./wat_gen.watim" as GEN
 
-fn load-module-recursive(modules: .M:Modules, mem: .S:String, path: .S:String) {
-    local module: .M:Module
-    local imps: .AST:Imports
-    local i: i32
-
-    //2 "Loading module: " IO:write-all IO:check
-    //2 $path S:String-unpack IO:write-all IO:check
-    //2 "\n" IO:write-all IO:check
-    $path S:String-unpack $mem M:Module-load #module
-    $module M:Module-imports #imps
-    $modules $path S:String-unpack S:String-new $module M:Modules-insert
-    
-    loop {
-        $i $imps AST:Imports-len = if { break }
-        $modules $imps $i AST:Imports-get-value S:String-unpack M:Modules-get if {
-            drop
-        } else {
-            drop
-            $modules $mem $imps $i AST:Imports-get-value load-module-recursive
-        }
-        $i 1 + #i
-    }
+fn print-usage-and-exit() {
+    2 "The native Watim compiler\n\n" IO:write-all IO:check
+    2 "Usage: wasmtime --dir=. ./watim.wasm <watim-source-file>\n" IO:write-all IO:check
+    2 "Options:\n" IO:write-all IO:check
+    2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
+    1 CORE:exit
 }
 
-fn f() {
-    memory alloc-mem: i32 10000000 4; // 10 mb
+fn main() {
+    memory alloc-mem: i32 16777216 4; // 16 MiB
     local args: .S:StringVec
     local mem: .S:String
     local path: .S:String
@@ -50,12 +34,21 @@ fn f() {
     local modules: .M:Modules
     local stack-start: i32
 
-    $alloc-mem 10000000 A:init
+    enable-logging
+    $alloc-mem 16777216 A:init
     FS:init
     ARGS:get-args #args
     S:String-empty #mem
     
-    $args 1 S:StringVec-get #path 
+    $args S:StringVec-len 1 <= if { print-usage-and-exit }
+    $args 1 S:StringVec-get S:String-unpack "--quiet" S:str-eq 
+    $args 1 S:StringVec-get S:String-unpack "-q" S:str-eq or if {
+        $args S:StringVec-len 2 <= if { print-usage-and-exit }
+        disable-logging
+        $args 2 S:StringVec-get #path 
+    } else {
+        $args 1 S:StringVec-get #path 
+    }
 
     M:Modules-new #modules
     $modules $mem $path load-module-recursive
@@ -82,10 +75,45 @@ fn f() {
     }
 }
 
-fn main "_start" () {
-    1023 mem-grow 1 /= if {
-        1 CORE:exit
+fn load-module-recursive(modules: .M:Modules, mem: .S:String, path: .S:String) {
+    local module: .M:Module
+    local imps: .AST:Imports
+    local i: i32
+    logging-enabled if {
+        2 "Loading module: " IO:write-all IO:check
+        2 $path S:String-unpack IO:write-all IO:check
+        2 "\n" IO:write-all IO:check
     }
-    f
+    $path S:String-unpack $mem M:Module-load #module
+    $module M:Module-imports #imps
+    $modules $path S:String-unpack S:String-new $module M:Modules-insert
+    
+    loop {
+        $i $imps AST:Imports-len = if { break }
+        $modules $imps $i AST:Imports-get-value S:String-unpack M:Modules-get if {
+            drop
+        } else {
+            drop
+            $modules $mem $imps $i AST:Imports-get-value load-module-recursive
+        }
+        $i 1 + #i
+    }
+}
+
+memory LOGGING: bool 4 4;
+fn enable-logging() {
+    $LOGGING 0 0 = store32
+}
+fn disable-logging() {
+    $LOGGING 0 1 = store32
+}
+fn logging-enabled() -> bool {
+    $LOGGING load32
+}
+
+fn start "_start" () {
+    // grow memory to 512 * 2B^16 = 32 MiB
+    512 mem-grow 1 /= if { 1 CORE:exit } 
+    main
 }
 

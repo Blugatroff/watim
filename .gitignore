@@ -1,4 +1,4 @@
 /target
-*.wasm
 *.wat
 test.watim
+

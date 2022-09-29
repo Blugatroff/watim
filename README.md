@@ -1,11 +1,11 @@
 # Watim 
 
-Watim is a simple stack-based language which compiles to [Webassembly Text Format (WAT)](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format).
+Watim is a simple, low level, stack-based language which compiles to [Webassembly Text Format (WAT)](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format).
 Which can then be compiled to wasm and run in your favorite browser or by runtimes like [wasmtime](https://github.com/bytecodealliance/wasmtime) and [wasm3](https://github.com/wasm3/wasm3).
 
-The goal is to eventually rewrite the Watim compiler in Watim to make it self-hosted.
+The Watim compiler is written in Watim.
 
-This project is inspired by [Porth](https://gitlab.com/tsoding/porth).
+This project was inspired by [Porth](https://gitlab.com/tsoding/porth).
 
 Watim = WAT Improved
 
@@ -19,11 +19,21 @@ Watim = WAT Improved
 - structs
 
 ## How to run
-First [install wasm3](https://github.com/wasm3/wasm3/blob/main/docs/Installation.md).
+First [install Wasmtime](https://wasmtime.dev/).
+
+Then compile:
+```bash
+wasmtime --dir=. ./watim.wasm <watim-source-file> > out.wat
+```
 
 Then run:
 ```bash
-./run.sh <source-file> [args]...
+wasmtime --dir=. ./out.wat [args]...
+```
+
+Or just use the provided script:
+```bash
+./run.sh <watim-source-file> [args]...
 ```
 
 ## Editor Support
@@ -37,35 +47,42 @@ cargo run -- debug <source-file>
 ## Example Program
 This program exits with the exit code read from stdin.
 ```
-extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .i32, iovs_count: i32, result: .i32) -> i32
-extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .i32, iovs_count: i32, nwritten: .i32) -> i32
+extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: ..Iov, iovs_count: i32, written: .i32) -> i32
+extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: ..Iov, iovs_count: i32, written: .i32) -> i32
 extern "wasi_unstable" "proc_exit" fn exit(code: i32)
 
-fn write(file: i32, pt: .i32, len: i32) -> i32 {
-    memory space 8 4;
+struct Iov {
+    ptr: .i32
+    len: i32
+}
+
+fn write(file: i32, ptr: .i32, len: i32) -> i32 {
+    memory iov: Iov 8 4;
+    memory written-ptr: i32 4 4;
     local written: i32
-    $space $pt !i32 store32
-    $space 4 + $len store32
-    $file $space 1 $space raw_write drop
-    $space load32 #written
+    $iov.ptr $ptr store32
+    $iov.len $len store32
+    $file $iov !..Iov 1 $written-ptr raw_write drop
+    $written-ptr load32 #written
     $written $len = if {
         $len
     } else {
-        $file $pt !i32 $written + !.i32 $len $written - write $written +
+        $file $ptr $written + $len $written - write $written +
     }
 }
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32 {
-    memory space 8 4;
-    $space $buf_addr !i32 store32 
-    $space !i32 4 + !.i32 $buf_size store32 
-    $file $space 1 $space raw_read drop
-    $space load32
+    memory iov: Iov 8 4;
+    memory nread: i32 4 4;
+    $iov.ptr $buf_addr store32 
+    $iov.len $buf_size store32 
+    $file $iov !..Iov 1 $nread raw_read drop
+    $nread load32
 }
 
 fn print(n: i32) {
-    memory buf 16;
-    memory buf_reversed 16;
+    memory buf: i32 16;
+    memory buf-reversed: i32 16;
     local l: i32
     local i: i32
     0 #l
@@ -75,7 +92,7 @@ fn print(n: i32) {
     } else {
         loop {
             $n 0 = if { break }
-            $buf !i32 $l + !.i32
+            $buf $l +
             $n 10 % // rightmost digit
             48 + // + ascii 'a'
             store8
@@ -85,17 +102,17 @@ fn print(n: i32) {
     }
     0 #i
     loop {
-        $buf_reversed !i32 $i + !.i32
-        $buf !i32 $l 1 - $i - + !.i32 load8
+        $buf-reversed $i +
+        $buf $l 1 - $i - + load8
         store8
         $i 1 + #i
         $i $l = if { break }
     }
-    1 $buf_reversed $l write drop
+    1 $buf-reversed $l write drop
 }
 
 fn write_byte(file: i32, b: i32) {
-    memory buf 1;
+    memory buf: i32 1;
     $buf $b store8
     $file $buf 1 write drop
 }
@@ -131,7 +148,7 @@ fn dup(a: i32) -> i32, i32 {
 }
 
 fn main "_start" () {
-    memory buf 32;
+    memory buf: i32 32;
     local nread: i32
     0 $buf 32 read #nread
     $buf $nread 1 - parse
