@@ -701,13 +701,17 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         }
         $ty L:TOKEN_STRING = if {
             AST:WORD_STRING $file $line $column AST:Word-new #word
-            $word.addr $self.mem load32 S:String-len store32
+
             $word.size $token.string load32 S:String-len store32
-            //2 "token.string: " IO:write-all IO:check
-            //$token.string load32 S:String-unpack U:print-bytes
-            //2 $token.string load32 S:String-unpack IO:write-all IO:check
-            //2 "\n" IO:write-all IO:check
-            $self.mem load32 $token.string load32 S:String-unpack S:String-append
+            $self.mem load32 S:String-unpack 
+            $token.string load32 S:String-unpack
+            S:str-find-str if {
+                $word.addr flip store32
+            } else {
+                drop
+                $word.addr $self.mem load32 S:String-len store32
+                $self.mem load32 $token.string load32 S:String-unpack S:String-append
+            }
             $word break
         }
         $ty L:TOKEN_BREAK = if {

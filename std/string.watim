@@ -381,6 +381,5 @@ fn StringVec-join-with(self: .StringVec, del-ptr: .i32, del-len: i32) -> .String
         $i 1 + #i
     }
     $out
-
 }
 
