@@ -58,7 +58,7 @@ fn resolve-struc(modules: .M:Modules, module: .M:Module, struc: .AST:Struct) {
     }
 }
 fn resolve-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
-    $modules $module $function AST:Function-ret resolve-types
+    $modules $module $function AST:Function-rets resolve-types
     $modules $module $function AST:Function-parameters resolve-parameters
     $modules $module $function AST:Function-locals resolve-locals
     $modules $module $function AST:Function-memories resolve-memories

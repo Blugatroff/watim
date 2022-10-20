@@ -1,5 +1,5 @@
 import "./core.watim" as CORE
-extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .i32, iovs_count: i32, read: .i32) -> i32
+extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, read: .i32) -> i32
 extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
 
 struct Iov {
@@ -7,102 +7,109 @@ struct Iov {
     len: i32
 }
 
+struct I32 { inner: i32 }
+
 fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
-    memory space: Iov 8 4;
-    memory writ: i32 4 4;
+    local iov: Iov
+    local writ: I32
     local code: i32
-    $writ 0 store32
-    $space.ptr $pt store32
-    $space.len $len store32
-    $fd $space 1 $writ raw_write #code
-    $writ load32 $code
+    0 @writ.inner
+    ?pt @iov.ptr
+    ?len @iov.len
+    ?fd &iov 1 &writ.inner raw_write @code
+    ?writ.inner ?code
 }
 
 fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     local written: i32
     local code: i32
-    $fd $pt $len write #code #written
-    $code 0 = if {
-        $written $len = if {
-            $written $code
+    ?fd ?pt ?len write @code @written
+    ?code 0 = if {
+        ?written ?len = if {
+            ?written ?code
         } else {
-            $fd 
-            $pt $written + 
-            $len $written - 
+            ?fd 
+            ?pt ?written + 
+            ?len ?written - 
             write-all-inner
-            flip $written + flip
+            flip ?written + flip
         }
     } else {
-        0 $code
+        0 ?code
     }
 }
 
 fn write-all(fd: i32, pt: .i32, len: i32) -> i32 {
-    $fd $pt $len write-all-inner flip drop
+    ?fd ?pt ?len write-all-inner flip drop
 }
 
 fn write-byte(file: i32, b: i32) -> i32 {
     memory buf: i32 1;
-    $buf $b store8
-    $file $buf 1 write-all
+    ?buf ?b store8
+    ?file ?buf 1 write-all
 }
 
-fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
-    memory space: i32 8 4;
-    memory writ: i32 4 4;
+fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
+    local iov: Iov
+    local writ: I32
     local code: i32
-    $space $buf_addr !i32 store32 
-    $space !i32 4 + !.i32 $buf_size store32 
-    $file $space 1 $writ raw_read #code
-    $writ load32 $code
+    ?buf-addr @iov.ptr
+    ?buf-size @iov.len
+    ?file &iov 1 &writ.inner raw_read @code
+    ?writ.inner ?code
 }
 
 fn print-to-fd-i32-fallible(fd: i32, n: i32) -> i32 {
     memory buf-reversed: i32 24;
-    $fd $buf-reversed $n $buf-reversed print-i32-into write-all
+    ?fd ?buf-reversed ?n ?buf-reversed print-i32-into write-all
 }
 fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
     memory buf: i32 24;
     local l: i32
     local i: i32
-    0 #l
-    $n 0 = if {
-        1 #l // length = 1
-        $buf 48 store8 // put '0' in buf
+    0 @l
+    ?n 0 = if {
+        1 @l // length = 1
+        ?buf 48 store8 // put '0' in buf
     } else {
         loop {
-            $n 0 = if { break }
-            $buf $l + !.i32
-            $n 10 % // rightmost digit
+            ?n 0 = if { break }
+            ?buf ?l + !.i32
+            ?n 10 % // rightmost digit
             48 + // + ascii 'a'
             store8
-            $n 10 / #n // shift right in decimal
-            $l 1 + #l
+            ?n 10 / @n // shift right in decimal
+            ?l 1 + @l
         }
     }
-    0 #i
+    0 @i
     loop {
-        $buf-reversed !i32 $i + !.i32
-        $buf !i32 $l 1 - $i - + !.i32 load8
+        ?buf-reversed !i32 ?i + !.i32
+        ?buf !i32 ?l 1 - ?i - + !.i32 load8
         store8
-        $i 1 + #i
-        $i $l = if { break }
+        ?i 1 + @i
+        ?i ?l = if { break }
     }
-    $l
+    ?l
 }
 
 fn print(n: i32) {
-    1 $n print-to-fd-i32-fallible check
+    1 ?n print-to-fd-i32-fallible check
 }
 fn print-to-fd(fd: i32, n: i32) {
-    $fd $n print-to-fd-i32-fallible check
+    ?fd ?n print-to-fd-i32-fallible check
 }
 
 fn check(code: i32) {
-    $code 0 /= if {
-        2 1 "Error Code: " write-all drop $code print-to-fd-i32-fallible drop
+    ?code 0 /= if {
+        2 1 "Error Code: " write-all drop ?code print-to-fd-i32-fallible drop
         2 10 write-byte drop
         1 CORE:exit
     }
+}
+
+fn abort(msg-ptr: .i32, msg-len: i32) {
+    2 ?msg-ptr ?msg-len write-all check
+    1 CORE:exit
 }
 

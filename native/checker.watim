@@ -41,7 +41,7 @@ fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
     local msg: .S:String
     FMT:Formatter-new #formatter
     $formatter "return type mismatch expected: " FMT:Formatter-write
-    $function AST:Function-ret $formatter AST:Types-format
+    $function AST:Function-rets $formatter AST:Types-format
     $formatter " got: " FMT:Formatter-write
     $stack $formatter AST:Types-format
     $formatter FMT:Formatter-into-string #msg
@@ -63,18 +63,17 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     $temp-types $function get-locals-in-function #locals
 
     $function AST:Function-body #words
-
     BS:BreakStacks-new #bs
     $temp-types $bs $modules $module $stack $locals $words check-words not if {
         // if the function does not diverge, aka does return
         // then check wheter the remaining stack matches the return type
-        $stack AST:Types-len $function AST:Function-ret AST:Types-len /= if {
+        $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
             $stack $function report-return-type-mismatch
         }
         loop {
-            $i $function AST:Function-ret AST:Types-len = if { break }
+            $i $function AST:Function-rets AST:Types-len = if { break }
             $stack $stack AST:Types-len 1 - $i - AST:Types-get 
-            $function AST:Function-ret $function AST:Function-ret AST:Types-len 1 - $i - AST:Types-get 
+            $function AST:Function-rets $function AST:Function-rets AST:Types-len 1 - $i - AST:Types-get 
             AST:Type-eq not if {
                 $stack $function report-return-type-mismatch
             }
@@ -164,9 +163,116 @@ fn check-word(
         $word AST:Word-ty AST:WORD_DEREF = if {
             $temp-types $stack $word check-deref break
         }
+        $word AST:Word-ty AST:WORD_STRUCT_SET = if {
+            $modules $module $stack $locals $word check-struc-set break
+        }
+        $word AST:Word-ty AST:WORD_GET_REF = if {
+            $stack $locals $temp-types $word check-get-ref break
+        }
+        $word AST:Word-ty AST:WORD_LOCAL2 = if {
+            $stack $locals $word check-locl2 break
+        }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
+}
+fn check-locl2(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    local struc: .AST:Struct
+    local i: i32
+    local field: .L:Token
+    local offset: i32
+    local ptr-type: .AST:Type
+    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
+        #type
+    } else {
+        drop $word AST:Word-location "local not found\n" U:abort-with-location
+    }
+    loop {
+        $i $word.fields load32 L:Tokens-len = if { break }
+        $word.fields load32 $i L:Tokens-get #field
+        $type AST:Type-ty AST:TYPE_STRUCT /= if {
+            $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
+        }
+        $type AST:Type-struc #struc
+        $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field if {
+            $offset + #offset
+            AST:Field-type #type
+        } else {
+            drop drop $field L:Token-location "field not found" U:abort-with-location
+        }
+        $i 1 + #i
+    }
+    $word.offset $offset store32
+    $word.type $type store32
+    $stack $type AST:Types-push
+    0 1 =
+}
+fn check-get-ref(stack: .AST:Types, locals: .LocalsMap, temp-types: .AST:Types, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    local struc: .AST:Struct
+    local i: i32
+    local field: .L:Token
+    local offset: i32
+    local ptr-type: .AST:Type
+    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
+        #type
+    } else {
+        drop $word AST:Word-location "local not found\n" U:abort-with-location
+    }
+    $type AST:Type-ty AST:TYPE_STRUCT /= if {
+        $word AST:Word-location "cannot get pointer of non-struct local" U:abort-with-location
+    }
+    loop {
+        $i $word.fields load32 L:Tokens-len = if { break }
+        $word.fields load32 $i L:Tokens-get #field
+        $type AST:Type-ty AST:TYPE_STRUCT /= if {
+            $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
+        }
+        $type AST:Type-struc #struc
+        $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field if {
+            $offset + #offset
+            AST:Field-type #type
+        } else {
+            drop drop $field L:Token-location "field not found" U:abort-with-location
+        }
+        $i 1 + #i
+    }
+    $word.offset $offset store32
+    $temp-types $type AST:Type-new-ptr U:push-temp-type #ptr-type
+    $stack $ptr-type AST:Types-push
+    0 1 =
+}
+fn check-struc-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    local struc: .AST:Struct
+    local i: i32
+    local field: .L:Token
+    local offset: i32
+    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
+        #type
+    } else {
+        drop $word AST:Word-location "local not found\n" U:abort-with-location
+    }
+    loop {
+        $i $word.fields load32 L:Tokens-len = if { break }
+        $type AST:Type-ty AST:TYPE_STRUCT /= if {
+            $word AST:Word-location "cannot access field of non-struct type" U:abort-with-location
+        }
+        $type AST:Type-struc #struc
+        $word.fields load32 $i L:Tokens-get #field
+        $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field if {
+            $offset + #offset
+            AST:Field-type #type
+        } else {
+            drop drop $field L:Token-location "field not found" U:abort-with-location
+        }
+        $i 1 + #i
+    }
+    $word.offset $offset store32
+    $word.type $type store32
+    $stack $type $word U:expect-stack-one
+    0 1 =
 }
 fn report-check-deref-error(stack: .AST:Types, word: .AST:Word) {
     local formatter: .FMT:Formatter
@@ -185,13 +291,14 @@ fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bo
     $stack AST:Types-len 0 = if { 
         $stack $word report-check-deref-error
     }
-    $stack AST:Types-pop #type
+    $stack AST:Types-last #type
     $type AST:Type-ty AST:TYPE_PTR /= if {
         $stack $word report-check-deref-error
     }
     $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT /= if {
         $stack $word report-check-deref-error
     }
+    $stack AST:Types-pop #type
     $type AST:Type-child AST:Type-struc 
     $word AST:Word-ident S:Str-unpack
     AST:Struct-find-field if {
@@ -355,12 +462,12 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
 
     $function !i32 0 /= if {
         $function AST:Function-parameters #param-locals
-        $function AST:Function-ret #ret
+        $function AST:Function-rets #ret
     } else {
         $ext AST:Extern-parameters #param-locals
         $ext AST:Extern-rets #ret
     }
-
+    $word.rets $ret AST:Types-clone-container store32
     AST:Types-new #params
     loop {
         $i $param-locals AST:Locals-len = if { break }

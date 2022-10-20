@@ -718,16 +718,7 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
             AST:WORD_BREAK $file $line $column AST:Word-new break
         }
         $ty L:TOKEN_DOLLAR = if {
-            AST:WORD_LOCAL $file $line $column AST:Word-new #word
-            $self.current load32 $self.tokens load32 L:Tokens-len = if {
-                $self.file load32 "Expected identifier found EOF" U:abort
-            }
-            $self Parser-advance #token
-            $token L:Token-ty L:TOKEN_IDENT /= if {
-                $token L:Token-location "expected identifier" U:abort-with-location
-            }
-            $word.ident $token L:Token-lexeme store32
-            $word break
+            $self $file $line $column Parser-parse-get-locl break
         }
         $ty L:TOKEN_HASH = if {
             AST:WORD_SET $file $line $column AST:Word-new #word
@@ -770,12 +761,122 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
             $word.ident $token L:Token-lexeme store32
             $word break
         }
+        $ty L:TOKEN_AT = if {
+            $self $file $line $column Parser-parse-struc-set break
+        }
+        $ty L:TOKEN_AMPERSAND = if {
+            $self $file $line $column Parser-parse-get-ref break
+        }
+        $ty L:TOKEN_QUESTION = if {
+            $self $file $line $column Parser-parse-get-locl2 break
+        }
         1 "Unexpected Token: " IO:write-all IO:check
         1 $ty L:token-ty-name IO:write-all IO:check
         1 "\n" IO:write-all IO:check
         1 CORE:exit
         0 !.AST:Word break
     }
+}
+fn Parser-parse-get-locl(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
+    local word: .AST:Word
+    local token: .L:Token
+    AST:WORD_LOCAL $file $line $column AST:Word-new #word
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        $file "expected identifier found EOF" U:abort
+    }
+    $self Parser-advance #token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        $file $line $column "expected identifier" U:abort-with-location
+    }
+    $word.ident $token L:Token-lexeme store32
+    $word 
+}
+fn Parser-parse-get-locl2(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
+    local word: .AST:Word
+    local token: .L:Token
+    AST:WORD_LOCAL2 $file $line $column AST:Word-new #word
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        $file "expected identifier found EOF" U:abort
+    }
+    $self Parser-advance #token
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        $file $line $column "expected identifier" U:abort-with-location
+    }
+    $word.ident $token L:Token-lexeme store32
+    $word.fields L:Tokens-new store32
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_DOT /= if { break }
+        $self Parser-advance #token
+        $self.current load32 $self.tokens load32 L:Tokens-len = if {
+            $file "expected identifier found EOF" U:abort
+        }
+        $self Parser-advance #token
+        $token L:Token-ty L:TOKEN_IDENT /= if {
+            $token L:Token-location "expected identifier" U:abort-with-location
+        }
+        $word.fields load32 $token L:Tokens-push
+    }
+    $word 
+}
+fn Parser-parse-get-ref(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
+    local word: .AST:Word
+    local token: .L:Token
+    AST:WORD_GET_REF $file $line $column AST:Word-new #word
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        $file "expected identifier found EOF" U:abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_IDENT /= if {
+        $token L:Token-location "expected identifier" U:abort-with-location
+    }
+    $word.ident $token L:Token-lexeme store32
+    $word.fields L:Tokens-new store32
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_DOT /= if { break }
+        $self Parser-advance #token
+        $self.current load32 $self.tokens load32 L:Tokens-len = if {
+            $file "expected identifier found EOF" U:abort
+        }
+        $self Parser-advance #token
+        $token L:Token-ty L:TOKEN_IDENT /= if {
+            $token L:Token-location "expected identifier" U:abort-with-location
+        }
+        $word.fields load32 $token L:Tokens-push
+    }
+    $word
+}
+fn Parser-parse-struc-set(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
+    local token: .L:Token
+    local word: .AST:Word
+    AST:WORD_STRUCT_SET $file $line $column AST:Word-new #word
+    $self.current load32 $self.tokens load32 L:Tokens-len = if {
+        $self.file load32 "Expected identifier found EOF" U:abort
+    }
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_IDENT /= if {
+        $token L:Token-location "expected identifier" U:abort-with-location
+    }
+    $word.ident $token L:Token-lexeme store32
+    $word.fields L:Tokens-new store32
+    loop {
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
+        $self Parser-peek #token
+        $token L:Token-ty L:TOKEN_DOT /= if { break }
+        $self Parser-advance #token
+        $self.current load32 $self.tokens load32 L:Tokens-len = if { 
+            $file "expected identifier found EOF" U:abort
+        }
+        $self Parser-advance #token
+        $token L:Token-ty L:TOKEN_IDENT /= if {
+            $token L:Token-location "expected identifier" U:abort-with-location
+        }
+        $word.fields load32 $token L:Tokens-push
+    }
+    $word
 }
 fn Parser-parse-lop(self: .Parser) -> .AST:Words {
     local token: .L:Token
@@ -876,6 +977,9 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_STRING = or
     $ty L:TOKEN_BANG = or
     $ty L:TOKEN_DOT = or
+    $ty L:TOKEN_AMPERSAND = or
+    $ty L:TOKEN_AT = or
+    $ty L:TOKEN_QUESTION = or
 }
 
 fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {

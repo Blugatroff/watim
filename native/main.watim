@@ -25,7 +25,7 @@ fn print-usage-and-exit() {
 }
 
 fn main() {
-    memory alloc-mem: i32 16777216 4; // 16 MiB
+    memory alloc-mem: i32 25165824 4; // 24 MiB
     local args: .S:StringVec
     local mem: .S:String
     local path: .S:String
@@ -35,7 +35,7 @@ fn main() {
     local stack-start: i32
 
     enable-logging
-    $alloc-mem 16777216 A:init
+    $alloc-mem 25165824 A:init
     FS:init
     ARGS:get-args #args
     S:String-empty #mem

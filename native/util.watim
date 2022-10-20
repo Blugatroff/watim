@@ -47,7 +47,7 @@ fn expect-stack-fallible(stack: .AST:Types, expected: .AST:Types, word: .AST:Wor
     local i: i32
     loop {
         $i $expected AST:Types-len = if { 0 0 = break }
-        $stack AST:Types-len 0 = if { 
+        $i $stack AST:Types-len = if { 
             0 1 = break
         }
         $stack $stack AST:Types-len 1 - $i - AST:Types-get

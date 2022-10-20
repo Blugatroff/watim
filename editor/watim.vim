@@ -30,8 +30,9 @@ syntax match watimEscapes display contained "\\[nr\"', tr\"']"
 " Number literals
 syn match watimNumber "\<\d\+\>"
 
-syntax match watimVariable "\$[0-9,a-z,A-Z,\-,*,_,@]*"
-syntax match watimAssign "\#[0-9,a-z,A-Z,\-,*,_,@]*"
+syntax match watimVariable "@[0-9,a-z,A-Z,\-,*,_]*"
+syntax match watimAssign "?[0-9,a-z,A-Z,\-,*,_]*"
+syntax match watimRef "&[0-9,a-z,A-Z,\-,*,_]*"
 
 " Type names the compiler recognizes
 syntax keyword watimTypeNames i64 i32 bool
@@ -47,6 +48,7 @@ highlight default link watimChar Character
 highlight default link watimEscapes SpecialChar
 highlight default link watimVariable Identifier
 highlight default link watimAssign Identifier
+highlight default link watimRef Identifier
 highlight default link watimWord Function
 
 let b:current_syntax = "watim"

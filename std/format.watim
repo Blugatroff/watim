@@ -1,5 +1,6 @@
 import "./alloc.watim" as A
 import "./string.watim" as S
+import "./io.watim" as IO
 
 struct Formatter {
     out: .S:String
@@ -28,7 +29,7 @@ fn Formatter-write-indent(self: .Formatter) {
     local i: i32
     loop {
         $i $self.indent-level load32 = if { break }
-        $self.out load32 "  " S:String-append
+        $self "  " Formatter-write
         $i 1 + #i
     }
 }
@@ -36,6 +37,9 @@ fn Formatter-indent(self: .Formatter) {
     $self.indent-level $self.indent-level load32 1 + store32
 }
 fn Formatter-dedent(self: .Formatter) {
+    $self.indent-level load32 0 = if {
+        "Formatter: tried to dedent below 0" IO:abort
+    }
     $self.indent-level $self.indent-level load32 1 - store32
 }
 

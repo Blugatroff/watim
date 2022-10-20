@@ -34,6 +34,9 @@ fn TOKEN_MEMORY() -> i32 { 26 }
 fn TOKEN_LOCAL() -> i32 { 27 }
 fn TOKEN_ELSE() -> i32 { 28 }
 fn TOKEN_STRUCT() -> i32 { 29 }
+fn TOKEN_AMPERSAND() -> i32 { 30 }
+fn TOKEN_AT() -> i32 { 31 }
+fn TOKEN_QUESTION() -> i32 { 32 }
 
 fn token-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -66,6 +69,9 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_LOCAL = if { "TOKEN_LOCAL" break }
         $ty TOKEN_ELSE = if { "TOKEN_ELSE" break }
         $ty TOKEN_STRUCT = if { "TOKEN_STRUCT" break }
+        $ty TOKEN_AMPERSAND  = if { "TOKEN_AMPERSAND" break }
+        $ty TOKEN_AT  = if { "TOKEN_AT" break }
+        $ty TOKEN_QUESTION  = if { "TOKEN_QUESTION" break }
         "INVALID TOKEN TYPE" break
     }
 }
@@ -167,8 +173,7 @@ fn Tokens-free(tokens: .Tokens) {
         $tokens $i Tokens-get Token-free
         $i 1 + #i
     }
-    $tokens.inner load32 IV:I32Vec-free
-    $tokens !.i32 A:free
+    $tokens Tokens-free-container
 }
 fn Tokens-push(tokens: .Tokens, token: .Token) {
     $tokens.inner load32 $token !i32 IV:I32Vec-push
@@ -178,6 +183,10 @@ fn Tokens-get(tokens: .Tokens, index: i32) -> .Token {
 }
 fn Tokens-len(tokens: .Tokens) -> i32 {
     $tokens.inner load32 IV:I32Vec-len
+}
+fn Tokens-free-container(self: .Tokens) {
+    $self.inner load32 IV:I32Vec-free
+    $self !.i32 A:free
 }
 
 struct Lexer {
@@ -327,6 +336,24 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
         }
         $char "#" drop load8 = if {
             TOKEN_HASH $lexeme $lexer.file load32 $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "&" drop load8 = if {
+            TOKEN_AMPERSAND $lexeme $lexer.file load32 $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "@" drop load8 = if {
+            TOKEN_AT $lexeme $lexer.file load32 $lexer.line load32 $lexer.column load32 Token-new 
+            $lexer.index $lexer.index load32 1 + store32
+            $lexer.column $lexer.column load32 1 + store32
+            break
+        }
+        $char "?" drop load8 = if {
+            TOKEN_QUESTION $lexeme $lexer.file load32 $lexer.line load32 $lexer.column load32 Token-new 
             $lexer.index $lexer.index load32 1 + store32
             $lexer.column $lexer.column load32 1 + store32
             break
@@ -544,7 +571,7 @@ fn allowed-in-ident(char: i32) -> bool {
     local res: bool
     local i: i32
     0 0 = #res
-    "#${}() ;\t\n:,.!" #disallowed-len #disallowed
+    "#${}() ;\t\n:,.!@&?" #disallowed-len #disallowed
     loop {
         $i $disallowed-len = if { break }
         $disallowed $i + load8 $char = if { 
