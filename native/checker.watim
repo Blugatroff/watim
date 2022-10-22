@@ -4,6 +4,7 @@ import "../std/map.watim" as MAP
 import "../std/string.watim" as S
 import "../std/core.watim" as CORE
 import "../std/format.watim" as FMT
+import "../std/i32vec.watim" as IV
 
 import "./module.watim" as M
 import "./ast.watim" as AST
@@ -172,9 +173,26 @@ fn check-word(
         $word AST:Word-ty AST:WORD_LOCAL2 = if {
             $stack $locals $word check-locl2 break
         }
+        $word AST:Word-ty AST:WORD_LOAD = if {
+            $stack $word check-load break
+        }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
+}
+fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    $stack AST:Types-len 0 = if {
+        $word AST:Word-location "expected pointer got []\n" U:abort-with-location
+    }
+    $stack AST:Types-pop #type
+    $type AST:Type-ty AST:TYPE_PTR /= if {
+        $word AST:Word-location "expected pointer" U:abort-with-location
+    }
+    $type AST:Type-child #type
+    $stack $type AST:Types-push
+    $word.type $type store32
+    0 1 =
 }
 fn check-locl2(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
@@ -183,28 +201,49 @@ fn check-locl2(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local field: .L:Token
     local offset: i32
     local ptr-type: .AST:Type
+    local loads: .IV:I32Vec
     $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
         #type
     } else {
         drop $word AST:Word-location "local not found\n" U:abort-with-location
     }
+    IV:I32Vec-new #loads
+
     loop {
         $i $word.fields load32 L:Tokens-len = if { break }
-        $word.fields load32 $i L:Tokens-get #field
-        $type AST:Type-ty AST:TYPE_STRUCT /= if {
+        $i 0 = 
+        $type AST:Type-ty AST:TYPE_STRUCT = 
+        and 
+        $type AST:Type-ty AST:TYPE_PTR = if { $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT = } else { 0 1 = }
+        or
+        if { // value on the stack is a pointer to a struct
+            0 #offset
+            loop { // loop for every field access which can be reduced to one load with offset
+                $i $word.fields load32 L:Tokens-len = if { break }
+                $word.fields load32 $i L:Tokens-get #field
+
+                $type AST:Type-ty AST:TYPE_PTR = if {
+                    $type AST:Type-child #type
+                }
+                $type AST:Type-struc #struc
+                $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field not if {
+                    $field L:Token-location "field not found" U:abort-with-location
+                }
+                $offset + #offset
+                AST:Field-type #type
+                $i 1 + #i
+                $type AST:Type-ty AST:TYPE_STRUCT /= if {
+                    break
+                }
+            }
+            $loads $offset IV:I32Vec-push
+        } else {
             $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
         }
-        $type AST:Type-struc #struc
-        $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field if {
-            $offset + #offset
-            AST:Field-type #type
-        } else {
-            drop drop $field L:Token-location "field not found" U:abort-with-location
-        }
-        $i 1 + #i
     }
-    $word.offset $offset store32
+
     $word.type $type store32
+    $word.loads $loads store32
     $stack $type AST:Types-push
     0 1 =
 }
@@ -278,7 +317,7 @@ fn report-check-deref-error(stack: .AST:Types, word: .AST:Word) {
     local formatter: .FMT:Formatter
     local msg: .S:String
     FMT:Formatter-new #formatter
-    $formatter "expected a pointer to a struct, got: " FMT:Formatter-write
+    $formatter "expected a pointer to a struct or a struct, got: " FMT:Formatter-write
     $stack $formatter AST:Types-format
     $formatter FMT:Formatter-into-string #msg
     $word AST:Word-location
@@ -292,20 +331,38 @@ fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bo
         $stack $word report-check-deref-error
     }
     $stack AST:Types-last #type
-    $type AST:Type-ty AST:TYPE_PTR /= if {
-        $stack $word report-check-deref-error
-    }
-    $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT /= if {
-        $stack $word report-check-deref-error
-    }
-    $stack AST:Types-pop #type
-    $type AST:Type-child AST:Type-struc 
-    $word AST:Word-ident S:Str-unpack
-    AST:Struct-find-field if {
-        $word.offset flip store32
-        AST:Field-type AST:Type-new-ptr $temp-types flip U:push-temp-type $stack flip AST:Types-push
+    $type AST:Type-ty AST:TYPE_STRUCT = if {
+        $stack AST:Types-pop #type
+        $type AST:Type-struc
+        $word AST:Word-ident S:Str-unpack
+        $word.src-type $type store32
+        AST:Struct-find-field if {
+            $word.offset flip store32
+            AST:Field-type #type
+            $stack $type AST:Types-push
+            $word.type $type store32
+        } else {
+            drop drop $word AST:Word-location "field not found" U:abort-with-location
+        }
     } else {
-        drop drop $word AST:Word-location "field not found" U:abort-with-location
+        $type AST:Type-ty AST:TYPE_PTR /= if {
+            $stack $word report-check-deref-error
+        }
+        $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT /= if {
+            $stack $word report-check-deref-error
+        }
+        $stack AST:Types-pop #type
+        $word.src-type $type store32
+        $type AST:Type-child AST:Type-struc 
+        $word AST:Word-ident S:Str-unpack
+        AST:Struct-find-field if {
+            $word.offset flip store32
+            AST:Field-type AST:Type-new-ptr $temp-types flip U:push-temp-type #type
+            $stack $type AST:Types-push
+            $word.type $type store32
+        } else {
+            drop drop $word AST:Word-location "field not found" U:abort-with-location
+        }
     }
     0 1 =
 }

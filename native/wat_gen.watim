@@ -3,6 +3,7 @@ import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/string.watim" as S
+import "../std/i32vec.watim" as IV
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -116,8 +117,13 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
         $self.ty load32 AST:WORD_DEREF = if {
             $formatter "i32.const " FMT:Formatter-write
             $self.offset load32 $formatter U:i32-format
-            $formatter " i32.add" FMT:Formatter-write
-            break
+            $formatter " i32.add " FMT:Formatter-write
+            $self.src-type load32 AST:Type-ty AST:TYPE_PTR = if { break }
+            $self.type load32 AST:Type-ty AST:TYPE_STRUCT = if {
+                $formatter $self.type load32 $locl-copy-space-ptr generate-load-struc
+            } else {
+                $formatter "i32.load" FMT:Formatter-write
+            }
         }
         $self.ty load32 AST:WORD_STRUCT_SET = if {
             $formatter $self generate-struc-set break
@@ -131,33 +137,57 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             break
         }
         $self.ty load32 AST:WORD_LOCAL2 = if {
-            $self.type load32 AST:Type-ty AST:TYPE_STRUCT = if {
-                $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
-                $locl-copy-space-ptr load32 $formatter U:i32-format
-                $formatter " i32.add local.get $" FMT:Formatter-write
-                $formatter $self AST:Word-ident S:Str-unpack FMT:Formatter-write
-                $formatter " call $intrinsic:dupi32 " FMT:Formatter-write
-                $self.fields load32 L:Tokens-len 0 /= if {
-                    $formatter " i32.load offset=" FMT:Formatter-write
-                    $self.offset load32 $formatter U:i32-format
-                }
-                $formatter " i32.const " FMT:Formatter-write
-                $self.type load32 AST:Type-size $formatter U:i32-format
-                $formatter " memory.copy" FMT:Formatter-write
-                $locl-copy-space-ptr $locl-copy-space-ptr load32 $self.type load32 AST:Type-size + store32
-            } else {
-                $formatter "local.get $" FMT:Formatter-write
-                $formatter $self AST:Word-ident S:Str-unpack FMT:Formatter-write
-                $self.fields load32 L:Tokens-len 0 /= if {
-                    $formatter " i32.load offset=" FMT:Formatter-write
-                    $self.offset load32 $formatter U:i32-format
-                }
-            }
+            $formatter $self $locl-copy-space-ptr generate-local2
             break
         }
-        $formatter $self AST:Word-ty AST:word-ty-name FMT:Formatter-write
+        $self.ty load32 AST:WORD_LOAD = if {
+            $self.type load32 AST:Type-ty AST:TYPE_STRUCT = if {
+                $formatter $self.type load32 $locl-copy-space-ptr generate-load-struc
+            } else {
+                $self.type load32 $formatter AST:Type-format
+                $formatter ".load" FMT:Formatter-write
+            }
+        }
         break
     } 
+}
+fn generate-load-struc(formatter: .FMT:Formatter, type: .AST:Type, locl-copy-space-ptr: .i32) { 
+    $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
+    $locl-copy-space-ptr load32 $formatter U:i32-format
+    $formatter " i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const " FMT:Formatter-write
+    $type AST:Type-size $formatter U:i32-format
+    $formatter " memory.copy" FMT:Formatter-write
+}
+fn generate-local2(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
+    local i: i32
+    local offset: i32
+    $word.type load32 AST:Type-ty AST:TYPE_STRUCT = if {
+        $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
+        $locl-copy-space-ptr load32 $formatter U:i32-format
+        $formatter " i32.add call $intrinsic:dupi32 " FMT:Formatter-write
+    }
+    $formatter "local.get $" FMT:Formatter-write
+    $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
+    $formatter " " FMT:Formatter-write
+    loop {
+        $i $word.loads load32 IV:I32Vec-len = if { break }
+        $word.loads load32 $i IV:I32Vec-get #offset
+
+        $word.loads load32 IV:I32Vec-len $i 1 + < 
+        $word.type load32 AST:Type-ty AST:TYPE_STRUCT /= 
+        or if {
+            $formatter "i32.load offset=" FMT:Formatter-write
+            $offset $formatter U:i32-format
+            $formatter " " FMT:Formatter-write
+        } else {
+            $formatter " i32.const " FMT:Formatter-write
+            $offset $formatter U:i32-format
+            $formatter " i32.add i32.const " FMT:Formatter-write
+            $word.type load32 AST:Type-size $formatter U:i32-format
+            $formatter " memory.copy" FMT:Formatter-write
+        }
+        $i 1 + #i
+    }
 }
 fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, word: .AST:Word) {
     local i: i32
@@ -214,16 +244,35 @@ fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, wor
     }
 }
 fn generate-struc-set(formatter: .FMT:Formatter, word: .AST:Word) {
-    $word.fields load32 L:Tokens-len 0 > if {
-        $formatter "local.get $" FMT:Formatter-write
-        $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
-        $formatter " call $intrinsic:flip " FMT:Formatter-write
-        $formatter $word.type load32 generate-type
-        $formatter ".store offset=" FMT:Formatter-write
-        $word.offset load32 $formatter U:i32-format
+    // TODO: this can be simplified
+    $word.type load32 AST:Type-ty AST:TYPE_STRUCT = if {
+        $word.fields load32 L:Tokens-len 0 > if {
+            $formatter "local.get $" FMT:Formatter-write
+            $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
+            $formatter " call $intrinsic:flip i32.const " FMT:Formatter-write
+            $word.offset load32 $formatter U:i32-format
+            $formatter " i32.add i32.const " FMT:Formatter-write
+            $word.type load32 AST:Type-size $formatter U:i32-format
+            $formatter " memory.copy" FMT:Formatter-write
+        } else {
+            $formatter "local.get $" FMT:Formatter-write
+            $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
+            $formatter " $intrinsic:flip i32.const " FMT:Formatter-write
+            $word.type load32 AST:Type-size $formatter U:i32-format
+            $formatter " memory.copy" FMT:Formatter-write
+        }
     } else {
-        $formatter "local.set $" FMT:Formatter-write
-        $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
+        $word.fields load32 L:Tokens-len 0 > if {
+            $formatter "local.get $" FMT:Formatter-write
+            $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
+            $formatter " call $intrinsic:flip " FMT:Formatter-write
+            $formatter $word.type load32 generate-type
+            $formatter ".store offset=" FMT:Formatter-write
+            $word.offset load32 $formatter U:i32-format
+        } else {
+            $formatter "local.set $" FMT:Formatter-write
+            $formatter $word AST:Word-ident S:Str-unpack FMT:Formatter-write
+        }
     }
 }
 fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
@@ -673,6 +722,18 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
                 $count 1 + #count
             }
         }
+        $word AST:Word-ty AST:WORD_DEREF = if {
+            $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
+                $word AST:Word-type AST:Type-size $size + #size
+                $count 1 + #count
+            }
+        }
+        $word AST:Word-ty AST:WORD_LOAD = if {
+            $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
+                $word AST:Word-type AST:Type-size $size + #size
+                $count 1 + #count
+            }
+        }
         $word AST:Word-ty AST:WORD_LOOP = if {
             $word AST:Word-words measure-locl-copy-space
             $count + #count
@@ -822,6 +883,7 @@ fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules
     $formatter FMT:Formatter-write-indent
     $formatter "(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)\n" FMT:Formatter-write
     $formatter "(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)\n" FMT:Formatter-write
+    $formatter "(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)\n" FMT:Formatter-write
 
     $formatter $mem S:String-len $modules generate-global-mems
 

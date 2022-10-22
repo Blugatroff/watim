@@ -34,6 +34,9 @@ fn Parser-free(self: .Parser) -> .AST:Types {
 fn Parser-peek(self: .Parser) -> .L:Token {
     $self.tokens load32 $self.current load32 L:Tokens-get
 }
+fn Parser-peek2(self: .Parser) -> .L:Token {
+    $self.tokens load32 $self.current load32 1 + L:Tokens-get
+}
 fn Parser-advance(self: .Parser) -> .L:Token {
     $self Parser-peek
     $self.current $self.current load32 1 + store32
@@ -770,6 +773,9 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         $ty L:TOKEN_QUESTION = if {
             $self $file $line $column Parser-parse-get-locl2 break
         }
+        $ty L:TOKEN_TILDE = if {
+            AST:WORD_LOAD $file $line $column AST:Word-new break
+        }
         1 "Unexpected Token: " IO:write-all IO:check
         1 $ty L:token-ty-name IO:write-all IO:check
         1 "\n" IO:write-all IO:check
@@ -818,7 +824,7 @@ fn Parser-parse-get-locl2(self: .Parser, file: .S:String, line: i32, column: i32
         }
         $word.fields load32 $token L:Tokens-push
     }
-    $word 
+    $word
 }
 fn Parser-parse-get-ref(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
     local word: .AST:Word
@@ -980,6 +986,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_AMPERSAND = or
     $ty L:TOKEN_AT = or
     $ty L:TOKEN_QUESTION = or
+    $ty L:TOKEN_TILDE = or
 }
 
 fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {

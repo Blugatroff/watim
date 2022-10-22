@@ -84,6 +84,7 @@ fn WORD_GLOBAL() -> i32 { 14 }
 fn WORD_STRUCT_SET() -> i32 { 15 }
 fn WORD_GET_REF() -> i32 { 16 }
 fn WORD_LOCAL2() -> i32 { 17 }
+fn WORD_LOAD() -> i32 { 18 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -104,6 +105,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_STRUCT_SET = if { "WORD_STRUCT_SET" break }
         $ty WORD_GET_REF = if { "WORD_GET_REF" break }
         $ty WORD_LOCAL2 = if { "WORD_LOCAL2" break }
+        $ty WORD_LOAD = if { "WORD_LOAD" break }
         "INVALID WORD TY" break
     }
 }
@@ -466,13 +468,15 @@ struct Word {
     addr: i32
     // for WORD_STRING
     size: i32
-    // for WORD_FIELD, WORD_STRUCT_SET, WORD_GET_REF, WORD_LOCAL2
+    // for WORD_FIELD, WORD_STRUCT_SET, WORD_GET_REF
     offset: i32
     // for WORD_CALL, WORD_LOCAL
     module: i32
 
     // for WORD_STRUCT_SET
     fields: .L:Tokens
+    // for WORD_LOCAL2
+    loads: .IV:I32Vec
     // for WORD_LOOP
     lop: .Words
     // for WORD_LOOP, WORD_CALL
@@ -481,14 +485,14 @@ struct Word {
     // for WORD_IF
     iff: .If
 
-    // for WORD_CAST, WORD_INTRINSIC, WORD_STRUCT_SET, WORD_LOCAL2
+    // for WORD_CAST, WORD_INTRINSIC, WORD_STRUCT_SET, WORD_LOCAL2, WORD_LOAD, WORD_DEREF
     type: .Type
-    // for WORD_CAST
+    // for WORD_CAST, WORD_DEREF
     src-type: .Type
 }
 fn Word-new(ty: i32, file: .S:String, line: i32, column: i32) -> .Word {
     local self: .Word
-    76 A:alloc !.Word #self
+    80 A:alloc !.Word #self
     $self.file $file store32
     $self.ty $ty store32
     $self.line $line store32
@@ -509,6 +513,7 @@ fn Word-new(ty: i32, file: .S:String, line: i32, column: i32) -> .Word {
     $self.rets 0 !.Types store32
     $self.src-type 0 !.Type store32
     $self.fields 0 !.L:Tokens store32
+    $self.loads 0 !.IV:I32Vec store32
     $self
 }
 fn Word-free(self: .Word) {
@@ -523,6 +528,9 @@ fn Word-free(self: .Word) {
     }
     $self.fields load32 !i32 0 /= if {
         $self.fields load32 L:Tokens-free-container
+    }
+    $self.loads load32 !i32 0 /= if {
+        $self.loads load32 IV:I32Vec-free
     }
     $self !.i32 A:free
 }
