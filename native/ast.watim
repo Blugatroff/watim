@@ -85,6 +85,7 @@ fn WORD_STRUCT_SET() -> i32 { 15 }
 fn WORD_GET_REF() -> i32 { 16 }
 fn WORD_LOCAL2() -> i32 { 17 }
 fn WORD_LOAD() -> i32 { 18 }
+fn WORD_SIZEOF() -> i32 { 19 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -106,6 +107,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_GET_REF = if { "WORD_GET_REF" break }
         $ty WORD_LOCAL2 = if { "WORD_LOCAL2" break }
         $ty WORD_LOAD = if { "WORD_LOAD" break }
+        $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         "INVALID WORD TY" break
     }
 }
@@ -454,7 +456,7 @@ struct Word {
     ty: i32
     line: i32
     column: i32
-    // for WORD_CALL, WORD_LOCAL, WORD_GLOBAL_MEM, WORD_SET, WORD_DEREF, WORD_STRUCT_SET, WORD_GET_REF
+    // for WORD_CALL, WORD_LOCAL, WORD_GLOBAL_MEM, WORD_SET, WORD_DEREF, WORD_STRUCT_SET, WORD_GET_REF, WORD_SIZEOF
     ident: .S:Str
     // for WORD_DEREF
     offset: i32

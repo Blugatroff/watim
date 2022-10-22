@@ -176,6 +176,16 @@ fn check-word(
         $word AST:Word-ty AST:WORD_LOAD = if {
             $stack $word check-load break
         }
+        $word AST:Word-ty AST:WORD_SIZEOF = if {
+            $module $word.ident load32 S:Str-unpack M:Module-find-struc if {
+                AST:Struct-size $word.number flip store32
+            } else {
+                drop
+                $word AST:Word-location "struct not found\n" U:abort-with-location
+            }
+            $stack $temp-types AST:Type-new-int32 U:push-temp-type AST:Types-push
+            0 1 = break
+        }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }

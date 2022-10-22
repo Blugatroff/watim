@@ -525,7 +525,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
         $token L:Token-location "expected type" U:abort-with-location
     }
 }
-fn parse-intrinsic(token: .L:Token) -> .AST:Word, bool {
+fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
     local file: .S:String
     local line: i32
     local column: i32
@@ -654,7 +654,32 @@ fn parse-intrinsic(token: .L:Token) -> .AST:Word, bool {
             $word.intrinsic AST:INTRINSIC_OR store32
             $word 0 0 = break
         }
-
+        $token L:Token-lexeme S:Str-unpack "sizeof" S:str-eq if {
+            AST:WORD_SIZEOF $file $line $column AST:Word-new #word
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                $self.file load32 "Expected ( found EOF" U:abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_LEFT_PAREN /= if  {
+                $token L:Token-location "expected (" U:abort-with-location
+            }
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                $self.file load32 "Expected identifier found EOF" U:abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_IDENT /= if {
+                $token L:Token-location "expected identifier" U:abort-with-location
+            }
+            $word.ident $token L:Token-lexeme store32
+            $self.current load32 $self.tokens load32 L:Tokens-len = if {
+                $self.file load32 "Expected ) found EOF" U:abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
+                $token L:Token-location "expected )" U:abort-with-location
+            }
+            $word 0 0 = break
+        }
         0 !.AST:Word 0 1 = break
     }
 }
@@ -675,7 +700,7 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
     $token L:Token-column #column
     loop {
         $ty L:TOKEN_IDENT = if {
-            $token parse-intrinsic if {
+            $self $token Parser-parse-intrinsic if {
                 break
             } else { drop }
             AST:WORD_CALL $file $line $column AST:Word-new #word

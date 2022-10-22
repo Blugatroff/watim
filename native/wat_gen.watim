@@ -147,6 +147,11 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
                 $self.type load32 $formatter AST:Type-format
                 $formatter ".load" FMT:Formatter-write
             }
+            break
+        }
+        $self.ty load32 AST:WORD_SIZEOF = if {
+            $formatter "i32.const " FMT:Formatter-write
+            $self.number load32 $formatter U:i32-format
         }
         break
     } 
