@@ -6,6 +6,7 @@ import "../std/fs.watim" as FS
 import "../std/io.watim" as IO
 import "../std/map.watim" as MAP
 import "../std/string.watim" as S
+import "../std/string2.watim" as S2
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -26,9 +27,9 @@ fn print-usage-and-exit() {
 
 fn main() {
     memory alloc-mem: i32 25165824 4; // 24 MiB
-    local args: .S:StringVec
+    local args: S2:StringVec
     local mem: .S:String
-    local path: .S:String
+    local path: .S2:String
     local formatter: .FMT:Formatter
     local formatted: .S:String
     local modules: .M:Modules
@@ -37,21 +38,22 @@ fn main() {
     enable-logging
     $alloc-mem 25165824 A:init
     FS:init
-    ARGS:get-args #args
+    ARGS:get-args @args
+    &args S2:StringVec-print
     S:String-empty #mem
     
-    $args S:StringVec-len 1 <= if { print-usage-and-exit }
-    $args 1 S:StringVec-get S:String-unpack "--quiet" S:str-eq 
-    $args 1 S:StringVec-get S:String-unpack "-q" S:str-eq or if {
-        $args S:StringVec-len 2 <= if { print-usage-and-exit }
+    &args S2:StringVec-len 1 <= if { print-usage-and-exit }
+    &args 1 S2:StringVec-get S2:String-unpack "--quiet" S:str-eq 
+    &args 1 S2:StringVec-get S2:String-unpack "-q" S:str-eq or if {
+        &args S2:StringVec-len 2 <= if { print-usage-and-exit }
         disable-logging
-        $args 2 S:StringVec-get #path 
+        &args 2 S2:StringVec-get @path 
     } else {
-        $args 1 S:StringVec-get #path 
+        &args 1 S2:StringVec-get @path 
     }
 
     M:Modules-new #modules
-    $modules $mem $path load-module-recursive
+    $modules $mem ?path S2:String-unpack load-module-recursive
     $modules R:resolve
     $mem S:String-len $modules MEM:process #stack-start
     $modules C:check
@@ -64,7 +66,7 @@ fn main() {
     $formatted S:String-free
 
     $modules M:Modules-free
-    $args S:StringVec-free
+    $args S2:StringVec-free
     $mem S:String-free
     FS:uninit
     A:is-empty not if {
@@ -75,18 +77,18 @@ fn main() {
     }
 }
 
-fn load-module-recursive(modules: .M:Modules, mem: .S:String, path: .S:String) {
+fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
     local module: .M:Module
     local imps: .AST:Imports
     local i: i32
     logging-enabled if {
         2 "Loading module: " IO:write-all IO:check
-        2 $path S:String-unpack IO:write-all IO:check
+        2 ?path-ptr ?path-len IO:write-all IO:check
         2 "\n" IO:write-all IO:check
     }
-    $path S:String-unpack $mem M:Module-load #module
+    ?path-ptr ?path-len $mem M:Module-load #module
     $module M:Module-imports #imps
-    $modules $path S:String-unpack S:String-new $module M:Modules-insert
+    $modules $path-ptr $path-len S:String-new $module M:Modules-insert
     
     loop {
         $i $imps AST:Imports-len = if { break }
@@ -94,7 +96,9 @@ fn load-module-recursive(modules: .M:Modules, mem: .S:String, path: .S:String) {
             drop
         } else {
             drop
-            $modules $mem $imps $i AST:Imports-get-value load-module-recursive
+            $modules $mem 
+            $imps $i AST:Imports-get-value S:String-unpack 
+            load-module-recursive
         }
         $i 1 + #i
     }

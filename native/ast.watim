@@ -86,6 +86,7 @@ fn WORD_GET_REF() -> i32 { 16 }
 fn WORD_LOCAL2() -> i32 { 17 }
 fn WORD_LOAD() -> i32 { 18 }
 fn WORD_SIZEOF() -> i32 { 19 }
+fn WORD_STORE() -> i32 { 20 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -108,6 +109,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_LOCAL2 = if { "WORD_LOCAL2" break }
         $ty WORD_LOAD = if { "WORD_LOAD" break }
         $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
+        $ty WORD_STORE = if { "WORD_STORE" break }
         "INVALID WORD TY" break
     }
 }
@@ -1157,13 +1159,15 @@ fn Struct-fields(self: .Struct) -> .Fields {
 fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, i32, bool {
     local i: i32
     local fields: .Fields
+    local offset: i32
     $self Struct-fields #fields
     loop {
         $i $fields Fields-len = if { 0 !.Field 0 0 1 = break }
         $fields $i Fields-get Field-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
             $fields $i Fields-get
-            $i 4 * 0 0 = break
+            $offset 0 0 = break
         }
+        $offset $fields $i Fields-get Field-type Type-size + #offset
         $i 1 + #i
     }
 }

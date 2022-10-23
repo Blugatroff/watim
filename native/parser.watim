@@ -801,6 +801,9 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         $ty L:TOKEN_TILDE = if {
             AST:WORD_LOAD $file $line $column AST:Word-new break
         }
+        $ty L:TOKEN_RIGHT_RIGHT = if {
+            $self $file $line $column Parser-parse-store break
+        }
         1 "Unexpected Token: " IO:write-all IO:check
         1 $ty L:token-ty-name IO:write-all IO:check
         1 "\n" IO:write-all IO:check
@@ -851,19 +854,18 @@ fn Parser-parse-get-locl2(self: .Parser, file: .S:String, line: i32, column: i32
     }
     $word
 }
-fn Parser-parse-get-ref(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
-    local word: .AST:Word
+fn Parser-parse-fields-access(self: .Parser, file: .S:String, line: i32, column: i32) -> .L:Tokens, .S:Str {
     local token: .L:Token
-    AST:WORD_GET_REF $file $line $column AST:Word-new #word
+    local fields: .L:Tokens
+    local ident: .L:Token
     $self.current load32 $self.tokens load32 L:Tokens-len = if {
         $file "expected identifier found EOF" U:abort
     }
-    $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_IDENT /= if {
-        $token L:Token-location "expected identifier" U:abort-with-location
+    $self Parser-advance #ident
+    $ident L:Token-ty L:TOKEN_IDENT /= if {
+        $ident L:Token-location "expected identifier" U:abort-with-location
     }
-    $word.ident $token L:Token-lexeme store32
-    $word.fields L:Tokens-new store32
+    L:Tokens-new #fields
     loop {
         $self.current load32 $self.tokens load32 L:Tokens-len = if { break }
         $self Parser-peek #token
@@ -876,8 +878,24 @@ fn Parser-parse-get-ref(self: .Parser, file: .S:String, line: i32, column: i32) 
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        $word.fields load32 $token L:Tokens-push
+        $fields $token L:Tokens-push
     }
+    $fields $ident L:Token-lexeme
+}
+fn Parser-parse-get-ref(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
+    local word: .AST:Word
+    AST:WORD_GET_REF $file $line $column AST:Word-new #word
+    $self $file $line $column Parser-parse-fields-access 
+    $word.ident flip store32 
+    $word.fields flip store32
+    $word
+}
+fn Parser-parse-store(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
+    local word: .AST:Word
+    AST:WORD_STORE $file $line $column AST:Word-new #word
+    $self $file $line $column Parser-parse-fields-access 
+    $word.ident flip store32 
+    $word.fields flip store32
     $word
 }
 fn Parser-parse-struc-set(self: .Parser, file: .S:String, line: i32, column: i32) -> .AST:Word {
@@ -1012,6 +1030,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_AT = or
     $ty L:TOKEN_QUESTION = or
     $ty L:TOKEN_TILDE = or
+    $ty L:TOKEN_RIGHT_RIGHT = or
 }
 
 fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {

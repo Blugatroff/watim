@@ -186,6 +186,9 @@ fn check-word(
             $stack $temp-types AST:Type-new-int32 U:push-temp-type AST:Types-push
             0 1 = break
         }
+        $word AST:Word-ty AST:WORD_STORE = if {
+            $stack $locals $word check-store break
+        }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
@@ -204,21 +207,21 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     $word.type $type store32
     0 1 =
 }
-fn check-locl2(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
-    local type: .AST:Type
-    local struc: .AST:Struct
+fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:Type, .IV:I32Vec {
     local i: i32
     local field: .L:Token
     local offset: i32
-    local ptr-type: .AST:Type
+    local type: .AST:Type
+    local struc: .AST:Struct
     local loads: .IV:I32Vec
+    local src-type: .AST:Type
     $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
         #type
     } else {
         drop $word AST:Word-location "local not found\n" U:abort-with-location
     }
+    $type #src-type
     IV:I32Vec-new #loads
-
     loop {
         $i $word.fields load32 L:Tokens-len = if { break }
         $i 0 = 
@@ -251,74 +254,54 @@ fn check-locl2(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
             $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
         }
     }
-
+    $src-type $type $loads
+}
+fn check-locl2(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    local loads: .IV:I32Vec
+    $locals $word check-fields-access #loads #type drop
     $word.type $type store32
     $word.loads $loads store32
     $stack $type AST:Types-push
     0 1 =
 }
+fn check-store(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+    local type: .AST:Type
+    local loads: .IV:I32Vec
+    local src-type: .AST:Type
+    $locals $word check-fields-access #loads #type #src-type
+
+    $type AST:Type-ty AST:TYPE_PTR =
+    $src-type AST:Type-ty AST:TYPE_PTR =
+    or not if {
+        $word AST:Word-location "expected a pointer for the store instruction\n" U:abort-with-location
+    }
+    $word.type $type AST:Type-child store32
+    $word.loads $loads store32
+    $stack $type AST:Type-child $word U:expect-stack-one
+    0 1 =
+}
 fn check-get-ref(stack: .AST:Types, locals: .LocalsMap, temp-types: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
-    local i: i32
-    local field: .L:Token
-    local offset: i32
-    local ptr-type: .AST:Type
-    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
-        #type
-    } else {
-        drop $word AST:Word-location "local not found\n" U:abort-with-location
-    }
+    local loads: .IV:I32Vec
+    local src-type: .AST:Type
+    $locals $word check-fields-access #loads #type #src-type
     $type AST:Type-ty AST:TYPE_STRUCT /= if {
         $word AST:Word-location "cannot get pointer of non-struct local" U:abort-with-location
     }
-    loop {
-        $i $word.fields load32 L:Tokens-len = if { break }
-        $word.fields load32 $i L:Tokens-get #field
-        $type AST:Type-ty AST:TYPE_STRUCT /= if {
-            $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
-        }
-        $type AST:Type-struc #struc
-        $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field if {
-            $offset + #offset
-            AST:Field-type #type
-        } else {
-            drop drop $field L:Token-location "field not found" U:abort-with-location
-        }
-        $i 1 + #i
-    }
-    $word.offset $offset store32
-    $temp-types $type AST:Type-new-ptr U:push-temp-type #ptr-type
-    $stack $ptr-type AST:Types-push
+    $word.loads $loads store32
+    $word.type $type store32
+    $stack $temp-types $type AST:Type-new-ptr U:push-temp-type AST:Types-push
     0 1 =
 }
 fn check-struc-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
-    local i: i32
-    local field: .L:Token
-    local offset: i32
-    $locals $word AST:Word-ident S:Str-unpack LocalsMap-get if {
-        #type
-    } else {
-        drop $word AST:Word-location "local not found\n" U:abort-with-location
-    }
-    loop {
-        $i $word.fields load32 L:Tokens-len = if { break }
-        $type AST:Type-ty AST:TYPE_STRUCT /= if {
-            $word AST:Word-location "cannot access field of non-struct type" U:abort-with-location
-        }
-        $type AST:Type-struc #struc
-        $word.fields load32 $i L:Tokens-get #field
-        $struc $field L:Token-lexeme S:Str-unpack AST:Struct-find-field if {
-            $offset + #offset
-            AST:Field-type #type
-        } else {
-            drop drop $field L:Token-location "field not found" U:abort-with-location
-        }
-        $i 1 + #i
-    }
-    $word.offset $offset store32
+    local loads: .IV:I32Vec
+    local src-type: .AST:Type
+    $locals $word check-fields-access #loads #type #src-type
+    $word.loads $loads store32
     $word.type $type store32
     $stack $type $word U:expect-stack-one
     0 1 =

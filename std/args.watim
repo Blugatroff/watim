@@ -1,39 +1,39 @@
-import "./string.watim" as S
+import "./string2.watim" as S
 import "./io.watim" as IO
 import "./alloc.watim" as A
 
 extern "wasi_unstable" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
 extern "wasi_unstable" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
 
-fn get-args() -> .S:StringVec {
+fn get-args() -> S:StringVec {
     memory arg_number_ptr: i32 4 4;
     memory arg_sizes_ptr: i32 4 4;
-    local strings: .S:StringVec
+    local strings: S:StringVec
     local ptr_buf: .i32
     local arg_buf: .i32
     local arg_number: i32
     local arg_sizes: i32
     local i: i32
     local ptr: .i32
-    $arg_number_ptr $arg_sizes_ptr args_sizes_get IO:check
-    $arg_number_ptr load32 #arg_number
-    $arg_sizes_ptr load32 #arg_sizes
-    $arg_sizes A:alloc #arg_buf
-    $arg_number 4 * A:alloc #ptr_buf
+    ?arg_number_ptr ?arg_sizes_ptr args_sizes_get IO:check
+    ?arg_number_ptr load32 @arg_number
+    ?arg_sizes_ptr load32 @arg_sizes
+    ?arg_sizes A:alloc @arg_buf
+    ?arg_number 4 * A:alloc @ptr_buf
 
-    $ptr_buf !..i32 $arg_buf args_get IO:check
+    ?ptr_buf !..i32 ?arg_buf args_get IO:check
 
-    S:StringVec-new #strings
+    S:StringVec-new @strings
 
     loop {
-        $i $arg_number >= if { break }
-        $ptr_buf $i 4 * + load32 !.i32 #ptr
-        $strings $ptr $ptr cstr-len S:String-new S:StringVec-push
-        $i 1 + #i
+        ?i ?arg_number >= if { break }
+        ?ptr_buf ?i 4 * + load32 !.i32 @ptr
+        &strings ?ptr ?ptr cstr-len S:String-new S:StringVec-push
+        ?i 1 + @i
     }
-    $ptr_buf A:free
-    $arg_buf A:free
-    $strings
+    ?ptr_buf A:free
+    ?arg_buf A:free
+    ?strings
 }
 
 fn cstr-len(ptr: .i32) -> i32 {

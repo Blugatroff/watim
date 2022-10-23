@@ -38,6 +38,7 @@ fn TOKEN_AMPERSAND() -> i32 { 30 }
 fn TOKEN_AT() -> i32 { 31 }
 fn TOKEN_QUESTION() -> i32 { 32 }
 fn TOKEN_TILDE() -> i32 { 33 }
+fn TOKEN_RIGHT_RIGHT() -> i32 { 34 }
 
 fn token-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -74,6 +75,7 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_AT  = if { "TOKEN_AT" break }
         $ty TOKEN_QUESTION  = if { "TOKEN_QUESTION" break }
         $ty TOKEN_TILDE  = if { "TOKEN_TILDE" break }
+        $ty TOKEN_RIGHT_RIGHT  = if { "TOKEN_RIGHT_RIGHT" break }
         "INVALID TOKEN TYPE" break
     }
 }
@@ -210,6 +212,7 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
 
         $lexer.input load32 $lexer.index load32 S:Str-get #char
         $lexer.input load32 $lexer.index load32 1 S:Str-slice #lexeme
+
         $char "/" drop load8 = if {
             $lexer.index load32 $lexer.input load32 S:Str-len < if {
                 $lexer.input load32 $lexer.index load32 1 + S:Str-get "/" drop load8 = if {
@@ -341,6 +344,30 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             $lexer.column $lexer.column load32 1 + store32
             break
         }
+        $char ">" drop load8 = if {
+            $lexer.input load32 S:Str-len $lexer.index load32 1 + > if { 
+                $lexer.input load32 $lexer.index load32 1 + S:Str-get ">" drop load8 = if {
+                    $lexeme !.i32 A:free
+                    $lexer.input load32 $lexer.index load32 2 S:Str-slice #lexeme
+                    $lexer.index $lexer.index load32 2 + store32
+                    $lexer.column $lexer.column load32 2 + store32
+                    TOKEN_RIGHT_RIGHT $lexeme $lexer.file load32 $lexer.line load32 $lexer.column load32 Token-new 
+                    break
+                }
+            }
+        }
+        $char "-" drop load8 = if {
+            $lexer.input load32 S:Str-len $lexer.index load32 1 + > if { 
+                $lexer.input load32 $lexer.index load32 1 + S:Str-get ">" drop load8 = if {
+                    $lexeme !.i32 A:free
+                    $lexer.input load32 $lexer.index load32 2 S:Str-slice #lexeme
+                    $lexer.index $lexer.index load32 2 + store32
+                    $lexer.column $lexer.column load32 2 + store32
+                    TOKEN_ARROW $lexeme $lexer.file load32 $lexer.line load32 $lexer.column load32 Token-new 
+                    break
+                }
+            }
+        }
         $char is-ascii-digit if {
             $lexeme !.i32 A:free
             $lexer Lexer-lex-number break
@@ -348,14 +375,15 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
         $char allowed-in-ident if {
             $lexeme !.i32 A:free
             $lexer Lexer-lex-ident break
-        }
-        1 "./test.watim:" IO:write-all IO:check
-        $lexer.line load32 IO:print
-        1 ":" IO:write-all IO:check
-        $lexer.column load32 IO:print
-        1 ": Unexpected character \"" IO:write-all IO:check
-        1 $lexeme S:Str-unpack IO:write-all IO:check
-        1 "\"\n" IO:write-all IO:check
+        } 
+        2 $lexer.file load32 S:String-unpack IO:write-all IO:check
+        2 ":" IO:write-all IO:check
+        2 $lexer.line load32 IO:print-to-fd
+        2 ":" IO:write-all IO:check
+        2 $lexer.column load32 IO:print-to-fd
+        2 ": Unexpected character \"" IO:write-all IO:check
+        2 $lexeme S:Str-unpack IO:write-all IO:check
+        2 "\"\n" IO:write-all IO:check
         1 CORE:exit
 
         $lexeme !.i32 A:free // content is borrowed from $lexer.input
@@ -389,9 +417,6 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
         S:Str-slice #ident
         $ident S:Str-unpack "fn" S:str-eq if {
             TOKEN_FN $ident $lexer.file load32 $line $column Token-new break
-        }
-        $ident S:Str-unpack "->" S:str-eq if {
-            TOKEN_ARROW $ident $lexer.file load32 $line $column Token-new break
         }
         $ident S:Str-unpack "i32" S:str-eq if {
             TOKEN_I32 $ident $lexer.file load32 $line $column Token-new break
