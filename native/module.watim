@@ -1,4 +1,5 @@
 import "../std/string.watim" as S
+import "../std/string2.watim" as S2
 import "../std/io.watim" as IO
 import "../std/map.watim" as MAP
 import "../std/fs.watim" as FS
@@ -13,98 +14,89 @@ import "./parser.watim" as P
 struct Module {
     items: .AST:TopItems
     imports: .AST:Imports
-    file: .S:String
+    file: S2:String
     tokens: .L:Tokens
     types: .AST:Types
-    path: .S:String
+    path: S2:String
 }
 // mem is borrowed
-fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> .Module {
-    local str: .S:String
+fn Module-load(path-ptr: .i32, path-len: i32, mem: .S2:String) -> Module {
+    local str: S2:String
     local tokens: .L:Tokens
     local items: .AST:TopItems
     local types: .AST:Types
-    local path: .S:String
+    local path: S2:String
     local code: i32
 
-    $path-ptr $path-len S:String-new #path
-    $path S:String-unpack FS:read-file #code #str 
-    $code 0 /= if {
+    ?path-ptr ?path-len S2:String-new @path
+    &path S2:String-unpack FS:read-file @code @str 
+    ?code 0 /= if {
         2 "Failed to read file: \"" IO:write-all IO:check
-        2 $path-ptr $path-len IO:write-all IO:check
+        2 ?path-ptr ?path-len IO:write-all IO:check
         2 "\" Error Code: " IO:write-all IO:check
-        2 $code IO:print-to-fd
+        2 ?code IO:print-to-fd
         2 "\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $str $path L:lex #tokens
-    $mem $tokens P:parse #types #items 
+    &str &path S2:String-unpack S:Str-new L:lex @tokens
+    ?mem ?tokens P:parse @types @items 
     
-    $items $path $str $tokens $types Module-new
+    ?items ?path ?str ?tokens ?types Module-new
 }
-fn Module-new(items: .AST:TopItems, path: .S:String, file: .S:String, tokens: .L:Tokens, types: .AST:Types) -> .Module {
-    local self: .Module
-    24 A:alloc !.Module #self
-    $self.items $items store32
-    $self.file $file store32
-    $self.tokens $tokens store32
-    $self.types $types store32
-    $self.path $path store32
-    $self $self.path load32 Module-extract-imports
-    $self
+fn Module-new(items: .AST:TopItems, path: S2:String, file: S2:String, tokens: .L:Tokens, types: .AST:Types) -> Module {
+    local self: Module
+    ?items @self.items
+    ?file @self.file
+    ?tokens @self.tokens
+    ?types @self.types
+    ?path @self.path
+    &self &self.path Module-extract-imports
+    ?self
 }
 
 // module-path is borrowed
-fn Module-extract-imports(self: .Module, module-path: .S:String) {
+fn Module-extract-imports(self: .Module, module-path: .S2:String) {
     local i: i32
     local item: .AST:TopItem
     local imp: .AST:Import
-    local path: .S:String
-    $self.imports AST:Imports-new store32
+    local path: S2:String
+    local ident: S2:String
+
+    AST:Imports-new @self.imports
     loop {
-        $i $self.items load32 AST:TopItems-len = if { break }
-        $self.items load32 $i AST:TopItems-get #item
-        $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
-            $item.imp load32 #imp
-            $module-path S:String-unpack FS:path-dir S:String-new #path
-            $path $imp AST:Import-path-content S:String-append
-            $self.imports load32 
-            $item.imp load32 AST:Import-ident L:Token-lexeme S:Str-unpack S:String-new
-            $path S:String-unpack FS:normalize $path S:String-free
+        ?i ?self.items AST:TopItems-len = if { break }
+        ?self.items ?i AST:TopItems-get @item
+        ?item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
+            ?item.imp @imp
+            ?module-path S2:String-unpack FS:path-dir S2:String-new @path
+            &path $imp AST:Import-path-content S2:String-append
+            ?self.imports
+            ?item.imp AST:Import-ident L:Token-lexeme S:Str-unpack S2:String-new 
+            // #ident
+            // 2 "Module-extract-imports ident: " IO:write-all IO:check
+            // 2 &ident S2:String-unpack IO:write-all IO:check
+            // 2 "\n" IO:write-all IO:check
+            // ?ident
+            &path S2:String-unpack FS:normalize 
             AST:Imports-insert
+            ?path S2:String-free
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
 fn Module-imports(self: .Module) -> .AST:Imports {
-    $self.imports load32
+    ?self.imports
 }
-fn Module-free(self: .Module) {
-    $self.items load32 AST:TopItems-free
-    $self.file load32 S:String-free
-    $self.tokens load32 L:Tokens-free
-    $self.types load32 AST:Types-free
-    $self.path load32 S:String-free
-    $self.imports load32 AST:Imports-free
-    $self !.i32 A:free
-}
-fn Module-format(self: .Module, formatter: .FMT:Formatter) {
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    $formatter FMT:Formatter-write-indent
-    $formatter "items: " FMT:Formatter-write
-    $self.items load32 $formatter AST:TopItems-format
-    $formatter ",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "imports: " FMT:Formatter-write
-    $self.imports load32 $formatter AST:Imports-format
-    $formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
+fn Module-free(self: Module) {
+    ?self.items AST:TopItems-free
+    ?self.file S2:String-free
+    ?self.tokens L:Tokens-free
+    ?self.types AST:Types-free
+    ?self.imports AST:Imports-free
+    ?self.path S2:String-free
 }
 fn Module-items(self: .Module) -> .AST:TopItems {
-    $self.items load32
+    ?self.items
 }
 fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {
     local items: .AST:TopItems
@@ -170,8 +162,8 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Memor
 fn Module-types(self: .Module) -> .AST:Types {
     $self.types load32
 }
-fn Module-path(self: .Module) -> .S:String {
-    $self.path load32
+fn Module-path(self: .Module) -> .S2:String {
+    &self.path
 }
 
 struct Modules {
@@ -179,25 +171,31 @@ struct Modules {
 }
 fn Modules-new() -> .Modules {
     local self: .Modules
-    4 A:alloc !.Modules #self
-    $self.inner MAP:StringMap-new store32
-    $self
+    4 A:alloc !.Modules @self
+    MAP:StringMap-new @self.inner
+    ?self
 }
 fn Modules-free(self: .Modules) {
     local i: i32
     loop {
-        $i $self.inner load32 MAP:StringMap-len = if { break }
-        $self.inner load32 $i MAP:StringMap-get-value !.Module Module-free
-        $i 1 + #i
+        ?i ?self.inner MAP:StringMap-len = if { break }
+        ?self.inner ?i MAP:StringMap-get-value !.Module ~ Module-free
+        ?self.inner ?i MAP:StringMap-get-value !.i32 A:free
+        ?i 1 + @i
     }
-    $self.inner load32 MAP:StringMap-free
-    $self !.i32 A:free
+    ?self.inner MAP:StringMap-free
+    ?self !.i32 A:free
 }
-fn Modules-insert(self: .Modules, path: .S:String, module: .Module) {
-    $self.inner load32 $path $module !i32 MAP:StringMap-insert if {
-        1 "WARNING: overwrote module: " IO:write-all IO:check 1 $path S:String-unpack IO:write-all IO:check
+fn Modules-insert(self: .Modules, path: S2:String, module: Module) {
+    local alloced-module: .Module
+    sizeof(Module) A:alloc !.Module @alloced-module
+    ?module >>alloced-module
+    ?self.inner ?path ?alloced-module !i32 MAP:StringMap-insert if {
+        !.Module @alloced-module
+        1 "WARNING: overwrote module: " IO:write-all IO:check 1 &path S2:String-unpack IO:write-all IO:check
         1 "\n" IO:write-all IO:check
-        !.Module Module-free
+        ?alloced-module ~ Module-free
+        ?alloced-module !.i32 A:free
     } else {
         drop
     }
@@ -209,32 +207,14 @@ fn Modules-get(self: .Modules, path-ptr: .i32, path-len: i32) -> .Module, bool {
         !.Module 0 1 =
     }
 }
-fn Modules-get-key(self: .Modules, index: i32) -> .S:String {
-    $self.inner load32 $index MAP:StringMap-get-key
+fn Modules-get-key(self: .Modules, index: i32) -> .S2:String {
+    ?self.inner ?index MAP:StringMap-get-key
 }
 fn Modules-get-value(self: .Modules, index: i32) -> .Module {
     $self.inner load32 $index MAP:StringMap-get-value !.Module
 }
 fn Modules-len(self: .Modules) -> i32 {
     $self.inner load32 MAP:StringMap-len
-}
-fn Modules-format(self: .Modules, formatter: .FMT:Formatter) {
-    local i: i32
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    loop {
-        $i $self Modules-len = if { break }
-        $formatter FMT:Formatter-write-indent
-        $formatter "\"" FMT:Formatter-write
-        $formatter $self $i Modules-get-key S:String-unpack FMT:Formatter-write
-        $formatter "\": " FMT:Formatter-write
-        $self $i Modules-get-value $formatter Module-format
-        $formatter ",\n" FMT:Formatter-write
-        $i 1 + #i
-    }
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
 }
 fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {
     local i: i32

@@ -5,7 +5,7 @@ import "../std/core.watim" as CORE
 fn main "_start" () {
     memory buf: i32 32;
     local nread: i32
-    0 $buf 32 IO:read IO:check #nread
-    $buf $nread 1 - U:parse
+    0 ?buf 32 IO:read IO:check @nread
+    ?buf ?nread 1 - U:parse
     CORE:dup IO:print CORE:exit
 }

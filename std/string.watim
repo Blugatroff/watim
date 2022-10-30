@@ -141,35 +141,31 @@ struct Str {
 fn Str-free(str: .Str) {
     $str !.i32 A:free
 }
-fn Str-new(ptr: .i32, len: i32) -> .Str {
-    local s: .Str
-    8 A:alloc !.Str #s
-    $s.ptr $ptr store32
-    $s.len $len store32
-    $s
+fn Str-new(ptr: .i32, len: i32) -> Str {
+    local self: Str
+    ?ptr @self.ptr
+    ?len @self.len
+    ?self
 }
-fn Str-copy(str: .Str) -> .Str {
-    $str.ptr load32 $str.len load32 Str-new
+fn Str-len(self: .Str) -> i32 {
+    ?self.len
 }
-fn Str-len(str: .Str) -> i32 {
-    $str.len load32
+fn Str-unpack(self: .Str) -> .i32, i32 {
+    ?self.ptr ?self.len
 }
-fn Str-unpack(str: .Str) -> .i32, i32 {
-    $str.ptr load32 $str.len load32
-}
-fn Str-get(str: .Str, index: i32) -> i32 {
-    $index $str Str-len >= if { 
+fn Str-get(self: .Str, index: i32) -> i32 {
+    ?index ?self Str-len >= if { 
         1 "Str-get Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $str.ptr load32 $index + load8
+    ?self.ptr ?index + load8
 }
-fn Str-slice(str: .Str, index: i32, len: i32) -> .Str {
-    $index $len + $str Str-len > if { 
+fn Str-slice(self: .Str, index: i32, len: i32) -> Str {
+    ?index ?len + ?self Str-len > if { 
         1 "Str-slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $str.ptr load32 $index + $len Str-new
+    ?self.ptr ?index + ?len Str-new
 }
 
 struct String {
@@ -253,15 +249,15 @@ fn String-free(self: .String) {
     }
     $self !.i32 A:free
 }
-fn String-to-Str(self: .String) -> .Str {
-    $self.ptr load32 $self.len load32 Str-new
+fn String-to-Str(self: .String) -> Str {
+    ?self.ptr ?self.len Str-new
 }
-fn String-slice(str: .Str, index: i32, len: i32) -> .Str {
-    $index $len + $str Str-len > if { 
+fn String-slice(str: .Str, index: i32, len: i32) -> Str {
+    ?index ?len + ?str Str-len > if { 
         1 "Str-slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $str.ptr load32 $index + $len Str-new
+    ?str.ptr ?index + ?len Str-new
 }
 fn String-indent(self: .String) -> .String {
     local new: .String

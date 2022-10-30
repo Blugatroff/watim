@@ -1,5 +1,6 @@
 import "../std/alloc.watim" as A
 import "../std/string.watim" as S
+import "../std/string2.watim" as S2
 import "../std/i32vec.watim" as IV
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
@@ -454,7 +455,7 @@ fn If-format(self: .If, formatter: .FMT:Formatter) {
 }
 
 struct Word {
-    file: .S:String
+    file: S:Str
     ty: i32
     line: i32
     column: i32
@@ -494,10 +495,10 @@ struct Word {
     // for WORD_CAST, WORD_DEREF
     src-type: .Type
 }
-fn Word-new(ty: i32, file: .S:String, line: i32, column: i32) -> .Word {
+fn Word-new(ty: i32, file: S:Str, line: i32, column: i32) -> .Word {
     local self: .Word
-    80 A:alloc !.Word #self
-    $self.file $file store32
+    sizeof(Word) A:alloc !.Word #self
+    ?file @self.file
     $self.ty $ty store32
     $self.line $line store32
     $self.column $column store32
@@ -538,8 +539,8 @@ fn Word-free(self: .Word) {
     }
     $self !.i32 A:free
 }
-fn Word-location(self: .Word) -> .S:String, i32, i32 {
-    $self.file load32 $self.line load32 $self.column load32
+fn Word-location(self: .Word) -> .i32, i32, i32, i32 {
+    &self.file S:Str-unpack ?self.line ?self.column
 }
 fn Word-ty(self: .Word) -> i32 {
     $self.ty load32
@@ -854,33 +855,6 @@ fn Function-ident(self: .Function) -> .L:Token {
 fn Function-diverges(self: .Function) -> bool {
     $self.diverges load32
 }
-fn Function-format(self: .Function, formatter: .FMT:Formatter) {
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    $formatter FMT:Formatter-write-indent
-    $formatter "indent: \"" FMT:Formatter-write
-    $formatter $self.ident load32 .lexeme load32 S:Str-unpack FMT:Formatter-write
-    $formatter "\",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "params: " FMT:Formatter-write
-    $self.parameters load32 $formatter Locals-format
-    $formatter ",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "rets: " FMT:Formatter-write
-    $self.ret load32 $formatter Types-format
-    $formatter ",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "locals: " FMT:Formatter-write
-    $self.locals load32 $formatter Locals-format
-    $formatter ",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "body: " FMT:Formatter-write
-    $self.body load32 $formatter Words-format
-    $formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
-}
 fn Function-has-struc-locl(self: .Function) -> bool {
     local locals: .Locals
     local i: i32
@@ -918,25 +892,6 @@ fn Functions-len(self: .Functions) -> i32 {
 }
 fn Functions-get(self: .Functions, index: i32) -> .Function {
     $self.inner load32 $index IV:I32Vec-get !.Function
-}
-fn Functions-format(self: .Functions, formatter: .FMT:Formatter) {
-    local i: i32
-    $self Functions-len 0 = if { 
-        $formatter "[]" FMT:Formatter-write
-    } else {
-        $formatter "[\n" FMT:Formatter-write
-        $formatter FMT:Formatter-indent
-        loop {
-            $i $self Functions-len = if { break }
-            $formatter FMT:Formatter-write-indent
-            $self $i Functions-get $formatter Function-format
-            $formatter ",\n" FMT:Formatter-write
-            $i 1 + #i
-        }
-        $formatter FMT:Formatter-dedent
-        $formatter FMT:Formatter-write-indent
-        $formatter "]" FMT:Formatter-write
-    }
 }
 
 struct Extern {
@@ -1278,35 +1233,6 @@ fn TopItem-free(self: .TopItem) {
     }
     $self !.i32 A:free
 }
-fn TopItem-format(self: .TopItem, formatter: .FMT:Formatter) {
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    $formatter FMT:Formatter-write-indent
-    $formatter "ty: " FMT:Formatter-write
-    $formatter $self TopItem-ty top-item-ty-name FMT:Formatter-write
-    $formatter ",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "value: " FMT:Formatter-write
-    $self TopItem-ty TOP_ITEM_FN = if {
-        $self.function load32 $formatter Function-format
-    }
-    $self TopItem-ty TOP_ITEM_MEM = if {
-        $self.mem load32 $formatter Memory-format
-    }
-    $self TopItem-ty TOP_ITEM_EXT = if {
-        $self.ext load32 $formatter Extern-format
-    }
-    $self TopItem-ty TOP_ITEM_IMPORT = if {
-        $self.imp load32 $formatter Import-format
-    }
-    $self TopItem-ty TOP_ITEM_STRUCT = if {
-        $self.struc load32 $formatter Struct-format
-    }
-    $formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
- }
 
 struct TopItems {
     inner: .IV:I32Vec
@@ -1336,25 +1262,6 @@ fn TopItems-len(self: .TopItems) -> i32 {
 fn TopItems-get(self: .TopItems, index: i32) -> .TopItem {
     $self.inner load32 $index IV:I32Vec-get !.TopItem
 }
-fn TopItems-format(self: .TopItems, formatter: .FMT:Formatter) {
-    local i: i32
-    0 $self TopItems-len = if {
-        $formatter "[]" FMT:Formatter-write
-    } else {
-        $formatter "[\n" FMT:Formatter-write
-        $formatter FMT:Formatter-indent
-        loop {
-            $i $self TopItems-len = if { break }
-            $formatter FMT:Formatter-write-indent
-            $self $i TopItems-get $formatter TopItem-format
-            $formatter ",\n" FMT:Formatter-write
-            $i 1 + #i 
-        }
-        $formatter FMT:Formatter-dedent
-        $formatter FMT:Formatter-write-indent
-        $formatter "]" FMT:Formatter-write
-    }
-}
 
 struct Imports {
     map: .M:StringMap
@@ -1375,46 +1282,34 @@ fn Imports-free(self: .Imports) {
     $self.map load32 M:StringMap-free
     $self !.i32 A:free
 }
-fn Imports-insert(self: .Imports, ident: .S:String, path: .S:String) {
-    $self.map load32 $ident $path !i32 M:StringMap-insert if {
+fn Imports-insert(self: .Imports, ident: S2:String, path: S2:String) {
+    local alloced-path: .S2:String
+    // TODO: make this sizeof work:
+    // sizeof(S2:String) A:alloc !.S2:String @alloced-path
+    12 A:alloc !.S2:String @alloced-path
+    ?path >>alloced-path
+    ?self.map ?ident ?alloced-path !i32 M:StringMap-insert if {
         1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
-        !.S:String S:String-free
+        !.S2:String ~ S2:String-free
     } else {
         drop
     }
 }
-fn Imports-get-key(self: .Imports, index: i32) -> .S:String {
-    $self.map load32 $index M:StringMap-get-key !.S:String
+fn Imports-get-key(self: .Imports, index: i32) -> .S2:String {
+    $self.map load32 $index M:StringMap-get-key !.S2:String
 }
-fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
-    $self.map load32 $index M:StringMap-get-value !.S:String
+fn Imports-get-value(self: .Imports, index: i32) -> .S2:String {
+    $self.map load32 $index M:StringMap-get-value !.S2:String
 }
-fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S:String, bool {
+fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S2:String, bool {
     local v: i32
     $self.map load32 $ident-ptr $ident-len M:StringMap-get if {
-        #v $v !.S:String 0 0 =
+        #v $v !.S2:String 0 0 =
     } else {
-        drop 0 !.S:String 0 1 =
+        drop 0 !.S2:String 0 1 =
     }
 }
 fn Imports-len(self: .Imports) -> i32 {
     $self.map load32 M:StringMap-len
-}
-fn Imports-format(self: .Imports, formatter: .FMT:Formatter) {
-    local i: i32
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    loop {
-        $i $self.map load32 M:StringMap-len = if { break }
-        $formatter FMT:Formatter-write-indent
-        $formatter $self $i Imports-get-key S:String-unpack FMT:Formatter-write
-        $formatter ": \"" FMT:Formatter-write
-        $formatter $self $i Imports-get-value S:String-unpack FMT:Formatter-write
-        $formatter "\",\n" FMT:Formatter-write
-        $i 1 + #i
-    }
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
 }
 

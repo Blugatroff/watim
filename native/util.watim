@@ -1,27 +1,21 @@
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/string.watim" as S
+import "../std/string2.watim" as S2
 import "../std/format.watim" as FMT
 
+import "./lexer.watim" as L
 import "./ast.watim" as AST
 
-fn print-location(file: .S:String, line: i32, column: i32) {
-    2 $file S:String-unpack IO:write-all IO:check
-    2 ":" IO:write-all IO:check
-    2 $line IO:print-to-fd
-    2 ":" IO:write-all IO:check
-    2 $column IO:print-to-fd
-    2 " " IO:write-all IO:check
-}
-fn abort-with-location(file: .S:String, line: i32, column: i32, msg-ptr: .i32, msg-len: i32) {
-    $file $line $column print-location
-    2 $msg-ptr $msg-len IO:write-all IO:check
+fn abort-with-location(file-ptr: .i32, file-len: i32, line: i32, column: i32, msg-ptr: .i32, msg-len: i32) {
+    2 ?file-ptr ?file-len ?line ?column L:print-location
+    2 ?msg-ptr ?msg-len IO:write-all IO:check
     1 CORE:exit
 }
-fn abort(file: .S:String, msg-ptr: .i32, msg-len: i32) {
-    2 $file S:String-unpack IO:write-all IO:check
+fn abort(file-ptr: .i32, file-len: i32, msg-ptr: .i32, msg-len: i32) {
+    2 ?file-ptr ?file-len IO:write-all IO:check
     2 ": " IO:write-all IO:check
-    2 $msg-ptr $msg-len IO:write-all IO:check
+    2 ?msg-ptr ?msg-len IO:write-all IO:check
     1 CORE:exit
 }
 

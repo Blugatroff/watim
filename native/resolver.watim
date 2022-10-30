@@ -1,6 +1,7 @@
 import "./ast.watim" as AST
 import "../std/io.watim" as IO
 import "../std/string.watim" as S
+import "../std/string2.watim" as S2
 import "../std/alloc.watim" as A
 import "./module.watim" as M
 import "./lexer.watim" as L
@@ -10,9 +11,9 @@ import "./util.watim" as U
 fn resolve(modules: .M:Modules) {
     local i: i32
     loop {
-        $i $modules M:Modules-len = if { break }
-        $modules $modules $i M:Modules-get-value resolve-module
-        $i 1 + #i
+        ?i ?modules M:Modules-len = if { break }
+        ?modules ?modules ?i M:Modules-get-value resolve-module
+        ?i 1 + @i
     }
 }
 fn resolve-module(modules: .M:Modules, module: .M:Module) {
@@ -20,151 +21,151 @@ fn resolve-module(modules: .M:Modules, module: .M:Module) {
     local items: .AST:TopItems
     local item: .AST:TopItem
 
-    $module M:Module-items #items
+    ?module M:Module-items @items
     loop {
-        $i $items AST:TopItems-len = if { break }
-        $items $i AST:TopItems-get #item
-        $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
-            $modules $module $item AST:TopItem-struc resolve-struc
+        ?i ?items AST:TopItems-len = if { break }
+        ?items ?i AST:TopItems-get @item
+        ?item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
+            ?modules ?module ?item AST:TopItem-struc resolve-struc
         }
-        $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-            $modules $module $item AST:TopItem-function resolve-function
+        ?item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+            ?modules ?module ?item AST:TopItem-function resolve-function
         }
-        $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
-            $modules $module $item AST:TopItem-ext resolve-extern
+        ?item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
+            ?modules ?module ?item AST:TopItem-ext resolve-extern
         }
-        $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $modules $module $item AST:TopItem-mem resolve-memory
+        ?item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+            ?modules ?module ?item AST:TopItem-mem resolve-memory
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
 fn resolve-extern(modules: .M:Modules, module: .M:Module, ext: .AST:Extern) {
-    $modules $module $ext AST:Extern-parameters resolve-parameters
-    $modules $module $ext AST:Extern-rets resolve-types
+    ?modules ?module ?ext AST:Extern-parameters resolve-parameters
+    ?modules ?module ?ext AST:Extern-rets resolve-types
 }
 fn resolve-struc(modules: .M:Modules, module: .M:Module, struc: .AST:Struct) {
     local fields: .AST:Fields
     local field: .AST:Field
     local type: .AST:Type
     local i: i32
-    $struc AST:Struct-fields #fields
+    ?struc AST:Struct-fields @fields
     loop {
-        $i $fields AST:Fields-len = if { break }
-        $fields $i AST:Fields-get #field
-        $field AST:Field-type #type
-        $modules $module $field resolve-field
-        $i 1 + #i
+        ?i ?fields AST:Fields-len = if { break }
+        ?fields ?i AST:Fields-get @field
+        ?field AST:Field-type @type
+        ?modules ?module ?field resolve-field
+        ?i 1 + @i
     }
 }
 fn resolve-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
-    $modules $module $function AST:Function-rets resolve-types
-    $modules $module $function AST:Function-parameters resolve-parameters
-    $modules $module $function AST:Function-locals resolve-locals
-    $modules $module $function AST:Function-memories resolve-memories
-    $modules $module $function AST:Function-body resolve-words
+    ?modules ?module ?function AST:Function-rets resolve-types
+    ?modules ?module ?function AST:Function-parameters resolve-parameters
+    ?modules ?module ?function AST:Function-locals resolve-locals
+    ?modules ?module ?function AST:Function-memories resolve-memories
+    ?modules ?module ?function AST:Function-body resolve-words
 }
 fn resolve-words(modules: .M:Modules, module: .M:Module, words: .AST:Words) {
     local i: i32
     loop {
-        $i $words AST:Words-len = if { break }
-        $modules $module $words $i AST:Words-get resolve-word
-        $i 1 + #i
+        ?i ?words AST:Words-len = if { break }
+        ?modules ?module ?words ?i AST:Words-get resolve-word
+        ?i 1 + @i
     }
 }
 fn resolve-word(modules: .M:Modules, module: .M:Module, word: .AST:Word) {
-    $word AST:Word-ty AST:WORD_CAST = if {
-        $modules $module $word AST:Word-type resolve-type
+    ?word AST:Word-ty AST:WORD_CAST = if {
+        ?modules ?module ?word AST:Word-type resolve-type
     }
-    $word AST:Word-ty AST:WORD_IF = if {
-        $modules $module $word AST:Word-iff resolve-iff
+    ?word AST:Word-ty AST:WORD_IF = if {
+        ?modules ?module ?word AST:Word-iff resolve-iff
     }
-    $word AST:Word-ty AST:WORD_LOOP = if {
-        $modules $module $word AST:Word-lop resolve-words
+    ?word AST:Word-ty AST:WORD_LOOP = if {
+        ?modules ?module ?word AST:Word-lop resolve-words
     }
 }
 fn resolve-iff(modules: .M:Modules, module: .M:Module, iff: .AST:If) {
-    $modules $module $iff AST:If-body resolve-words
-    $iff AST:If-el !i32 0 /= if { 
-        $modules $module $iff AST:If-el resolve-words
+    ?modules ?module ?iff AST:If-body resolve-words
+    ?iff AST:If-el !i32 0 /= if { 
+        ?modules ?module ?iff AST:If-el resolve-words
     }
 }
 fn resolve-field(modules: .M:Modules, module: .M:Module, field: .AST:Field) {
-    $modules $module $field AST:Field-type resolve-type
+    ?modules ?module ?field AST:Field-type resolve-type
 }
 fn resolve-types(modules: .M:Modules, module: .M:Module, types: .AST:Types) {
     local i: i32
     loop {
-        $i $types AST:Types-len = if { break }
-        $modules $module $types $i AST:Types-get resolve-type
-        $i 1 + #i
+        ?i ?types AST:Types-len = if { break }
+        ?modules ?module ?types ?i AST:Types-get resolve-type
+        ?i 1 + @i
     }
 }
 fn resolve-memories(modules: .M:Modules, module: .M:Module, memories: .AST:Memories) {
     local i: i32
     loop {
-        $i $memories AST:Memories-len = if { break }
-        $modules $module $memories $i AST:Memories-get resolve-memory
-        $i 1 + #i
+        ?i $memories AST:Memories-len = if { break }
+        ?modules ?module ?memories ?i AST:Memories-get resolve-memory
+        ?i 1 + @i
     }
 }
 fn resolve-memory(modules: .M:Modules, module: .M:Module, mem: .AST:Memory) {
-    $modules $module $mem AST:Memory-type resolve-type
+    ?modules ?module ?mem AST:Memory-type resolve-type
 }
 fn resolve-locals(modules: .M:Modules, module: .M:Module, locals: .AST:Locals) {
     local i: i32
     loop {
-        $i $locals AST:Locals-len = if { break }
-        $modules $module $locals $i AST:Locals-get resolve-local
-        $i 1 + #i
+        ?i ?locals AST:Locals-len = if { break }
+        ?modules ?module ?locals ?i AST:Locals-get resolve-local
+        ?i 1 + @i
     }
 }
 fn resolve-local(modules: .M:Modules, module: .M:Module, locl: .AST:Local) {
-    $modules $module $locl AST:Local-type resolve-type
+    ?modules ?module ?locl AST:Local-type resolve-type
 }
 fn resolve-parameters(modules: .M:Modules, module: .M:Module, parameters: .AST:Locals) {
     local i: i32
     loop {
-        $parameters AST:Locals-len $i = if { break }
-        $modules $module $parameters $i AST:Locals-get resolve-parameter
-        $i 1 + #i
+        ?parameters AST:Locals-len ?i = if { break }
+        ?modules ?module ?parameters ?i AST:Locals-get resolve-parameter
+        ?i 1 + @i
     }
 }
 fn resolve-parameter(modules: .M:Modules, module: .M:Module, parameter: .AST:Local) {
-    $modules $module $parameter AST:Local-type resolve-type
+    ?modules ?module ?parameter AST:Local-type resolve-type
 }
 fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
     local ident: .S:Str
     local module-token: .L:Token
-    local path: .S:String
+    local path: .S2:String
     local imports: .AST:Imports
     local struc: .AST:Struct
 
     loop {
         $type AST:Type-ty AST:TYPE_STRUCT = if {
-            $type AST:Type-module #module-token
-            $type AST:Type-ident L:Token-lexeme #ident
+            ?type AST:Type-module @module-token
+            ?type AST:Type-ident L:Token-lexeme @ident
             
-            $module-token !i32 0 /= if {
-                $module M:Module-imports #imports
-                $imports $module-token L:Token-lexeme S:Str-unpack AST:Imports-get if {
-                    #path
+            ?module-token !i32 0 /= if {
+                ?module M:Module-imports @imports
+                ?imports ?module-token L:Token-lexeme S:Str-unpack AST:Imports-get if {
+                    @path
                 } else {
                     drop
-                    $module-token L:Token-location "module not found" U:abort-with-location
+                    ?module-token L:Token-location "module not found" U:abort-with-location
                 }
             } else {
-                $module M:Module-path #path
+                ?module M:Module-path @path
             }
-            $modules $path S:String-unpack $ident S:Str-unpack M:Modules-find-struc if {
-                #struc $type $struc AST:Type-set-struc
+            ?modules ?path S2:String-unpack $ident S:Str-unpack M:Modules-find-struc if {
+                @struc ?type $struc AST:Type-set-struc
             } else {
-                drop $type AST:Type-ident L:Token-location "struct not found" U:abort-with-location
+                drop ?type AST:Type-ident L:Token-location "struct not found" U:abort-with-location
             }
             break
         }
-        $type AST:Type-ty AST:TYPE_PTR = if {
-            $modules $module $type AST:Type-child resolve-type
+        ?type AST:Type-ty AST:TYPE_PTR = if {
+            ?modules ?module ?type AST:Type-child resolve-type
             break
         }
         break
