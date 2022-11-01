@@ -114,34 +114,66 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
 }
 
 struct Words {
-    inner: .IV:I32Vec
+    ptr: ..Word
+    len: i32
+    cap: i32
 }
 fn Words-new() -> .Words {
     local self: .Words
-    local inner: .IV:I32Vec
-    4 A:alloc !.Words #self
-    IV:I32Vec-new #inner
-    $self.inner $inner store32
-    $self
-}
-fn Words-free(self: .Words) {
-    local i: i32
-    loop {
-        $i $self.inner load32 IV:I32Vec-len = if { break }
-        $self.inner load32 $i IV:I32Vec-get !.Word Word-free
-        $i 1 + #i
-    }
-    $self.inner load32 IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Words-get(self: .Words, index: i32) -> .Word {
-    $self.inner load32 $index IV:I32Vec-get !.Word
-}
-fn Words-push(self: .Words, word: .Word) {
-    $self.inner load32 $word !i32 IV:I32Vec-push
+    sizeof(Words) A:alloc !.Words @self
+    0 !..Word @self.ptr
+    0 @self.len
+    0 @self.cap
+    ?self
 }
 fn Words-len(self: .Words) -> i32 {
-    $self.inner load32 IV:I32Vec-len
+    ?self.len
+}
+fn Words-get(self: .Words, index: i32) -> .Word {
+    ?index ?self.len >= if {
+        2 "Words: Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    ?self.ptr ?index 4 * + load32
+}
+fn Words-push(self: .Words, word: .Word) {
+    local new-buf: ..Word
+    local size: i32
+    local dst-ptr: ..Word
+    ?self.len 1 + ?self.cap <= if {
+        ?self.ptr ?self.len 4 * + @dst-ptr
+        ?self.len 1 + @self.len
+        ?word >>dst-ptr
+    } else {
+        ?self.cap 2 CORE:max 2 * @size
+        ?size 4 * A:alloc !..Word @new-buf
+        ?self.ptr !.i32
+        ?new-buf !.i32
+        ?self.len 4 *
+        CORE:copy
+        ?size @self.cap
+        ?self.len 0 > if {
+            ?self.ptr !.i32 A:free
+        }
+        ?new-buf @self.ptr
+        ?self ?word Words-push
+    }
+}
+fn Words-pop(self: .Words) -> .Word {
+    ?self.len 0 = if {
+        2 "Cannot pop from empty Words" IO:write-all IO:check
+        1 CORE:exit
+    }
+    ?self ?self.len 1 - Words-get
+    ?self.len 1 - @self.len
+}
+fn Words-free(self: .Words) {
+    loop {
+        ?self.len 0 = if { break }
+        ?self Words-pop Word-free
+    }
+    ?self.cap 0 > if { ?self.ptr !.i32 A:free }
+    ?self !.i32 A:free
 }
 
 fn TYPE_I32() -> i32 { 1 }
