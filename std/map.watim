@@ -9,17 +9,15 @@ struct StringMap {
     keys: S2:StringVec
     values: .IV:I32Vec
 }
-fn StringMap-new() -> .StringMap {
-    local self: .StringMap
-    sizeof(StringMap) A:alloc !.StringMap @self
+fn StringMap-new() -> StringMap {
+    local self: StringMap
     S2:StringVec-new @self.keys
     IV:I32Vec-new @self.values
     ?self
 }
-fn StringMap-free(self: .StringMap) {
+fn StringMap-free(self: StringMap) {
     ?self.keys S2:StringVec-free
     ?self.values IV:I32Vec-free
-    ?self !.i32 A:free
 }
 fn StringMap-insert(self: .StringMap, key: S2:String, value: i32) -> i32, bool {
     local i: i32

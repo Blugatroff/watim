@@ -15,14 +15,14 @@ struct Module {
     items: .AST:TopItems
     imports: .AST:Imports
     file: S2:String
-    tokens: .L:Tokens
+    tokens: L:Tokens
     types: .AST:Types
     path: S2:String
 }
-// mem is borrowed
+
 fn Module-load(path-ptr: .i32, path-len: i32, mem: .S2:String) -> Module {
     local str: S2:String
-    local tokens: .L:Tokens
+    local tokens: L:Tokens
     local items: .AST:TopItems
     local types: .AST:Types
     local path: S2:String
@@ -39,11 +39,12 @@ fn Module-load(path-ptr: .i32, path-len: i32, mem: .S2:String) -> Module {
         1 CORE:exit
     }
     &str &path S2:String-unpack S:Str-new L:lex @tokens
-    ?mem ?tokens P:parse @types @items 
+    ?mem &tokens P:parse @types @items 
     
     ?items ?path ?str ?tokens ?types Module-new
 }
-fn Module-new(items: .AST:TopItems, path: S2:String, file: S2:String, tokens: .L:Tokens, types: .AST:Types) -> Module {
+
+fn Module-new(items: .AST:TopItems, path: S2:String, file: S2:String, tokens: L:Tokens, types: .AST:Types) -> Module {
     local self: Module
     ?items @self.items
     ?file @self.file
@@ -54,7 +55,6 @@ fn Module-new(items: .AST:TopItems, path: S2:String, file: S2:String, tokens: .L
     ?self
 }
 
-// module-path is borrowed
 fn Module-extract-imports(self: .Module, module-path: .S2:String) {
     local i: i32
     local item: .AST:TopItem
@@ -84,9 +84,11 @@ fn Module-extract-imports(self: .Module, module-path: .S2:String) {
         ?i 1 + @i
     }
 }
+
 fn Module-imports(self: .Module) -> .AST:Imports {
     ?self.imports
 }
+
 fn Module-free(self: Module) {
     ?self.items AST:TopItems-free
     ?self.file S2:String-free
@@ -95,102 +97,109 @@ fn Module-free(self: Module) {
     ?self.imports AST:Imports-free
     ?self.path S2:String-free
 }
+
 fn Module-items(self: .Module) -> .AST:TopItems {
     ?self.items
 }
+
 fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {
     local items: .AST:TopItems
     local item: .AST:TopItem
     local struc: .AST:Struct
     local i: i32
-    $self Module-items #items
+    ?self Module-items @items
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Struct 0 1 = break }
-        $items $i AST:TopItems-get #item
-        $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
-            $item AST:TopItem-struc #struc
-            $struc AST:Struct-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
-                $struc 0 0 = break
+        ?i ?items AST:TopItems-len = if { 0 !.AST:Struct 0 1 = break }
+        ?items ?i AST:TopItems-get @item
+        ?item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
+            ?item AST:TopItem-struc @struc
+            ?struc AST:Struct-ident L:Token-lexeme S:Str-unpack ?ident-ptr ?ident-len S:str-eq if {
+                ?struc 0 0 = break
             }
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
+
 fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Extern, .AST:Function, bool {
     local items: .AST:TopItems
     local item: .AST:TopItem
     local fun: .AST:Function
     local ext: .AST:Extern
     local i: i32
-    $self Module-items #items
+    ?self Module-items @items
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Extern 0 !.AST:Function 0 1 = break }
-        $items $i AST:TopItems-get #item
-        $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-            $item AST:TopItem-function #fun
-            $fun AST:Function-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
+        ?i ?items AST:TopItems-len = if { 0 !.AST:Extern 0 !.AST:Function 0 1 = break }
+        ?items ?i AST:TopItems-get @item
+        ?item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+            ?item AST:TopItem-function @fun
+            ?fun AST:Function-ident L:Token-lexeme S:Str-unpack ?ident-ptr ?ident-len S:str-eq if {
                 0 !.AST:Extern $fun 0 0 = break
             }
         }
-        $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
-            $item AST:TopItem-ext #ext
-            $ext AST:Extern-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
-                $ext 0 !.AST:Function 0 0 = break
+        ?item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
+            ?item AST:TopItem-ext @ext
+            ?ext AST:Extern-ident L:Token-lexeme S:Str-unpack ?ident-ptr ?ident-len S:str-eq if {
+                ?ext 0 !.AST:Function 0 0 = break
             }
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
+
 fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Memory, bool {
     local items: .AST:TopItems
     local item: .AST:TopItem
     local mem: .AST:Memory
     local i: i32
-    $self Module-items #items
+    ?self Module-items @items
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Memory 0 1 = break }
-        $items $i AST:TopItems-get #item
-        $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $item AST:TopItem-mem #mem
-            $mem AST:Memory-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
-                $mem 0 0 = break 
+        ?i ?items AST:TopItems-len = if { 0 !.AST:Memory 0 1 = break }
+        ?items ?i AST:TopItems-get @item
+        ?item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+            ?item AST:TopItem-mem @mem
+            ?mem AST:Memory-ident L:Token-lexeme S:Str-unpack ?ident-ptr ?ident-len S:str-eq if {
+                ?mem 0 0 = break 
             }
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
+
 fn Module-types(self: .Module) -> .AST:Types {
-    $self.types load32
+    ?self.types
 }
+
 fn Module-path(self: .Module) -> .S2:String {
     &self.path
 }
 
 struct Modules {
-    inner: .MAP:StringMap
+    inner: MAP:StringMap
 }
-fn Modules-new() -> .Modules {
-    local self: .Modules
-    4 A:alloc !.Modules @self
+
+fn Modules-new() -> Modules {
+    local self: Modules
     MAP:StringMap-new @self.inner
     ?self
 }
+
 fn Modules-free(self: .Modules) {
     local i: i32
     loop {
-        ?i ?self.inner MAP:StringMap-len = if { break }
-        ?self.inner ?i MAP:StringMap-get-value !.Module ~ Module-free
-        ?self.inner ?i MAP:StringMap-get-value !.i32 A:free
+        ?i &self.inner MAP:StringMap-len = if { break }
+        &self.inner ?i MAP:StringMap-get-value !.Module ~ Module-free
+        &self.inner ?i MAP:StringMap-get-value !.i32 A:free
         ?i 1 + @i
     }
     ?self.inner MAP:StringMap-free
-    ?self !.i32 A:free
 }
+
 fn Modules-insert(self: .Modules, path: S2:String, module: Module) {
     local alloced-module: .Module
     sizeof(Module) A:alloc !.Module @alloced-module
     ?module >>alloced-module
-    ?self.inner ?path ?alloced-module !i32 MAP:StringMap-insert if {
+    &self.inner ?path ?alloced-module !i32 MAP:StringMap-insert if {
         !.Module @alloced-module
         1 "WARNING: overwrote module: " IO:write-all IO:check 1 &path S2:String-unpack IO:write-all IO:check
         1 "\n" IO:write-all IO:check
@@ -200,42 +209,48 @@ fn Modules-insert(self: .Modules, path: S2:String, module: Module) {
         drop
     }
 }
+
 fn Modules-get(self: .Modules, path-ptr: .i32, path-len: i32) -> .Module, bool {
-    $self.inner load32 $path-ptr $path-len MAP:StringMap-get if {
+    &self.inner ?path-ptr ?path-len MAP:StringMap-get if {
         !.Module 0 0 =
     } else {
         !.Module 0 1 =
     }
 }
+
 fn Modules-get-key(self: .Modules, index: i32) -> .S2:String {
-    ?self.inner ?index MAP:StringMap-get-key
+    &self.inner ?index MAP:StringMap-get-key
 }
+
 fn Modules-get-value(self: .Modules, index: i32) -> .Module {
-    $self.inner load32 $index MAP:StringMap-get-value !.Module
+    &self.inner ?index MAP:StringMap-get-value !.Module
 }
+
 fn Modules-len(self: .Modules) -> i32 {
-    $self.inner load32 MAP:StringMap-len
+    &self.inner MAP:StringMap-len
 }
+
 fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {
     local i: i32
     local module: .Module
-    $self $path-ptr $path-len Modules-get if {
-        #module $module $ident-ptr $ident-len Module-find-struc
+    ?self ?path-ptr ?path-len Modules-get if {
+        @module ?module ?ident-ptr ?ident-len Module-find-struc
     } else {
         drop 0 !.AST:Struct 0 1 = 
     }
 }
+
 fn Modules-find-index(self: .Modules, module: .Module) -> i32 {
     local i: i32
     loop {
-        $i $self Modules-len = if { 
+        ?i ?self Modules-len = if { 
             2 "Modules-find-index: NOT FOUND" IO:write-all IO:check
             1 CORE:exit
         }
-        $module $self $i Modules-get-value = if { 
-            $i break 
+        ?module ?self ?i Modules-get-value = if { 
+            ?i break 
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
 

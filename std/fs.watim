@@ -20,8 +20,8 @@ extern "wasi_unstable" "path_open" fn path_open(
 ) -> i32
 
 fn create-rights(read: bool, write: bool) -> i64 {
-    $read !i64 1 rotl // 1 << 1
-    $write !i64 5 rotl
+    ?read !i64 1 rotl // 1 << 1
+    ?write !i64 5 rotl
     or
 }
 
@@ -29,12 +29,12 @@ fn open-file(path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> 
     memory res_fd: i32 4 4;
     local code: i32
     local parent-fd: i32
-    find-current-dir #code #parent-fd
-    $code 0 /= if {
-        0 $code
+    find-current-dir @code @parent-fd
+    ?code 0 /= if {
+        0 ?code
     } else {
-        $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 $res_fd path_open #code
-        $res_fd load32 $code
+        ?parent-fd 0 ?path ?path_len 0 ?rights ?inheriting_rights 0 ?res_fd path_open @code
+        ?res_fd load32 ?code
     }
 }
 
@@ -234,10 +234,10 @@ fn normalize(path-ptr: .i32, path-len: i32) -> S2:String {
 
 fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
     local index: i32
-    $path-ptr $path-len "/" drop load8 S:str-find-rev if {
-        #index $path-ptr $index
+    ?path-ptr ?path-len "/" drop load8 S:str-find-rev if {
+        @index ?path-ptr ?index
     } else {
-        drop $path-ptr $path-len
+        drop ?path-ptr ?path-len
     }
 }
 

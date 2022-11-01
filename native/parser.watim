@@ -845,13 +845,13 @@ fn Parser-parse-get-locl2(self: .Parser, file: S:Str, line: i32, column: i32) ->
         ?token L:Token-ty L:TOKEN_IDENT /= if {
             ?token L:Token-location "expected identifier" U:abort-with-location
         }
-        ?word.fields ?token L:Tokens-push
+        &word.fields ?token L:Tokens-push
     }
     ?word
 }
-fn Parser-parse-fields-access(self: .Parser, file: S:Str, line: i32, column: i32) -> .L:Tokens, .S:Str {
+fn Parser-parse-fields-access(self: .Parser, file: S:Str, line: i32, column: i32) -> L:Tokens, .S:Str {
     local token: .L:Token
-    local fields: .L:Tokens
+    local fields: L:Tokens
     local ident: .L:Token
     ?self.current ?self.tokens L:Tokens-len = if {
         &file S:Str-unpack "expected identifier found EOF" U:abort
@@ -873,7 +873,7 @@ fn Parser-parse-fields-access(self: .Parser, file: S:Str, line: i32, column: i32
         ?token L:Token-ty L:TOKEN_IDENT /= if {
             ?token L:Token-location "expected identifier" U:abort-with-location
         }
-        ?fields ?token L:Tokens-push
+        &fields ?token L:Tokens-push
     }
     ?fields ?ident L:Token-lexeme
 }
@@ -918,7 +918,7 @@ fn Parser-parse-struc-set(self: .Parser, file: S:Str, line: i32, column: i32) ->
         ?token L:Token-ty L:TOKEN_IDENT /= if {
             ?token L:Token-location "expected identifier" U:abort-with-location
         }
-        ?word.fields ?token L:Tokens-push
+        &word.fields ?token L:Tokens-push
     }
     ?word
 }

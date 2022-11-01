@@ -44,40 +44,40 @@ fn TOKEN_RIGHT_RIGHT() -> i32 { 34 }
 
 fn token-ty-name(ty: i32) -> .i32, i32 {
     loop {
-        $ty TOKEN_FN = if { "TOKEN_FN" break }
-        $ty TOKEN_IDENT = if { "TOKEN_IDENT" break }
-        $ty TOKEN_LEFT_PAREN = if { "TOKEN_LEFT_PAREN" break }
-        $ty TOKEN_RIGHT_PAREN = if { "TOKEN_RIGHT_PAREN" break }
-        $ty TOKEN_COLON = if { "TOKEN_COLON" break }
-        $ty TOKEN_DOT = if { "TOKEN_DOT" break }
-        $ty TOKEN_LEFT_CURLY = if { "TOKEN_LEFT_CURLY" break }
-        $ty TOKEN_RIGHT_CURLY = if { "TOKEN_RIGHT_CURLY" break }
-        $ty TOKEN_BANG = if { "TOKEN_BANG" break }
-        $ty TOKEN_STRING = if { "TOKEN_STRING" break }
-        $ty TOKEN_ARROW = if { "TOKEN_ARROW" break }
-        $ty TOKEN_I32 = if { "TOKEN_I32" break }
-        $ty TOKEN_I64 = if { "TOKEN_I64" break }
-        $ty TOKEN_BOOL = if { "TOKEN_BOOL" break }
-        $ty TOKEN_SEMICOLON = if { "TOKEN_SEMICOLON" break }
-        $ty TOKEN_COMMA = if { "TOKEN_COMMA" break }
-        $ty TOKEN_EXTERN = if { "TOKEN_EXTERN" break }
-        $ty TOKEN_AS = if { "TOKEN_AS" break }
-        $ty TOKEN_IMPORT = if { "TOKEN_IMPORT" break }
-        $ty TOKEN_NUMBER = if { "TOKEN_NUMBER" break }
-        $ty TOKEN_DOLLAR = if { "TOKEN_DOLLAR" break }
-        $ty TOKEN_IF = if { "TOKEN_IF" break }
-        $ty TOKEN_BREAK = if { "TOKEN_BREAK" break }
-        $ty TOKEN_HASH = if { "TOKEN_HASH" break }
-        $ty TOKEN_LOOP = if { "TOKEN_LOOP" break }
-        $ty TOKEN_MEMORY = if { "TOKEN_MEMORY" break }
-        $ty TOKEN_LOCAL = if { "TOKEN_LOCAL" break }
-        $ty TOKEN_ELSE = if { "TOKEN_ELSE" break }
-        $ty TOKEN_STRUCT = if { "TOKEN_STRUCT" break }
-        $ty TOKEN_AMPERSAND  = if { "TOKEN_AMPERSAND" break }
-        $ty TOKEN_AT  = if { "TOKEN_AT" break }
-        $ty TOKEN_QUESTION  = if { "TOKEN_QUESTION" break }
-        $ty TOKEN_TILDE  = if { "TOKEN_TILDE" break }
-        $ty TOKEN_RIGHT_RIGHT  = if { "TOKEN_RIGHT_RIGHT" break }
+        ?ty TOKEN_FN = if { "TOKEN_FN" break }
+        ?ty TOKEN_IDENT = if { "TOKEN_IDENT" break }
+        ?ty TOKEN_LEFT_PAREN = if { "TOKEN_LEFT_PAREN" break }
+        ?ty TOKEN_RIGHT_PAREN = if { "TOKEN_RIGHT_PAREN" break }
+        ?ty TOKEN_COLON = if { "TOKEN_COLON" break }
+        ?ty TOKEN_DOT = if { "TOKEN_DOT" break }
+        ?ty TOKEN_LEFT_CURLY = if { "TOKEN_LEFT_CURLY" break }
+        ?ty TOKEN_RIGHT_CURLY = if { "TOKEN_RIGHT_CURLY" break }
+        ?ty TOKEN_BANG = if { "TOKEN_BANG" break }
+        ?ty TOKEN_STRING = if { "TOKEN_STRING" break }
+        ?ty TOKEN_ARROW = if { "TOKEN_ARROW" break }
+        ?ty TOKEN_I32 = if { "TOKEN_I32" break }
+        ?ty TOKEN_I64 = if { "TOKEN_I64" break }
+        ?ty TOKEN_BOOL = if { "TOKEN_BOOL" break }
+        ?ty TOKEN_SEMICOLON = if { "TOKEN_SEMICOLON" break }
+        ?ty TOKEN_COMMA = if { "TOKEN_COMMA" break }
+        ?ty TOKEN_EXTERN = if { "TOKEN_EXTERN" break }
+        ?ty TOKEN_AS = if { "TOKEN_AS" break }
+        ?ty TOKEN_IMPORT = if { "TOKEN_IMPORT" break }
+        ?ty TOKEN_NUMBER = if { "TOKEN_NUMBER" break }
+        ?ty TOKEN_DOLLAR = if { "TOKEN_DOLLAR" break }
+        ?ty TOKEN_IF = if { "TOKEN_IF" break }
+        ?ty TOKEN_BREAK = if { "TOKEN_BREAK" break }
+        ?ty TOKEN_HASH = if { "TOKEN_HASH" break }
+        ?ty TOKEN_LOOP = if { "TOKEN_LOOP" break }
+        ?ty TOKEN_MEMORY = if { "TOKEN_MEMORY" break }
+        ?ty TOKEN_LOCAL = if { "TOKEN_LOCAL" break }
+        ?ty TOKEN_ELSE = if { "TOKEN_ELSE" break }
+        ?ty TOKEN_STRUCT = if { "TOKEN_STRUCT" break }
+        ?ty TOKEN_AMPERSAND  = if { "TOKEN_AMPERSAND" break }
+        ?ty TOKEN_AT  = if { "TOKEN_AT" break }
+        ?ty TOKEN_QUESTION  = if { "TOKEN_QUESTION" break }
+        ?ty TOKEN_TILDE  = if { "TOKEN_TILDE" break }
+        ?ty TOKEN_RIGHT_RIGHT  = if { "TOKEN_RIGHT_RIGHT" break }
         "INVALID TOKEN TYPE" break
     }
 }
@@ -102,7 +102,7 @@ struct Token {
 }
 fn Token-new(ty: i32, lexeme: S:Str, file: S:Str, line: i32, column: i32) -> .Token {
     local self: .Token
-    sizeof(Token) A:alloc !.Token #self
+    sizeof(Token) A:alloc !.Token @self
     &file S:Str-unpack "import " S:str-is-prefix if {
         2 "HERE\n" IO:write-all IO:check
         0 0 / drop
@@ -117,7 +117,7 @@ fn Token-new(ty: i32, lexeme: S:Str, file: S:Str, line: i32, column: i32) -> .To
     ?self
 }
 fn Token-ty(token: .Token) -> i32 {
-    $token.ty load32
+    ?token.ty
 }
 fn Token-lexeme(token: .Token) -> .S:Str {
     &token.lexeme
@@ -132,7 +132,7 @@ fn Token-column(token: .Token) -> i32 {
     ?token.column
 }
 fn Token-set-string(token: .Token, string: .S:String) {
-    $token.string $string store32
+    ?string @token.string
 }
 fn Token-free(token: .Token) {
     ?token.string !i32 0 /= if {
@@ -156,35 +156,31 @@ struct Tokens {
     inner: .IV:I32Vec
 }
 
-fn Tokens-new() -> .Tokens {
-    local self: .Tokens
-    local inner: .IV:I32Vec
-    4 A:alloc !.Tokens #self
-    IV:I32Vec-new #inner
-    $self.inner $inner store32
-    $self
+fn Tokens-new() -> Tokens {
+    local self: Tokens
+    IV:I32Vec-new @self.inner
+    ?self
 }
-fn Tokens-free(tokens: .Tokens) {
+fn Tokens-free(tokens: Tokens) {
     local i: i32
     loop {
-        $i $tokens Tokens-len = if { break }
-        $tokens $i Tokens-get Token-free
-        $i 1 + #i
+        ?i &tokens Tokens-len = if { break }
+        &tokens ?i Tokens-get Token-free
+        ?i 1 + @i
     }
-    $tokens Tokens-free-container
+    ?tokens Tokens-free-container
 }
 fn Tokens-push(tokens: .Tokens, token: .Token) {
-    $tokens.inner load32 $token !i32 IV:I32Vec-push
+    ?tokens.inner ?token !i32 IV:I32Vec-push
 }
 fn Tokens-get(tokens: .Tokens, index: i32) -> .Token {
-    $tokens.inner load32 $index IV:I32Vec-get !.Token
+    ?tokens.inner ?index IV:I32Vec-get !.Token
 }
 fn Tokens-len(tokens: .Tokens) -> i32 {
-    $tokens.inner load32 IV:I32Vec-len
+    ?tokens.inner IV:I32Vec-len
 }
-fn Tokens-free-container(self: .Tokens) {
-    $self.inner load32 IV:I32Vec-free
-    $self !.i32 A:free
+fn Tokens-free-container(self: Tokens) {
+    ?self.inner IV:I32Vec-free
 }
 fn Tokens-print(self: .Tokens, fd: i32) {
     local i: i32
@@ -198,7 +194,7 @@ fn Tokens-print(self: .Tokens, fd: i32) {
 struct Lexer {
     input: S:Str
     index: i32
-    tokens: .Tokens
+    tokens: Tokens
     file: S:Str
     line: i32
     column: i32
@@ -216,16 +212,14 @@ fn Lexer-new(input-ptr: .i32, input-len: i32, file: S:Str) -> Lexer {
     ?self
 }
 // consumes Lexer
-fn Lexer-run(lexer: Lexer) -> .Tokens {
-    local tokens: .Tokens
+fn Lexer-run(lexer: Lexer) -> Tokens {
     local token: .Token
     loop {
         &lexer Lexer-next @token
         ?token !i32 0 = if { break }
-        ?lexer.tokens ?token Tokens-push
+        &lexer.tokens ?token Tokens-push
     }
-    ?lexer.tokens @tokens
-    ?tokens
+    ?lexer.tokens
 }
 fn Lexer-next(lexer: .Lexer) -> .Token {
     local char: i32
@@ -481,7 +475,7 @@ fn Lexer-lex-string(lexer: .Lexer) -> .Token {
     local token: .Token
     local line: i32
     local column: i32
-    S:String-empty #string
+    S:String-empty @string
     ?lexer.index @lexer.start
 
     ?lexer.line @line
@@ -593,23 +587,23 @@ fn allowed-in-ident(char: i32) -> bool {
     local disallowed-len: i32
     local res: bool
     local i: i32
-    0 0 = #res
-    "#${}() ;\t\n:,.!@&?~" #disallowed-len #disallowed
+    0 0 = @res
+    "#${}() ;\t\n:,.!@&?~" @disallowed-len @disallowed
     loop {
-        $i $disallowed-len = if { break }
-        $disallowed $i + load8 $char = if { 
-            0 1 = #res break
+        ?i ?disallowed-len = if { break }
+        ?disallowed ?i + load8 ?char = if { 
+            0 1 = @res break
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
-    $res
+    ?res
 }
 fn is-ascii-digit(char: i32) -> bool {
-    $char 48 >= $char 57 <= and
+    ?char 48 >= ?char 57 <= and
 }
 
 // input and file is borrowed
-fn lex(input: .S2:String, file: S:Str) -> .Tokens {
+fn lex(input: .S2:String, file: S:Str) -> Tokens {
     ?input S2:String-unpack ?file Lexer-new Lexer-run
 }
 

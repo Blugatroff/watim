@@ -30,9 +30,9 @@ fn main() {
     local args: S2:StringVec
     local mem: S2:String
     local path: .S2:String
-    local formatter: .FMT:Formatter
-    local formatted: .S:String
-    local modules: .M:Modules
+    local formatter: FMT:Formatter
+    local formatted: S2:String
+    local modules: M:Modules
     local stack-start: i32
 
     enable-logging
@@ -52,20 +52,20 @@ fn main() {
     }
 
     M:Modules-new @modules
-    ?modules &mem ?path S2:String-unpack load-module-recursive
-    ?modules R:resolve
-    &mem S2:String-len ?modules MEM:process @stack-start
-    ?modules C:check
+    &modules &mem ?path S2:String-unpack load-module-recursive
+    &modules R:resolve
+    &mem S2:String-len &modules MEM:process @stack-start
+    &modules C:check
 
     FMT:Formatter-new @formatter
-    ?formatter ?stack-start &mem ?modules GEN:generate
+    &formatter ?stack-start &mem &modules GEN:generate
     ?formatter FMT:Formatter-into-string @formatted
-    1 ?formatted S:String-unpack IO:write-all IO:check
+    1 &formatted S2:String-unpack IO:write-all IO:check
     1 "\n" IO:write-all IO:check
     2 A:report
-    ?formatted S:String-free
+    ?formatted S2:String-free
 
-    ?modules M:Modules-free
+    &modules M:Modules-free
     ?args S2:StringVec-free
     ?mem S2:String-free
     FS:uninit

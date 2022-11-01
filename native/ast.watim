@@ -70,7 +70,6 @@ fn intrinsic-name(intrinsic: i32) -> .i32, i32 {
 
 fn WORD_CALL() -> i32 { 1 }
 fn WORD_LOCAL() -> i32 { 2 }
-fn WORD_GLOBAL_MEM() -> i32 { 3 }
 fn WORD_SET() -> i32 { 4 }
 fn WORD_NUMBER() -> i32 { 5 }
 fn WORD_INTRINSIC() -> i32 { 6 }
@@ -93,7 +92,6 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
         $ty WORD_CALL = if { "WORD_CALL" break }
         $ty WORD_LOCAL = if { "WORD_LOCAL" break }
-        $ty WORD_GLOBAL_MEM = if { "WORD_GLOBAL_MEM" break }
         $ty WORD_SET = if { "WORD_SET" break }
         $ty WORD_NUMBER = if { "WORD_NUMBER" break }
         $ty WORD_INTRINSIC = if { "WORD_INTRINSIC" break }
@@ -144,25 +142,6 @@ fn Words-push(self: .Words, word: .Word) {
 }
 fn Words-len(self: .Words) -> i32 {
     $self.inner load32 IV:I32Vec-len
-}
-fn Words-format(self: .Words, formatter: .FMT:Formatter) {
-    local i: i32
-    $self Words-len 0 = if {
-        $formatter "[]" FMT:Formatter-write
-    } else {
-        $formatter "[\n" FMT:Formatter-write
-        $formatter FMT:Formatter-indent
-        loop {
-            $self Words-len $i = if { break }
-            $formatter FMT:Formatter-write-indent
-            $self $i Words-get $formatter Word-format
-            $formatter "\n" FMT:Formatter-write
-            $i 1 + #i
-        }
-        $formatter FMT:Formatter-dedent
-        $formatter FMT:Formatter-write-indent
-        $formatter "]" FMT:Formatter-write
-    }
 }
 
 fn TYPE_I32() -> i32 { 1 }
@@ -327,7 +306,7 @@ fn Types-free-container(self: .Types) {
     $self !.i32 A:free
 }
 fn Types-push(self: .Types, f: .Type) {
-    $self.inner load32 $f !i32 IV:I32Vec-push
+    ?self.inner ?f !i32 IV:I32Vec-push
 }
 fn Types-pop(self: .Types) -> .Type {
     $self.inner load32 IV:I32Vec-pop !.Type
@@ -344,32 +323,39 @@ fn Types-clone-slice(self: .Types, start: i32, end: i32) -> .Types {
     $new
 }
 fn Types-len(self: .Types) -> i32 {
-    $self.inner load32 IV:I32Vec-len
+    ?self.inner IV:I32Vec-len
 }
 fn Types-get(self: .Types, index: i32) -> .Type {
-    $self.inner load32 $index IV:I32Vec-get !.Type
+    ?self.inner ?index IV:I32Vec-get !.Type
 }
 fn Types-format(self: .Types, formatter: .FMT:Formatter) {
     local i: i32
-    0 $self Types-len = if {
-        $formatter "[]" FMT:Formatter-write
+    0 ?self Types-len = if {
+        ?formatter "[]" FMT:Formatter-write
     } else {
-        $formatter "[\n" FMT:Formatter-write
-        $formatter FMT:Formatter-indent
+        ?formatter "[" FMT:Formatter-write
         loop {
-            $i $self Types-len = if { break }
-            $formatter FMT:Formatter-write-indent
-            $self $i Types-get $formatter Type-format
-            $formatter ",\n" FMT:Formatter-write
-            $i 1 + #i
+            ?i ?self Types-len = if { break }
+            ?self ?i Types-get ?formatter Type-format
+            ?i 1 + ?self Types-len < if {
+                ?formatter ", " FMT:Formatter-write
+            }
+            ?i 1 + @i
         }
-        $formatter FMT:Formatter-dedent
-        $formatter FMT:Formatter-write-indent
-        $formatter "]" FMT:Formatter-write
+        ?formatter "]" FMT:Formatter-write
     }
 }
+fn Types-print(self: .Types, fd: i32) {
+    local formatter: FMT:Formatter
+    local out: S2:String
+    FMT:Formatter-new @formatter
+    ?self &formatter Types-format
+    ?formatter FMT:Formatter-into-string @out
+    ?fd &out S2:String-unpack IO:write-all IO:check
+    ?out S2:String-free
+}
 fn Types-last(self: .Types) -> .Type {
-    $self $self Types-len 1 - Types-get
+    ?self ?self Types-len 1 - Types-get
 }
 
 struct If {
@@ -423,203 +409,97 @@ fn If-rets(self: .If) -> .Types {
 fn If-set-rets(self: .If, params: .Types) {
     $self.rets $params store32
 }
-fn If-format(self: .If, formatter: .FMT:Formatter) {
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-
-    $formatter FMT:Formatter-write-indent
-    $formatter "params: " FMT:Formatter-write
-    $self If-params $formatter Types-format
-    $formatter "\n" FMT:Formatter-write
-
-    $formatter FMT:Formatter-write-indent
-    $formatter "rets: " FMT:Formatter-write
-    $self If-rets $formatter Types-format
-    $formatter "\n" FMT:Formatter-write
-
-    $formatter FMT:Formatter-write-indent
-    $formatter "body: " FMT:Formatter-write
-    $self.body load32 $formatter Words-format
-    $formatter FMT:Formatter-dedent
-    $self.el load32 !i32 0 /= if {
-        $formatter FMT:Formatter-indent
-        $formatter "\n" FMT:Formatter-write
-        $formatter FMT:Formatter-write-indent
-        $formatter "else: " FMT:Formatter-write
-        $self.el load32 $formatter Words-format
-        $formatter FMT:Formatter-dedent
-    }
-    $formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
-}
 
 struct Word {
     file: S:Str
     ty: i32
     line: i32
     column: i32
-    // for WORD_CALL, WORD_LOCAL, WORD_GLOBAL_MEM, WORD_SET, WORD_DEREF, WORD_STRUCT_SET, WORD_GET_REF, WORD_SIZEOF
     ident: .S:Str
-    // for WORD_DEREF
     offset: i32
-    // for WORD_CALL, WORD_GLOBAL_MEM
     qualifier: .S:Str
-    // for WORD_NUMBER
     number: i32
-    // for WORD_INTRINSIC
     intrinsic: i32
-    // for WORD_STRING
     addr: i32
-    // for WORD_STRING
     size: i32
-    // for WORD_FIELD, WORD_STRUCT_SET, WORD_GET_REF
     offset: i32
-    // for WORD_CALL, WORD_LOCAL
     module: i32
-
-    // for WORD_STRUCT_SET
-    fields: .L:Tokens
-    // for WORD_LOCAL2
+    fields: L:Tokens
     loads: .IV:I32Vec
-    // for WORD_LOOP
     lop: .Words
-    // for WORD_LOOP, WORD_CALL
     rets: .Types
-
-    // for WORD_IF
     iff: .If
-
-    // for WORD_CAST, WORD_INTRINSIC, WORD_STRUCT_SET, WORD_LOCAL2, WORD_LOAD, WORD_DEREF
     type: .Type
-    // for WORD_CAST, WORD_DEREF
     src-type: .Type
 }
 fn Word-new(ty: i32, file: S:Str, line: i32, column: i32) -> .Word {
     local self: .Word
     sizeof(Word) A:alloc !.Word #self
     ?file @self.file
-    $self.ty $ty store32
-    $self.line $line store32
-    $self.column $column store32
-    $self.ident 0 !.S:Str store32
-    $self.lop 0 !.Words store32
-    $self.qualifier 0 !.S:Str store32
-    $self.number 0 store32
-    $self.intrinsic 0 store32
-    $self.addr 0 store32
-    $self.size 0 store32
-    $self.offset 0 store32
-    $self.lop 0 !.Words store32
-    $self.iff 0 !.If store32
-    $self.type 0 !.Type store32
-    $self.offset 0 store32
-    $self.module 0 store32
-    $self.rets 0 !.Types store32
-    $self.src-type 0 !.Type store32
-    $self.fields 0 !.L:Tokens store32
-    $self.loads 0 !.IV:I32Vec store32
-    $self
+    ?ty @self.ty
+    ?line @self.line
+    ?column @self.column
+    0 !.S:Str @self.qualifier
+    ?self
 }
 fn Word-free(self: .Word) {
-    $self.iff load32 !i32 0 /= if {
-        $self.iff load32 If-free
+    ?self.ty WORD_IF = if {
+        ?self.iff If-free
     }
-    $self.lop load32 !i32 0 /= if {
-        $self.lop load32 Words-free
+    ?self.ty WORD_LOOP = if {
+        ?self.lop Words-free
     }
-    $self.rets load32 !i32 0 /= if {
-        $self.rets load32 Types-free-container
+    ?self.ty WORD_STRUCT_SET = 
+    ?self.ty WORD_GET_REF = or
+    ?self.ty WORD_LOCAL2 = or
+    ?self.ty WORD_STORE = or
+    ?self.ty WORD_GLOBAL = or
+    if {
+        ?self.fields L:Tokens-free-container
     }
-    $self.fields load32 !i32 0 /= if {
-        $self.fields load32 L:Tokens-free-container
+    ?self.ty WORD_STRUCT_SET = 
+    ?self.ty WORD_GET_REF = or
+    ?self.ty WORD_LOCAL2 = or
+    ?self.ty WORD_STORE = or
+    if {
+        ?self.loads IV:I32Vec-free
     }
-    $self.loads load32 !i32 0 /= if {
-        $self.loads load32 IV:I32Vec-free
+    ?self.ty WORD_LOOP = 
+    ?self.ty WORD_CALL = or 
+    if {
+        ?self.rets Types-free-container
     }
-    $self !.i32 A:free
+    ?self !.i32 A:free
 }
 fn Word-location(self: .Word) -> .i32, i32, i32, i32 {
     &self.file S:Str-unpack ?self.line ?self.column
 }
 fn Word-ty(self: .Word) -> i32 {
-    $self.ty load32
+    ?self.ty
 }
 fn Word-type(self: .Word) -> .Type {
-    $self.type load32
+    ?self.type
 }
 fn Word-iff(self: .Word) -> .If {
-    $self.iff load32 
+    ?self.iff
 }
 fn Word-lop(self: .Word) -> .Words {
-    $self.lop load32
+    ?self.lop
 }
 fn Word-ident(self: .Word) -> .S:Str {
-    $self.ident load32
+    ?self.ident
 }
 fn Word-words(self: .Word) -> .Words {
-    $self.lop load32
+    ?self.lop
 }
 fn Word-rets(self: .Word) -> .Types {
-    $self.rets load32
+    ?self.rets
 }
 fn Word-intrinsic(self: .Word) -> i32 {
-    $self.intrinsic load32
+    ?self.intrinsic
 }
 fn Word-module(self: .Word) -> i32 {
-    $self.module load32
-}
-fn Word-format(self: .Word, formatter: .FMT:Formatter) {
-    $formatter "{ ty: " FMT:Formatter-write
-    $formatter $self.ty load32 word-ty-name FMT:Formatter-write
-    $self.ty load32 WORD_NUMBER = if {
-        $formatter ", " FMT:Formatter-write
-        $formatter "value: " FMT:Formatter-write
-        $self.number load32 $formatter U:i32-format
-    }
-    $self.ty load32 WORD_STRING = if {
-        $formatter ", " FMT:Formatter-write
-        $formatter "addr: " FMT:Formatter-write
-        $self.addr load32 $formatter U:i32-format
-        $formatter ", size: " FMT:Formatter-write
-        $self.size load32 $formatter U:i32-format
-    }
-    $self.ty load32 WORD_CALL = if {
-        $formatter ", ident: \"" FMT:Formatter-write
-        $formatter $self.ident load32 S:Str-unpack FMT:Formatter-write
-        $formatter "\"" FMT:Formatter-write
-        $self.qualifier load32 !i32 0 /= if {
-            $formatter ", qualifier: \"" FMT:Formatter-write
-            $formatter $self.qualifier load32 S:Str-unpack FMT:Formatter-write
-            $formatter "\"" FMT:Formatter-write
-        }
-    }
-    $self.ty load32 WORD_LOCAL = 
-    $self.ty load32 WORD_SET = or 
-    $self.ty load32 WORD_DEREF = or 
-    if {
-        $formatter ", " FMT:Formatter-write
-        $formatter "ident: \"" FMT:Formatter-write
-        $formatter $self.ident load32 S:Str-unpack FMT:Formatter-write
-        $formatter "\"" FMT:Formatter-write
-    }
-    $self.ty load32 WORD_IF = if {
-        $formatter ", iff: " FMT:Formatter-write
-        $self.iff load32 $formatter If-format
-    }
-    $self.ty load32 WORD_LOOP = if {
-        $formatter ", lop: " FMT:Formatter-write
-        $self.lop load32 $formatter Words-format
-    }
-    $self.ty load32 WORD_INTRINSIC = if {
-        $formatter ", kind: " FMT:Formatter-write
-        $formatter $self.intrinsic load32 intrinsic-name FMT:Formatter-write
-    }
-    $self.ty load32 WORD_CAST = if {
-        $formatter ", type: " FMT:Formatter-write
-        $self.type load32 $formatter Type-format
-    }
-    $formatter ", }" FMT:Formatter-write
+    ?self.module
 }
 
 struct Local {
@@ -637,7 +517,7 @@ fn Local-ident(self: .Local) -> .L:Token {
     $self.ident load32
 }
 fn Local-type(self: .Local) -> .Type {
-    $self.type load32
+    ?self.type
 }
 fn Local-set-type(self: .Local, type: .Type) {
     $self.type $type store32
@@ -734,7 +614,7 @@ fn Memory-ident(self: .Memory) -> .L:Token {
     $self.locl load32 Local-ident
 }
 fn Memory-type(self: .Memory) -> .Type {
-    $self.locl load32 Local-type
+    ?self.locl Local-type
 }
 fn Memory-set-type(self: .Memory, type: .Type) {
     $self.locl load32 $type Local-set-type
@@ -1264,31 +1144,30 @@ fn TopItems-get(self: .TopItems, index: i32) -> .TopItem {
 }
 
 struct Imports {
-    map: .M:StringMap
+    map: M:StringMap
 }
 fn Imports-new() -> .Imports {
     local self: .Imports
-    4 A:alloc !.Imports #self
-    $self.map M:StringMap-new store32
-    $self
+    sizeof(Imports) A:alloc !.Imports @self
+    M:StringMap-new @self.map
+    ?self
 }
 fn Imports-free(self: .Imports) {
     local i: i32
     loop {
-        $i $self.map load32 M:StringMap-len = if { break }
-        $self.map load32 $i M:StringMap-get-value !.S:String S:String-free
-        $i 1 + #i
+        ?i &self.map M:StringMap-len = if { break }
+        &self.map ?i M:StringMap-get-value !.S:String S:String-free
+        ?i 1 + @i
     }
-    $self.map load32 M:StringMap-free
-    $self !.i32 A:free
+    ?self.map M:StringMap-free
+    ?self !.i32 A:free
 }
 fn Imports-insert(self: .Imports, ident: S2:String, path: S2:String) {
     local alloced-path: .S2:String
-    // TODO: make this sizeof work:
-    // sizeof(S2:String) A:alloc !.S2:String @alloced-path
+    // TODO: make this work -> sizeof(S2:String) A:alloc !.S2:String @alloced-path
     12 A:alloc !.S2:String @alloced-path
     ?path >>alloced-path
-    ?self.map ?ident ?alloced-path !i32 M:StringMap-insert if {
+    &self.map ?ident ?alloced-path !i32 M:StringMap-insert if {
         1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
         !.S2:String ~ S2:String-free
     } else {
@@ -1296,20 +1175,20 @@ fn Imports-insert(self: .Imports, ident: S2:String, path: S2:String) {
     }
 }
 fn Imports-get-key(self: .Imports, index: i32) -> .S2:String {
-    $self.map load32 $index M:StringMap-get-key !.S2:String
+    &self.map ?index M:StringMap-get-key
 }
 fn Imports-get-value(self: .Imports, index: i32) -> .S2:String {
-    $self.map load32 $index M:StringMap-get-value !.S2:String
+    &self.map ?index M:StringMap-get-value !.S2:String
 }
 fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S2:String, bool {
     local v: i32
-    $self.map load32 $ident-ptr $ident-len M:StringMap-get if {
-        #v $v !.S2:String 0 0 =
+    &self.map ?ident-ptr ?ident-len M:StringMap-get if {
+        @v ?v !.S2:String 0 0 =
     } else {
         drop 0 !.S2:String 0 1 =
     }
 }
 fn Imports-len(self: .Imports) -> i32 {
-    $self.map load32 M:StringMap-len
+    &self.map M:StringMap-len
 }
 

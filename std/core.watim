@@ -1,45 +1,45 @@
 extern "wasi_unstable" "proc_exit" fn raw_exit(code: i32)
 
 fn dup(a: i32) -> i32, i32 {
-    $a $a
+    ?a ?a
 }
 
 fn max(a: i32, b: i32) -> i32 {
-    $a $b > if { $a } else { $b }
+    ?a ?b > if { ?a } else { ?b }
 }
 
 fn min(a: i32, b: i32) -> i32 {
-    $a $b < if { $a } else { $b }
+    ?a ?b < if { ?a } else { ?b }
 }
 
 fn align-to(n: i32, to: i32) -> i32 {
-    $n $to $n $to % - $n $to % 0 > !i32 * +
+    ?n ?to ?n ?to % - ?n ?to % 0 > !i32 * +
 }
 
 fn copy(a: .i32, b: .i32, len: i32) {
-    $b $a $len mem-copy
+    ?b ?a ?len mem-copy
 }
 
 fn exit(code: i32) {
-    $code raw_exit
+    ?code raw_exit
 }
 
 fn escape(char: i32, dest: .i32) -> i32 {
     local hex-digits-ptr: .i32
     local hex-digits-len: i32
-    "0123456789abcdef" #hex-digits-len #hex-digits-ptr
+    "0123456789abcdef" @hex-digits-len @hex-digits-ptr
     loop {
-        $char "\t" drop load8 = if { "\\t" $dest flip copy 2 break }
-        $char "\r" drop load8 = if { "\\r" $dest flip copy 2 break }
-        $char "\n" drop load8 = if { "\\n" $dest flip copy 2 break }
-        $char "\\" drop load8 = if { "\\\\" $dest flip copy 2 break }
-        $char "\"" drop load8 = if { "\\\"" $dest flip copy 2 break}
-        $char 32 >= $char 126 <= and if { $dest $char store8 1 break }
-        "\\x" $dest flip copy
-        $dest 2 + #dest
-        $dest $hex-digits-ptr $char 4 rotr 255 and + load8 store8
-        $dest 1 + #dest
-        $dest $hex-digits-ptr $char 255 and + load8 store8
+        ?char "\t" drop load8 = if { "\\t" ?dest flip copy 2 break }
+        ?char "\r" drop load8 = if { "\\r" ?dest flip copy 2 break }
+        ?char "\n" drop load8 = if { "\\n" ?dest flip copy 2 break }
+        ?char "\\" drop load8 = if { "\\\\" ?dest flip copy 2 break }
+        ?char "\"" drop load8 = if { "\\\"" ?dest flip copy 2 break}
+        ?char 32 >= ?char 126 <= and if { ?dest ?char store8 1 break }
+        "\\x" ?dest flip copy
+        ?dest 2 + @dest
+        ?dest ?hex-digits-ptr ?char 4 rotr 255 and + load8 store8
+        ?dest 1 + @dest
+        ?dest ?hex-digits-ptr ?char 255 and + load8 store8
         4 break
     }
 }
