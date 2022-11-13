@@ -34,7 +34,7 @@ fn i32-format(self: i32, formatter: .FMT:Formatter) {
     ?formatter ?buf ?self ?buf IO:print-i32-into FMT:Formatter-write
 }
 
-fn format-i32(n: i32) -> .S:String {
+fn format-i32(n: i32) -> S:String {
     memory buf: i32 24;
     ?buf ?n ?buf IO:print-i32-into S:String-new
 }

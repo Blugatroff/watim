@@ -1,6 +1,6 @@
 import "../std/alloc.watim" as A
 import "../std/string.watim" as S
-import "../std/string2.watim" as S2
+import "../std/str.watim" as STR
 import "../std/i32vec.watim" as IV
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
@@ -290,10 +290,10 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
         }
         $self Type-ty TYPE_STRUCT = if {
             $self.module load32 !i32 0 /= if {
-                $formatter $self.module load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+                $formatter $self.module load32 L:Token-lexeme STR:Str-unpack FMT:Formatter-write
                 $formatter ":" FMT:Formatter-write
             }
-            $formatter $self Type-struc Struct-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+            $formatter $self Type-struc Struct-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
             break
         }
         2 "invalid Type-ty" IO:write-all IO:check
@@ -379,12 +379,12 @@ fn Types-format(self: .Types, formatter: .FMT:Formatter) {
 }
 fn Types-print(self: .Types, fd: i32) {
     local formatter: FMT:Formatter
-    local out: S2:String
+    local out: S:String
     FMT:Formatter-new @formatter
     ?self &formatter Types-format
     ?formatter FMT:Formatter-into-string @out
-    ?fd &out S2:String-unpack IO:write-all IO:check
-    ?out S2:String-free
+    ?fd &out S:String-unpack IO:write-all IO:check
+    ?out S:String-free
 }
 fn Types-last(self: .Types) -> .Type {
     ?self ?self Types-len 1 - Types-get
@@ -443,13 +443,13 @@ fn If-set-rets(self: .If, params: .Types) {
 }
 
 struct Word {
-    file: S:Str
+    file: STR:Str
     ty: i32
     line: i32
     column: i32
-    ident: .S:Str
+    ident: .STR:Str
     offset: i32
-    qualifier: .S:Str
+    qualifier: .STR:Str
     number: i32
     intrinsic: i32
     addr: i32
@@ -464,14 +464,14 @@ struct Word {
     type: .Type
     src-type: .Type
 }
-fn Word-new(ty: i32, file: S:Str, line: i32, column: i32) -> .Word {
+fn Word-new(ty: i32, file: STR:Str, line: i32, column: i32) -> .Word {
     local self: .Word
-    sizeof(Word) A:alloc !.Word #self
+    sizeof(Word) A:alloc !.Word @self
     ?file @self.file
     ?ty @self.ty
     ?line @self.line
     ?column @self.column
-    0 !.S:Str @self.qualifier
+    0 !.STR:Str @self.qualifier
     ?self
 }
 fn Word-free(self: .Word) {
@@ -504,7 +504,7 @@ fn Word-free(self: .Word) {
     ?self !.i32 A:free
 }
 fn Word-location(self: .Word) -> .i32, i32, i32, i32 {
-    &self.file S:Str-unpack ?self.line ?self.column
+    &self.file STR:Str-unpack ?self.line ?self.column
 }
 fn Word-ty(self: .Word) -> i32 {
     ?self.ty
@@ -518,7 +518,7 @@ fn Word-iff(self: .Word) -> .If {
 fn Word-lop(self: .Word) -> .Words {
     ?self.lop
 }
-fn Word-ident(self: .Word) -> .S:Str {
+fn Word-ident(self: .Word) -> .STR:Str {
     ?self.ident
 }
 fn Word-words(self: .Word) -> .Words {
@@ -556,7 +556,7 @@ fn Local-set-type(self: .Local, type: .Type) {
 }
 fn Local-format(self: .Local, formatter: .FMT:Formatter) {
     $formatter "{ ident: \"" FMT:Formatter-write
-    $formatter $self.ident load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self.ident load32 L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\", type: " FMT:Formatter-write
     $self.type load32 $formatter Type-format
     $formatter " }" FMT:Formatter-write
@@ -668,7 +668,7 @@ fn Memory-alignment(self: .Memory) -> i32 {
 }
 fn Memory-format(self: .Memory, formatter: .FMT:Formatter) {
     $formatter "{ ident: " FMT:Formatter-write
-    $formatter $self Memory-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self Memory-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter ", type: " FMT:Formatter-write
     $self Memory-type $formatter Type-format
     $formatter ", size: " FMT:Formatter-write
@@ -854,15 +854,15 @@ fn Extern-format(self: .Extern, formatter: .FMT:Formatter) {
     $formatter FMT:Formatter-indent
     $formatter FMT:Formatter-write-indent
     $formatter "module: \"" FMT:Formatter-write 
-    $formatter $self.module load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self.module load32 L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\",\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "name: \"" FMT:Formatter-write
-    $formatter $self.name load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self.name load32 L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\",\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "ident: \"" FMT:Formatter-write
-    $formatter $self.ident load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self.ident load32 L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\",\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "params: " FMT:Formatter-write
@@ -899,15 +899,15 @@ fn Import-ident(self: .Import) -> .L:Token {
 }
 fn Import-format(self: .Import, formatter: .FMT:Formatter) {
     $formatter "{ path: " FMT:Formatter-write
-    $formatter $self Import-path L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self Import-path L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter ", ident: \"" FMT:Formatter-write
-    $formatter $self Import-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self Import-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\" }" FMT:Formatter-write
 }
 fn Import-path-content(self: .Import) -> .i32, i32 {
     local ptr: .i32
     local len: i32
-    $self Import-path L:Token-lexeme S:Str-unpack #len #ptr
+    $self Import-path L:Token-lexeme STR:Str-unpack #len #ptr
     $ptr 1 + $len 2 -
 }
 
@@ -933,7 +933,7 @@ fn Field-type(self: .Field) -> .Type {
 }
 fn Field-format(self: .Field, formatter: .FMT:Formatter) {
     $formatter "{ ident: \"" FMT:Formatter-write
-    $formatter $self Field-ident L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self Field-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\", type: " FMT:Formatter-write
     $self Field-type $formatter Type-format
     $formatter " }" FMT:Formatter-write
@@ -1007,7 +1007,7 @@ fn Struct-format(self: .Struct, formatter: .FMT:Formatter) {
     $formatter FMT:Formatter-indent
     $formatter FMT:Formatter-write-indent
     $formatter "ident: \"" FMT:Formatter-write
-    $formatter $self.ident load32 L:Token-lexeme S:Str-unpack FMT:Formatter-write
+    $formatter $self.ident load32 L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter "\"\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "fields: " FMT:Formatter-write
@@ -1030,7 +1030,7 @@ fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, 
     $self Struct-fields #fields
     loop {
         $i $fields Fields-len = if { 0 !.Field 0 0 1 = break }
-        $fields $i Fields-get Field-ident L:Token-lexeme S:Str-unpack $ident-ptr $ident-len S:str-eq if {
+        $fields $i Fields-get Field-ident L:Token-lexeme STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
             $fields $i Fields-get
             $offset 0 0 = break
         }
@@ -1188,36 +1188,37 @@ fn Imports-free(self: .Imports) {
     local i: i32
     loop {
         ?i &self.map M:StringMap-len = if { break }
-        &self.map ?i M:StringMap-get-value !.S:String S:String-free
+        &self.map ?i M:StringMap-get-value !.S:String ~ S:String-free // deallocate string itself
+        &self.map ?i M:StringMap-get-value !.i32 A:free // deallocate string struct
         ?i 1 + @i
     }
     ?self.map M:StringMap-free
     ?self !.i32 A:free
 }
-fn Imports-insert(self: .Imports, ident: S2:String, path: S2:String) {
-    local alloced-path: .S2:String
-    // TODO: make this work -> sizeof(S2:String) A:alloc !.S2:String @alloced-path
-    12 A:alloc !.S2:String @alloced-path
+fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
+    local alloced-path: .S:String
+    // TODO: make this work -> sizeof(S:String) A:alloc !.S:String @alloced-path
+    12 A:alloc !.S:String @alloced-path
     ?path >>alloced-path
     &self.map ?ident ?alloced-path !i32 M:StringMap-insert if {
         1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
-        !.S2:String ~ S2:String-free
+        !.S:String ~ S:String-free
     } else {
         drop
     }
 }
-fn Imports-get-key(self: .Imports, index: i32) -> .S2:String {
+fn Imports-get-key(self: .Imports, index: i32) -> .S:String {
     &self.map ?index M:StringMap-get-key
 }
-fn Imports-get-value(self: .Imports, index: i32) -> .S2:String {
-    &self.map ?index M:StringMap-get-value !.S2:String
+fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
+    &self.map ?index M:StringMap-get-value !.S:String
 }
-fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S2:String, bool {
+fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S:String, bool {
     local v: i32
     &self.map ?ident-ptr ?ident-len M:StringMap-get if {
-        @v ?v !.S2:String 0 0 =
+        @v ?v !.S:String 0 0 =
     } else {
-        drop 0 !.S2:String 0 1 =
+        drop 0 !.S:String 0 1 =
     }
 }
 fn Imports-len(self: .Imports) -> i32 {

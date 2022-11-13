@@ -1,5 +1,5 @@
-import "../std/string.watim" as S
-import "../std/string2.watim" as S2
+import "../std/string.watim" as S2
+import "../std/str.watim" as STR
 import "../std/i32vec.watim" as IV
 import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
@@ -93,23 +93,22 @@ fn print-location(fd: i32, file-ptr: .i32, file-len: i32, line: i32, column: i32
 
 struct Token {
     ty: i32
-    lexeme: S:Str
-    string: .S:String
-    file: S:Str
+    lexeme: STR:Str
+    string: S2:String
+    file: STR:Str
     line: i32
     column: i32
     number: i32
 }
-fn Token-new(ty: i32, lexeme: S:Str, file: S:Str, line: i32, column: i32) -> .Token {
+fn Token-new(ty: i32, lexeme: STR:Str, file: STR:Str, line: i32, column: i32) -> .Token {
     local self: .Token
     sizeof(Token) A:alloc !.Token @self
-    &file S:Str-unpack "import " S:str-is-prefix if {
+    &file STR:Str-unpack "import " STR:str-is-prefix if {
         2 "HERE\n" IO:write-all IO:check
         0 0 / drop
     }
     ?ty @self.ty
     ?lexeme @self.lexeme
-    0 !.S:String @self.string
     ?file @self.file
     ?line @self.line
     ?column @self.column
@@ -119,10 +118,10 @@ fn Token-new(ty: i32, lexeme: S:Str, file: S:Str, line: i32, column: i32) -> .To
 fn Token-ty(token: .Token) -> i32 {
     ?token.ty
 }
-fn Token-lexeme(token: .Token) -> .S:Str {
+fn Token-lexeme(token: .Token) -> .STR:Str {
     &token.lexeme
 }
-fn Token-file(token: .Token) -> .S:Str {
+fn Token-file(token: .Token) -> .STR:Str {
     &token.file
 }
 fn Token-line(token: .Token) -> i32 {
@@ -131,22 +130,19 @@ fn Token-line(token: .Token) -> i32 {
 fn Token-column(token: .Token) -> i32 {
     ?token.column
 }
-fn Token-set-string(token: .Token, string: .S:String) {
-    ?string @token.string
-}
 fn Token-free(token: .Token) {
-    ?token.string !i32 0 /= if {
-        ?token.string S:String-free
+    ?token.ty TOKEN_STRING = if {
+        ?token.string S2:String-free
     }
     ?token !.i32 A:free
 }
 fn Token-location(self: .Token) -> .i32, i32, i32, i32 {
-    &self.file S:Str-unpack ?self.line ?self.column
+    &self.file STR:Str-unpack ?self.line ?self.column
 }
 fn Token-print(self: .Token, fd: i32) {
     ?fd ?self Token-location print-location
     ?fd " lexeme: \"" IO:write-all IO:check
-    ?fd ?self Token-lexeme S:Str-unpack IO:write-all IO:check
+    ?fd ?self Token-lexeme STR:Str-unpack IO:write-all IO:check
     ?fd "\", type: " IO:write-all IO:check
     ?fd ?self Token-ty token-ty-name IO:write-all IO:check
     ?fd "\n" IO:write-all IO:check
@@ -192,17 +188,17 @@ fn Tokens-print(self: .Tokens, fd: i32) {
 }
 
 struct Lexer {
-    input: S:Str
+    input: STR:Str
     index: i32
     tokens: Tokens
-    file: S:Str
+    file: STR:Str
     line: i32
     column: i32
     start: i32
 }
-fn Lexer-new(input-ptr: .i32, input-len: i32, file: S:Str) -> Lexer {
+fn Lexer-new(input-ptr: .i32, input-len: i32, file: STR:Str) -> Lexer {
     local self: Lexer
-    ?input-ptr ?input-len S:Str-new @self.input
+    ?input-ptr ?input-len STR:Str-new @self.input
     0 @self.index
     Tokens-new @self.tokens
     ?file @self.file
@@ -223,22 +219,22 @@ fn Lexer-run(lexer: Lexer) -> Tokens {
 }
 fn Lexer-next(lexer: .Lexer) -> .Token {
     local char: i32
-    local lexeme: S:Str
+    local lexeme: STR:Str
     loop {
-        &lexer.input S:Str-len ?lexer.index = if { 
+        &lexer.input STR:Str-len ?lexer.index = if { 
             0 !.Token break 
         }
 
-        &lexer.input ?lexer.index S:Str-get @char
-        &lexer.input ?lexer.index 1 S:Str-slice @lexeme
+        &lexer.input ?lexer.index STR:Str-get @char
+        &lexer.input ?lexer.index 1 STR:Str-slice @lexeme
 
         ?char "/" drop load8 = if {
-            ?lexer.index &lexer.input S:Str-len < if {
-                &lexer.input ?lexer.index 1 + S:Str-get "/" drop load8 = if {
+            ?lexer.index &lexer.input STR:Str-len < if {
+                &lexer.input ?lexer.index 1 + STR:Str-get "/" drop load8 = if {
                     ?lexer.index 1 + @lexer.index
                     loop {
-                        &lexer.input S:Str-len ?lexer.index = if { break }
-                        &lexer.input ?lexer.index S:Str-get
+                        &lexer.input STR:Str-len ?lexer.index = if { break }
+                        &lexer.input ?lexer.index STR:Str-get
                         "\n" drop load8 = if { 
                             break 
                         }
@@ -359,9 +355,9 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             break
         }
         ?char ">" drop load8 = if {
-            &lexer.input S:Str-len ?lexer.index 1 + > if { 
-                &lexer.input ?lexer.index 1 + S:Str-get ">" drop load8 = if {
-                    &lexer.input ?lexer.index 2 S:Str-slice @lexeme
+            &lexer.input STR:Str-len ?lexer.index 1 + > if { 
+                &lexer.input ?lexer.index 1 + STR:Str-get ">" drop load8 = if {
+                    &lexer.input ?lexer.index 2 STR:Str-slice @lexeme
                     ?lexer.index 2 + @lexer.index
                     ?lexer.column 2 + @lexer.column
                     TOKEN_RIGHT_RIGHT ?lexeme ?lexer.file ?lexer.line ?lexer.column Token-new 
@@ -370,9 +366,9 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             }
         }
         ?char "-" drop load8 = if {
-            &lexer.input S:Str-len ?lexer.index 1 + > if { 
-                &lexer.input ?lexer.index 1 + S:Str-get ">" drop load8 = if {
-                    &lexer.input ?lexer.index 2 S:Str-slice @lexeme
+            &lexer.input STR:Str-len ?lexer.index 1 + > if { 
+                &lexer.input ?lexer.index 1 + STR:Str-get ">" drop load8 = if {
+                    &lexer.input ?lexer.index 2 STR:Str-slice @lexeme
                     ?lexer.index 2 + @lexer.index
                     ?lexer.column 2 + @lexer.column
                     TOKEN_ARROW ?lexeme ?lexer.file ?lexer.line ?lexer.column Token-new 
@@ -386,13 +382,13 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
         ?char allowed-in-ident if {
             ?lexer Lexer-lex-ident break
         } 
-        2 &lexer.file S:Str-unpack IO:write-all IO:check
+        2 &lexer.file STR:Str-unpack IO:write-all IO:check
         2 ":" IO:write-all IO:check
         2 ?lexer.line IO:print-to-fd
         2 ":" IO:write-all IO:check
         2 ?lexer.column IO:print-to-fd
         2 ": Unexpected character \"" IO:write-all IO:check
-        2 &lexeme S:Str-unpack IO:write-all IO:check
+        2 &lexeme STR:Str-unpack IO:write-all IO:check
         2 "\"\n" IO:write-all IO:check
         1 CORE:exit
 
@@ -400,7 +396,7 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
     }
 }
 fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
-    local ident: S:Str
+    local ident: STR:Str
     local char: i32
     local line: i32
     local column: i32
@@ -409,8 +405,8 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
         ?lexer.line @line
         ?lexer.column @column
         loop {
-            ?lexer.index &lexer.input S:Str-len < if {
-                &lexer.input ?lexer.index S:Str-get @char
+            ?lexer.index &lexer.input STR:Str-len < if {
+                &lexer.input ?lexer.index STR:Str-get @char
                 ?char allowed-in-ident not if {
                     break
                 }
@@ -423,47 +419,47 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
         &lexer.input
         ?lexer.start
         ?lexer.index ?lexer.start - 
-        S:Str-slice @ident
-        &ident S:Str-unpack "fn" S:str-eq if {
+        STR:Str-slice @ident
+        &ident STR:Str-unpack "fn" STR:str-eq if {
             TOKEN_FN ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "i32" S:str-eq if {
+        &ident STR:Str-unpack "i32" STR:str-eq if {
             TOKEN_I32 ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "i64" S:str-eq if {
+        &ident STR:Str-unpack "i64" STR:str-eq if {
             TOKEN_I64 ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "bool" S:str-eq if {
+        &ident STR:Str-unpack "bool" STR:str-eq if {
             TOKEN_BOOL ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "extern" S:str-eq if {
+        &ident STR:Str-unpack "extern" STR:str-eq if {
             TOKEN_EXTERN ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "as" S:str-eq if {
+        &ident STR:Str-unpack "as" STR:str-eq if {
             TOKEN_AS ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "import" S:str-eq if {
+        &ident STR:Str-unpack "import" STR:str-eq if {
             TOKEN_IMPORT ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "loop" S:str-eq if {
+        &ident STR:Str-unpack "loop" STR:str-eq if {
             TOKEN_LOOP ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "memory" S:str-eq if {
+        &ident STR:Str-unpack "memory" STR:str-eq if {
             TOKEN_MEMORY ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "local" S:str-eq if {
+        &ident STR:Str-unpack "local" STR:str-eq if {
             TOKEN_LOCAL ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "if" S:str-eq if {
+        &ident STR:Str-unpack "if" STR:str-eq if {
             TOKEN_IF ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "else" S:str-eq if {
+        &ident STR:Str-unpack "else" STR:str-eq if {
             TOKEN_ELSE ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "break" S:str-eq if {
+        &ident STR:Str-unpack "break" STR:str-eq if {
             TOKEN_BREAK ?ident ?lexer.file ?line ?column Token-new break
         }
-        &ident S:Str-unpack "struct" S:str-eq if {
+        &ident STR:Str-unpack "struct" STR:str-eq if {
             TOKEN_STRUCT ?ident ?lexer.file ?line ?column Token-new break
         }
         TOKEN_IDENT ?ident ?lexer.file ?line ?column Token-new break
@@ -471,11 +467,11 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
 }
 fn Lexer-lex-string(lexer: .Lexer) -> .Token {
     local char: i32
-    local string: .S:String
+    local string: S2:String
     local token: .Token
     local line: i32
     local column: i32
-    S:String-empty @string
+    S2:String-empty @string
     ?lexer.index @lexer.start
 
     ?lexer.line @line
@@ -484,75 +480,75 @@ fn Lexer-lex-string(lexer: .Lexer) -> .Token {
     ?lexer.column 1 + @lexer.column
 
     loop {
-        &lexer.input S:Str-len ?lexer.index = if {
+        &lexer.input STR:Str-len ?lexer.index = if {
             1 "Unterminated String\n" IO:write-all IO:check
             1 CORE:exit
             break
         }
-        &lexer.input ?lexer.index S:Str-get @char
+        &lexer.input ?lexer.index STR:Str-get @char
         ?lexer.index 1 + @lexer.index
         ?lexer.column 1 + @lexer.column
         ?char "\"" drop load8 = if {
             break
         }
         ?char "\\" drop load8 = if {
-            &lexer.input S:Str-len ?lexer.index = if {
+            &lexer.input STR:Str-len ?lexer.index = if {
                 1 "Unterminated String\n" IO:write-all IO:check
                 1 CORE:exit
                 break
             }
-            &lexer.input ?lexer.index S:Str-get @char
+            &lexer.input ?lexer.index STR:Str-get @char
             loop {
                 ?char "\"" drop load8 = if {
                     ?lexer.index 1 + @lexer.index
                     ?lexer.column 1 + @lexer.column
-                    ?string "\"" drop load8 S:String-push break
+                    &string "\"" drop load8 S2:String-push break
                 }
                 ?char "n" drop load8 = if {
                     ?lexer.index 1 + @lexer.index
                     ?lexer.column 1 + @lexer.column
-                    ?string "\n" drop load8 S:String-push break
+                    &string "\n" drop load8 S2:String-push break
                 }
                 ?char "t" drop load8 = if {
                     ?lexer.index 1 + @lexer.index
                     ?lexer.column 1 + @lexer.column
-                    ?string "\t" drop load8 S:String-push break
+                    &string "\t" drop load8 S2:String-push break
                 }
                 ?char "r" drop load8 = if {
                     ?lexer.index 1 + @lexer.index
                     ?lexer.column 1 + @lexer.column
-                    ?string "\r" drop load8 S:String-push break
+                    &string "\r" drop load8 S2:String-push break
                 }
                 ?char "\\" drop load8 = if {
                     ?lexer.index 1 + @lexer.index
                     ?lexer.column 1 + @lexer.column
-                    ?string "\\" drop load8 S:String-push break
+                    &string "\\" drop load8 S2:String-push break
                 }
-                ?string "\\" drop load8 S:String-push
-                ?string ?char S:String-push
+                &string "\\" drop load8 S2:String-push
+                &string ?char S2:String-push
                 break
             }
         } else {
-            ?string ?char S:String-push
+            &string ?char S2:String-push
         }
     }
     TOKEN_STRING
     &lexer.input
     ?lexer.start
     ?lexer.index ?lexer.start -
-    S:Str-slice
+    STR:Str-slice
     ?lexer.file
     ?line
     ?column
     Token-new
     @token
-    ?token ?string Token-set-string
+    ?string @token.string
     ?token
 }
 fn Lexer-lex-number(lexer: .Lexer) -> .Token {
     local char: i32
     local num: i32
-    local lexeme: S:Str
+    local lexeme: STR:Str
     local token: .Token
     local line: i32
     local column: i32
@@ -560,10 +556,10 @@ fn Lexer-lex-number(lexer: .Lexer) -> .Token {
     ?lexer.line @line
     ?lexer.column @column
     loop {
-        &lexer.input S:Str-len ?lexer.index = if {
+        &lexer.input STR:Str-len ?lexer.index = if {
             break
         }
-        &lexer.input ?lexer.index S:Str-get @char
+        &lexer.input ?lexer.index STR:Str-get @char
         ?char is-ascii-digit not if { break }
         ?lexer.index 1 + @lexer.index
         ?lexer.column 1 + @lexer.column
@@ -571,8 +567,8 @@ fn Lexer-lex-number(lexer: .Lexer) -> .Token {
     &lexer.input
     ?lexer.start
     ?lexer.index ?lexer.start -
-    S:Str-slice @lexeme
-    &lexeme S:Str-unpack U:parse @num
+    STR:Str-slice @lexeme
+    &lexeme STR:Str-unpack U:parse @num
     TOKEN_NUMBER
     ?lexeme
     ?lexer.file
@@ -603,7 +599,7 @@ fn is-ascii-digit(char: i32) -> bool {
 }
 
 // input and file is borrowed
-fn lex(input: .S2:String, file: S:Str) -> Tokens {
+fn lex(input: .S2:String, file: STR:Str) -> Tokens {
     ?input S2:String-unpack ?file Lexer-new Lexer-run
 }
 

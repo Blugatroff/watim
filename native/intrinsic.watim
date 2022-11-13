@@ -1,5 +1,4 @@
 import "../std/string.watim" as S
-import "../std/string2.watim" as S2
 import "../std/io.watim" as IO
 import "../std/format.watim" as FMT
 
@@ -76,15 +75,15 @@ fn check-intrinsic(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -
 }
 fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32) {
     local formatter: FMT:Formatter
-    local formatted: S2:String
+    local formatted: S:String
     FMT:Formatter-new @formatter
     ?word AST:Word-location
     &formatter ?msg-ptr ?msg-len FMT:Formatter-write
     ?stack &formatter AST:Types-format
     ?formatter FMT:Formatter-into-string @formatted
-    &formatted S2:String-unpack 
+    &formatted S:String-unpack 
     U:abort-with-location
-    ?formatted S2:String-free
+    ?formatted S:String-free
 }
 fn check-intrinsic-rotl(stack: .AST:Types, word: .AST:Word) {
     ?stack ?stack AST:Types-len 2 - AST:Types-get AST:Type-ty AST:TYPE_I32 = 

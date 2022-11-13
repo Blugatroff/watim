@@ -1,4 +1,4 @@
-import "./string2.watim" as S
+import "./string.watim" as S
 import "./io.watim" as IO
 import "./alloc.watim" as A
 

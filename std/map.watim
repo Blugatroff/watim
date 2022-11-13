@@ -1,34 +1,34 @@
 import "./string.watim" as S
-import "./string2.watim" as S2
+import "./str.watim" as STR
 import "./i32vec.watim" as IV
 import "./io.watim" as IO
 import "./alloc.watim" as A
 import "./util.watim" as U
 
 struct StringMap {
-    keys: S2:StringVec
+    keys: S:StringVec
     values: .IV:I32Vec
 }
 fn StringMap-new() -> StringMap {
     local self: StringMap
-    S2:StringVec-new @self.keys
+    S:StringVec-new @self.keys
     IV:I32Vec-new @self.values
     ?self
 }
 fn StringMap-free(self: StringMap) {
-    ?self.keys S2:StringVec-free
+    ?self.keys S:StringVec-free
     ?self.values IV:I32Vec-free
 }
-fn StringMap-insert(self: .StringMap, key: S2:String, value: i32) -> i32, bool {
+fn StringMap-insert(self: .StringMap, key: S:String, value: i32) -> i32, bool {
     local i: i32
     loop {
-        ?i &self.keys S2:StringVec-len = if { 
-            &self.keys ?key S2:StringVec-push
+        ?i &self.keys S:StringVec-len = if { 
+            &self.keys ?key S:StringVec-push
             ?self.values ?value IV:I32Vec-push
             0 0 1 = break 
         }
-        ?self ?i StringMap-get-key S2:String-unpack &key S2:String-unpack S:str-eq if {
-            ?key S2:String-free
+        ?self ?i StringMap-get-key S:String-unpack &key S:String-unpack STR:str-eq if {
+            ?key S:String-free
             ?self.values ?i ?value IV:I32Vec-set
             0 0 =
             break
@@ -42,17 +42,17 @@ fn StringMap-get(self: .StringMap, key-ptr: .i32, key-len: i32) -> i32, bool {
         ?i ?self StringMap-len = if {
             0 0 1 = break
         }
-        ?self ?i StringMap-get-key S2:String-unpack ?key-ptr ?key-len S:str-eq if {
+        ?self ?i StringMap-get-key S:String-unpack ?key-ptr ?key-len STR:str-eq if {
             ?self ?i StringMap-get-value 0 0 = break
         }
         ?i 1 + @i
     }
 }
 fn StringMap-len(self: .StringMap) -> i32 {
-    &self.keys S2:StringVec-len
+    &self.keys S:StringVec-len
 }
-fn StringMap-get-key(self: .StringMap, index: i32) -> .S2:String {
-    &self.keys ?index S2:StringVec-get
+fn StringMap-get-key(self: .StringMap, index: i32) -> .S:String {
+    &self.keys ?index S:StringVec-get
 }
 fn StringMap-get-value(self: .StringMap, index: i32) -> i32 {
     ?self.values $index IV:I32Vec-get

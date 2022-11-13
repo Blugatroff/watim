@@ -1,7 +1,6 @@
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/string.watim" as S
-import "../std/string2.watim" as S2
 import "../std/format.watim" as FMT
 
 import "./lexer.watim" as L
@@ -66,7 +65,7 @@ fn expect-stack(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
 }
 fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
     local formatter: FMT:Formatter
-    local msg: S2:String
+    local msg: S:String
     FMT:Formatter-new @formatter
     &formatter "\n\texpected: " FMT:Formatter-write
     ?expected &formatter AST:Types-format
@@ -74,8 +73,8 @@ fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Wor
     ?stack &formatter AST:Types-format
     &formatter "\n" FMT:Formatter-write
     ?formatter FMT:Formatter-into-string @msg
-    ?word AST:Word-location &msg S2:String-unpack abort-with-location
-    ?msg S2:String-free
+    ?word AST:Word-location &msg S:String-unpack abort-with-location
+    ?msg S:String-free
 }
 
 fn push-temp-type(temp-types: .AST:Types, type: .AST:Type) -> .AST:Type {

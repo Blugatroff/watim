@@ -4,17 +4,17 @@ import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/string.watim" as S
-import "../std/string2.watim" as S2
+import "../std/str.watim" as STR
 import "./util.watim" as U
 
 struct Parser {
     tokens: .L:Tokens
     current: i32
-    mem: .S2:String
+    mem: .S:String
     types: .AST:Types
-    file: S:Str
+    file: STR:Str
 }
-fn Parser-new(tokens: .L:Tokens, mem: .S2:String) -> Parser {
+fn Parser-new(tokens: .L:Tokens, mem: .S:String) -> Parser {
     local self: Parser
     ?tokens @self.tokens
     0 @self.current
@@ -81,21 +81,21 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
     local ident: .L:Token
     AST:Fields-new @fields
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected struct" U:abort
+        &self.file STR:Str-unpack "expected struct" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_STRUCT /= if {
         ?token L:Token-location "expected struct" U:abort-with-location
     }
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected identifier" U:abort
+        &self.file STR:Str-unpack "expected identifier" U:abort
     }
     ?self Parser-advance @ident
     ?ident L:Token-ty L:TOKEN_IDENT /= if {
         ?token L:Token-location "expected identifier" U:abort-with-location
     }
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected {" U:abort
+        &self.file STR:Str-unpack "expected {" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
@@ -115,7 +115,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
         ?fields
         ?token
         ?self.current ?self.tokens L:Tokens-len = if {
-            &self.file S:Str-unpack "expected colon" U:abort
+            &self.file STR:Str-unpack "expected colon" U:abort
         }
         ?self Parser-advance @token
         ?token L:Token-ty L:TOKEN_COLON /= if {
@@ -130,14 +130,14 @@ fn Parser-parse-imp(self: .Parser) -> .AST:Import {
     local token: .L:Token
 
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected import" U:abort
+        &self.file STR:Str-unpack "expected import" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_IMPORT /= if {
         ?token L:Token-location "expected import" U:abort-with-location
     }
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected string" U:abort
+        &self.file STR:Str-unpack "expected string" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_STRING /= if {
@@ -145,14 +145,14 @@ fn Parser-parse-imp(self: .Parser) -> .AST:Import {
     }
     ?token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected as" U:abort
+        &self.file STR:Str-unpack "expected as" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_AS /= if {
         ?token L:Token-location "exected as" U:abort-with-location
     }
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected identifier" U:abort
+        &self.file STR:Str-unpack "expected identifier" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -169,14 +169,14 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
     local params: .AST:Locals
     local rets: .AST:Types
     ?self.tokens L:Tokens-len ?self.current = if {
-        &self.file S:Str-unpack "expected extern" U:abort
+        &self.file STR:Str-unpack "expected extern" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_EXTERN /= if {
         ?token L:Token-location "expected extern" U:abort-with-location
     }
     ?self.tokens L:Tokens-len ?self.current = if {
-        &self.file S:Str-unpack "expected string" U:abort
+        &self.file STR:Str-unpack "expected string" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_STRING /= if {
@@ -184,7 +184,7 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
     }
     ?token @module
     ?self.tokens L:Tokens-len ?self.current = if {
-        &self.file S:Str-unpack "expected string" U:abort
+        &self.file STR:Str-unpack "expected string" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_STRING /= if {
@@ -202,14 +202,14 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
 fn Parser-parse-loc(self: .Parser) -> .AST:Local {
     local token: .L:Token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected local" U:abort
+        &self.file STR:Str-unpack "expected local" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LOCAL /= if {
         ?token L:Token-location "expected local" U:abort-with-location
     }
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected identifier" U:abort
+        &self.file STR:Str-unpack "expected identifier" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -217,7 +217,7 @@ fn Parser-parse-loc(self: .Parser) -> .AST:Local {
     }
     ?token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected colon" U:abort
+        &self.file STR:Str-unpack "expected colon" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_COLON /= if {
@@ -231,21 +231,21 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Memory {
     local ident: .L:Token
     local type: .AST:Type
     ?self.tokens L:Tokens-len ?self.current = if {
-        &self.file S:Str-unpack "expected memory found EOF" U:abort
+        &self.file STR:Str-unpack "expected memory found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_MEMORY /= if {
         ?token L:Token-location "expected memory" U:abort-with-location
     }
     ?self.tokens L:Tokens-len ?self.current = if {
-        &self.file S:Str-unpack "expected identifier found EOF" U:abort
+        &self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     ?self Parser-advance @ident
     ?ident L:Token-ty L:TOKEN_IDENT /= if {
         ?ident L:Token-location "expected identifier" U:abort-with-location
     }
     ?self.tokens L:Tokens-len ?self.current = if {
-        &self.file S:Str-unpack "expected colon found EOF" U:abort
+        &self.file STR:Str-unpack "expected colon found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_COLON /= if {
@@ -266,7 +266,7 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Memory {
         1
     }
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected semicolon found EOF" U:abort
+        &self.file STR:Str-unpack "expected semicolon found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_SEMICOLON /= if {
@@ -317,7 +317,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, .AST:Locals, .AS
     local ret: .AST:Types
     local body: .AST:Words
     ?self.current ?self.tokens L:Tokens-len = if { 
-        &self.file S:Str-unpack "expected fn found EOF" U:abort
+        &self.file STR:Str-unpack "expected fn found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_FN /= if {
@@ -325,14 +325,14 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, .AST:Locals, .AS
     }
     loop {
         ?self.current ?self.tokens L:Tokens-len = if { 
-            &self.file S:Str-unpack "expected identifier found EOF" U:abort
+            &self.file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         ?self Parser-advance @ident
         ?ident L:Token-ty L:TOKEN_IDENT /= if {
             ?ident L:Token-location "expected identifier" U:abort-with-location
         }
         ?self.current ?self.tokens L:Tokens-len = if { 
-            &self.file S:Str-unpack "expected string or ( found EOF" U:abort
+            &self.file STR:Str-unpack "expected string or ( found EOF" U:abort
         }
         ?self Parser-peek @token
         ?token L:Token-ty L:TOKEN_STRING /= 
@@ -343,13 +343,13 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, .AST:Locals, .AS
         ?token L:Token-ty L:TOKEN_STRING = if {
             ?token @qualifier
             ?self.current ?self.tokens L:Tokens-len = if { 
-                &self.file S:Str-unpack "expected string or ( found EOF" U:abort
+                &self.file STR:Str-unpack "expected string or ( found EOF" U:abort
             }
             ?self Parser-advance @token
         }
         ?self Parser-parse-parameters @parameters
         ?self.current ?self.tokens L:Tokens-len = if {
-            &self.file S:Str-unpack "expected ) found EOF" U:abort
+            &self.file STR:Str-unpack "expected ) found EOF" U:abort
         }
         ?self Parser-advance @token
         ?token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
@@ -389,7 +389,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
 
     ?self Parser-parse-signature @ret @parameters @qualifier @ident
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected { found EOF" U:abort
+        &self.file STR:Str-unpack "expected { found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
@@ -397,7 +397,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
     }
     ?self Parser-parse-body @body @mems @locals
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected } found EOF" U:abort
+        &self.file STR:Str-unpack "expected } found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
@@ -419,7 +419,7 @@ fn Parser-parse-return-types(self: .Parser) -> .AST:Types {
     ?rets ?self Parser-parse-type AST:Types-push
     loop {
         ?self.current ?self.tokens L:Tokens-len = if {
-            &self.file S:Str-unpack "expected , or { found EOF" U:abort
+            &self.file STR:Str-unpack "expected , or { found EOF" U:abort
         }
         ?self Parser-peek @token
         ?token L:Token-ty L:TOKEN_COMMA /= if {
@@ -435,7 +435,7 @@ fn Parser-parse-parameters(self: .Parser) -> .AST:Locals {
     local token: .L:Token
     AST:Locals-new @params
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected ( found EOF" U:abort 
+        &self.file STR:Str-unpack "expected ( found EOF" U:abort 
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LEFT_PAREN /= if {
@@ -459,14 +459,14 @@ fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
     local ident: .L:Token
     local token: .L:Token
     ?self.current ?self.tokens L:Tokens-len = if { 
-        &self.file S:Str-unpack "expected identifier found EOF" U:abort
+        &self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     ?self Parser-advance @ident
     ?ident L:Token-ty L:TOKEN_IDENT /= if {
         ?ident L:Token-location "expected identifier" U:abort-with-location
     }
     ?self.current ?self.tokens L:Tokens-len = if { 
-        &self.file S:Str-unpack "expected : found EOF" U:abort
+        &self.file STR:Str-unpack "expected : found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_COLON /= if {
@@ -486,7 +486,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
     local token: .L:Token
     local module: .L:Token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected type found EOF" U:abort
+        &self.file STR:Str-unpack "expected type found EOF" U:abort
     }
     ?self Parser-advance @token
     loop {
@@ -507,7 +507,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
                 ?self Parser-peek L:Token-ty L:TOKEN_COLON = if {
                     ?self Parser-advance drop
                     ?self.current ?self.tokens L:Tokens-len = if {
-                        &self.file S:Str-unpack "expected identifier" U:abort
+                        &self.file STR:Str-unpack "expected identifier" U:abort
                     }
                     ?token @module
                     ?self Parser-advance @token
@@ -523,7 +523,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
     }
 }
 fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
-    local file: S:Str
+    local file: STR:Str
     local line: i32
     local column: i32
     local word: .AST:Word
@@ -531,137 +531,137 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
     ?token L:Token-line @line
     ?token L:Token-column @column
     loop {
-        ?token L:Token-lexeme S:Str-unpack "drop" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "drop" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_DROP @word.intrinsic
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "flip" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "flip" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_FLIP @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "+" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "+" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_ADD @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "<" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "<" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_LESS @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack ">" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack ">" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_GREATER @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "=" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "=" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_EQ @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack ">=" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack ">=" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_GREATER_EQ @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "<=" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "<=" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_LESS_EQ @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "not" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "not" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_NOT @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "mem-grow" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "mem-grow" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_MEM_GROW @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "store32" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "store32" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_STORE32 @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "load32" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "load32" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_LOAD32 @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "-" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "-" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_SUB @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "and" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "and" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_AND @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "store8" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "store8" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_STORE8 @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "load8" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "load8" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_LOAD8 @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "%" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "%" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_MOD @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "/" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "/" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_DIV @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "/=" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "/=" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_NOT_EQ @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "*" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "*" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_MUL @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "mem-copy" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "mem-copy" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_MEM_COPY @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "rotl" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "rotl" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_ROTL @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "rotr" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "rotr" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_ROTR @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "or" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "or" STR:str-eq if {
             AST:WORD_INTRINSIC ?file ?line ?column AST:Word-new @word
             AST:INTRINSIC_OR @word.intrinsic 
             ?word 0 0 = break
         }
-        ?token L:Token-lexeme S:Str-unpack "sizeof" S:str-eq if {
+        ?token L:Token-lexeme STR:Str-unpack "sizeof" STR:str-eq if {
             AST:WORD_SIZEOF ?file ?line ?column AST:Word-new @word
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "Expected ( found EOF" U:abort
+                &self.file STR:Str-unpack "Expected ( found EOF" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_LEFT_PAREN /= if  {
                 ?token L:Token-location "expected (" U:abort-with-location
             }
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "Expected identifier found EOF" U:abort
+                &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -669,7 +669,7 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
             }
             ?token L:Token-lexeme @word.ident
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "Expected ) found EOF" U:abort
+                &self.file STR:Str-unpack "Expected ) found EOF" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
@@ -683,12 +683,12 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
 fn Parser-parse-word(self: .Parser) -> .AST:Word {
     local token: .L:Token
     local ty: i32
-    local file: S:Str
+    local file: STR:Str
     local line: i32
     local column: i32
     local word: .AST:Word
     ?self.current ?self.tokens L:Tokens-len = if { 
-        &self.file S:Str-unpack "Expected word found EOF" U:abort
+        &self.file STR:Str-unpack "Expected word found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty @ty
@@ -705,7 +705,7 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
                 ?self Parser-peek L:Token-ty L:TOKEN_COLON = if {
                     ?self Parser-advance drop
                     ?self.current ?self.tokens L:Tokens-len = if { 
-                        &self.file S:Str-unpack "Expected ident found EOF" U:abort
+                        &self.file STR:Str-unpack "Expected ident found EOF" U:abort
                     }
                     ?token L:Token-lexeme @word.qualifier
                     ?self Parser-advance @token
@@ -727,15 +727,15 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         ?ty L:TOKEN_STRING = if {
             AST:WORD_STRING ?file ?line ?column AST:Word-new @word
 
-            ?token.string S:String-len @word.size
-            ?self.mem S2:String-unpack 
-            ?token.string S:String-unpack
-            S:str-find-str if {
+            &token.string S:String-len @word.size
+            ?self.mem S:String-unpack 
+            &token.string S:String-unpack
+            STR:str-find-str if {
                 @word.addr
             } else {
                 drop
-                ?self.mem S2:String-len @word.addr
-                ?self.mem ?token.string S:String-unpack S2:String-append
+                ?self.mem S:String-len @word.addr
+                ?self.mem &token.string S:String-unpack S:String-append
             }
             ?word break
         }
@@ -748,7 +748,7 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         ?ty L:TOKEN_HASH = if {
             AST:WORD_SET ?file ?line ?column AST:Word-new @word
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "Expected identifier found EOF" U:abort
+                &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -775,7 +775,7 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         ?ty L:TOKEN_DOT = if {
             AST:WORD_DEREF ?file ?line ?column AST:Word-new @word
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "Expected identifier found EOF" U:abort
+                &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -806,30 +806,30 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         0 !.AST:Word break
     }
 }
-fn Parser-parse-get-locl(self: .Parser, file: S:Str, line: i32, column: i32) -> .AST:Word {
+fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
     local word: .AST:Word
     local token: .L:Token
     AST:WORD_LOCAL ?file ?line ?column AST:Word-new @word
     ?self.current ?self.tokens L:Tokens-len = if {
-        &file S:Str-unpack "expected identifier found EOF" U:abort
+        &file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     ?self Parser-advance @token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &file S:Str-unpack ?line ?column "expected identifier" U:abort-with-location
+        &file STR:Str-unpack ?line ?column "expected identifier" U:abort-with-location
     }
     ?token L:Token-lexeme @word.ident
     ?word 
 }
-fn Parser-parse-get-locl2(self: .Parser, file: S:Str, line: i32, column: i32) -> .AST:Word {
+fn Parser-parse-get-locl2(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
     local word: .AST:Word
     local token: .L:Token
     AST:WORD_LOCAL2 ?file ?line ?column AST:Word-new @word
     ?self.current ?self.tokens L:Tokens-len = if {
-        &file S:Str-unpack "expected identifier found EOF" U:abort
+        &file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     ?self Parser-advance @token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &file S:Str-unpack ?line ?column "expected identifier" U:abort-with-location
+        &file STR:Str-unpack ?line ?column "expected identifier" U:abort-with-location
     }
     ?token L:Token-lexeme @word.ident
     L:Tokens-new @word.fields
@@ -839,7 +839,7 @@ fn Parser-parse-get-locl2(self: .Parser, file: S:Str, line: i32, column: i32) ->
         ?token L:Token-ty L:TOKEN_DOT /= if { break }
         ?self Parser-advance @token
         ?self.current ?self.tokens L:Tokens-len = if {
-            &file S:Str-unpack "expected identifier found EOF" U:abort
+            &file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         ?self Parser-advance @token
         ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -849,12 +849,12 @@ fn Parser-parse-get-locl2(self: .Parser, file: S:Str, line: i32, column: i32) ->
     }
     ?word
 }
-fn Parser-parse-fields-access(self: .Parser, file: S:Str, line: i32, column: i32) -> L:Tokens, .S:Str {
+fn Parser-parse-fields-access(self: .Parser, file: STR:Str, line: i32, column: i32) -> L:Tokens, .STR:Str {
     local token: .L:Token
     local fields: L:Tokens
     local ident: .L:Token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &file S:Str-unpack "expected identifier found EOF" U:abort
+        &file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     ?self Parser-advance @ident
     ?ident L:Token-ty L:TOKEN_IDENT /= if {
@@ -867,7 +867,7 @@ fn Parser-parse-fields-access(self: .Parser, file: S:Str, line: i32, column: i32
         ?token L:Token-ty L:TOKEN_DOT /= if { break }
         ?self Parser-advance @token
         ?self.current ?self.tokens L:Tokens-len = if {
-            &file S:Str-unpack "expected identifier found EOF" U:abort
+            &file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         ?self Parser-advance @token
         ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -877,7 +877,7 @@ fn Parser-parse-fields-access(self: .Parser, file: S:Str, line: i32, column: i32
     }
     ?fields ?ident L:Token-lexeme
 }
-fn Parser-parse-get-ref(self: .Parser, file: S:Str, line: i32, column: i32) -> .AST:Word {
+fn Parser-parse-get-ref(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
     local word: .AST:Word
     AST:WORD_GET_REF ?file ?line ?column AST:Word-new @word
     ?self ?file ?line ?column Parser-parse-fields-access 
@@ -885,7 +885,7 @@ fn Parser-parse-get-ref(self: .Parser, file: S:Str, line: i32, column: i32) -> .
     @word.fields
     ?word
 }
-fn Parser-parse-store(self: .Parser, file: S:Str, line: i32, column: i32) -> .AST:Word {
+fn Parser-parse-store(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
     local word: .AST:Word
     AST:WORD_STORE ?file ?line ?column AST:Word-new @word
     ?self ?file ?line ?column Parser-parse-fields-access 
@@ -893,12 +893,12 @@ fn Parser-parse-store(self: .Parser, file: S:Str, line: i32, column: i32) -> .AS
     @word.fields
     ?word
 }
-fn Parser-parse-struc-set(self: .Parser, file: S:Str, line: i32, column: i32) -> .AST:Word {
+fn Parser-parse-struc-set(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
     local token: .L:Token
     local word: .AST:Word
     AST:WORD_STRUCT_SET ?file ?line ?column AST:Word-new @word
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "Expected identifier found EOF" U:abort
+        &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -912,7 +912,7 @@ fn Parser-parse-struc-set(self: .Parser, file: S:Str, line: i32, column: i32) ->
         ?token L:Token-ty L:TOKEN_DOT /= if { break }
         ?self Parser-advance @token
         ?self.current ?self.tokens L:Tokens-len = if { 
-            &file S:Str-unpack "expected identifier found EOF" U:abort
+            &file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         ?self Parser-advance @token
         ?token L:Token-ty L:TOKEN_IDENT /= if {
@@ -926,7 +926,7 @@ fn Parser-parse-lop(self: .Parser) -> .AST:Words {
     local token: .L:Token
     ?self.current 1 - @self.current
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected loop" U:abort
+        &self.file STR:Str-unpack "expected loop" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LOOP /= if {
@@ -934,7 +934,7 @@ fn Parser-parse-lop(self: .Parser) -> .AST:Words {
     }
 
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected {" U:abort
+        &self.file STR:Str-unpack "expected {" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
@@ -942,7 +942,7 @@ fn Parser-parse-lop(self: .Parser) -> .AST:Words {
     }
     ?self Parser-parse-words
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "expected }" U:abort
+        &self.file STR:Str-unpack "expected }" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
@@ -953,7 +953,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
     local token: .L:Token
     ?self.current 1 - @self.current
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "exected if" U:abort
+        &self.file STR:Str-unpack "exected if" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_IF /= if {
@@ -961,7 +961,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
     }
     ?token
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "exected {" U:abort
+        &self.file STR:Str-unpack "exected {" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
@@ -969,7 +969,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
     }
     ?self Parser-parse-words
     ?self.current ?self.tokens L:Tokens-len = if {
-        &self.file S:Str-unpack "exected }" U:abort
+        &self.file STR:Str-unpack "exected }" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
@@ -980,7 +980,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
         ?token L:Token-ty L:TOKEN_ELSE = if {
             ?self Parser-advance drop
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "expected {" U:abort
+                &self.file STR:Str-unpack "expected {" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
@@ -988,7 +988,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
             }
             ?self Parser-parse-words
             ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file S:Str-unpack "expected }" U:abort
+                &self.file STR:Str-unpack "expected }" U:abort
             }
             ?self Parser-advance @token
             ?token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
@@ -1005,7 +1005,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
 fn Parser-parse-number(self: .Parser) -> i32 {
     local token: .L:Token
     ?self.current ?self.tokens L:Tokens-len = if { 
-        &self.file S:Str-unpack "expected number found EOF" U:abort
+        &self.file STR:Str-unpack "expected number found EOF" U:abort
     }
     ?self Parser-advance @token
     ?token L:Token-ty L:TOKEN_NUMBER /= if {
@@ -1033,7 +1033,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     ?ty L:TOKEN_RIGHT_RIGHT = or
 }
 
-fn parse(mem: .S2:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {
+fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {
     local parser: Parser
     local items: .AST:TopItems
     ?tokens ?mem Parser-new @parser
