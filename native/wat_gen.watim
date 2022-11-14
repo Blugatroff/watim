@@ -69,12 +69,6 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
         ?self.ty AST:WORD_CALL = if {
             ?formatter ?struc-returnals-space-ptr ?self generate-call break
         }
-        ?self.ty AST:WORD_LOCAL = if {
-            ?formatter "local.get $" FMT:Formatter-write
-            ?formatter ?self AST:Word-ident STR:Str-unpack FMT:Formatter-write
-            ?formatter "\n" FMT:Formatter-write
-            break
-        }
         ?self.ty AST:WORD_GLOBAL = if {
             ?formatter "global.get $" FMT:Formatter-write
             ?self AST:Word-module ?formatter U:i32-format
@@ -93,12 +87,6 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
         }
         ?self.ty AST:WORD_IF = if {
             ?formatter ?struc-returnals-space-ptr ?locl-copy-space-ptr ?self AST:Word-iff generate-iff
-            break
-        }
-        ?self.ty AST:WORD_SET = if {
-            ?formatter "local.set $" FMT:Formatter-write
-            ?formatter ?self AST:Word-ident STR:Str-unpack FMT:Formatter-write
-            ?formatter "\n" FMT:Formatter-write
             break
         }
         ?self.ty AST:WORD_INTRINSIC = if {
@@ -144,8 +132,8 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             ?formatter ?self generate-get-ref
             break
         }
-        ?self.ty AST:WORD_LOCAL2 = if {
-            ?formatter ?self ?locl-copy-space-ptr generate-local2
+        ?self.ty AST:WORD_LOCAL = if {
+            ?formatter ?self ?locl-copy-space-ptr generate-get-locl
             break
         }
         ?self.ty AST:WORD_LOAD = if {
@@ -225,7 +213,7 @@ fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
     }
     ?formatter "\n" FMT:Formatter-write
 }
-fn generate-local2(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
+fn generate-get-locl(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
     local i: i32
     local offset: i32
     ?word.type AST:Type-ty AST:TYPE_STRUCT = if {
@@ -815,7 +803,7 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
     loop {
         ?i ?words AST:Words-len = if { break }
         ?words ?i AST:Words-get @word
-        ?word AST:Word-ty AST:WORD_LOCAL2 = if {
+        ?word AST:Word-ty AST:WORD_LOCAL = if {
             ?word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
                 ?word AST:Word-type AST:Type-size ?size + @size
                 ?count 1 + @count

@@ -742,21 +742,6 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         ?ty L:TOKEN_BREAK = if {
             AST:WORD_BREAK ?file ?line ?column AST:Word-new break
         }
-        ?ty L:TOKEN_DOLLAR = if {
-            ?self ?file ?line ?column Parser-parse-get-locl break
-        }
-        ?ty L:TOKEN_HASH = if {
-            AST:WORD_SET ?file ?line ?column AST:Word-new @word
-            ?self.current ?self.tokens L:Tokens-len = if {
-                &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
-            }
-            ?self Parser-advance @token
-            ?token L:Token-ty L:TOKEN_IDENT /= if {
-                ?token L:Token-location "expected identifier" U:abort-with-location
-            }
-            ?token L:Token-lexeme @word.ident
-            ?word break
-        }
         ?ty L:TOKEN_IF = if {
             AST:WORD_IF ?file ?line ?column AST:Word-new @word
             ?self Parser-parse-iff @word.iff
@@ -799,31 +784,15 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
         ?ty L:TOKEN_RIGHT_RIGHT = if {
             ?self ?file ?line ?column Parser-parse-store break
         }
-        2 "Unexpected Token: " IO:write-all IO:check
-        2 ?ty L:token-ty-name IO:write-all IO:check
-        2 "\n" IO:write-all IO:check
-        1 CORE:exit
+        ?token L:Token-location "Unexpected Token" U:abort-with-location
         0 !.AST:Word break
     }
 }
-fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
-    local word: .AST:Word
-    local token: .L:Token
-    AST:WORD_LOCAL ?file ?line ?column AST:Word-new @word
-    ?self.current ?self.tokens L:Tokens-len = if {
-        &file STR:Str-unpack "expected identifier found EOF" U:abort
-    }
-    ?self Parser-advance @token
-    ?self.current ?self.tokens L:Tokens-len = if {
-        &file STR:Str-unpack ?line ?column "expected identifier" U:abort-with-location
-    }
-    ?token L:Token-lexeme @word.ident
-    ?word 
-}
+
 fn Parser-parse-get-locl2(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
     local word: .AST:Word
     local token: .L:Token
-    AST:WORD_LOCAL2 ?file ?line ?column AST:Word-new @word
+    AST:WORD_LOCAL ?file ?line ?column AST:Word-new @word
     ?self.current ?self.tokens L:Tokens-len = if {
         &file STR:Str-unpack "expected identifier found EOF" U:abort
     }

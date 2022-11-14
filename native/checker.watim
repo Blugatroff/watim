@@ -113,8 +113,8 @@ fn check-words(
         ?diverges
         ?temp-types ?bs ?modules ?module ?stack ?locals ?words ?i AST:Words-get check-word
         or
-        #diverges
-        ?i 1 + #i
+        @diverges
+        ?i 1 + @i
     }
     ?diverges
 }
@@ -141,12 +141,6 @@ fn check-word(
         ?word AST:Word-ty AST:WORD_CALL = if {
             ?modules ?module ?stack ?word check-call break
         }
-        ?word AST:Word-ty AST:WORD_LOCAL = if {
-            ?modules ?module ?stack ?locals ?word check-locl break
-        }
-        ?word AST:Word-ty AST:WORD_SET = if {
-            ?stack ?locals ?word check-set break
-        }
         ?word AST:Word-ty AST:WORD_LOOP = if {
             ?temp-types ?modules ?module ?stack ?locals ?word check-lop break
         }
@@ -171,8 +165,8 @@ fn check-word(
         ?word AST:Word-ty AST:WORD_GET_REF = if {
             ?stack ?locals ?temp-types ?word check-get-ref break
         }
-        ?word AST:Word-ty AST:WORD_LOCAL2 = if {
-            ?modules ?module ?stack ?locals ?word check-locl2 break
+        ?word AST:Word-ty AST:WORD_LOCAL = if {
+            ?modules ?module ?stack ?locals ?word check-locl break
         }
         ?word AST:Word-ty AST:WORD_LOAD = if {
             ?stack ?word check-load break
@@ -258,7 +252,7 @@ fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:T
         ?src-type ?type ?loads 0 0 =
     }
 }
-fn check-locl2(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
     local loads: .IV:I32Vec
     ?locals ?word check-fields-access if {
@@ -352,7 +346,7 @@ fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bo
     }
     ?stack AST:Types-last @type
     ?type AST:Type-ty AST:TYPE_STRUCT = if {
-        ?stack AST:Types-pop #type
+        ?stack AST:Types-pop @type
         ?type AST:Type-struc
         ?word AST:Word-ident STR:Str-unpack
         ?type @word.src-type
@@ -525,14 +519,6 @@ fn check-set(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
         drop ?word AST:Word-location "local not found\n" U:abort-with-location
     }
     0 1 = 
-}
-fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
-    ?locals ?word AST:Word-ident STR:Str-unpack LocalsMap-get if {
-        ?stack flip AST:Types-push
-    } else {
-        drop ?word AST:Word-location "local not found\n" U:abort-with-location
-    }
-    0 1 =
 }
 fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
     local msg: S:String

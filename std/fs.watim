@@ -124,7 +124,7 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
         ?PREOPENED_FDS IV:I32Vec-new store32
         S:StringVec-new >>workaround
         loop {
-            ?fd ?prestat !.i32 fd_prestat_get #code
+            ?fd ?prestat !.i32 fd_prestat_get @code
             // 8 = Bad file descriptor
             ?code 8 = if { 
                 0 @code

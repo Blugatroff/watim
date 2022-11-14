@@ -72,11 +72,6 @@ fn Module-extract-imports(self: .Module, module-path: .S:String) {
             &path ?imp AST:Import-path-content S:String-append
             ?self.imports
             ?item.imp AST:Import-ident L:Token-lexeme STR:Str-unpack S:String-new 
-            // #ident
-            // 2 "Module-extract-imports ident: " IO:write-all IO:check
-            // 2 &ident S:String-unpack IO:write-all IO:check
-            // 2 "\n" IO:write-all IO:check
-            // ?ident
             &path S:String-unpack FS:normalize 
             AST:Imports-insert
             ?path S:String-free

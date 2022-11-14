@@ -69,8 +69,6 @@ fn intrinsic-name(intrinsic: i32) -> .i32, i32 {
 }
 
 fn WORD_CALL() -> i32 { 1 }
-fn WORD_LOCAL() -> i32 { 2 }
-fn WORD_SET() -> i32 { 4 }
 fn WORD_NUMBER() -> i32 { 5 }
 fn WORD_INTRINSIC() -> i32 { 6 }
 fn WORD_IF() -> i32 { 7 }
@@ -83,7 +81,7 @@ fn WORD_DEREF() -> i32 { 13 }
 fn WORD_GLOBAL() -> i32 { 14 }
 fn WORD_STRUCT_SET() -> i32 { 15 }
 fn WORD_GET_REF() -> i32 { 16 }
-fn WORD_LOCAL2() -> i32 { 17 }
+fn WORD_LOCAL() -> i32 { 17 }
 fn WORD_LOAD() -> i32 { 18 }
 fn WORD_SIZEOF() -> i32 { 19 }
 fn WORD_STORE() -> i32 { 20 }
@@ -91,8 +89,6 @@ fn WORD_STORE() -> i32 { 20 }
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
         ?ty WORD_CALL = if { "WORD_CALL" break }
-        ?ty WORD_LOCAL = if { "WORD_LOCAL" break }
-        ?ty WORD_SET = if { "WORD_SET" break }
         ?ty WORD_NUMBER = if { "WORD_NUMBER" break }
         ?ty WORD_INTRINSIC = if { "WORD_INTRINSIC" break }
         ?ty WORD_IF = if { "WORD_IF" break }
@@ -105,7 +101,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         ?ty WORD_GLOBAL = if { "WORD_GLOBAL" break }
         ?ty WORD_STRUCT_SET = if { "WORD_STRUCT_SET" break }
         ?ty WORD_GET_REF = if { "WORD_GET_REF" break }
-        ?ty WORD_LOCAL2 = if { "WORD_LOCAL2" break }
+        ?ty WORD_LOCAL = if { "WORD_LOCAL" break }
         ?ty WORD_LOAD = if { "WORD_LOAD" break }
         ?ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         ?ty WORD_STORE = if { "WORD_STORE" break }
@@ -484,7 +480,7 @@ fn Word-free(self: .Word) {
     }
     ?self.ty WORD_STRUCT_SET = 
     ?self.ty WORD_GET_REF = or
-    ?self.ty WORD_LOCAL2 = or
+    ?self.ty WORD_LOCAL = or
     ?self.ty WORD_STORE = or
     ?self.ty WORD_GLOBAL = or
     if {
@@ -492,7 +488,7 @@ fn Word-free(self: .Word) {
     }
     ?self.ty WORD_STRUCT_SET = 
     ?self.ty WORD_GET_REF = or
-    ?self.ty WORD_LOCAL2 = or
+    ?self.ty WORD_LOCAL = or
     ?self.ty WORD_STORE = or
     if {
         ?self.loads IV:I32Vec-free
