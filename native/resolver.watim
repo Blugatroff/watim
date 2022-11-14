@@ -104,7 +104,7 @@ fn resolve-types(modules: .M:Modules, module: .M:Module, types: .AST:Types) {
 fn resolve-memories(modules: .M:Modules, module: .M:Module, memories: .AST:Memories) {
     local i: i32
     loop {
-        ?i $memories AST:Memories-len = if { break }
+        ?i ?memories AST:Memories-len = if { break }
         ?modules ?module ?memories ?i AST:Memories-get resolve-memory
         ?i 1 + @i
     }
@@ -142,7 +142,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
     local struc: .AST:Struct
 
     loop {
-        $type AST:Type-ty AST:TYPE_STRUCT = if {
+        ?type AST:Type-ty AST:TYPE_STRUCT = if {
             ?type AST:Type-module @module-token
             ?type AST:Type-ident L:Token-lexeme @ident
             
@@ -157,8 +157,8 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
             } else {
                 ?module M:Module-path @path
             }
-            ?modules ?path S2:String-unpack $ident STR:Str-unpack M:Modules-find-struc if {
-                @struc ?type $struc AST:Type-set-struc
+            ?modules ?path S2:String-unpack ?ident STR:Str-unpack M:Modules-find-struc if {
+                @struc ?type ?struc AST:Type-set-struc
             } else {
                 drop ?type AST:Type-ident L:Token-location "struct not found" U:abort-with-location
             }

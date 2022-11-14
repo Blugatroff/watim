@@ -4,15 +4,15 @@ import "./string.watim" as S
 
 fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
     local i: i32
-    $len-a $len-b = if {
+    ?len-a ?len-b = if {
         loop {
-            $i $len-a = if { 0 0 = break }
-            $ptr-a $i + load8
-            $ptr-b $i + load8
+            ?i ?len-a = if { 0 0 = break }
+            ?ptr-a ?i + load8
+            ?ptr-b ?i + load8
             /= if {
                 0 1 = break
             }
-            $i 1 + #i
+            ?i 1 + @i
         }
     } else {
         0 1 =
@@ -21,55 +21,55 @@ fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
 fn str-find(ptr: .i32, len: i32, char: i32) -> i32, bool {
     local i: i32
     loop {
-        $i $len = if {
+        ?i ?len = if {
             0 0 1 = break
         }
-        $ptr $i + load8 $char = if {
-            $i 0 0 = break
+        ?ptr ?i + load8 ?char = if {
+            ?i 0 0 = break
         }
-        $i 1 + #i
+        ?i 1 + @i
     }
 }
 fn str-find-rev(ptr: .i32, len: i32, char: i32) -> i32, bool {
     local i: i32
-    $len #i
+    ?len @i
     loop {
-        $i 0 = if {
+        ?i 0 = if {
             0 0 1 = break
         }
-        $ptr $i 1 - + load8 $char = if {
-            $i 0 0 = break
+        ?ptr ?i 1 - + load8 ?char = if {
+            ?i 0 0 = break
         }
-        $i 1 - #i
+        ?i 1 - @i
     }
 }
 fn str-is-prefix(ptr: .i32, len: i32, prefix-ptr: .i32, prefix-len: i32) -> bool {
-    $ptr $len $prefix-len CORE:min $prefix-ptr $prefix-len str-eq
+    ?ptr ?len ?prefix-len CORE:min ?prefix-ptr ?prefix-len str-eq
 }
 fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, bool {
     local char: i32
     local index: i32
     loop {
-        $target-len 0 = if { 0 0 0 = break }
-        $len 0 = if {
-            0 $target-len 0 = break
+        ?target-len 0 = if { 0 0 0 = break }
+        ?len 0 = if {
+            0 ?target-len 0 = break
         }
-        $target-ptr load8 #char
-        $ptr $len $char str-find if {
-            #index
-            $ptr $index + $len $index - 
-            $target-ptr $target-len
+        ?target-ptr load8 @char
+        ?ptr ?len ?char str-find if {
+            @index
+            ?ptr ?index + ?len ?index - 
+            ?target-ptr ?target-len
             str-is-prefix if {
-                $index 0 0 = break
+                ?index 0 0 = break
             }
         } else {
             0 1 = break
         } 
-        $ptr $index + 1 +
-        $len $index - 1 -
-        $target-ptr $target-len 
+        ?ptr ?index + 1 +
+        ?len ?index - 1 -
+        ?target-ptr ?target-len 
         str-find-str if {
-            $index + 1 + 0 0 = break
+            ?index + 1 + 0 0 = break
         } else {
             0 1 = break
         }

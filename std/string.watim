@@ -31,13 +31,11 @@ fn String-new-from-buf(ptr: .i32, len: i32) -> String {
 fn String-push(self: .String, char: i32) {
     local new-buf: .i32
     local size: i32
-    local ptr: .i32
     ?self.len 1 + ?self.cap > if {
         ?self.cap 2 CORE:max 2 * @size
         ?size A:alloc @new-buf
         ?self.ptr ?new-buf ?self.len CORE:copy
-        $self.cap @ptr
-        ?size >>ptr
+        ?size @self.cap
         ?self.ptr !i32 0 /= if {
             ?self.ptr A:free
         }

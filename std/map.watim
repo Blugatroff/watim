@@ -55,6 +55,6 @@ fn StringMap-get-key(self: .StringMap, index: i32) -> .S:String {
     &self.keys ?index S:StringVec-get
 }
 fn StringMap-get-value(self: .StringMap, index: i32) -> i32 {
-    ?self.values $index IV:I32Vec-get
+    ?self.values ?index IV:I32Vec-get
 }
 

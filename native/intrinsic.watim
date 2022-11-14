@@ -175,7 +175,7 @@ fn check-intrinsic-store32(stack: .AST:Types, word: .AST:Word) {
     ?left AST:Type-ty AST:TYPE_PTR /= if {
         ?stack ?word "expected a => [.a, a] got: " report-error
     }
-    ?left AST:Type-child $right AST:Type-eq not if {
+    ?left AST:Type-child ?right AST:Type-eq not if {
         ?stack ?word "expected a => [.a, a] got: " report-error
     }
     ?stack AST:Types-pop drop
@@ -206,7 +206,7 @@ fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
     ?stack AST:Types-pop @right
     ?stack AST:Types-pop @left
     ?right AST:Type-ty AST:TYPE_I32 /= 
-    ?left AST:Type-ty AST:TYPE_I32 /= $left AST:Type-ty AST:TYPE_PTR /= and 
+    ?left AST:Type-ty AST:TYPE_I32 /= ?left AST:Type-ty AST:TYPE_PTR /= and 
     or if {
         ?stack ?word "expected [(i32, ptr), i32] got: " report-error
     }

@@ -24,13 +24,13 @@ fn buf-size() -> i32 {
     ?BUF_SIZE load32
 }
 fn set-buf-size(size: i32) {
-    ?BUF_SIZE $size store32
+    ?BUF_SIZE ?size store32
 }
 fn n-allocs() -> i32 {
     ?N_ALLOCS load32
 }
 fn set-n-allocs(n: i32) {
-    ?N_ALLOCS $n store32
+    ?N_ALLOCS ?n store32
 }
 fn inc-n-allocs() {
     n-allocs 1 + set-n-allocs 
@@ -303,12 +303,12 @@ fn remaining() -> i32 {
 }
 
 fn report(fd: i32) {
-    $fd "Memory usage: " IO:write-all IO:check 
-    $fd usage IO:print-to-fd
-    $fd " bytes, largest free block: " IO:write-all IO:check
-    $fd size-of-largest-free-block IO:print-to-fd
-    $fd " number of allocations: " IO:write-all IO:check
-    $fd n-allocs IO:print-to-fd
-    $fd "\n" IO:write-all IO:check
+    ?fd "Memory usage: " IO:write-all IO:check 
+    ?fd usage IO:print-to-fd
+    ?fd " bytes, largest free block: " IO:write-all IO:check
+    ?fd size-of-largest-free-block IO:print-to-fd
+    ?fd " number of allocations: " IO:write-all IO:check
+    ?fd n-allocs IO:print-to-fd
+    ?fd "\n" IO:write-all IO:check
 }
 

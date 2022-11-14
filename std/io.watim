@@ -7,15 +7,17 @@ struct Iov {
     len: i32
 }
 
+struct I32 { inner: i32 }
+
 fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     memory space: Iov 8 4;
-    memory writ: i32 4 4;
+    local writ: I32
     local code: i32
-    $writ 0 store32
-    $space.ptr $pt store32
-    $space.len $len store32
-    $fd $space 1 $writ raw_write #code
-    $writ load32 $code
+    0 @writ.inner
+    ?pt @space.ptr
+    ?len @space.len
+    ?fd ?space 1 &writ.inner raw_write @code
+    ?writ.inner ?code
 }
 
 fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
@@ -49,12 +51,12 @@ fn write-byte(file: i32, b: i32) -> i32 {
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     memory iov: Iov 8 4;
-    memory writ: i32 4 4;
+    local writ: I32
     local code: i32
-    $iov.ptr $buf_addr store32
-    $iov.len $buf_size store32 
-    $file $iov 1 $writ raw_read #code
-    $writ load32 $code
+    ?buf_addr @iov.ptr 
+    ?buf_size @iov.len 
+    ?file ?iov 1 &writ.inner raw_read @code
+    ?writ.inner ?code
 }
 
 fn print-to-fd-i32-fallible(fd: i32, n: i32) -> i32 {

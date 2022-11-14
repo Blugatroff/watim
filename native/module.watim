@@ -69,7 +69,7 @@ fn Module-extract-imports(self: .Module, module-path: .S:String) {
         ?item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
             ?item.imp @imp
             ?module-path S:String-unpack FS:path-dir S:String-new @path
-            &path $imp AST:Import-path-content S:String-append
+            &path ?imp AST:Import-path-content S:String-append
             ?self.imports
             ?item.imp AST:Import-ident L:Token-lexeme STR:Str-unpack S:String-new 
             // #ident
@@ -134,7 +134,7 @@ fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:
         ?item AST:TopItem-ty AST:TOP_ITEM_FN = if {
             ?item AST:TopItem-function @fun
             ?fun AST:Function-ident L:Token-lexeme STR:Str-unpack ?ident-ptr ?ident-len STR:str-eq if {
-                0 !.AST:Extern $fun 0 0 = break
+                0 !.AST:Extern ?fun 0 0 = break
             }
         }
         ?item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
