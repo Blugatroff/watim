@@ -4,15 +4,15 @@ import "./string.watim" as S
 
 fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
     local i: i32
-    ?len-a ?len-b = if {
+    $len-a $len-b = if {
         loop {
-            ?i ?len-a = if { 0 0 = break }
-            ?ptr-a ?i + load8
-            ?ptr-b ?i + load8
+            $i $len-a = if { 0 0 = break }
+            $ptr-a $i + load8
+            $ptr-b $i + load8
             /= if {
                 0 1 = break
             }
-            ?i 1 + @i
+            $i 1 + #i
         }
     } else {
         0 1 =
@@ -21,55 +21,55 @@ fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
 fn str-find(ptr: .i32, len: i32, char: i32) -> i32, bool {
     local i: i32
     loop {
-        ?i ?len = if {
+        $i $len = if {
             0 0 1 = break
         }
-        ?ptr ?i + load8 ?char = if {
-            ?i 0 0 = break
+        $ptr $i + load8 $char = if {
+            $i 0 0 = break
         }
-        ?i 1 + @i
+        $i 1 + #i
     }
 }
 fn str-find-rev(ptr: .i32, len: i32, char: i32) -> i32, bool {
     local i: i32
-    ?len @i
+    $len #i
     loop {
-        ?i 0 = if {
+        $i 0 = if {
             0 0 1 = break
         }
-        ?ptr ?i 1 - + load8 ?char = if {
-            ?i 0 0 = break
+        $ptr $i 1 - + load8 $char = if {
+            $i 0 0 = break
         }
-        ?i 1 - @i
+        $i 1 - #i
     }
 }
 fn str-is-prefix(ptr: .i32, len: i32, prefix-ptr: .i32, prefix-len: i32) -> bool {
-    ?ptr ?len ?prefix-len CORE:min ?prefix-ptr ?prefix-len str-eq
+    $ptr $len $prefix-len CORE:min $prefix-ptr $prefix-len str-eq
 }
 fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, bool {
     local char: i32
     local index: i32
     loop {
-        ?target-len 0 = if { 0 0 0 = break }
-        ?len 0 = if {
-            0 ?target-len 0 = break
+        $target-len 0 = if { 0 0 0 = break }
+        $len 0 = if {
+            0 $target-len 0 = break
         }
-        ?target-ptr load8 @char
-        ?ptr ?len ?char str-find if {
-            @index
-            ?ptr ?index + ?len ?index - 
-            ?target-ptr ?target-len
+        $target-ptr load8 #char
+        $ptr $len $char str-find if {
+            #index
+            $ptr $index + $len $index - 
+            $target-ptr $target-len
             str-is-prefix if {
-                ?index 0 0 = break
+                $index 0 0 = break
             }
         } else {
             0 1 = break
         } 
-        ?ptr ?index + 1 +
-        ?len ?index - 1 -
-        ?target-ptr ?target-len 
+        $ptr $index + 1 +
+        $len $index - 1 -
+        $target-ptr $target-len 
         str-find-str if {
-            ?index + 1 + 0 0 = break
+            $index + 1 + 0 0 = break
         } else {
             0 1 = break
         }
@@ -79,59 +79,59 @@ fn str-escape(str-ptr: .i32, str-len: i32) -> S:String {
     memory buf: i32 4 4;
     local out: S:String
     local i: i32
-    S:String-empty @out
+    S:String-empty #out
     loop {
-        ?str-len ?i = if { break }
-        &out ?buf ?str-ptr ?i + load8 ?buf CORE:escape S:String-append
-        ?i 1 + @i
+        $str-len $i = if { break }
+        &out $buf $str-ptr $i + load8 $buf CORE:escape S:String-append
+        $i 1 + #i
     }
-    ?out
+    $out
 }
 fn str-replace(str-ptr: .i32, str-len: i32, old-ptr: .i32, old-len: i32, new-ptr: .i32, new-len: i32) -> S:String {
     local out: S:String
     local index: i32
-    S:String-empty @out
-    ?str-ptr ?str-len ?old-ptr ?old-len str-find-str if {
-        @index
+    S:String-empty #out
+    $str-ptr $str-len $old-ptr $old-len str-find-str if {
+        #index
 
-        &out ?str-ptr ?index S:String-append
-        &out ?new-ptr ?new-len S:String-append
+        &out $str-ptr $index S:String-append
+        &out $new-ptr $new-len S:String-append
 
-        ?out
+        $out
 
-        ?str-ptr ?index + ?old-len + 
-        ?str-len ?index - ?old-len -
-        ?old-ptr
-        ?old-len
-        ?new-ptr
-        ?new-len
+        $str-ptr $index + $old-len + 
+        $str-len $index - $old-len -
+        $old-ptr
+        $old-len
+        $new-ptr
+        $new-len
         str-replace
 
         S:String-merge
     } else {
         drop 
-        &out ?str-ptr ?str-len S:String-append
-        ?out
+        &out $str-ptr $str-len S:String-append
+        $out
     }
 }
 fn str-split(str-ptr: .i32, str-len: i32, del: i32) -> S:StringVec {
     local splits: S:StringVec
     local index: i32
-    S:StringVec-new @splits
+    S:StringVec-new #splits
     loop {
-        ?str-len 0 = if { break }
-        ?str-ptr ?str-len ?del str-find if {
-            @index
-            &splits ?str-ptr ?index S:String-new S:StringVec-push
-            ?str-ptr ?index + 1 + @str-ptr
-            ?str-len ?index - 1 - @str-len
+        $str-len 0 = if { break }
+        $str-ptr $str-len $del str-find if {
+            #index
+            &splits $str-ptr $index S:String-new S:StringVec-push
+            $str-ptr $index + 1 + #str-ptr
+            $str-len $index - 1 - #str-len
         } else {
             drop
-            &splits ?str-ptr ?str-len S:String-new S:StringVec-push
+            &splits $str-ptr $str-len S:String-new S:StringVec-push
             break
         }
     }
-    ?splits
+    $splits
 }
 
 struct Str {
@@ -140,28 +140,28 @@ struct Str {
 }
 fn Str-new(ptr: .i32, len: i32) -> Str {
     local self: Str
-    ?ptr @self.ptr
-    ?len @self.len
-    ?self
+    $ptr #self.ptr
+    $len #self.len
+    $self
 }
 fn Str-len(self: .Str) -> i32 {
-    ?self.len
+    $self.len
 }
 fn Str-unpack(self: .Str) -> .i32, i32 {
-    ?self.ptr ?self.len
+    $self.ptr $self.len
 }
 fn Str-get(self: .Str, index: i32) -> i32 {
-    ?index ?self Str-len >= if { 
+    $index $self Str-len >= if { 
         1 "Str-get Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    ?self.ptr ?index + load8
+    $self.ptr $index + load8
 }
 fn Str-slice(self: .Str, index: i32, len: i32) -> Str {
-    ?index ?len + ?self Str-len > if { 
+    $index $len + $self Str-len > if { 
         1 "Str-slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    ?self.ptr ?index + ?len Str-new
+    $self.ptr $index + $len Str-new
 }
 

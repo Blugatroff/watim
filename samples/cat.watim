@@ -11,20 +11,20 @@ fn main "_start" () {
     local args: S:StringVec
     local str: S:String
 
-    ?MEM 16384 A:init
+    $MEM 16384 A:init
 
-    ARGS:get-args @args
+    ARGS:get-args #args
 
     &args S:StringVec-len 1 <= if {
         2 "\ncat written in Watim\n" IO:write-all IO:check
         2 "\tUsage: ./run.sh ./samples/cat.watim <file>\n" IO:write-all IO:check
         1 CORE:exit
     }
-    &args 1 S:StringVec-get S:String-unpack FS:read-file IO:check @str
+    &args 1 S:StringVec-get S:String-unpack FS:read-file IO:check #str
 
     1 &str S:String-unpack IO:write-all IO:check
 
-    ?str S:String-free
-    ?args S:StringVec-free
+    $str S:String-free
+    $args S:StringVec-free
 }
 

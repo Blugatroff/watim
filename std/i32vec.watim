@@ -10,76 +10,76 @@ struct I32Vec {
 
 fn I32Vec-new() -> .I32Vec {
     local vec: .I32Vec
-    12 A:alloc !.I32Vec @vec
-    0 !.i32 @vec.ptr
-    0 @vec.len
-    0 @vec.cap
-    ?vec
+    12 A:alloc !.I32Vec #vec
+    0 !.i32 #vec.ptr
+    0 #vec.len
+    0 #vec.cap
+    $vec
 }
 fn I32Vec-len(vec: .I32Vec) -> i32 {
-    ?vec.len
+    $vec.len
 }
 fn I32Vec-get(vec: .I32Vec, index: i32) -> i32 {
-    ?index ?vec I32Vec-len >= if { 
+    $index $vec I32Vec-len >= if { 
         2 "Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    ?vec.ptr ?index 4 * + load32
+    $vec.ptr $index 4 * + load32
 }
 
 fn I32Vec-set(self: .I32Vec, index: i32, value: i32) -> i32 {
-    ?index ?self I32Vec-len >= if {
+    $index $self I32Vec-len >= if {
         2 "Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    ?self ?index I32Vec-get 
-    ?self.ptr ?index 4 * + ?value store32
+    $self $index I32Vec-get 
+    $self.ptr $index 4 * + $value store32
 }
 fn I32Vec-free(vec: .I32Vec) {
-    ?vec.cap 0 > if { ?vec.ptr A:free }
-    ?vec !.i32 A:free
+    $vec.cap 0 > if { $vec.ptr A:free }
+    $vec !.i32 A:free
 }
 fn I32Vec-push(vec: .I32Vec, val: i32) {
     local new-buf: .i32
     local size: i32
-    ?vec.len 1 + ?vec.cap <= if {
-        ?vec.ptr ?vec.len 4 * + ?val store32
-        ?vec.len 1 + @vec.len
+    $vec.len 1 + $vec.cap <= if {
+        $vec.ptr $vec.len 4 * + $val store32
+        $vec.len 1 + #vec.len
     } else {
-        ?vec.cap 2 CORE:max 2 * @size
-        ?size 4 * A:alloc @new-buf
-        ?vec.ptr !.i32
-        ?new-buf !.i32
-        ?vec.len 4 *
+        $vec.cap 2 CORE:max 2 * #size
+        $size 4 * A:alloc #new-buf
+        $vec.ptr !.i32
+        $new-buf !.i32
+        $vec.len 4 *
         CORE:copy
-        ?size @vec.cap
-        ?vec.len 0 > if {
-            ?vec.ptr !.i32 A:free
+        $size #vec.cap
+        $vec.len 0 > if {
+            $vec.ptr !.i32 A:free
         }
-        ?new-buf @vec.ptr
-        ?vec ?val I32Vec-push
+        $new-buf #vec.ptr
+        $vec $val I32Vec-push
     }
 }
 fn I32Vec-pop(self: .I32Vec) -> i32 {
-    ?self I32Vec-len 0 = if { 
+    $self I32Vec-len 0 = if { 
         1 "Cannot pop from emtpy I32Vec" IO:write-all IO:check
         1 CORE:exit
     }
-    ?self ?self I32Vec-len 1 - I32Vec-get
-    ?self.len 1 - @self.len
+    $self $self I32Vec-len 1 - I32Vec-get
+    $self.len 1 - #self.len
 }
 fn I32Vec-print(vec: .I32Vec) {
     local i: i32
-    ?vec I32Vec-len 0 = if { 
+    $vec I32Vec-len 0 = if { 
         1 "[]" IO:write-all IO:check
     } else {
         1 "[\n" IO:write-all IO:check
         loop {
-            ?i ?vec I32Vec-len = if { break }
+            $i $vec I32Vec-len = if { break }
             1 "  " IO:write-all IO:check
-            ?vec ?i I32Vec-get IO:print
+            $vec $i I32Vec-get IO:print
             1 ",\n" IO:write-all IO:check
-            ?i 1 + @i
+            $i 1 + #i
         }
         1 "]" IO:write-all IO:check
     }
@@ -87,12 +87,12 @@ fn I32Vec-print(vec: .I32Vec) {
 fn I32Vec-clone(self: .I32Vec) -> .I32Vec {
     local new: .I32Vec
     local i: i32
-    I32Vec-new @new
+    I32Vec-new #new
     loop {
-        ?i ?self I32Vec-len = if { break }
-        ?new ?self ?i I32Vec-get I32Vec-push
-        ?i 1 + @i
+        $i $self I32Vec-len = if { break }
+        $new $self $i I32Vec-get I32Vec-push
+        $i 1 + #i
     }
-    ?new
+    $new
 }
 

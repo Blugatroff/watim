@@ -7,88 +7,88 @@ import "./lexer.watim" as L
 import "./ast.watim" as AST
 
 fn abort-with-location(file-ptr: .i32, file-len: i32, line: i32, column: i32, msg-ptr: .i32, msg-len: i32) {
-    2 ?file-ptr ?file-len ?line ?column L:print-location
-    2 ?msg-ptr ?msg-len IO:write-all IO:check
+    2 $file-ptr $file-len $line $column L:print-location
+    2 $msg-ptr $msg-len IO:write-all IO:check
     1 CORE:exit
 }
 fn abort(file-ptr: .i32, file-len: i32, msg-ptr: .i32, msg-len: i32) {
-    2 ?file-ptr ?file-len IO:write-all IO:check
+    2 $file-ptr $file-len IO:write-all IO:check
     2 ": " IO:write-all IO:check
-    2 ?msg-ptr ?msg-len IO:write-all IO:check
+    2 $msg-ptr $msg-len IO:write-all IO:check
     1 CORE:exit
 }
 
 fn report-stack-one-error(stack: .AST:Types, expected: .AST:Type, word: .AST:Word) {
     local types: .AST:Types
-    AST:Types-new @types
-    ?types ?expected AST:Types-push
-    ?stack ?types ?word report-stack-mismatch
-    ?types AST:Types-free
+    AST:Types-new #types
+    $types $expected AST:Types-push
+    $stack $types $word report-stack-mismatch
+    $types AST:Types-free
 }
 fn expect-stack-one(stack: .AST:Types, expected: .AST:Type, word: .AST:Word) {
-    ?stack AST:Types-len 0 = if {
-        ?stack ?expected ?word report-stack-one-error
+    $stack AST:Types-len 0 = if {
+        $stack $expected $word report-stack-one-error
     }
-    ?stack ?stack AST:Types-len 1 - AST:Types-get
-    ?expected
+    $stack $stack AST:Types-len 1 - AST:Types-get
+    $expected
     AST:Type-eq not if {
-        ?stack ?expected ?word report-stack-one-error
+        $stack $expected $word report-stack-one-error
     }
-    ?stack AST:Types-pop drop
+    $stack AST:Types-pop drop
 }
 fn expect-stack-fallible(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) -> bool {
     local i: i32
     loop {
-        ?i ?expected AST:Types-len = if { 0 0 = break }
-        ?i ?stack AST:Types-len = if { 
+        $i $expected AST:Types-len = if { 0 0 = break }
+        $i $stack AST:Types-len = if { 
             0 1 = break
         }
-        ?stack ?stack AST:Types-len 1 - ?i - AST:Types-get
-        ?expected ?expected AST:Types-len 1 - ?i - AST:Types-get
+        $stack $stack AST:Types-len 1 - $i - AST:Types-get
+        $expected $expected AST:Types-len 1 - $i - AST:Types-get
         AST:Type-eq not if {
             0 1 = break
         }
-        ?i 1 + @i 
+        $i 1 + #i 
     }
 }
 fn expect-stack(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
     local i: i32
-    ?stack ?expected ?word expect-stack-fallible not if {
-        ?stack ?expected ?word report-stack-mismatch
+    $stack $expected $word expect-stack-fallible not if {
+        $stack $expected $word report-stack-mismatch
     }
-    0 @i
+    0 #i
     loop {
-        ?i ?expected AST:Types-len = if { break }
-        ?stack AST:Types-pop drop
-        ?i 1 + @i
+        $i $expected AST:Types-len = if { break }
+        $stack AST:Types-pop drop
+        $i 1 + #i
     }
 }
 fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
     local formatter: FMT:Formatter
     local msg: S:String
-    FMT:Formatter-new @formatter
+    FMT:Formatter-new #formatter
     &formatter "\n\texpected: " FMT:Formatter-write
-    ?expected &formatter AST:Types-format
+    $expected &formatter AST:Types-format
     &formatter "\n\tgot:      " FMT:Formatter-write
-    ?stack &formatter AST:Types-format
+    $stack &formatter AST:Types-format
     &formatter "\n" FMT:Formatter-write
-    ?formatter FMT:Formatter-into-string @msg
-    ?word AST:Word-location &msg S:String-unpack abort-with-location
-    ?msg S:String-free
+    $formatter FMT:Formatter-into-string #msg
+    $word AST:Word-location &msg S:String-unpack abort-with-location
+    $msg S:String-free
 }
 
 fn push-temp-type(temp-types: .AST:Types, type: .AST:Type) -> .AST:Type {
-    ?temp-types ?type AST:Types-push
-    ?type
+    $temp-types $type AST:Types-push
+    $type
 }
 
 fn print-bytes(ptr: .i32, len: i32) {
     local i: i32
     loop {
-        ?i ?len = if { break }
-        ?ptr ?i + load8 IO:print
+        $i $len = if { break }
+        $ptr $i + load8 IO:print
         1 ", " IO:write-all IO:check
-        ?i 1 + @i
+        $i 1 + #i
     }
 }
 

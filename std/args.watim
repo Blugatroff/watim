@@ -15,33 +15,33 @@ fn get-args() -> S:StringVec {
     local arg_sizes: i32
     local i: i32
     local ptr: .i32
-    ?arg_number_ptr ?arg_sizes_ptr args_sizes_get IO:check
-    ?arg_number_ptr load32 @arg_number
-    ?arg_sizes_ptr load32 @arg_sizes
-    ?arg_sizes A:alloc @arg_buf
-    ?arg_number 4 * A:alloc @ptr_buf
+    $arg_number_ptr $arg_sizes_ptr args_sizes_get IO:check
+    $arg_number_ptr load32 #arg_number
+    $arg_sizes_ptr load32 #arg_sizes
+    $arg_sizes A:alloc #arg_buf
+    $arg_number 4 * A:alloc #ptr_buf
 
-    ?ptr_buf !..i32 ?arg_buf args_get IO:check
+    $ptr_buf !..i32 $arg_buf args_get IO:check
 
-    S:StringVec-new @strings
+    S:StringVec-new #strings
 
     loop {
-        ?i ?arg_number >= if { break }
-        ?ptr_buf ?i 4 * + ~ !.i32 @ptr
-        &strings ?ptr ?ptr cstr-len S:String-new S:StringVec-push
-        ?i 1 + @i
+        $i $arg_number >= if { break }
+        $ptr_buf $i 4 * + ~ !.i32 #ptr
+        &strings $ptr $ptr cstr-len S:String-new S:StringVec-push
+        $i 1 + #i
     }
-    ?ptr_buf A:free
-    ?arg_buf A:free
-    ?strings
+    $ptr_buf A:free
+    $arg_buf A:free
+    $strings
 }
 
 fn cstr-len(ptr: .i32) -> i32 {
     local i: i32
     loop {
-        ?ptr load8 0 = if { ?i break }
-        ?i 1 + @i
-        ?ptr 1 + @ptr
+        $ptr load8 0 = if { $i break }
+        $i 1 + #i
+        $ptr 1 + #ptr
     }
 }
 

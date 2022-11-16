@@ -9,33 +9,33 @@ fn parse(pt: .i32, len: i32) -> i32 {
     local d: i32
     local original-ptr: .i32
     local original-len: i32
-    ?pt @original-ptr
-    ?len @original-len
+    $pt #original-ptr
+    $len #original-len
     loop {
-        ?pt load8 @d
-        ?d 48 >= ?d 58 <= and if { // 48 is ascii '0'
-            ?n ?d 48 - + @n
+        $pt load8 #d
+        $d 48 >= $d 58 <= and if { // 48 is ascii '0'
+            $n $d 48 - + #n
         } else {
             1 "Failed to parse: '" IO:write-all IO:check
-            1 ?original-ptr ?original-len IO:write-all IO:check
+            1 $original-ptr $original-len IO:write-all IO:check
             1 "'" IO:write-all IO:check
             1 10 IO:write-byte IO:check
             1 CORE:exit
         }
-        ?pt 1 + @pt // advance pointer
-        ?len 1 - @len // reduce length
-        ?len 0 = if { ?n break }
-        ?n 10 * @n
+        $pt 1 + #pt // advance pointer
+        $len 1 - #len // reduce length
+        $len 0 = if { $n break }
+        $n 10 * #n
     }
 }
 
 fn i32-format(self: i32, formatter: .FMT:Formatter) {
     memory buf: i32 24;
-    ?formatter ?buf ?self ?buf IO:print-i32-into FMT:Formatter-write
+    $formatter $buf $self $buf IO:print-i32-into FMT:Formatter-write
 }
 
 fn format-i32(n: i32) -> S:String {
     memory buf: i32 24;
-    ?buf ?n ?buf IO:print-i32-into S:String-new
+    $buf $n $buf IO:print-i32-into S:String-new
 }
 

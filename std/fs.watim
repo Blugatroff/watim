@@ -20,8 +20,8 @@ extern "wasi_unstable" "path_open" fn path_open(
 ) -> i32
 
 fn create-rights(read: bool, write: bool) -> i64 {
-    ?read !i64 1 rotl // 1 << 1
-    ?write !i64 5 rotl
+    $read !i64 1 rotl // 1 << 1
+    $write !i64 5 rotl
     or
 }
 
@@ -29,26 +29,26 @@ fn open-file(path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> 
     memory res_fd: i32 4 4;
     local code: i32
     local parent-fd: i32
-    find-current-dir @code @parent-fd
-    ?code 0 /= if {
-        0 ?code
+    find-current-dir #code #parent-fd
+    $code 0 /= if {
+        0 $code
     } else {
-        ?parent-fd 0 ?path ?path_len 0 ?rights ?inheriting_rights 0 ?res_fd path_open @code
-        ?res_fd load32 ?code
+        $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 $res_fd path_open #code
+        $res_fd load32 $code
     }
 }
 
 fn read-file(path: .i32, path-len: i32) -> S:String, i32 {
     local code: i32
     local fd: i32
-    ?path ?path-len
+    $path $path-len
     0 0 = 0 1 = create-rights
     0 1 = 0 1 = create-rights
-    open-file @code @fd
-    ?code 0 /= if {
-        S:String-empty ?code
+    open-file #code #fd
+    $code 0 /= if {
+        S:String-empty $code
     } else {
-        ?fd read-all
+        $fd read-all
     }
 }
 
@@ -59,36 +59,36 @@ fn read-all(file: i32) -> S:String, i32 {
     local read: i32
     local code: i32
     local r: i32
-    0 @read
-    0 @r
-    64 @buf-size
-    ?buf-size A:alloc @buf
+    0 #read
+    0 #r
+    64 #buf-size
+    $buf-size A:alloc #buf
 
     loop {
-        ?buf-size ?read = if {
-            ?buf @old-buf
-            ?buf-size 2 * A:alloc @buf
-            ?buf !i32 0 = if {
-                ?old-buf A:free
+        $buf-size $read = if {
+            $buf #old-buf
+            $buf-size 2 * A:alloc #buf
+            $buf !i32 0 = if {
+                $old-buf A:free
                 // 48 Error code = Not enough space
                 S:String-empty 48 break
             }
-            ?old-buf ?buf ?buf-size CORE:copy
-            ?buf-size 2 * @buf-size
-            ?old-buf A:free
+            $old-buf $buf $buf-size CORE:copy
+            $buf-size 2 * #buf-size
+            $old-buf A:free
         }
-        ?file 
-        ?buf ?read + 
-        ?buf-size ?read -
-        IO:read @code @r
-        ?code 0 /= if {
-            ?buf A:free
-            S:String-empty ?code break
+        $file 
+        $buf $read + 
+        $buf-size $read -
+        IO:read #code #r
+        $code 0 /= if {
+            $buf A:free
+            S:String-empty $code break
         }
-        ?r 0 = if {
-            ?buf ?read S:String-new-from-buf 0 break
+        $r 0 = if {
+            $buf $read S:String-new-from-buf 0 break
         } else {
-            ?read ?r + @read
+            $read $r + #read
         }
     }
 }
@@ -102,12 +102,12 @@ memory PREOPENED_FDS: .IV:I32Vec 4 4;
 memory PREOPENED_PATHS: S:StringVec 12 4;
 
 fn init() {
-    ?PREOPENED_FDS 0 !.IV:I32Vec store32
+    $PREOPENED_FDS 0 !.IV:I32Vec store32
 }
 fn uninit() {
-    ?PREOPENED_FDS load32 !i32 0 /= if {
-        ?PREOPENED_FDS load32 IV:I32Vec-free
-        ?PREOPENED_PATHS ~ S:StringVec-free
+    $PREOPENED_FDS load32 !i32 0 /= if {
+        $PREOPENED_FDS load32 IV:I32Vec-free
+        $PREOPENED_PATHS ~ S:StringVec-free
     }
 }
 
@@ -118,34 +118,34 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
     local buf: .i32
     local len: i32
     local workaround: .S:StringVec
-    ?PREOPENED_PATHS @workaround
-    ?PREOPENED_FDS load32 !i32 0 = if {
-        3 @fd
-        ?PREOPENED_FDS IV:I32Vec-new store32
+    $PREOPENED_PATHS #workaround
+    $PREOPENED_FDS load32 !i32 0 = if {
+        3 #fd
+        $PREOPENED_FDS IV:I32Vec-new store32
         S:StringVec-new >>workaround
         loop {
-            ?fd ?prestat !.i32 fd_prestat_get @code
+            $fd $prestat !.i32 fd_prestat_get #code
             // 8 = Bad file descriptor
-            ?code 8 = if { 
-                0 @code
+            $code 8 = if { 
+                0 #code
                 break 
             }
-            ?code 0 /= if {
+            $code 0 /= if {
                 break
             }
-            ?prestat.path_len @len
-            ?len A:alloc @buf
-            ?fd ?buf ?len fd_prestat_dir_name @code
-            ?code 0 /= if {
+            $prestat.path_len #len
+            $len A:alloc #buf
+            $fd $buf $len fd_prestat_dir_name #code
+            $code 0 /= if {
                 break
             }
-            ?PREOPENED_FDS load32 ?fd IV:I32Vec-push
-            ?PREOPENED_PATHS ?buf ?len S:String-new S:StringVec-push
-            ?buf A:free
-            ?fd 1 + @fd
+            $PREOPENED_FDS load32 $fd IV:I32Vec-push
+            $PREOPENED_PATHS $buf $len S:String-new S:StringVec-push
+            $buf A:free
+            $fd 1 + #fd
         }
     }
-    ?PREOPENED_FDS load32 ?PREOPENED_PATHS ?code
+    $PREOPENED_FDS load32 $PREOPENED_PATHS $code
 }
 
 // returns 0, 0 if not found
@@ -155,25 +155,25 @@ fn find-current-dir() -> i32, i32 {
     local paths: .S:StringVec
     local code: i32
     local i: i32
-    get-preopened-fds @code @paths @fds
-    ?code 0 = if {
+    get-preopened-fds #code #paths #fds
+    $code 0 = if {
         loop {
-            ?i ?fds IV:I32Vec-len = if { 
+            $i $fds IV:I32Vec-len = if { 
                 // not found
                 2 "failed to find preopened current directory\n" IO:write-all IO:check
                 1 CORE:exit
                 0 0 break
             }
-            ?paths ?i S:StringVec-get S:String-unpack "." STR:str-is-prefix
+            $paths $i S:StringVec-get S:String-unpack "." STR:str-is-prefix
             if {
-                ?fds ?i IV:I32Vec-get 
+                $fds $i IV:I32Vec-get 
                 0 
                 break
             }
-            ?i 1 + @i 
+            $i 1 + #i 
         }
     } else {
-        0 ?code
+        0 $code
     }
 }
 
@@ -183,62 +183,62 @@ fn normalize(path-ptr: .i32, path-len: i32) -> S:String {
     local splits: S:StringVec
     local outsplits: S:StringVec
     local i: i32
-    S:String-empty @out
-    S:StringVec-new @outsplits
-    ?path-ptr ?path-len "./" STR:str-is-prefix not if {
+    S:String-empty #out
+    S:StringVec-new #outsplits
+    $path-ptr $path-len "./" STR:str-is-prefix not if {
         &out "./" S:String-append
     }
-    &out ?path-ptr ?path-len S:String-append
+    &out $path-ptr $path-len S:String-append
     
-    &out S:String-unpack "//" "/" S:str-replace @new
-    ?out S:String-free
-    ?new @out
+    &out S:String-unpack "//" "/" S:str-replace #new
+    $out S:String-free
+    $new #out
 
 
-    &out S:String-unpack "/./" "/" S:str-replace @new
-    ?out S:String-free
-    ?new @out
+    &out S:String-unpack "/./" "/" S:str-replace #new
+    $out S:String-free
+    $new #out
 
-    &out S:String-unpack "./." "." S:str-replace @new
-    ?out S:String-free
-    ?new @out
+    &out S:String-unpack "./." "." S:str-replace #new
+    $out S:String-free
+    $new #out
 
-    &out S:String-unpack "/" drop load8 S:str-split @splits
-    ?out S:String-free
+    &out S:String-unpack "/" drop load8 S:str-split #splits
+    $out S:String-free
 
     loop {
-        ?i &splits S:StringVec-len = if { break }
+        $i &splits S:StringVec-len = if { break }
         loop {
-            ?i 1 + &splits S:StringVec-len /= if {
-                &splits ?i 1 + S:StringVec-get S:String-unpack ".." STR:str-eq 
-                &splits ?i S:StringVec-get S:String-unpack "." STR:str-eq not and
-                &splits ?i S:StringVec-get S:String-unpack ".." STR:str-eq not and
+            $i 1 + &splits S:StringVec-len /= if {
+                &splits $i 1 + S:StringVec-get S:String-unpack ".." STR:str-eq 
+                &splits $i S:StringVec-get S:String-unpack "." STR:str-eq not and
+                &splits $i S:StringVec-get S:String-unpack ".." STR:str-eq not and
                 if {
-                    ?i 1 + @i break
+                    $i 1 + #i break
                 }
             }
-            &outsplits &splits ?i S:StringVec-get S:String-unpack S:String-new S:StringVec-push
+            &outsplits &splits $i S:StringVec-get S:String-unpack S:String-new S:StringVec-push
             break
         }
-        ?i 1 + @i
+        $i 1 + #i
     }
-    ?splits S:StringVec-free
-    &outsplits "/" S:StringVec-join-with @out
-    ?outsplits S:StringVec-free
-    ?path-ptr ?path-len &out S:String-unpack STR:str-eq if {
-        ?out
+    $splits S:StringVec-free
+    &outsplits "/" S:StringVec-join-with #out
+    $outsplits S:StringVec-free
+    $path-ptr $path-len &out S:String-unpack STR:str-eq if {
+        $out
     } else {
         &out S:String-unpack normalize
-        ?out S:String-free
+        $out S:String-free
     }
 }
 
 fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
     local index: i32
-    ?path-ptr ?path-len "/" drop load8 STR:str-find-rev if {
-        @index ?path-ptr ?index
+    $path-ptr $path-len "/" drop load8 STR:str-find-rev if {
+        #index $path-ptr $index
     } else {
-        drop ?path-ptr ?path-len
+        drop $path-ptr $path-len
     }
 }
 

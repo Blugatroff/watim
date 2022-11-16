@@ -36,38 +36,38 @@ fn main() {
     local stack-start: i32
 
     enable-logging
-    ?alloc-mem 25165824 A:init
+    $alloc-mem 25165824 A:init
     FS:init
-    ARGS:get-args @args
-    S2:String-empty @mem
+    ARGS:get-args #args
+    S2:String-empty #mem
 
     &args S2:StringVec-len 1 <= if { print-usage-and-exit }
     &args 1 S2:StringVec-get S2:String-unpack "--quiet" S:str-eq 
     &args 1 S2:StringVec-get S2:String-unpack "-q" S:str-eq or if {
         &args S2:StringVec-len 2 <= if { print-usage-and-exit }
         disable-logging
-        &args 2 S2:StringVec-get @path 
+        &args 2 S2:StringVec-get #path 
     } else {
-        &args 1 S2:StringVec-get @path 
+        &args 1 S2:StringVec-get #path 
     }
 
-    M:Modules-new @modules
-    &modules &mem ?path S2:String-unpack load-module-recursive
+    M:Modules-new #modules
+    &modules &mem $path S2:String-unpack load-module-recursive
     &modules R:resolve
-    &mem S2:String-len &modules MEM:process @stack-start
+    &mem S2:String-len &modules MEM:process #stack-start
     &modules C:check
 
-    FMT:Formatter-new @formatter
-    &formatter ?stack-start &mem &modules GEN:generate
-    ?formatter FMT:Formatter-into-string @formatted
+    FMT:Formatter-new #formatter
+    &formatter $stack-start &mem &modules GEN:generate
+    $formatter FMT:Formatter-into-string #formatted
     1 &formatted S2:String-unpack IO:write-all IO:check
     1 "\n" IO:write-all IO:check
     2 A:report
-    ?formatted S2:String-free
+    $formatted S2:String-free
 
     &modules M:Modules-free
-    ?args S2:StringVec-free
-    ?mem S2:String-free
+    $args S2:StringVec-free
+    $mem S2:String-free
     FS:uninit
     A:is-empty not if {
         A:root A:print-alloc-list
@@ -83,36 +83,36 @@ fn load-module-recursive(modules: .M:Modules, mem: .S2:String, path-ptr: .i32, p
     local i: i32
     logging-enabled if {
         2 "Loading module: " IO:write-all IO:check
-        2 ?path-ptr ?path-len IO:write-all IO:check
+        2 $path-ptr $path-len IO:write-all IO:check
         2 "\n" IO:write-all IO:check
     }
-    ?path-ptr ?path-len ?mem M:Module-load @module
-    &module M:Module-imports @imps
-    ?modules ?path-ptr ?path-len S2:String-new ?module M:Modules-insert
+    $path-ptr $path-len $mem M:Module-load #module
+    &module M:Module-imports #imps
+    $modules $path-ptr $path-len S2:String-new $module M:Modules-insert
     
     loop {
-        ?i ?imps AST:Imports-len = if { break }
-        ?modules ?imps ?i AST:Imports-get-value S2:String-unpack M:Modules-get if {
+        $i $imps AST:Imports-len = if { break }
+        $modules $imps $i AST:Imports-get-value S2:String-unpack M:Modules-get if {
             drop
         } else {
             drop
-            ?modules ?mem 
-            ?imps ?i AST:Imports-get-value S2:String-unpack 
+            $modules $mem 
+            $imps $i AST:Imports-get-value S2:String-unpack 
             load-module-recursive
         }
-        ?i 1 + @i
+        $i 1 + #i
     }
 }
 
 memory LOGGING: bool 4 4;
 fn enable-logging() {
-    ?LOGGING 0 0 = store32
+    $LOGGING 0 0 = store32
 }
 fn disable-logging() {
-    ?LOGGING 0 1 = store32
+    $LOGGING 0 1 = store32
 }
 fn logging-enabled() -> bool {
-    ?LOGGING load32
+    $LOGGING load32
 }
 
 fn start "_start" () {

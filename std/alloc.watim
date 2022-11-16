@@ -3,34 +3,34 @@ import "./core.watim" as CORE
 
 memory LOGGING: bool 4 4;
 fn enable-logging() {
-    ?LOGGING 0 0 = store32
+    $LOGGING 0 0 = store32
 }
 fn disable-logging() {
-    ?LOGGING 0 1 = store32
+    $LOGGING 0 1 = store32
 }
 fn logging() -> bool {
-    ?LOGGING !.i32 load32 0 /=
+    $LOGGING !.i32 load32 0 /=
 }
 memory ROOT: .i32 4 4;
 memory BUF_SIZE: i32 4 4;
 memory N_ALLOCS: i32 4 4;
 fn root() -> .i32 {
-    ?ROOT load32
+    $ROOT load32
 }
 fn set-root(root: .i32) {
-    ?ROOT ?root store32
+    $ROOT $root store32
 }
 fn buf-size() -> i32 {
-    ?BUF_SIZE load32
+    $BUF_SIZE load32
 }
 fn set-buf-size(size: i32) {
-    ?BUF_SIZE ?size store32
+    $BUF_SIZE $size store32
 }
 fn n-allocs() -> i32 {
-    ?N_ALLOCS load32
+    $N_ALLOCS load32
 }
 fn set-n-allocs(n: i32) {
-    ?N_ALLOCS ?n store32
+    $N_ALLOCS $n store32
 }
 fn inc-n-allocs() {
     n-allocs 1 + set-n-allocs 
@@ -43,14 +43,14 @@ fn init(mem: .i32, size: i32) {
     local next: .i32
     
     logging if { 1 "ALLOC RESET: \n" IO:write-all IO:check }
-    ?mem set-root
-    ?size set-buf-size
+    $mem set-root
+    $size set-buf-size
     // Set the next pointer of the init block to 0 since there is only this block. 
-    0 !.i32 @next
+    0 !.i32 #next
     // Store the next pointer in the block.
-    root ?next !i32 store32
+    root $next !i32 store32
     // Store the size of the block.
-    root 4 + ?size store32
+    root 4 + $size store32
     // Mark this block as unused.
     root 8 + 0 store32
 }
@@ -63,102 +63,102 @@ fn alloc(size: i32) -> .i32 {
     local new-block: .i32
     local n: i32
     local unused: bool
-    ?size 4 CORE:align-to @size
-    root @prev
-    root @block
+    $size 4 CORE:align-to #size
+    root #prev
+    root #block
     loop {
-        ?block load32 !.i32 @next
-        ?block 4 + load32 @block-size
-        ?block 8 + load32 0 = @unused
+        $block load32 !.i32 #next
+        $block 4 + load32 #block-size
+        $block 8 + load32 0 = #unused
 
         // Test whether this block has enough space for the requested size + the BLOCK_SIZE.
-        ?block-size ?size 12 + >= ?unused and if {
-            // Is there enough remaining space to split this block in two?
-            ?block-size ?size 12 + 12 + >= if {
+        $block-size $size 12 + >= $unused and if {
+            // Is there enough remaining space to split this block in two$
+            $block-size $size 12 + 12 + >= if {
                 // Calculate the position of the new block.
-                ?block 12 ?size + + @new-block
+                $block 12 $size + + #new-block
                 // Load the block after the one we are splitting.
-                ?block load32 @n
+                $block load32 #n
                 // Set the next-pointer of the new block.
-                ?new-block ?n store32
+                $new-block $n store32
                 // Set the size of the new block.
-                ?new-block 4 + ?block-size 12 - ?size - store32
+                $new-block 4 + $block-size 12 - $size - store32
                 // Mark the new block as unused.
-                ?new-block 8 + 0 store32
+                $new-block 8 + 0 store32
             } else {
-                0 !.i32 @new-block
+                0 !.i32 #new-block
             }
-            ?new-block !i32 0 = if {
-                ?block !..i32 ?next store32
+            $new-block !i32 0 = if {
+                $block !..i32 $next store32
             } else {
-                ?new-block !i32 >>block
+                $new-block !i32 >>block
 
                 // only adjust the size of the block if it was split
-                ?block 4 + ?size 12 + store32
+                $block 4 + $size 12 + store32
             }
-            ?block 8 + 1 store32
+            $block 8 + 1 store32
 
-            root ?prev = if {
+            root $prev = if {
                 root 8 + load32 0 /= if { // if the root is used
-                    ?new-block !i32 0 = if {
+                    $new-block !i32 0 = if {
                         root find-next-free set-root
                     } else {
-                        ?new-block set-root
+                        $new-block set-root
                     }
                 }
             } else {
-                ?new-block !i32 0 = if {
-                    ?prev ?block find-next-free !i32 store32
+                $new-block !i32 0 = if {
+                    $prev $block find-next-free !i32 store32
                 } else {
-                    ?prev ?new-block !i32 store32
+                    $prev $new-block !i32 store32
                 }
             }
             logging if { 
                 1 "ALLOCED ptr: " IO:write-all IO:check 
-                ?block 12 + !i32 IO:print 
+                $block 12 + !i32 IO:print 
                 1 " size: " IO:write-all IO:check 
-                ?size IO:print
+                $size IO:print
                 1 " n-allocs: " IO:write-all IO:check 
                 n-allocs 1 + IO:print 
                 1 "\n" IO:write-all IO:check
             }
             inc-n-allocs
-            ?block 12 + break
+            $block 12 + break
         }
-        ?next !i32 0 = if {
+        $next !i32 0 = if {
             1 "ALLOC FAILED NO MEMORY size: " IO:write-all IO:check 
-            ?size IO:print 1 "\n" IO:write-all IO:check
+            $size IO:print 1 "\n" IO:write-all IO:check
             1 CORE:exit
             0 !.i32 break
         }
-        ?block @prev
-        ?next @block
+        $block #prev
+        $next #block
     }
 }
 
 fn find-next-free(block: .i32) -> .i32 {
     local b: .i32
-    root @b
+    root #b
     loop {
-        ?b !i32 0 = if { 0 !.i32 break }
-        ?b 8 + load32 0 =
-        ?b !i32 ?block !i32 > 
+        $b !i32 0 = if { 0 !.i32 break }
+        $b 8 + load32 0 =
+        $b !i32 $block !i32 > 
         and
         if {
-            ?b break
+            $b break
         }
-        ?b !..i32 load32 @b
+        $b !..i32 load32 #b
     }
 }
 
 fn find-prev-free(block: .i32) -> .i32 {
     local b: .i32
-    root @b
+    root #b
     loop {
-        ?b load32 ?block !i32 >= if {
-            ?b break
+        $b load32 $block !i32 >= if {
+            $b break
         }
-        ?b ~ !.i32 @b
+        $b ~ !.i32 #b
     }
 }
 
@@ -168,47 +168,47 @@ fn free(ptr: .i32) {
     local next-free: .i32
     local b: .i32
     local size: i32
-    ?ptr 12 - @block
-    ?block load32 !.i32 @next
-    ?block find-next-free @next-free
-    ?block 4 + load32 12 - @size
+    $ptr 12 - #block
+    $block load32 !.i32 #next
+    $block find-next-free #next-free
+    $block 4 + load32 12 - #size
 
     logging if { 
         1 "FREEING ptr: " IO:write-all IO:check 
-        ?ptr !i32 IO:print 
+        $ptr !i32 IO:print 
         1 " size: " IO:write-all IO:check 
-        ?size IO:print 
+        $size IO:print 
         1 " n-allocs: " IO:write-all IO:check 
         n-allocs 1 - IO:print 
         1 "\n" IO:write-all IO:check 
     }
-    ?block ?next-free !i32 store32
-    ?block 8 + 0 store32
+    $block $next-free !i32 store32
+    $block 8 + 0 store32
 
-    root !i32 ?block !i32 > if {
-        ?block set-root
+    root !i32 $block !i32 > if {
+        $block set-root
     } else {
-        ?block root = // The root block is being freed
+        $block root = // The root block is being freed
         root load32 0 = // The root has no next block
         and if {
             // The last block is being freed, therefore 
             // everything is free and we can simply reset.
             root buf-size init
         } else {
-            ?block find-prev-free !..i32 ?block store32
+            $block find-prev-free !..i32 $block store32
        }
     }
     dec-n-allocs
-    ?ptr ?size clear
+    $ptr $size clear
     merge
 }
 
 fn clear(ptr: .i32, len: i32) {
     local i: i32
     loop {
-        ?i ?len = if { break }
-        ?ptr ?i + 69 store8
-        ?i 1 + @i
+        $i $len = if { break }
+        $ptr $i + 69 store8
+        $i 1 + #i
     }
 }
 
@@ -221,23 +221,23 @@ fn merge() {
     local next-size: i32
     local next-used: bool
 
-    root @block
+    root #block
     loop {
-        ?block !i32 0 = if { break }
-        ?block load32 !.i32 @next
-        ?next !i32 0 = if { break }
+        $block !i32 0 = if { break }
+        $block load32 !.i32 #next
+        $next !i32 0 = if { break }
         
-        ?block 4 + load32 @size
-        ?block 8 + load32 0 /= @used
-        ?next load32 !.i32 @next-next
-        ?next 4 + load32 @next-size
-        ?next 8 + load32 0 /= @next-used
+        $block 4 + load32 #size
+        $block 8 + load32 0 /= #used
+        $next load32 !.i32 #next-next
+        $next 4 + load32 #next-size
+        $next 8 + load32 0 /= #next-used
 
-        ?block ?size + ?next = ?used not and ?next-used not and if {
-            ?block ?next-next !i32 store32
-            ?block 4 + ?size ?next-size + store32
+        $block $size + $next = $used not and $next-used not and if {
+            $block $next-next !i32 store32
+            $block 4 + $size $next-size + store32
         } else {
-            ?next @block
+            $next #block
         }
     }
 }
@@ -247,39 +247,39 @@ fn print-alloc-list(start: .i32) {
     local next: .i32
     local size: i32
     local used: bool
-    ?start @block
-    1 "BLOCK LIST STARTING AT: " IO:write-all IO:check ?block !i32 IO:print 1 10 IO:write-byte IO:check
+    $start #block
+    1 "BLOCK LIST STARTING AT: " IO:write-all IO:check $block !i32 IO:print 1 10 IO:write-byte IO:check
     loop {
-        ?block !i32 0 = if { break }
-        ?block load32 !.i32 @next
-        ?block 4 + load32 @size
-        ?block 8 + load32 0 > @used
+        $block !i32 0 = if { break }
+        $block load32 !.i32 #next
+        $block 4 + load32 #size
+        $block 8 + load32 0 > #used
 
         1 9 IO:write-byte IO:check 
-        ?block !i32 IO:print
+        $block !i32 IO:print
         1 ": " IO:write-all IO:check
         1 " " IO:write-all IO:check
-        ?next !i32 IO:print
+        $next !i32 IO:print
         1 " " IO:write-all IO:check
-        ?size IO:print
+        $size IO:print
         1 " " IO:write-all IO:check
-        ?used !i32 IO:print
+        $used !i32 IO:print
         1 10 IO:write-byte IO:check 
         
-        ?next @block
+        $next #block
     }
 }
 
 fn size-of-largest-free-block() -> i32 {
     local block: .i32
     local max: i32
-    root @block
+    root #block
     loop {
-        ?block !i32 0 = if { break }
-        ?block 4 + load32 ?max CORE:max @max 
-        ?block load32 !.i32 @block
+        $block !i32 0 = if { break }
+        $block 4 + load32 $max CORE:max #max 
+        $block load32 !.i32 #block
     }
-    ?max
+    $max
 }
 
 fn is-empty() -> bool {
@@ -293,22 +293,22 @@ fn usage() -> i32 {
 fn remaining() -> i32 {
     local block: .i32
     local free: i32
-    root @block
+    root #block
     loop {
-        ?block !i32 0 = if { break }
-        ?block 4 + load32 ?free + @free
-        ?block load32 !.i32 @block
+        $block !i32 0 = if { break }
+        $block 4 + load32 $free + #free
+        $block load32 !.i32 #block
     }
-    ?free
+    $free
 }
 
 fn report(fd: i32) {
-    ?fd "Memory usage: " IO:write-all IO:check 
-    ?fd usage IO:print-to-fd
-    ?fd " bytes, largest free block: " IO:write-all IO:check
-    ?fd size-of-largest-free-block IO:print-to-fd
-    ?fd " number of allocations: " IO:write-all IO:check
-    ?fd n-allocs IO:print-to-fd
-    ?fd "\n" IO:write-all IO:check
+    $fd "Memory usage: " IO:write-all IO:check 
+    $fd usage IO:print-to-fd
+    $fd " bytes, largest free block: " IO:write-all IO:check
+    $fd size-of-largest-free-block IO:print-to-fd
+    $fd " number of allocations: " IO:write-all IO:check
+    $fd n-allocs IO:print-to-fd
+    $fd "\n" IO:write-all IO:check
 }
 
