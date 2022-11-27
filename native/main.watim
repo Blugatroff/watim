@@ -26,7 +26,7 @@ fn print-usage-and-exit() {
 }
 
 fn main() {
-    memory alloc-mem: i32 25165824 4; // 24 MiB
+    memory alloc-mem: i32 25165824 // 24 MiB
     local args: S2:StringVec
     local mem: S2:String
     local path: .S2:String
@@ -104,7 +104,7 @@ fn load-module-recursive(modules: .M:Modules, mem: .S2:String, path-ptr: .i32, p
     }
 }
 
-memory LOGGING: bool 4 4;
+memory LOGGING: bool 4
 fn enable-logging() {
     $LOGGING 0 0 = store32
 }

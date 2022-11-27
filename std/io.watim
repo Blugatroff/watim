@@ -10,7 +10,7 @@ struct Iov {
 struct I32 { inner: i32 }
 
 fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
-    memory space: Iov 8 4;
+    memory space: Iov 8
     local writ: I32
     local code: i32
     0 #writ.inner
@@ -44,13 +44,13 @@ fn write-all(fd: i32, pt: .i32, len: i32) -> i32 {
 }
 
 fn write-byte(file: i32, b: i32) -> i32 {
-    memory buf: i32 1;
+    memory buf: i32 1
     $buf $b store8
     $file $buf 1 write-all
 }
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
-    memory iov: Iov 8 4;
+    memory iov: Iov 8
     local writ: I32
     local code: i32
     $buf_addr #iov.ptr 
@@ -59,12 +59,12 @@ fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     $writ.inner $code
 }
 
-fn print-to-fd-i32-fallible(fd: i32, n: i32) -> i32 {
-    memory buf-reversed: i32 24;
+fn print-to-fd-fallible(fd: i32, n: i32) -> i32 {
+    memory buf-reversed: i32 24
     $fd $buf-reversed $n $buf-reversed print-i32-into write-all
 }
 fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
-    memory buf: i32 24;
+    memory buf: i32 24
     local l: i32
     local i: i32
     0 #l
@@ -94,17 +94,16 @@ fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
 }
 
 fn print(n: i32) {
-    1 $n print-to-fd-i32-fallible check
+    1 $n print-to-fd-fallible check
 }
 fn print-to-fd(fd: i32, n: i32) {
-    $fd $n print-to-fd-i32-fallible check
+    $fd $n print-to-fd-fallible check
 }
 
 fn check(code: i32) {
     $code 0 /= if {
-        2 1 "Error Code: " write-all drop $code print-to-fd-i32-fallible drop
-        2 10 write-byte drop
-        0 0 / drop
+        2 2 "Error Code: " write-all drop $code print-to-fd-fallible drop
+        2 "\n" write-all drop
         1 CORE:exit
     }
 }

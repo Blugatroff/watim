@@ -26,7 +26,7 @@ fn create-rights(read: bool, write: bool) -> i64 {
 }
 
 fn open-file(path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> i32, i32 {
-    memory res_fd: i32 4 4;
+    memory res_fd: i32 4
     local code: i32
     local parent-fd: i32
     find-current-dir #code #parent-fd
@@ -98,8 +98,8 @@ struct Prestat {
     path_len: i32
 }
 
-memory PREOPENED_FDS: .IV:I32Vec 4 4;
-memory PREOPENED_PATHS: S:StringVec 12 4;
+memory PREOPENED_FDS: .IV:I32Vec 4
+memory PREOPENED_PATHS: S:StringVec 12
 
 fn init() {
     $PREOPENED_FDS 0 !.IV:I32Vec store32

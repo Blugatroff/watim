@@ -631,15 +631,13 @@ fn Locals-contains-struc(self: .Locals) -> bool {
 struct Memory {
     locl: .Local
     size: i32
-    alignment: i32
     address: i32
 }
-fn Memory-new(ident: .L:Token, type: .Type, size: i32, alignment: i32) -> .Memory {
+fn Memory-new(ident: .L:Token, type: .Type, size: i32) -> .Memory {
     local self: .Memory
     sizeof(Memory) A:alloc !.Memory #self
     $ident $type Local-new #self.locl
     $size #self.size
-    $alignment #self.alignment
     0 #self.address
     $self
 }
@@ -667,20 +665,6 @@ fn Memory-set-address(self: .Memory, address: i32) {
 }
 fn Memory-size(self: .Memory) -> i32 {
     $self.size
-}
-fn Memory-alignment(self: .Memory) -> i32 {
-    $self.alignment
-}
-fn Memory-format(self: .Memory, formatter: .FMT:Formatter) {
-    $formatter "{ ident: " FMT:Formatter-write
-    $formatter $self Memory-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
-    $formatter ", type: " FMT:Formatter-write
-    $self Memory-type $formatter Type-format
-    $formatter ", size: " FMT:Formatter-write
-    $self.size $formatter U:i32-format
-    $formatter ", alignment: " FMT:Formatter-write
-    $self.alignment $formatter U:i32-format
-    $formatter " }" FMT:Formatter-write
 }
 
 struct Memories {

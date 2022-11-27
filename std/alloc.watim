@@ -1,7 +1,7 @@
 import "./io.watim" as IO
 import "./core.watim" as CORE
 
-memory LOGGING: bool 4 4;
+memory LOGGING: bool 4
 fn enable-logging() {
     $LOGGING 0 0 = store32
 }
@@ -11,9 +11,9 @@ fn disable-logging() {
 fn logging() -> bool {
     $LOGGING !.i32 load32 0 /=
 }
-memory ROOT: .i32 4 4;
-memory BUF_SIZE: i32 4 4;
-memory N_ALLOCS: i32 4 4;
+memory ROOT: .i32 4
+memory BUF_SIZE: i32 4
+memory N_ALLOCS: i32 4
 fn root() -> .i32 {
     $ROOT load32
 }

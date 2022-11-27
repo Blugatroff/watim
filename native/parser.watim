@@ -255,23 +255,6 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Memory {
     $ident
     $type
     $self Parser-parse-number
-    $self.current $self.tokens L:Tokens-len /= if {
-        $self Parser-peek #token
-        $token L:Token-ty L:TOKEN_NUMBER = if {
-            $self Parser-parse-number
-        } else {
-            1
-        }
-    } else {
-        1
-    }
-    $self.current $self.tokens L:Tokens-len = if {
-        &self.file STR:Str-unpack "expected semicolon found EOF" U:abort
-    }
-    $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_SEMICOLON /= if {
-        $token L:Token-location "expected semicolon" U:abort-with-location
-    }
     AST:Memory-new
 }
 fn Parser-parse-body(self: .Parser) -> .AST:Locals, .AST:Memories, AST:Words {

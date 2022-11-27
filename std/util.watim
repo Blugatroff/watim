@@ -30,12 +30,12 @@ fn parse(pt: .i32, len: i32) -> i32 {
 }
 
 fn i32-format(self: i32, formatter: .FMT:Formatter) {
-    memory buf: i32 24;
+    memory buf: i32 24
     $formatter $buf $self $buf IO:print-i32-into FMT:Formatter-write
 }
 
 fn format-i32(n: i32) -> S:String {
-    memory buf: i32 24;
+    memory buf: i32 24
     $buf $n $buf IO:print-i32-into S:String-new
 }
 

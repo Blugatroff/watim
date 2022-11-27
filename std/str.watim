@@ -76,7 +76,7 @@ fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, 
     }
 }
 fn str-escape(str-ptr: .i32, str-len: i32) -> S:String {
-    memory buf: i32 4 4;
+    memory buf: i32 4
     local out: S:String
     local i: i32
     S:String-empty #out

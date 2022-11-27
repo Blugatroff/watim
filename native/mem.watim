@@ -7,7 +7,7 @@ import "./util.watim" as U
 import "./lexer.watim" as L
 
 fn process(global-mem-start: i32, modules: .M:Modules) -> i32 {
-    memory mem-start: i32 4 4;
+    memory mem-start: i32 4
     local i: i32
     $global-mem-start >>mem-start
     loop {
@@ -38,11 +38,9 @@ fn process-item(temp-types: .AST:Types, global-mem-address: .i32, item: .AST:Top
 fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Memory) {
     local address: i32
     local size: i32
-    local alignment: i32
     $global-mem-address ~ #address
     $mem AST:Memory-size #size
-    $mem AST:Memory-alignment #alignment
-    $address $alignment CORE:align-to #address
+    $address 4 CORE:align-to #address
     $address $size + >>global-mem-address 
     $mem $address AST:Memory-set-address
 

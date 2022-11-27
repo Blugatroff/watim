@@ -580,7 +580,7 @@ fn generate-global-mem(formatter: .FMT:Formatter, module: i32, statics-len: i32,
     $formatter ":" FMT:Formatter-write
     $formatter $mem AST:Memory-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
     $formatter " (mut i32) (i32.const " FMT:Formatter-write
-    $mem AST:Memory-address $mem AST:Memory-alignment CORE:align-to $formatter U:i32-format
+    $mem AST:Memory-address $formatter U:i32-format
     $formatter "))\n" FMT:Formatter-write
 }
 
@@ -605,7 +605,7 @@ fn generate-global-mems(formatter: .FMT:Formatter, statics-len: i32, modules: .M
     }
 }
 fn generate-static-mem(formatter: .FMT:Formatter, mem: .S:String) {
-    memory buf: i32 4 4;
+    memory buf: i32 4
     local i: i32
     $formatter FMT:Formatter-write-indent
     $formatter "(data (i32.const 0) \"" FMT:Formatter-write
@@ -654,16 +654,9 @@ fn generate-locals(formatter: .FMT:Formatter, locals: .AST:Locals) {
         $i 1 + #i
     }
 }
-fn generate-mem(formatter: .FMT:Formatter, alignment: i32, size: i32, ident-ptr: .i32, ident-len: i32) {
-    $formatter "global.get $stac:k i32.const " FMT:Formatter-write
-    $alignment $formatter U:i32-format
-    $formatter " global.get $stac:k i32.const " FMT:Formatter-write
-    $alignment $formatter U:i32-format
-    $formatter " i32.rem_u i32.sub global.get $stac:k i32.const " FMT:Formatter-write
-    $alignment $formatter U:i32-format
-    $formatter " i32.rem_u i32.const 0 i32.gt_u i32.mul i32.add global.set $stac:k" FMT:Formatter-write
-    $formatter " global.get $stac:k global.get $stac:k i32.const " FMT:Formatter-write
-    $size $formatter U:i32-format
+fn generate-mem(formatter: .FMT:Formatter, size: i32, ident-ptr: .i32, ident-len: i32) {
+    $formatter "global.get $stac:k global.get $stac:k i32.const " FMT:Formatter-write
+    $size 4 CORE:align-to $formatter U:i32-format
     $formatter " i32.add global.set $stac:k local.set $" FMT:Formatter-write
     $formatter $ident-ptr $ident-len FMT:Formatter-write
 }
@@ -675,7 +668,6 @@ fn generate-memories(formatter: .FMT:Formatter, memories: .AST:Memories) {
         $memories $i AST:Memories-get #mem
         $formatter FMT:Formatter-write-indent
         $formatter 
-        $mem AST:Memory-alignment 
         $mem AST:Memory-size 
         $mem AST:Memory-ident L:Token-lexeme STR:Str-unpack
         generate-mem
@@ -692,7 +684,6 @@ fn generate-struc-mems(formatter: .FMT:Formatter, locals: .AST:Locals) {
         $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
             $formatter FMT:Formatter-write-indent
             $formatter 
-            4
             $locl AST:Local-type AST:Type-struc AST:Struct-size
             $locl AST:Local-ident L:Token-lexeme STR:Str-unpack
             generate-mem
@@ -734,7 +725,7 @@ fn generate-param-receiving(formatter: .FMT:Formatter, param: .AST:Local) {
         $formatter $param AST:Local-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
         $formatter "\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
-        $formatter 4 $struc AST:Struct-size $param AST:Local-ident L:Token-lexeme STR:Str-unpack generate-mem
+        $formatter $struc AST:Struct-size $param AST:Local-ident L:Token-lexeme STR:Str-unpack generate-mem
         $formatter "\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
         $formatter "local.get $" FMT:Formatter-write
@@ -841,8 +832,8 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
     $size $count
 }
 fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Function) {
-    memory struc-returnals-space-ptr: i32 4 4;
-    memory locl-copy-space-ptr: i32 4 4;
+    memory struc-returnals-space-ptr: i32 4
+    memory locl-copy-space-ptr: i32 4
     local i: i32
     local uses-stack: bool
     local struc-returnals-space: i32
@@ -901,7 +892,7 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
             $formatter FMT:Formatter-write-indent
             $formatter "global.get $stac:k local.set $stac:k\n" FMT:Formatter-write
             $formatter FMT:Formatter-write-indent
-            $formatter 4 $struc-returnals-space "struc-returnals-spac:e\n" generate-mem
+            $formatter $struc-returnals-space "struc-returnals-spac:e\n" generate-mem
         } else {
             $formatter "global.get $stac:k local.set $stac:k" FMT:Formatter-write
         }
@@ -909,7 +900,7 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
     $formatter $function generate-params-receiving
     $locl-copy-space 0 > if {
         $formatter FMT:Formatter-write-indent
-        $formatter 4 $locl-copy-space "locl-copy-spac:e\n" generate-mem
+        $formatter $locl-copy-space "locl-copy-spac:e\n" generate-mem
     }
     $formatter $function AST:Function-memories generate-memories
     $formatter $function AST:Function-locals generate-struc-mems
