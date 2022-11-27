@@ -429,7 +429,7 @@ fn check-iff(
     $stack $iff-stack AST:Types-min $stack AST:Types-len AST:Types-clone-slice #params
     $iff-stack $iff-stack AST:Types-min $iff-stack AST:Types-len AST:Types-clone-slice #rets
 
-    $iff AST:If-el !i32 0 /= if {
+    $iff.has-el if {
         $temp-types $bs $modules $module $el-stack $locals $iff AST:If-el check-words #false-branch-diverges
         loop {
             $iff-stack AST:Types-len $el-stack AST:Types-len /= if {

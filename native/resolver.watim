@@ -86,7 +86,7 @@ fn resolve-word(modules: .M:Modules, module: .M:Module, word: .AST:Word) {
 }
 fn resolve-iff(modules: .M:Modules, module: .M:Module, iff: .AST:If) {
     $modules $module $iff AST:If-body resolve-words
-    $iff AST:If-el !i32 0 /= if { 
+    $iff.has-el if { 
         $modules $module $iff AST:If-el resolve-words
     }
 }

@@ -42,7 +42,7 @@ fn dec-n-allocs() {
 fn init(mem: .i32, size: i32) {
     local next: .i32
     
-    logging if { 1 "ALLOC RESET: \n" IO:write-all IO:check }
+    logging if { 2 "ALLOC RESET: \n" IO:write-all IO:check }
     $mem set-root
     $size set-buf-size
     // Set the next pointer of the init block to 0 since there is only this block. 
@@ -114,13 +114,13 @@ fn alloc(size: i32) -> .i32 {
                 }
             }
             logging if { 
-                1 "ALLOCED ptr: " IO:write-all IO:check 
-                $block 12 + !i32 IO:print 
-                1 " size: " IO:write-all IO:check 
-                $size IO:print
-                1 " n-allocs: " IO:write-all IO:check 
-                n-allocs 1 + IO:print 
-                1 "\n" IO:write-all IO:check
+                2 "ALLOCED ptr: " IO:write-all IO:check 
+                2 $block 12 + !i32 IO:print-to-fd
+                2 " size: " IO:write-all IO:check 
+                2 $size IO:print-to-fd
+                2 " n-allocs: " IO:write-all IO:check 
+                2 n-allocs 1 + IO:print-to-fd
+                2 "\n" IO:write-all IO:check
             }
             inc-n-allocs
             $block 12 + break
@@ -174,13 +174,13 @@ fn free(ptr: .i32) {
     $block 4 + load32 12 - #size
 
     logging if { 
-        1 "FREEING ptr: " IO:write-all IO:check 
-        $ptr !i32 IO:print 
-        1 " size: " IO:write-all IO:check 
-        $size IO:print 
-        1 " n-allocs: " IO:write-all IO:check 
-        n-allocs 1 - IO:print 
-        1 "\n" IO:write-all IO:check 
+        2 "FREEING ptr: " IO:write-all IO:check 
+        2 $ptr !i32 IO:print-to-fd
+        2 " size: " IO:write-all IO:check 
+        2 $size IO:print-to-fd
+        2 " n-allocs: " IO:write-all IO:check 
+        2 n-allocs 1 - IO:print-to-fd
+        2 "\n" IO:write-all IO:check 
     }
     $block $next-free !i32 store32
     $block 8 + 0 store32
@@ -207,7 +207,7 @@ fn clear(ptr: .i32, len: i32) {
     local i: i32
     loop {
         $i $len = if { break }
-        $ptr $i + 69 store8
+        $ptr $i + 0 store8
         $i 1 + #i
     }
 }
@@ -248,23 +248,23 @@ fn print-alloc-list(start: .i32) {
     local size: i32
     local used: bool
     $start #block
-    1 "BLOCK LIST STARTING AT: " IO:write-all IO:check $block !i32 IO:print 1 10 IO:write-byte IO:check
+    2 "BLOCK LIST STARTING AT: " IO:write-all IO:check $block !i32 IO:print 1 10 IO:write-byte IO:check
     loop {
         $block !i32 0 = if { break }
         $block load32 !.i32 #next
         $block 4 + load32 #size
         $block 8 + load32 0 > #used
 
-        1 9 IO:write-byte IO:check 
-        $block !i32 IO:print
-        1 ": " IO:write-all IO:check
-        1 " " IO:write-all IO:check
-        $next !i32 IO:print
-        1 " " IO:write-all IO:check
-        $size IO:print
-        1 " " IO:write-all IO:check
-        $used !i32 IO:print
-        1 10 IO:write-byte IO:check 
+        2 "\t" IO:write-all IO:check 
+        2 $block !i32 IO:print-to-fd
+        2 ": " IO:write-all IO:check
+        2 " " IO:write-all IO:check
+        2 $next !i32 IO:print-to-fd
+        2 " " IO:write-all IO:check
+        2 $size IO:print-to-fd
+        2 " " IO:write-all IO:check
+        2 $used !i32 IO:print-to-fd
+        2 "\n" IO:write-all IO:check 
         
         $next #block
     }

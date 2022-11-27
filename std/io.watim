@@ -104,6 +104,7 @@ fn check(code: i32) {
     $code 0 /= if {
         2 1 "Error Code: " write-all drop $code print-to-fd-i32-fallible drop
         2 10 write-byte drop
+        0 0 / drop
         1 CORE:exit
     }
 }

@@ -274,7 +274,7 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Memory {
     }
     AST:Memory-new
 }
-fn Parser-parse-body(self: .Parser) -> .AST:Locals, .AST:Memories, .AST:Words {
+fn Parser-parse-body(self: .Parser) -> .AST:Locals, .AST:Memories, AST:Words {
     local token: .L:Token
     local mems: .AST:Memories
     local locals: .AST:Locals
@@ -295,8 +295,8 @@ fn Parser-parse-body(self: .Parser) -> .AST:Locals, .AST:Memories, .AST:Words {
     $locals $mems 
     $self Parser-parse-words
 }
-fn Parser-parse-words(self: .Parser) -> .AST:Words {
-    local words: .AST:Words
+fn Parser-parse-words(self: .Parser) -> AST:Words {
+    local words: AST:Words
     local token: .L:Token
     AST:Words-new #words
     loop {
@@ -304,7 +304,7 @@ fn Parser-parse-words(self: .Parser) -> .AST:Words {
         $self Parser-peek #token
 
         $token is-start-of-word not if { break }
-        $words $self Parser-parse-word AST:Words-push
+        &words $self Parser-parse-word AST:Words-push
     }
     $words
 }
@@ -383,7 +383,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
     local token: .L:Token
     local parameters: .AST:Locals
     local ret: .AST:Types
-    local body: .AST:Words
+    local body: AST:Words
     local mems: .AST:Memories
     local locals: .AST:Locals
 
@@ -522,11 +522,11 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
         $token L:Token-location "expected type" U:abort-with-location
     }
 }
-fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
+fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
     local file: STR:Str
     local line: i32
     local column: i32
-    local word: .AST:Word
+    local word: AST:Word
     $token L:Token-file ~ #file
     $token L:Token-line #line
     $token L:Token-column #column
@@ -680,13 +680,13 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> .AST:Word, bool {
         0 !.AST:Word 0 1 = break
     }
 }
-fn Parser-parse-word(self: .Parser) -> .AST:Word {
+fn Parser-parse-word(self: .Parser) -> AST:Word {
     local token: .L:Token
     local ty: i32
     local file: STR:Str
     local line: i32
     local column: i32
-    local word: .AST:Word
+    local word: AST:Word
     $self.current $self.tokens L:Tokens-len = if { 
         &self.file STR:Str-unpack "Expected word found EOF" U:abort
     }
@@ -789,8 +789,8 @@ fn Parser-parse-word(self: .Parser) -> .AST:Word {
     }
 }
 
-fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
-    local word: .AST:Word
+fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+    local word: AST:Word
     local token: .L:Token
     AST:WORD_LOCAL $file $line $column AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
@@ -846,25 +846,25 @@ fn Parser-parse-fields-access(self: .Parser, file: STR:Str, line: i32, column: i
     }
     $fields $ident L:Token-lexeme
 }
-fn Parser-parse-get-ref(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
-    local word: .AST:Word
+fn Parser-parse-get-ref(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+    local word: AST:Word
     AST:WORD_GET_REF $file $line $column AST:Word-new #word
     $self $file $line $column Parser-parse-fields-access 
     #word.ident
     #word.fields
     $word
 }
-fn Parser-parse-store(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
-    local word: .AST:Word
+fn Parser-parse-store(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+    local word: AST:Word
     AST:WORD_STORE $file $line $column AST:Word-new #word
     $self $file $line $column Parser-parse-fields-access 
     #word.ident
     #word.fields
     $word
 }
-fn Parser-parse-struc-set(self: .Parser, file: STR:Str, line: i32, column: i32) -> .AST:Word {
+fn Parser-parse-struc-set(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local token: .L:Token
-    local word: .AST:Word
+    local word: AST:Word
     AST:WORD_STRUCT_SET $file $line $column AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
         &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
@@ -891,7 +891,7 @@ fn Parser-parse-struc-set(self: .Parser, file: STR:Str, line: i32, column: i32) 
     }
     $word
 }
-fn Parser-parse-lop(self: .Parser) -> .AST:Words {
+fn Parser-parse-lop(self: .Parser) -> AST:Words {
     local token: .L:Token
     $self.current 1 - #self.current
     $self.current $self.tokens L:Tokens-len = if {
@@ -963,13 +963,13 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
             $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
                 $token L:Token-location "expected }" U:abort-with-location
             }
+            AST:If-new-with-el
         } else {
-            0 !.AST:Words
+            AST:If-new
         }
     } else {
-        0 !.AST:Words
+        AST:If-new
     }
-    AST:If-new
 }
 fn Parser-parse-number(self: .Parser) -> i32 {
     local token: .L:Token

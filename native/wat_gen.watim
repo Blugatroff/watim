@@ -141,7 +141,7 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
                 $formatter $self.type $locl-copy-space-ptr generate-load-struc
                 $formatter "\n" FMT:Formatter-write
             } else {
-                $self.type $formatter AST:Type-format
+                $formatter $self.type generate-type
                 $formatter ".load" FMT:Formatter-write
             }
             break
@@ -478,7 +478,7 @@ fn generate-iff(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, locl
     $formatter FMT:Formatter-dedent
     $formatter FMT:Formatter-write-indent
     $formatter ")" FMT:Formatter-write
-    $iff AST:If-el !i32 0 /= if {
+    $iff.has-el if {
         $formatter " (else\n" FMT:Formatter-write
         $formatter FMT:Formatter-indent
         $formatter $struc-returnals-space-ptr $locl-copy-space-ptr $iff AST:If-el generate-words
@@ -785,7 +785,7 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
             $word AST:Word-iff AST:If-body measure-struc-returnals-space
             $max-args CORE:max #max-args 
             $size + #size
-            $word AST:Word-iff AST:If-el !i32 0 /= if {
+            $word AST:Word-iff .has-el ~ if {
                 $word AST:Word-iff AST:If-el measure-struc-returnals-space
                 $max-args CORE:max #max-args 
                 $size + #size
@@ -830,7 +830,7 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
             $word AST:Word-iff AST:If-body measure-locl-copy-space
             $count + #count
             $size + #size
-            $word AST:Word-iff AST:If-el !i32 0 /= if {
+            $word AST:Word-iff .has-el ~ if {
                 $word AST:Word-iff AST:If-el measure-locl-copy-space
                 $count + #count
                 $size + #size
