@@ -14,6 +14,7 @@ fn logging() -> bool {
 memory ROOT: .i32 4
 memory BUF_SIZE: i32 4
 memory N_ALLOCS: i32 4
+memory N_FREES: i32 4
 fn root() -> .i32 {
     $ROOT load32
 }
@@ -29,14 +30,20 @@ fn set-buf-size(size: i32) {
 fn n-allocs() -> i32 {
     $N_ALLOCS load32
 }
+fn n-frees() -> i32 {
+    $N_FREES load32
+}
 fn set-n-allocs(n: i32) {
     $N_ALLOCS $n store32
+}
+fn set-n-frees(n: i32) {
+    $N_FREES $n store32
 }
 fn inc-n-allocs() {
     n-allocs 1 + set-n-allocs 
 }
-fn dec-n-allocs() {
-    n-allocs 1 - set-n-allocs 
+fn inc-n-frees() {
+    n-frees 1 + set-n-frees
 }
 
 fn init(mem: .i32, size: i32) {
@@ -53,6 +60,8 @@ fn init(mem: .i32, size: i32) {
     root 4 + $size store32
     // Mark this block as unused.
     root 8 + 0 store32
+    0 set-n-allocs
+    0 set-n-frees
 }
 
 fn alloc(size: i32) -> .i32 {
@@ -179,7 +188,7 @@ fn free(ptr: .i32) {
         2 " size: " IO:write-all IO:check 
         2 $size IO:print-to-fd
         2 " n-allocs: " IO:write-all IO:check 
-        2 n-allocs 1 - IO:print-to-fd
+        2 n-allocs n-frees - 1 - IO:print-to-fd
         2 "\n" IO:write-all IO:check 
     }
     $block $next-free !i32 store32
@@ -198,7 +207,7 @@ fn free(ptr: .i32) {
             $block find-prev-free !..i32 $block store32
        }
     }
-    dec-n-allocs
+    inc-n-frees
     $ptr $size clear
     merge
 }
@@ -303,11 +312,13 @@ fn remaining() -> i32 {
 }
 
 fn report(fd: i32) {
-    $fd "Memory usage: " IO:write-all IO:check 
+    $fd "Memory usage: \n\t" IO:write-all IO:check 
     $fd usage IO:print-to-fd
-    $fd " bytes, largest free block: " IO:write-all IO:check
+    $fd " bytes,\n\tlargest free block: " IO:write-all IO:check
     $fd size-of-largest-free-block IO:print-to-fd
-    $fd " number of allocations: " IO:write-all IO:check
+    $fd "\n\tactive allocations: " IO:write-all IO:check
+    $fd n-allocs n-frees - IO:print-to-fd
+    $fd "\n\ttotal allocations: " IO:write-all IO:check
     $fd n-allocs IO:print-to-fd
     $fd "\n" IO:write-all IO:check
 }

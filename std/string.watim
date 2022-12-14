@@ -5,8 +5,30 @@ import "./str.watim" as S
 
 struct String {
     ptr: .i32
-    len: i32
-    cap: i32
+    len: i32 // 4 used for inline strings
+    cap: i32 // 8
+    buf_1: i32 // 12
+    buf_2: i32 // 16
+    buf_3: i32 // 20
+    buf_4: i32 // 24
+    buf_5: i32 // 28
+}
+fn String-ptr(self: .String) -> .i32 {
+    $self String-is-inline if {
+        &self.len !.i32
+    } else {
+        $self.ptr
+    }
+}
+fn String-len(self: .String) -> i32 {
+    $self String-is-inline if {
+        $self.ptr !i32 1 not and 1 rotr
+    } else {
+        $self.len
+    }
+}
+fn String-is-inline(self: .String) -> bool {
+    $self.ptr !i32 1 and 0 /=
 }
 fn String-empty() -> String {
     local self: String
@@ -15,11 +37,21 @@ fn String-empty() -> String {
     0 #self.cap
     $self
 }
+fn String-new-inline(ptr: .i32, len: i32) -> String {
+    local self: String
+    $len 1 rotl 1 + !.i32 #self.ptr
+    $ptr &self.len $len CORE:copy
+    $self
+}
 fn String-new(ptr: .i32, len: i32) -> String {
     local buf: .i32
-    $len A:alloc #buf
-    $ptr $buf $len CORE:copy
-    $buf $len String-new-from-buf
+    $len sizeof(String) 4 - <= if {
+        $ptr $len String-new-inline
+    } else {
+        $len A:alloc #buf
+        $ptr $buf $len CORE:copy
+        $buf $len String-new-from-buf
+    }
 }
 fn String-new-from-buf(ptr: .i32, len: i32) -> String {
     local self: String
@@ -31,19 +63,30 @@ fn String-new-from-buf(ptr: .i32, len: i32) -> String {
 fn String-push(self: .String, char: i32) {
     local new-buf: .i32
     local size: i32
-    $self.len 1 + $self.cap > if {
-        $self.cap 2 CORE:max 2 * #size
-        $size A:alloc #new-buf
-        $self.ptr $new-buf $self.len CORE:copy
-        $size #self.cap
-        $self.ptr !i32 0 /= if {
-            $self.ptr A:free
+    $self String-is-inline if {
+        $self String-len #size
+        $size sizeof(String) 4 - < if {
+            &self.len $self String-len + $char store8
+            $size 1 + 1 rotl 1 or !.i32 #self.ptr
+        } else {
+            &self.len $size 1 + String-new >>self
+            $self $size $char String-set
         }
-        $new-buf #self.ptr
-        $self $char String-push
     } else {
-        $self.ptr $self.len + $char store8
-        $self.len 1 + #self.len
+        $self.len 1 + $self.cap > if {
+            $self.cap 2 CORE:max 2 * #size
+            $size A:alloc #new-buf
+            $self.ptr $new-buf $self.len CORE:copy
+            $size #self.cap
+            $self.ptr !i32 0 /= if {
+                $self.ptr A:free
+            }
+            $new-buf #self.ptr
+            $self $char String-push
+        } else {
+            $self.ptr $self.len + $char store8
+            $self.len 1 + #self.len
+        }
     }
 }
 fn String-append(self: .String, ptr: .i32, len: i32) {
@@ -55,15 +98,14 @@ fn String-append(self: .String, ptr: .i32, len: i32) {
     }
 }
 fn String-unpack(self: .String) -> .i32, i32 {
-    $self.ptr $self.len
+    $self String-ptr $self String-len
 }
 fn String-free(self: String) {
-    $self.ptr 0 !i32 /= if {
+    &self String-is-inline not 
+    $self.ptr 0 !i32 /= 
+    and if {
         $self.ptr A:free
     }
-}
-fn String-len(self: .String) -> i32 {
-    $self.len
 }
 fn String-clone(self: .String) -> String {
     $self String-unpack String-new
@@ -72,6 +114,17 @@ fn String-merge(self: String, other: String) -> String {
     &self &other String-unpack String-append
     $other String-free
     $self
+}
+fn String-set(self: .String, index: i32, char: i32) {
+    $index $self String-len >= if {
+        2 "Index out of bounds: " IO:write-all IO:check
+        2 $index IO:print-to-fd
+        2 ", len is: " IO:write-all IO:check
+        2 $self String-len IO:print-to-fd
+        2 "\n" IO:write-all IO:check
+        0 0 / drop
+    }
+    $self String-ptr $index + $char store8
 }
 
 struct StringVec {

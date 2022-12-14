@@ -5,8 +5,8 @@ import "../std/format.watim" as FMT
 import "../std/fs.watim" as FS
 import "../std/io.watim" as IO
 import "../std/map.watim" as MAP
-import "../std/str.watim" as S
-import "../std/string.watim" as S2
+import "../std/str.watim" as STR
+import "../std/string.watim" as S
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -27,11 +27,11 @@ fn print-usage-and-exit() {
 
 fn main() {
     memory alloc-mem: i32 25165824 // 24 MiB
-    local args: S2:StringVec
-    local mem: S2:String
-    local path: .S2:String
+    local args: S:StringVec
+    local mem: S:String
+    local path: .S:String
     local formatter: FMT:Formatter
-    local formatted: S2:String
+    local formatted: S:String
     local modules: M:Modules
     local stack-start: i32
 
@@ -39,35 +39,35 @@ fn main() {
     $alloc-mem 25165824 A:init
     FS:init
     ARGS:get-args #args
-    S2:String-empty #mem
+    S:String-empty #mem
 
-    &args S2:StringVec-len 1 <= if { print-usage-and-exit }
-    &args 1 S2:StringVec-get S2:String-unpack "--quiet" S:str-eq 
-    &args 1 S2:StringVec-get S2:String-unpack "-q" S:str-eq or if {
-        &args S2:StringVec-len 2 <= if { print-usage-and-exit }
+    &args S:StringVec-len 1 <= if { print-usage-and-exit }
+    &args 1 S:StringVec-get S:String-unpack "--quiet" STR:str-eq 
+    &args 1 S:StringVec-get S:String-unpack "-q" STR:str-eq or if {
+        &args S:StringVec-len 2 <= if { print-usage-and-exit }
         disable-logging
-        &args 2 S2:StringVec-get #path 
+        &args 2 S:StringVec-get #path 
     } else {
-        &args 1 S2:StringVec-get #path 
+        &args 1 S:StringVec-get #path 
     }
 
     M:Modules-new #modules
-    &modules &mem $path S2:String-unpack load-module-recursive
+    &modules &mem $path S:String-unpack load-module-recursive
     &modules R:resolve
-    &mem S2:String-len &modules MEM:process #stack-start
+    &mem S:String-len &modules MEM:process #stack-start
     &modules C:check
 
     FMT:Formatter-new #formatter
     &formatter $stack-start &mem &modules GEN:generate
     $formatter FMT:Formatter-into-string #formatted
-    1 &formatted S2:String-unpack IO:write-all IO:check
+    1 &formatted S:String-unpack IO:write-all IO:check
     1 "\n" IO:write-all IO:check
     2 A:report
-    $formatted S2:String-free
+    $formatted S:String-free
 
     &modules M:Modules-free
-    $args S2:StringVec-free
-    $mem S2:String-free
+    $args S:StringVec-free
+    $mem S:String-free
     FS:uninit
     A:is-empty not if {
         A:root A:print-alloc-list
@@ -75,9 +75,10 @@ fn main() {
         2 "MEMORY LEAK DETECTED\n" IO:write-all IO:check
         1 CORE:exit
     }
+    2 A:report
 }
 
-fn load-module-recursive(modules: .M:Modules, mem: .S2:String, path-ptr: .i32, path-len: i32) {
+fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
     local module: M:Module
     local imps: .AST:Imports
     local i: i32
@@ -88,16 +89,16 @@ fn load-module-recursive(modules: .M:Modules, mem: .S2:String, path-ptr: .i32, p
     }
     $path-ptr $path-len $mem M:Module-load #module
     &module M:Module-imports #imps
-    $modules $path-ptr $path-len S2:String-new $module M:Modules-insert
+    $modules $path-ptr $path-len S:String-new $module M:Modules-insert
     
     loop {
         $i $imps AST:Imports-len = if { break }
-        $modules $imps $i AST:Imports-get-value S2:String-unpack M:Modules-get if {
+        $modules $imps $i AST:Imports-get-value S:String-unpack M:Modules-get if {
             drop
         } else {
             drop
             $modules $mem 
-            $imps $i AST:Imports-get-value S2:String-unpack 
+            $imps $i AST:Imports-get-value S:String-unpack 
             load-module-recursive
         }
         $i 1 + #i

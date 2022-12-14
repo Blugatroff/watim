@@ -377,7 +377,12 @@ fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
             $formatter "drop" FMT:Formatter-write break
         }
         $word.intrinsic AST:INTRINSIC_NOT = if {
-            $formatter "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and" FMT:Formatter-write break
+            $word.type AST:Type-ty AST:TYPE_BOOL = if {
+                $formatter "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and" FMT:Formatter-write
+            } else {
+                $formatter "i32.const -1 i32.xor" FMT:Formatter-write
+            }
+            break
         }
         $word.intrinsic AST:INTRINSIC_MEM_GROW = if {
             $formatter "memory.grow" FMT:Formatter-write break

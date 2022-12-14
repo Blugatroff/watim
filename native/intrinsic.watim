@@ -86,6 +86,9 @@ fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32)
     $formatted S:String-free
 }
 fn check-intrinsic-rotl(stack: .AST:Types, word: .AST:Word) {
+    $stack AST:Types-len 2 < if {
+        $stack $word "expected [i32 | i64, i32] got: " report-error
+    }
     $stack $stack AST:Types-len 2 - AST:Types-get AST:Type-ty AST:TYPE_I32 = 
     $stack $stack AST:Types-len 2 - AST:Types-get AST:Type-ty AST:TYPE_I64 = or
     $stack $stack AST:Types-len 1 - AST:Types-get AST:Type-ty AST:TYPE_I32 = and
@@ -190,12 +193,19 @@ fn check-intrinsic-mem-grow(stack: .AST:Types, word: .AST:Word) {
     }
 }
 fn check-intrinsic-not(stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 0 = if { 
-        $stack $word "expected [bool] got: " report-error
+    local type: .AST:Type
+    local ty: i32
+    $stack AST:Types-len 0 = if {
+        $stack $word "expected [bool] or [i32] got: " report-error
     }
-    $stack $stack AST:Types-len 1 - AST:Types-get AST:Type-ty AST:TYPE_BOOL /= if {
-        $stack $word "expected [bool] got: " report-error
+    $stack $stack AST:Types-len 1 - AST:Types-get #type
+    $type AST:Type-ty #ty
+    $ty AST:TYPE_BOOL /= 
+    $ty AST:TYPE_I32 /= and
+    if {
+        $stack $word "expected [bool] or [i32] got: " report-error
     }
+    $type #word.type
 }
 fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
     local right: .AST:Type
