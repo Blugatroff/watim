@@ -196,8 +196,8 @@ fn Modules-insert(self: .Modules, path: S:String, module: Module) {
     $module >>alloced-module
     &self.inner $path $alloced-module !i32 MAP:StringMap-insert if {
         !.Module #alloced-module
-        1 "WARNING: overwrote module: " IO:write-all IO:check 1 &path S:String-unpack IO:write-all IO:check
-        1 "\n" IO:write-all IO:check
+        2 "WARNING: overwrote module: " IO:write-all IO:check 1 &path S:String-unpack IO:write-all IO:check
+        2 "\n" IO:write-all IO:check
         $alloced-module ~ Module-free
         $alloced-module !.i32 A:free
     } else {
