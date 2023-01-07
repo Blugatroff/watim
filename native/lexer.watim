@@ -244,7 +244,11 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             1 #lexer.column
             $lexer.line 1 + #lexer.line
             $lexer Lexer-next break
-        } 
+        }
+        $char "\r" drop load8 = if {
+            $lexer.index 1 + #lexer.index
+            $lexer Lexer-next break
+        }
         $char " " drop load8 = if {
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
