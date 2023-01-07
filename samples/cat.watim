@@ -5,7 +5,7 @@ import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/core.watim" as CORE
 
-memory MEM: i32 49152 4;
+memory MEM: i32 49152
 
 fn main "_start" () {
     local args: S:StringVec

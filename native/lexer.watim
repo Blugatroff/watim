@@ -211,6 +211,7 @@ fn Lexer-run(lexer: Lexer) -> Tokens {
     }
     $lexer.tokens
 }
+
 fn Lexer-next(lexer: .Lexer) -> .Token {
     local char: i32
     local lexeme: STR:Str

@@ -960,7 +960,7 @@ fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules
 	$formatter "(export \"memory\" (memory 0))\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "(global $stac:k (mut i32) (i32.const " FMT:Formatter-write
-    $stack-start $formatter U:i32-format
+    $stack-start 4 CORE:align-to $formatter U:i32-format
     $formatter "))\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)\n" FMT:Formatter-write

@@ -28,7 +28,7 @@ fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
     local path: S:String
     local code: i32
 
-    $path-ptr $path-len S:String-new #path
+    $path-ptr $path-len S:String-new-heap #path
     &path S:String-unpack FS:read-file #code #str 
     $code 0 /= if {
         2 "Failed to read file: \"" IO:write-all IO:check

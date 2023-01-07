@@ -37,6 +37,12 @@ fn String-empty() -> String {
     0 #self.cap
     $self
 }
+fn String-new-heap(ptr: .i32, len: i32) -> String {
+    local buf: .i32
+    $len A:alloc #buf
+    $ptr $buf $len CORE:copy
+    $buf $len String-new-from-buf
+}
 fn String-new-inline(ptr: .i32, len: i32) -> String {
     local self: String
     $len 1 rotl 1 + !.i32 #self.ptr
@@ -44,13 +50,10 @@ fn String-new-inline(ptr: .i32, len: i32) -> String {
     $self
 }
 fn String-new(ptr: .i32, len: i32) -> String {
-    local buf: .i32
     $len sizeof(String) 4 - <= if {
         $ptr $len String-new-inline
     } else {
-        $len A:alloc #buf
-        $ptr $buf $len CORE:copy
-        $buf $len String-new-from-buf
+        $ptr $len String-new-heap
     }
 }
 fn String-new-from-buf(ptr: .i32, len: i32) -> String {
@@ -106,6 +109,9 @@ fn String-free(self: String) {
     and if {
         $self.ptr A:free
     }
+}
+fn String-leak(self: String) -> .i32, i32 {
+    &self String-unpack
 }
 fn String-clone(self: .String) -> String {
     $self String-unpack String-new
