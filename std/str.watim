@@ -47,6 +47,7 @@ fn str-is-prefix(ptr: .i32, len: i32, prefix-ptr: .i32, prefix-len: i32) -> bool
     $ptr $len $prefix-len CORE:min $prefix-ptr $prefix-len str-eq
 }
 fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, bool {
+    local prev-index: i32
     local char: i32
     local index: i32
     loop {
@@ -60,19 +61,14 @@ fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, 
             $ptr $index + $len $index - 
             $target-ptr $target-len
             str-is-prefix if {
-                $index 0 0 = break
+                $index $prev-index + 0 0 = break
             }
         } else {
             0 1 = break
         } 
-        $ptr $index + 1 +
-        $len $index - 1 -
-        $target-ptr $target-len 
-        str-find-str if {
-            $index + 1 + 0 0 = break
-        } else {
-            0 1 = break
-        }
+        $ptr $index + 1 + #ptr
+        $len $index - 1 - #len
+        $index 1 + $prev-index + #prev-index
     }
 }
 fn str-escape(str-ptr: .i32, str-len: i32) -> S:String {
