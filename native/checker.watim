@@ -159,7 +159,7 @@ fn check-word(
         $word AST:Word-ty AST:WORD_DEREF = if {
             $temp-types $stack $word check-deref break
         }
-        $word AST:Word-ty AST:WORD_STRUCT_SET = if {
+        $word AST:Word-ty AST:WORD_SET = if {
             $modules $module $stack $locals $word check-struc-set break
         }
         $word AST:Word-ty AST:WORD_GET_REF = if {

@@ -860,7 +860,7 @@ fn Parser-parse-store(self: .Parser, file: STR:Str, line: i32, column: i32) -> A
 fn Parser-parse-struc-set(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local token: .L:Token
     local word: AST:Word
-    AST:WORD_STRUCT_SET $file $line $column AST:Word-new #word
+    AST:WORD_SET $file $line $column AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
         &self.file STR:Str-unpack "Expected identifier found EOF" U:abort
     }
