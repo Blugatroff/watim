@@ -991,7 +991,6 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_BANG = or
     $ty L:TOKEN_DOT = or
     $ty L:TOKEN_AMPERSAND = or
-    $ty L:TOKEN_HASH = or
     $ty L:TOKEN_TILDE = or
     $ty L:TOKEN_RIGHT_RIGHT = or
 }

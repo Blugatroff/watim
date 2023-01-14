@@ -297,7 +297,7 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
 }
 
 struct Types {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
     min-size: i32
 }
 fn Types-new() -> .Types {
@@ -309,8 +309,8 @@ fn Types-new() -> .Types {
 fn Types-free(self: .Types) {
     local i: i32
     loop {
-        $i $self.inner IV:I32Vec-len = if { break }
-        $self.inner $i IV:I32Vec-get !.Type Type-free
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Type Type-free
         $i 1 + #i
     }
     $self Types-free-container
@@ -324,7 +324,7 @@ fn Types-min(self: .Types) -> i32 {
 fn Types-clone-container(self: .Types) -> .Types {
     local new: .Types
     sizeof(Types) A:alloc !.Types #new
-    $self.inner IV:I32Vec-clone #new.inner
+    &self.inner IV:I32Vec-clone #new.inner
     $self Types-min #new.min-size
     $new
 }
@@ -333,10 +333,10 @@ fn Types-free-container(self: .Types) {
     $self !.i32 A:free
 }
 fn Types-push(self: .Types, f: .Type) {
-    $self.inner $f !i32 IV:I32Vec-push
+    &self.inner $f !i32 IV:I32Vec-push
 }
 fn Types-pop(self: .Types) -> .Type {
-    $self.inner IV:I32Vec-pop !.Type
+    &self.inner IV:I32Vec-pop !.Type
     $self Types-min $self Types-len CORE:min #self.min-size
 }
 fn Types-clone-slice(self: .Types, start: i32, end: i32) -> .Types {
@@ -350,10 +350,10 @@ fn Types-clone-slice(self: .Types, start: i32, end: i32) -> .Types {
     $new
 }
 fn Types-len(self: .Types) -> i32 {
-    $self.inner IV:I32Vec-len
+    &self.inner IV:I32Vec-len
 }
 fn Types-get(self: .Types, index: i32) -> .Type {
-    $self.inner $index IV:I32Vec-get !.Type
+    &self.inner $index IV:I32Vec-get !.Type
 }
 fn Types-format(self: .Types, formatter: .FMT:Formatter) {
     local i: i32
@@ -464,7 +464,7 @@ struct Word {
     offset: i32
     module: i32
     fields: L:Tokens
-    loads: .IV:I32Vec
+    loads: IV:I32Vec
     lop: Words
     rets: .Types
     iff: .If
@@ -571,7 +571,7 @@ fn Local-free(self: .Local) {
 }
 
 struct Locals {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
 }
 fn Locals-new() -> .Locals {
     local self: .Locals
@@ -582,21 +582,21 @@ fn Locals-new() -> .Locals {
 fn Locals-free(self: .Locals) {
     local i: i32
     loop {
-        $i $self.inner IV:I32Vec-len = if { break }
-        $self.inner $i IV:I32Vec-get !.Local Local-free
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Local Local-free
         $i 1 + #i
     }
     $self.inner IV:I32Vec-free
     $self !.i32 A:free
 }
 fn Locals-get(self: .Locals, index: i32) -> .Local {
-    $self.inner $index IV:I32Vec-get !.Local
+    &self.inner $index IV:I32Vec-get !.Local
 }
 fn Locals-push(self: .Locals, mem: .Local) {
-    $self.inner $mem !i32 IV:I32Vec-push
+    &self.inner $mem !i32 IV:I32Vec-push
 }
 fn Locals-len(self: .Locals) -> i32 {
-    $self.inner IV:I32Vec-len
+    &self.inner IV:I32Vec-len
 }
 fn Locals-format(self: .Locals, formatter: .FMT:Formatter) {
     local i: i32
@@ -668,7 +668,7 @@ fn Memory-size(self: .Memory) -> i32 {
 }
 
 struct Memories {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
 }
 fn Memories-new() -> .Memories {
     local self: .Memories
@@ -679,21 +679,21 @@ fn Memories-new() -> .Memories {
 fn Memories-free(self: .Memories) {
     local i: i32
     loop {
-        $i $self.inner IV:I32Vec-len = if { break }
-        $self.inner $i IV:I32Vec-get !.Memory Memory-free
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Memory Memory-free
         $i 1 + #i
     }
     $self.inner IV:I32Vec-free
     $self !.i32 A:free
 }
 fn Memories-get(self: .Memories, index: i32) -> .Memory {
-    $self.inner $index IV:I32Vec-get !.Memory
+    &self.inner $index IV:I32Vec-get !.Memory
 }
 fn Memories-push(self: .Memories, mem: .Memory) {
-    $self.inner $mem !i32 IV:I32Vec-push
+    &self.inner $mem !i32 IV:I32Vec-push
 }
 fn Memories-len(self: .Memories) -> i32 {
-    $self.inner IV:I32Vec-len
+    &self.inner IV:I32Vec-len
 }
 
 struct Function {
@@ -767,7 +767,7 @@ fn Function-has-struc-locl(self: .Function) -> bool {
 }
 
 struct Functions {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
 }
 fn Functions-new() -> .Functions {
     local self: .Functions
@@ -778,21 +778,21 @@ fn Functions-new() -> .Functions {
 fn Functions-free(self: .Functions) {
     local i: i32
     loop {
-        $i $self.inner IV:I32Vec-len = if { break }
-        $self.inner $i IV:I32Vec-get !.Function Function-free
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Function Function-free
         $i 1 + #i
     }
     $self.inner IV:I32Vec-free
     $self !.i32 A:free
 }
 fn Functions-push(self: .Functions, f: .Function) {
-    $self.inner $f !i32 IV:I32Vec-push
+    &self.inner $f !i32 IV:I32Vec-push
 }
 fn Functions-len(self: .Functions) -> i32 {
-    $self.inner IV:I32Vec-len
+    &self.inner IV:I32Vec-len
 }
 fn Functions-get(self: .Functions, index: i32) -> .Function {
-    $self.inner $index IV:I32Vec-get !.Function
+    &self.inner $index IV:I32Vec-get !.Function
 }
 
 struct Extern {
@@ -929,7 +929,7 @@ fn Field-format(self: .Field, formatter: .FMT:Formatter) {
 }
 
 struct Fields {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
 }
 fn Fields-new() -> .Fields {
     local self: .Fields
@@ -938,23 +938,23 @@ fn Fields-new() -> .Fields {
     $self
 }
 fn Fields-push(self: .Fields, item: .Field) {
-    $self.inner $item !i32 IV:I32Vec-push
+    &self.inner $item !i32 IV:I32Vec-push
 }
 fn Fields-free(self: .Fields) {
     local i: i32
     loop {
-        $i $self.inner IV:I32Vec-len = if { break }
-        $self.inner $i IV:I32Vec-get !.Field Field-free
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Field Field-free
         $i 1 + #i
     }
     $self.inner IV:I32Vec-free
     $self !.i32 A:free
 }
 fn Fields-len(self: .Fields) -> i32 {
-    $self.inner IV:I32Vec-len
+    &self.inner IV:I32Vec-len
 }
 fn Fields-get(self: .Fields, index: i32) -> .Field {
-    $self.inner $index IV:I32Vec-get !.Field
+    &self.inner $index IV:I32Vec-get !.Field
 }
 fn Fields-format(self: .Fields, formatter: .FMT:Formatter) {
     local i: i32
@@ -1136,7 +1136,7 @@ fn TopItem-free(self: .TopItem) {
 }
 
 struct TopItems {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
 }
 fn TopItems-new() -> .TopItems {
     local self: .TopItems
@@ -1145,23 +1145,23 @@ fn TopItems-new() -> .TopItems {
     $self
 }
 fn TopItems-push(self: .TopItems, item: .TopItem) {
-    $self.inner $item !i32 IV:I32Vec-push
+    &self.inner $item !i32 IV:I32Vec-push
 }
 fn TopItems-free(self: .TopItems) {
     local i: i32
     loop {
-        $i $self.inner IV:I32Vec-len = if { break }
-        $self.inner $i IV:I32Vec-get !.TopItem TopItem-free
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.TopItem TopItem-free
         $i 1 + #i
     }
     $self.inner IV:I32Vec-free
     $self !.i32 A:free
 }
 fn TopItems-len(self: .TopItems) -> i32 {
-    $self.inner IV:I32Vec-len
+    &self.inner IV:I32Vec-len
 }
 fn TopItems-get(self: .TopItems, index: i32) -> .TopItem {
-    $self.inner $index IV:I32Vec-get !.TopItem
+    &self.inner $index IV:I32Vec-get !.TopItem
 }
 
 struct Imports {

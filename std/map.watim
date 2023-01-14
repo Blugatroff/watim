@@ -7,7 +7,7 @@ import "./util.watim" as U
 
 struct StringMap {
     keys: S:StringVec
-    values: .IV:I32Vec
+    values: IV:I32Vec
 }
 fn StringMap-new() -> StringMap {
     local self: StringMap
@@ -24,12 +24,12 @@ fn StringMap-insert(self: .StringMap, key: S:String, value: i32) -> i32, bool {
     loop {
         $i &self.keys S:StringVec-len = if { 
             &self.keys $key S:StringVec-push
-            $self.values $value IV:I32Vec-push
+            &self.values $value IV:I32Vec-push
             0 0 1 = break 
         }
         $self $i StringMap-get-key S:String-unpack &key S:String-unpack STR:str-eq if {
             $key S:String-free
-            $self.values $i $value IV:I32Vec-set
+            &self.values $i $value IV:I32Vec-set
             0 0 =
             break
         }
@@ -55,6 +55,6 @@ fn StringMap-get-key(self: .StringMap, index: i32) -> .S:String {
     &self.keys $index S:StringVec-get
 }
 fn StringMap-get-value(self: .StringMap, index: i32) -> i32 {
-    $self.values $index IV:I32Vec-get
+    &self.values $index IV:I32Vec-get
 }
 

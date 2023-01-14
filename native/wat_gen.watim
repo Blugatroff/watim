@@ -173,10 +173,10 @@ fn generate-get-ref(formatter: .FMT:Formatter, word: .AST:Word) {
     $formatter $word AST:Word-ident STR:Str-unpack FMT:Formatter-write
     $formatter " " FMT:Formatter-write
     loop {
-        $i $word.loads IV:I32Vec-len = if { break }
-        $word.loads $i IV:I32Vec-get #offset
+        $i &word.loads IV:I32Vec-len = if { break }
+        &word.loads $i IV:I32Vec-get #offset
 
-        $i 1 + $word.loads IV:I32Vec-len = if {
+        $i 1 + &word.loads IV:I32Vec-len = if {
             $formatter " i32.const " FMT:Formatter-write
             $offset $formatter U:i32-format
             $formatter " i32.add" FMT:Formatter-write
@@ -195,8 +195,8 @@ fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
     $formatter $word AST:Word-ident STR:Str-unpack FMT:Formatter-write
     $formatter " " FMT:Formatter-write
     loop {
-        $i $word.loads IV:I32Vec-len = if { break }
-        $word.loads $i IV:I32Vec-get #offset
+        $i &word.loads IV:I32Vec-len = if { break }
+        &word.loads $i IV:I32Vec-get #offset
 
         $formatter " i32.load offset=" FMT:Formatter-write
         $offset $formatter U:i32-format
@@ -225,7 +225,7 @@ fn generate-get-locl(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space
     $formatter "local.get $" FMT:Formatter-write
     $formatter $word AST:Word-ident STR:Str-unpack FMT:Formatter-write
     $formatter " " FMT:Formatter-write
-    $word.loads IV:I32Vec-len 0 = if {
+    &word.loads IV:I32Vec-len 0 = if {
         $word.type AST:Type-ty AST:TYPE_STRUCT = if {
             $formatter " i32.const " FMT:Formatter-write
             $word.type AST:Type-size $formatter U:i32-format
@@ -233,10 +233,10 @@ fn generate-get-locl(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space
         }
     }
     loop {
-        $i $word.loads IV:I32Vec-len = if { break }
-        $word.loads $i IV:I32Vec-get #offset
+        $i &word.loads IV:I32Vec-len = if { break }
+        &word.loads $i IV:I32Vec-get #offset
 
-        $word.loads IV:I32Vec-len $i 1 + < 
+        &word.loads IV:I32Vec-len $i 1 + < 
         $word.type AST:Type-ty AST:TYPE_STRUCT /= 
         or if {
             $formatter "i32.load offset=" FMT:Formatter-write
@@ -313,15 +313,15 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
     local i: i32
     // TODO: this can be simplified
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
-        $word.loads IV:I32Vec-len 0 > if {
+        &word.loads IV:I32Vec-len 0 > if {
             $formatter "local.get $" FMT:Formatter-write
             $formatter $word AST:Word-ident STR:Str-unpack FMT:Formatter-write
             loop {
-                $word.loads IV:I32Vec-len $i = if { break }
+                &word.loads IV:I32Vec-len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
-                $word.loads $i IV:I32Vec-get $formatter U:i32-format
+                &word.loads $i IV:I32Vec-get $formatter U:i32-format
                 $formatter " i32.add " FMT:Formatter-write
-                $i 1 + $word.loads IV:I32Vec-len = if {
+                $i 1 + &word.loads IV:I32Vec-len = if {
                     $formatter " call $intrinsic:flip i32.const " FMT:Formatter-write
                     $word.type AST:Type-size $formatter U:i32-format
                     $formatter " memory.copy" FMT:Formatter-write
@@ -338,15 +338,15 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
             $formatter " memory.copy" FMT:Formatter-write
         }
     } else {
-        $word.loads IV:I32Vec-len 0 > if {
+        &word.loads IV:I32Vec-len 0 > if {
             $formatter "local.get $" FMT:Formatter-write
             $formatter $word AST:Word-ident STR:Str-unpack FMT:Formatter-write
             loop {
-                $word.loads IV:I32Vec-len $i = if { break }
+                &word.loads IV:I32Vec-len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
-                $word.loads $i IV:I32Vec-get $formatter U:i32-format
+                &word.loads $i IV:I32Vec-get $formatter U:i32-format
                 $formatter " i32.add " FMT:Formatter-write
-                $i 1 + $word.loads IV:I32Vec-len = if {
+                $i 1 + &word.loads IV:I32Vec-len = if {
                     $formatter " call $intrinsic:flip " FMT:Formatter-write
                     $formatter $word.type generate-type
                     $formatter ".store" FMT:Formatter-write

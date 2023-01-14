@@ -143,7 +143,7 @@ fn Token-print(self: .Token, fd: i32) {
 }
 
 struct Tokens {
-    inner: .IV:I32Vec
+    inner: IV:I32Vec
 }
 
 fn Tokens-new() -> Tokens {
@@ -161,13 +161,13 @@ fn Tokens-free(tokens: Tokens) {
     $tokens Tokens-free-container
 }
 fn Tokens-push(tokens: .Tokens, token: .Token) {
-    $tokens.inner $token !i32 IV:I32Vec-push
+    &tokens.inner $token !i32 IV:I32Vec-push
 }
 fn Tokens-get(tokens: .Tokens, index: i32) -> .Token {
-    $tokens.inner $index IV:I32Vec-get !.Token
+    &tokens.inner $index IV:I32Vec-get !.Token
 }
 fn Tokens-len(tokens: .Tokens) -> i32 {
-    $tokens.inner IV:I32Vec-len
+    &tokens.inner IV:I32Vec-len
 }
 fn Tokens-free-container(self: Tokens) {
     $self.inner IV:I32Vec-free

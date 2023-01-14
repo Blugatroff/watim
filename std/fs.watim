@@ -98,17 +98,19 @@ struct Prestat {
     path_len: i32
 }
 
-memory PREOPENED_FDS: .IV:I32Vec 4
+memory PREOPENED: bool 4
+memory PREOPENED_FDS: IV:I32Vec 12
 memory PREOPENED_PATHS: S:StringVec 12
 
 fn init() {
-    $PREOPENED_FDS 0 !.IV:I32Vec store32
+    local a: .IV:I32Vec
+    local b: .S:StringVec
+    $PREOPENED_FDS #a IV:I32Vec-new >>a
+    $PREOPENED_PATHS #b S:StringVec-new >>b
 }
 fn uninit() {
-    $PREOPENED_FDS load32 !i32 0 /= if {
-        $PREOPENED_FDS load32 IV:I32Vec-free
-        $PREOPENED_PATHS ~ S:StringVec-free
-    }
+    $PREOPENED_FDS ~ IV:I32Vec-free
+    $PREOPENED_PATHS ~ S:StringVec-free
 }
 
 fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
@@ -118,8 +120,9 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
     local buf: .i32
     local len: i32
     local workaround: .S:StringVec
+    local sad: .bool
     $PREOPENED_PATHS #workaround
-    $PREOPENED_FDS load32 !i32 0 = if {
+    $PREOPENED ~ not if {
         3 #fd
         $PREOPENED_FDS IV:I32Vec-new store32
         S:StringVec-new >>workaround
@@ -139,13 +142,17 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
             $code 0 /= if {
                 break
             }
-            $PREOPENED_FDS load32 $fd IV:I32Vec-push
+            $PREOPENED_FDS $fd IV:I32Vec-push
             $PREOPENED_PATHS $buf $len S:String-new S:StringVec-push
             $buf A:free
             $fd 1 + #fd
         }
+        // FIXME make this work: 1 1 = >>PROEOPENED
+        // 1 1 = >>PREOPENED
+        $PREOPENED #sad
+        1 1 = >>sad
     }
-    $PREOPENED_FDS load32 $PREOPENED_PATHS $code
+    $PREOPENED_FDS $PREOPENED_PATHS $code
 }
 
 // returns 0, 0 if not found

@@ -186,7 +186,7 @@ fn check-word(
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_STORE = if {
-            $stack $locals $word check-store break
+            $stack $modules $module $locals $word check-store break
         }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
@@ -206,17 +206,17 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     $type #word.type
     0 1 =
 }
-fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:Type, .IV:I32Vec, bool {
+fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
     local i: i32
     local field: .L:Token
     local offset: i32
     local type: .AST:Type
     local struc: .AST:Struct
-    local loads: .IV:I32Vec
+    local loads: IV:I32Vec
     local src-type: .AST:Type
     $locals $word AST:Word-ident STR:Str-unpack LocalsMap-get not if {
         drop 
-        0 !.AST:Type 0 !.AST:Type 0 !.IV:I32Vec 0 1 =
+        0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
     } else {
         #type
         $type #src-type
@@ -248,7 +248,7 @@ fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:T
                         break
                     }
                 }
-                $loads $offset IV:I32Vec-push
+                &loads $offset IV:I32Vec-push
             } else {
                 $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
             }
@@ -258,7 +258,7 @@ fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:T
 }
 fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
-    local loads: .IV:I32Vec
+    local loads: IV:I32Vec
     $locals $word check-fields-access if {
         #loads #type drop
         $type #word.type
@@ -277,29 +277,40 @@ fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals:
     }
     0 1 =
 }
-fn check-store(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
-    local loads: .IV:I32Vec
+    local loads: IV:I32Vec
     local src-type: .AST:Type
-    $locals $word check-fields-access not if {
-        $word AST:Word-location "local not found\n" U:abort-with-location
+    $locals $word check-fields-access if {
+        #loads #type #src-type
+        $type AST:Type-ty AST:TYPE_PTR =
+        $src-type AST:Type-ty AST:TYPE_PTR =
+        or not if {
+            $word AST:Word-location "expected a pointer for the store instruction\n" U:abort-with-location
+        }
+        $type AST:Type-child #word.type
+        $loads #word.loads
+        $stack $type AST:Type-child $word U:expect-stack-one
+        0 1 =
+    } else {
+        drop drop drop
+        $module $word AST:Word-ident STR:Str-unpack M:Module-find-mem if {
+            $modules $module M:Modules-find-index #word.module
+            drop
+            2 "TODO at checker.watim:check-store" IO:write-all IO:check
+            1 CORE:exit
+        } else {
+            drop
+            $word AST:Word-location "local not found\n" U:abort-with-location
+        }
+        0 1 =
     }
-    #loads #type #src-type
-
-    $type AST:Type-ty AST:TYPE_PTR =
-    $src-type AST:Type-ty AST:TYPE_PTR =
-    or not if {
-        $word AST:Word-location "expected a pointer for the store instruction\n" U:abort-with-location
-    }
-    $type AST:Type-child #word.type
-    $loads #word.loads
-    $stack $type AST:Type-child $word U:expect-stack-one
-    0 1 =
 }
+
 fn check-get-ref(stack: .AST:Types, locals: .LocalsMap, temp-types: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
-    local loads: .IV:I32Vec
+    local loads: IV:I32Vec
     local src-type: .AST:Type
     $locals $word check-fields-access not if {
         $word AST:Word-location "local not found\n" U:abort-with-location
@@ -320,7 +331,7 @@ fn check-get-ref(stack: .AST:Types, locals: .LocalsMap, temp-types: .AST:Types, 
 fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
-    local loads: .IV:I32Vec
+    local loads: IV:I32Vec
     local src-type: .AST:Type
     $locals $word check-fields-access not if {
         $word AST:Word-location "local not found\n" U:abort-with-location
