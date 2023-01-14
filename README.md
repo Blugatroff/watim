@@ -12,11 +12,18 @@ Watim = WAT Improved
 ## Features
 - structs
 - inline string literals
-- loop expression with **break** keyword
+- loop expression with `break` keyword
 - if expression
 - static type checking
 - terse syntax
 - modules
+
+## TODO
+- `continue` instruction for loops.
+- Variable declaration and initiliziation anywhere in function.
+- Generics using monomorphization.
+- Some sort of Typeclass/Trait system perhaps?
+- function pointers
 
 ## How to run
 First [install Wasmtime](https://wasmtime.dev/).
@@ -54,7 +61,7 @@ extern "wasi_unstable" "proc_exit" fn exit(code: i32)
 
 fn main "_start" () {
     // allocate 32 bytes on the stack
-    memory buf: i32 32;
+    memory buf: i32 32
     local nread: i32
     // read up to 32 bytes from file descriptor 0 (STDIN) into `buf`
     0 $buf 32 read #nread
@@ -71,8 +78,8 @@ fn main "_start" () {
 fn print(n: i32) {
     // allocate 16 bytes for the string, 
     // a 32 bit number will always have less than 16 digits in decimal.
-    memory buf: i32 16;
-    memory buf-reversed: i32 16;
+    memory buf: i32 16
+    memory buf-reversed: i32 16
     local l: i32
     local i: i32
     0 #l
@@ -159,7 +166,7 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
 }
 
 fn write_byte(file: i32, b: i32) {
-    memory buf: i32 1;
+    memory buf: i32 1
     $buf $b store8
     $file $buf 1 write drop
 }
