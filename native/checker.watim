@@ -160,7 +160,7 @@ fn check-word(
             $temp-types $stack $word check-deref break
         }
         $word AST:Word-ty AST:WORD_SET = if {
-            $modules $module $stack $locals $word check-struc-set break
+            $modules $module $stack $locals $word check-set break
         }
         $word AST:Word-ty AST:WORD_GET_REF = if {
             $stack $locals $temp-types $word check-get-ref break
@@ -317,7 +317,7 @@ fn check-get-ref(stack: .AST:Types, locals: .LocalsMap, temp-types: .AST:Types, 
     $stack $temp-types $type AST:Type-new-ptr U:push-temp-type AST:Types-push
     0 1 =
 }
-fn check-struc-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
+fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
     local loads: .IV:I32Vec
@@ -515,14 +515,6 @@ fn check-lop(
         0 1 =
     }
     $bs BS:BreakStacks-free
-}
-fn check-set(stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
-    $locals $word AST:Word-ident STR:Str-unpack LocalsMap-get if {
-        $stack flip $word U:expect-stack-one
-    } else {
-        drop $word AST:Word-location "local not found\n" U:abort-with-location
-    }
-    0 1 = 
 }
 fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
     local msg: S:String

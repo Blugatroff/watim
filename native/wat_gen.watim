@@ -126,7 +126,7 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             break
         }
         $self.ty AST:WORD_SET = if {
-            $formatter $self generate-struc-set break
+            $formatter $self generate-set break
         }
         $self.ty AST:WORD_GET_REF = if {
             $formatter $self generate-get-ref
@@ -309,7 +309,7 @@ fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, wor
         }
     }
 }
-fn generate-struc-set(formatter: .FMT:Formatter, word: .AST:Word) {
+fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
     local i: i32
     // TODO: this can be simplified
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
