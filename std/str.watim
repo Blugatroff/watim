@@ -160,4 +160,7 @@ fn Str-slice(self: .Str, index: i32, len: i32) -> Str {
     }
     $self.ptr $index + $len Str-new
 }
+fn Str-eq(self: .Str, other: .Str) -> bool {
+    $self Str-unpack $other Str-unpack str-eq
+}
 

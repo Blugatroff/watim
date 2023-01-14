@@ -52,7 +52,49 @@ fn Module-new(items: .AST:TopItems, path: S:String, file: S:String, tokens: L:To
     $types #self.types
     $path #self.path
     &self &self.path Module-extract-imports
+    &self Module-check-for-duplicate-functions
+    // TODO check for duplicate structs and memories
     $self
+}
+
+fn Module-check-for-duplicate-functions(self: .Module) {
+    local i: i32
+    local len: i32
+    local item: .AST:TopItem
+    local j: i32
+    local item2: .AST:TopItem
+    local ident: .L:Token
+
+    $self.items AST:TopItems-len #len
+    loop {
+        $i $len = if { break }
+        
+        $self.items $i AST:TopItems-get #item
+        $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+            0 #j
+            loop {
+                $j $i = if { break }
+                $self.items $j AST:TopItems-get #item2
+                
+                $item2 AST:TopItem-ty AST:TOP_ITEM_FN = if {
+                    $item AST:TopItem-function AST:Function-ident L:Token-lexeme
+                    $item2 AST:TopItem-function AST:Function-ident #ident
+                    $ident L:Token-lexeme
+                    STR:Str-eq if {
+                        2 $ident L:Token-location L:print-location
+                        2 "duplicate function: " IO:write-all IO:check
+                        2 $ident L:Token-lexeme STR:Str-unpack IO:write-all IO:check
+                        2 "\n" IO:write-all IO:check
+                        1 CORE:exit
+                    }
+                }
+
+                $j 1 + #j
+            }
+        }
+
+        $i 1 + #i
+    }
 }
 
 fn Module-extract-imports(self: .Module, module-path: .S:String) {
