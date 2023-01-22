@@ -11,9 +11,8 @@ import "../std/format.watim" as FMT
 import "./lexer.watim" as L
 
 fn INTRINSIC_ADD() -> i32 { 1 }
-fn INTRINSIC_STORE32() -> i32 { 2 }
+fn INTRINSIC_STORE() -> i32 { 2 }
 fn INTRINSIC_STORE8() -> i32 { 3 }
-fn INTRINSIC_LOAD32() -> i32 { 4 }
 fn INTRINSIC_LOAD8() -> i32 { 5 }
 fn INTRINSIC_DROP() -> i32 { 6 }
 fn INTRINSIC_SUB() -> i32 { 7 }
@@ -38,9 +37,8 @@ fn INTRINSIC_FLIP() -> i32 { 24 }
 fn intrinsic-name(intrinsic: i32) -> .i32, i32 {
     loop {
         $intrinsic INTRINSIC_ADD = if { "INTRINSIC_ADD" break }
-        $intrinsic INTRINSIC_STORE32 = if { "INTRINSIC_STORE32" break }
+        $intrinsic INTRINSIC_STORE = if { "INTRINSIC_STORE" break }
         $intrinsic INTRINSIC_STORE8 = if { "INTRINSIC_STORE8" break }
-        $intrinsic INTRINSIC_LOAD32 = if { "INTRINSIC_LOAD32" break }
         $intrinsic INTRINSIC_LOAD8 = if { "INTRINSIC_LOAD8" break }
         $intrinsic INTRINSIC_DROP = if { "INTRINSIC_DROP" break }
         $intrinsic INTRINSIC_SUB = if { "INTRINSIC_SUB" break }
@@ -85,6 +83,7 @@ fn WORD_LOCAL() -> i32 { 17 }
 fn WORD_LOAD() -> i32 { 18 }
 fn WORD_SIZEOF() -> i32 { 19 }
 fn WORD_STORE() -> i32 { 20 }
+fn WORD_STORE_GLOBAL() -> i32 { 21 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -105,6 +104,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_LOAD = if { "WORD_LOAD" break }
         $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         $ty WORD_STORE = if { "WORD_STORE" break }
+        $ty WORD_STORE_GLOBAL = if { "WORD_STORE_GLOBAL" break }
         "INVALID WORD TY" break
     }
 }
@@ -137,8 +137,8 @@ fn Words-push(self: .Words, word: Word) {
     local dst-ptr: .Word
     $self.len 1 + $self.cap <= if {
         $self.ptr $self.len sizeof(Word) * + #dst-ptr
-        $self.len 1 + #self.len
         $word >>dst-ptr
+        $self.len 1 + #self.len
     } else {
         $self.cap 2 CORE:max 2 * #size
         $size sizeof(Word) * A:alloc !.Word #new-buf

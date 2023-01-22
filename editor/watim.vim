@@ -12,8 +12,7 @@ if exists("b:current_syntax")
   finish
 endif
 
-syntax keyword watimTodos TODO
-syntax keyword watimTodos FIXME
+syntax keyword watimTodos TODO FIXME NOTE
 
 " Language keywords
 syntax keyword watimKeywords struct if extern loop local fn memory break else import as

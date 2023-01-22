@@ -152,7 +152,8 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             $formatter "\n" FMT:Formatter-write
             break
         }
-        $self.ty AST:WORD_STORE = if {
+        $self.ty AST:WORD_STORE = 
+        $self.ty AST:WORD_STORE_GLOBAL = or if {
             $formatter $self generate-store break
         }
         $formatter $self.ty AST:word-ty-name FMT:Formatter-write
@@ -191,7 +192,13 @@ fn generate-get-ref(formatter: .FMT:Formatter, word: .AST:Word) {
 fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
     local i: i32
     local offset: i32
-    $formatter "local.get $" FMT:Formatter-write
+    $word AST:Word-ty AST:WORD_STORE_GLOBAL = if {
+        $formatter "global.get $" FMT:Formatter-write
+        $word AST:Word-module $formatter U:i32-format
+        $formatter ":" FMT:Formatter-write
+    } else {
+        $formatter "local.get $" FMT:Formatter-write
+    }
     $formatter $word AST:Word-ident STR:Str-unpack FMT:Formatter-write
     $formatter " " FMT:Formatter-write
     loop {
@@ -213,6 +220,7 @@ fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
     }
     $formatter "\n" FMT:Formatter-write
 }
+
 fn generate-get-locl(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
     local i: i32
     local offset: i32
@@ -390,11 +398,15 @@ fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
         $word.intrinsic AST:INTRINSIC_NOT_EQ = if {
             $formatter "i32.ne" FMT:Formatter-write break
         }
-        $word.intrinsic AST:INTRINSIC_STORE32 = if {
-            $formatter "i32.store" FMT:Formatter-write break
-        }
-        $word.intrinsic AST:INTRINSIC_LOAD32 = if {
-            $formatter "i32.load" FMT:Formatter-write break
+        $word.intrinsic AST:INTRINSIC_STORE = if {
+            $word.type AST:Type-ty AST:TYPE_STRUCT =
+            $word.type AST:Type-size 4 /= and if {
+                $formatter "i32.const " FMT:Formatter-write
+                $word.type AST:Type-size $formatter U:i32-format
+                $formatter " memory.copy" FMT:Formatter-write
+            } else {
+                $formatter "i32.store" FMT:Formatter-write break
+            }
         }
         $word.intrinsic AST:INTRINSIC_GREATER_EQ = if {
             $formatter "i32.ge_u" FMT:Formatter-write break
@@ -862,10 +874,10 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
     $formatter $function AST:Function-memories generate-mem-locals
 
     $function AST:Function-body measure-struc-returnals-space #max-args #struc-returnals-space
-    $struc-returnals-space-ptr 0 store32
+    $struc-returnals-space-ptr 0 store
 
     $function AST:Function-body measure-locl-copy-space #locl-copy-count #locl-copy-space
-    $locl-copy-space-ptr 0 store32
+    $locl-copy-space-ptr 0 store
 
     $function AST:Function-memories AST:Memories-len 0 > 
     $function AST:Function-has-struc-locl or 

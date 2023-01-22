@@ -564,16 +564,6 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
             AST:INTRINSIC_MEM_GROW #word.intrinsic 
             $word 0 0 = break
         }
-        $token L:Token-lexeme STR:Str-unpack "store32" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
-            AST:INTRINSIC_STORE32 #word.intrinsic 
-            $word 0 0 = break
-        }
-        $token L:Token-lexeme STR:Str-unpack "load32" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
-            AST:INTRINSIC_LOAD32 #word.intrinsic 
-            $word 0 0 = break
-        }
         $token L:Token-lexeme STR:Str-unpack "-" STR:str-eq if {
             AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
             AST:INTRINSIC_SUB #word.intrinsic 
@@ -632,6 +622,11 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
         $token L:Token-lexeme STR:Str-unpack "or" STR:str-eq if {
             AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
             AST:INTRINSIC_OR #word.intrinsic 
+            $word 0 0 = break
+        }
+        $token L:Token-lexeme STR:Str-unpack "store" STR:str-eq if {
+            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:INTRINSIC_STORE #word.intrinsic
             $word 0 0 = break
         }
         $token L:Token-lexeme STR:Str-unpack "sizeof" STR:str-eq if {

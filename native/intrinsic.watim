@@ -19,15 +19,13 @@ fn check-intrinsic(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -
         $word AST:Word-intrinsic AST:INTRINSIC_MEM_GROW = if {
             $stack $word check-intrinsic-mem-grow break
         }
-        $word AST:Word-intrinsic AST:INTRINSIC_STORE32 =
+        $word AST:Word-intrinsic AST:INTRINSIC_STORE =
         $word AST:Word-intrinsic AST:INTRINSIC_STORE8 = or
         if {
-            $stack $word check-intrinsic-store32 break
+            $stack $word check-intrinsic-store break
         }
-        $word AST:Word-intrinsic AST:INTRINSIC_LOAD32 =
-        $word AST:Word-intrinsic AST:INTRINSIC_LOAD8 = or
-        if {
-            $stack $word check-intrinsic-load32 break
+        $word AST:Word-intrinsic AST:INTRINSIC_LOAD8 = if {
+            $stack $word check-intrinsic-load break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_ADD = 
         $word AST:Word-intrinsic AST:INTRINSIC_SUB = or 
@@ -155,7 +153,7 @@ fn check-compare-intrinsics(temp-types: .AST:Types, stack: .AST:Types, word: .AS
     $stack AST:Types-pop drop
     $stack $temp-types AST:Type-new-boolean U:push-temp-type AST:Types-push
 }
-fn check-intrinsic-load32(stack: .AST:Types, word: .AST:Word) {
+fn check-intrinsic-load(stack: .AST:Types, word: .AST:Word) {
     local type: .AST:Type
     $stack AST:Types-len 0 = if {
         $stack $word "expected pointer got: " report-error
@@ -167,7 +165,7 @@ fn check-intrinsic-load32(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-pop drop
     $stack $type AST:Type-child AST:Types-push
 }
-fn check-intrinsic-store32(stack: .AST:Types, word: .AST:Word) {
+fn check-intrinsic-store(stack: .AST:Types, word: .AST:Word) {
     local right: .AST:Type
     local left: .AST:Type
     $stack AST:Types-len 2 < if {

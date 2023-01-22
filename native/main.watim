@@ -107,13 +107,13 @@ fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, pa
 
 memory LOGGING: bool 4
 fn enable-logging() {
-    $LOGGING 0 0 = store32
+    $LOGGING 0 0 = store
 }
 fn disable-logging() {
-    $LOGGING 0 1 = store32
+    $LOGGING 0 1 = store
 }
 fn logging-enabled() -> bool {
-    $LOGGING load32
+    $LOGGING ~
 }
 
 fn start "_start" () {

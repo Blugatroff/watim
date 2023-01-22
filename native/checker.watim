@@ -206,60 +206,61 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     $type #word.type
     0 1 =
 }
-fn check-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
-    local i: i32
-    local field: .L:Token
-    local offset: i32
-    local type: .AST:Type
-    local struc: .AST:Struct
-    local loads: IV:I32Vec
-    local src-type: .AST:Type
+fn check-locl-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
     $locals $word AST:Word-ident STR:Str-unpack LocalsMap-get not if {
         drop 
         0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
     } else {
-        #type
-        $type #src-type
-        IV:I32Vec-new #loads
-        loop {
-            $i &word.fields L:Tokens-len = if { break }
-            $i 0 = 
-            $type AST:Type-ty AST:TYPE_STRUCT = 
-            and 
-            $type AST:Type-ty AST:TYPE_PTR = if { $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT = } else { 0 1 = }
-            or
-            if { // value on the stack is a pointer to a struct
-                0 #offset
-                loop { // loop for every field access which can be reduced to one load with offset
-                    $i &word.fields L:Tokens-len = if { break }
-                    &word.fields $i L:Tokens-get #field
-
-                    $type AST:Type-ty AST:TYPE_PTR = if {
-                        $type AST:Type-child #type
-                    }
-                    $type AST:Type-struc #struc
-                    $struc $field L:Token-lexeme STR:Str-unpack AST:Struct-find-field not if {
-                        $field L:Token-location "field not found" U:abort-with-location
-                    }
-                    $offset + #offset
-                    AST:Field-type #type
-                    $i 1 + #i
-                    $type AST:Type-ty AST:TYPE_STRUCT /= if {
-                        break
-                    }
-                }
-                &loads $offset IV:I32Vec-push
-            } else {
-                $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
-            }
-        }
-        $src-type $type $loads 0 0 =
+        $word check-fields-access 0 0 =
     }
+}
+fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec {
+    local loads: IV:I32Vec
+    local type: .AST:Type
+    local offset: i32
+    local field: .L:Token
+    local struc: .AST:Struct
+    local i: i32
+    $src-type #type
+    IV:I32Vec-new #loads
+    loop {
+        $i &word.fields L:Tokens-len = if { break }
+        $i 0 = 
+        $type AST:Type-ty AST:TYPE_STRUCT = 
+        and 
+        $type AST:Type-ty AST:TYPE_PTR = if { $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT = } else { 0 1 = }
+        or
+        if { // value on the stack is a pointer to a struct
+            0 #offset
+            loop { // loop for every field access which can be reduced to one load with offset
+                $i &word.fields L:Tokens-len = if { break }
+                &word.fields $i L:Tokens-get #field
+
+                $type AST:Type-ty AST:TYPE_PTR = if {
+                    $type AST:Type-child #type
+                }
+                $type AST:Type-struc #struc
+                $struc $field L:Token-lexeme STR:Str-unpack AST:Struct-find-field not if {
+                    $field L:Token-location "field not found" U:abort-with-location
+                }
+                $offset + #offset
+                AST:Field-type #type
+                $i 1 + #i
+                $type AST:Type-ty AST:TYPE_STRUCT /= if {
+                    break
+                }
+            }
+            &loads $offset IV:I32Vec-push
+        } else {
+            $field L:Token-location "cannot access field of a non-struct type" U:abort-with-location
+        }
+    }
+    $src-type $type $loads
 }
 fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .LocalsMap, word: .AST:Word) -> bool {
     local type: .AST:Type
     local loads: IV:I32Vec
-    $locals $word check-fields-access if {
+    $locals $word check-locl-fields-access if {
         #loads #type drop
         $type #word.type
         $loads #word.loads
@@ -281,7 +282,8 @@ fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals
     local type: .AST:Type
     local loads: IV:I32Vec
     local src-type: .AST:Type
-    $locals $word check-fields-access if {
+    local mem: .AST:Memory
+    $locals $word check-locl-fields-access if {
         #loads #type #src-type
         $type AST:Type-ty AST:TYPE_PTR =
         $src-type AST:Type-ty AST:TYPE_PTR =
@@ -295,10 +297,16 @@ fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals
     } else {
         drop drop drop
         $module $word AST:Word-ident STR:Str-unpack M:Module-find-mem if {
+            #mem
             $modules $module M:Modules-find-index #word.module
-            drop
-            2 "TODO at checker.watim:check-store" IO:write-all IO:check
-            1 CORE:exit
+            $mem AST:Memory-type $word check-fields-access #loads #type #src-type
+            AST:WORD_STORE_GLOBAL #word.ty
+            $loads #word.loads
+            $type AST:Type-child #word.type
+            $stack $type AST:Type-child $word U:expect-stack-one
+            &word.fields 2 L:Tokens-print
+            // 2 "TODO at checker.watim:check-store" IO:write-all IO:check
+            // 1 CORE:exit
         } else {
             drop
             $word AST:Word-location "local not found\n" U:abort-with-location
@@ -312,7 +320,7 @@ fn check-get-ref(stack: .AST:Types, locals: .LocalsMap, temp-types: .AST:Types, 
     local struc: .AST:Struct
     local loads: IV:I32Vec
     local src-type: .AST:Type
-    $locals $word check-fields-access not if {
+    $locals $word check-locl-fields-access not if {
         $word AST:Word-location "local not found\n" U:abort-with-location
     }
     #loads #type #src-type
@@ -333,7 +341,7 @@ fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: 
     local struc: .AST:Struct
     local loads: IV:I32Vec
     local src-type: .AST:Type
-    $locals $word check-fields-access not if {
+    $locals $word check-locl-fields-access not if {
         $word AST:Word-location "local not found\n" U:abort-with-location
     }
     #loads #type #src-type

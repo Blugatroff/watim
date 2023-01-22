@@ -22,8 +22,9 @@ Watim = WAT Improved
 - `continue` instruction for loops.
 - Variable declaration and initiliziation anywhere in function.
 - Generics using monomorphization.
-- Some sort of Typeclass/Trait system perhaps?
 - function pointers
+- closures?
+- Some sort of Typeclass/Trait system perhaps?
 
 ## How to run
 First [install Wasmtime](https://wasmtime.dev/).
