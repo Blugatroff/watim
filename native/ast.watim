@@ -285,10 +285,10 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
         }
         $self Type-ty TYPE_STRUCT = if {
             $self.module !i32 0 /= if {
-                $formatter $self.module L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+                $formatter $self.module L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
                 $formatter ":" FMT:Formatter-write
             }
-            $formatter $self Type-struc Struct-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+            $formatter $self Type-struc Struct-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
             break
         }
         2 "invalid Type-ty" IO:write-all IO:check
@@ -470,6 +470,8 @@ struct Word {
     iff: .If
     type: .Type
     src-type: .Type
+    string: S:String
+    checked: bool
 }
 fn Word-new(ty: i32, file: STR:Str, line: i32, column: i32) -> Word {
     local self: Word
@@ -477,6 +479,7 @@ fn Word-new(ty: i32, file: STR:Str, line: i32, column: i32) -> Word {
     $ty #self.ty
     $line #self.line
     $column #self.column
+    0 1 = #self.checked
     0 !.STR:Str #self.qualifier
     $self
 }
@@ -499,17 +502,25 @@ fn Word-free(self: Word) {
     $self.ty WORD_GET_REF = or
     $self.ty WORD_LOCAL = or
     $self.ty WORD_STORE = or
+    $self.checked and
     if {
         $self.loads IV:I32Vec-free
     }
     $self.ty WORD_LOOP = 
     $self.ty WORD_CALL = or 
+    $self.checked and
     if {
         $self.rets Types-free-container
     }
+    $self.ty WORD_STRING = if {
+        $self.string S:String-free
+    }
+}
+fn Word-mark-checked(self: .Word) {
+    1 1 = #self.checked
 }
 fn Word-location(self: .Word) -> .i32, i32, i32, i32 {
-    &self.file STR:Str-unpack $self.line $self.column
+    &self.file ~ STR:Str-unpack $self.line $self.column
 }
 fn Word-ty(self: .Word) -> i32 {
     $self.ty
@@ -561,7 +572,7 @@ fn Local-set-type(self: .Local, type: .Type) {
 }
 fn Local-format(self: .Local, formatter: .FMT:Formatter) {
     $formatter "{ ident: \"" FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\", type: " FMT:Formatter-write
     $self.type $formatter Type-format
     $formatter " }" FMT:Formatter-write
@@ -698,17 +709,18 @@ fn Memories-len(self: .Memories) -> i32 {
 
 struct Function {
     ident: .L:Token
-    qualifier: .L:Token
+    export: .L:Token
     parameters: .Locals
     ret: .Types
     mems: .Memories
     locals: .Locals
     body: Words
     diverges: bool
+    reachable: bool
 }
 fn Function-new(
     ident: .L:Token, 
-    qualifier: .L:Token, 
+    export: .L:Token, 
     parameters: .Locals,
     ret: .Types,
     mems: .Memories,
@@ -718,7 +730,7 @@ fn Function-new(
     local self: .Function
     sizeof(Function) A:alloc !.Function #self
     $ident #self.ident
-    $qualifier #self.qualifier
+    $export #self.export
     $parameters #self.parameters
     $ret #self.ret
     $mems #self.mems
@@ -765,6 +777,9 @@ fn Function-has-struc-locl(self: .Function) -> bool {
         $self Function-parameters Locals-contains-struc
     }
 }
+fn Function-mark-reachable(self: .Function) {
+    1 1 = #self.reachable
+}
 
 struct Functions {
     inner: IV:I32Vec
@@ -801,6 +816,7 @@ struct Extern {
     ident: .L:Token
     params: .Locals
     rets: .Types
+    reachable: bool
 }
 fn Extern-new(
     module: .L:Token,
@@ -816,6 +832,7 @@ fn Extern-new(
     $ident #self.ident
     $params #self.params
     $rets #self.rets
+    0 1 = #self.reachable
     $self
 }
 fn Extern-module(self: .Extern) -> .L:Token {
@@ -833,6 +850,9 @@ fn Extern-parameters(self: .Extern) -> .Locals {
 fn Extern-ident(self: .Extern) -> .L:Token {
     $self.ident
 }
+fn Extern-mark-reachable(self: .Extern) {
+    1 1 = #self.reachable
+}
 fn Extern-free(self: .Extern) {
     $self.params Locals-free
     $self.rets Types-free-container
@@ -843,15 +863,15 @@ fn Extern-format(self: .Extern, formatter: .FMT:Formatter) {
     $formatter FMT:Formatter-indent
     $formatter FMT:Formatter-write-indent
     $formatter "module: \"" FMT:Formatter-write 
-    $formatter $self.module L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self.module L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\",\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "name: \"" FMT:Formatter-write
-    $formatter $self.name L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self.name L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\",\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "ident: \"" FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\",\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "params: " FMT:Formatter-write
@@ -888,16 +908,13 @@ fn Import-ident(self: .Import) -> .L:Token {
 }
 fn Import-format(self: .Import, formatter: .FMT:Formatter) {
     $formatter "{ path: " FMT:Formatter-write
-    $formatter $self Import-path L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self Import-path L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter ", ident: \"" FMT:Formatter-write
-    $formatter $self Import-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self Import-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\" }" FMT:Formatter-write
 }
 fn Import-path-content(self: .Import) -> .i32, i32 {
-    local ptr: .i32
-    local len: i32
-    $self Import-path L:Token-lexeme STR:Str-unpack #len #ptr
-    $ptr 1 + $len 2 -
+    $self Import-path L:Token-lexeme ~ 1 STR:Str-drop 1 STR:Str-drop-end STR:Str-unpack 
 }
 
 struct Field {
@@ -922,7 +939,7 @@ fn Field-type(self: .Field) -> .Type {
 }
 fn Field-format(self: .Field, formatter: .FMT:Formatter) {
     $formatter "{ ident: \"" FMT:Formatter-write
-    $formatter $self Field-ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self Field-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\", type: " FMT:Formatter-write
     $self Field-type $formatter Type-format
     $formatter " }" FMT:Formatter-write
@@ -996,7 +1013,7 @@ fn Struct-format(self: .Struct, formatter: .FMT:Formatter) {
     $formatter FMT:Formatter-indent
     $formatter FMT:Formatter-write-indent
     $formatter "ident: \"" FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme STR:Str-unpack FMT:Formatter-write
+    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter "\"\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "fields: " FMT:Formatter-write
@@ -1019,7 +1036,7 @@ fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, 
     $self Struct-fields #fields
     loop {
         $i $fields Fields-len = if { 0 !.Field 0 0 1 = break }
-        $fields $i Fields-get Field-ident L:Token-lexeme STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+        $fields $i Fields-get Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
             $fields $i Fields-get
             $offset 0 0 = break
         }
@@ -1112,9 +1129,6 @@ fn TopItem-function(self: .TopItem) -> .Function {
 }
 fn TopItem-ext(self: .TopItem) -> .Extern {
     $self.ext
-}
-fn TopItem-mem(self: .TopItem) -> .Memory {
-    $self.mem
 }
 fn TopItem-free(self: .TopItem) {
     $self TopItem-ty TOP_ITEM_FN = if {

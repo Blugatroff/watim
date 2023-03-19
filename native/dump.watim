@@ -1,0 +1,201 @@
+import "../std/core.watim" as CORE
+import "../std/format.watim" as FMT
+import "../std/util.watim" as U
+import "../std/str.watim" as STR
+import "../std/string.watim" as S
+
+import "./ast.watim" as AST
+import "./lexer.watim" as L
+
+fn TopItems-json(formatter: .FMT:Formatter, items: .AST:TopItems) {
+    local i: i32
+    local len: i32
+    $items AST:TopItems-len #len
+
+    $formatter "[\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    loop {
+        $len $i = if { break }
+        $formatter $items $i AST:TopItems-get TopItem-json
+        
+        $i 1 + $len /= if {
+            $formatter "," FMT:Formatter-write
+        }
+        $formatter "\n" FMT:Formatter-write
+
+        $i 1 + #i
+    }
+    $formatter FMT:Formatter-dedent
+    $formatter "]" FMT:Formatter-write
+}
+
+fn TopItem-json(formatter: .FMT:Formatter, item: .AST:TopItem) {
+    $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+        $formatter $item AST:TopItem-function Function-json
+    }
+    $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
+        $formatter $item.mem Memory-json 
+    }
+    $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
+        $formatter $item.imp Import-json
+    }
+    $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
+        
+    }
+    $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
+        
+    }
+}
+
+fn write-escaped(formatter: .FMT:Formatter, ptr: .i32, len: i32) {
+    memory buf: i32 1
+    local i: i32
+    loop {
+        $i $len = if { break }
+        $formatter $buf $ptr $i + load8 $buf CORE:escape FMT:Formatter-write
+        $i 1 + #i
+    }
+}
+
+fn Memory-json(formatter: .FMT:Formatter, mem: .AST:Memory) {
+    $formatter FMT:Formatter-write-indent
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ty\": \"memory\"\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
+
+}
+
+fn Import-json(formatter: .FMT:Formatter, imp: .AST:Import) {
+    $formatter FMT:Formatter-write-indent
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ty\": \"import\",\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"path\": \"" FMT:Formatter-write
+    $formatter $imp.path L:Token-lexeme ~ 1 STR:Str-drop 1 STR:Str-drop-end STR:Str-unpack write-escaped
+    $formatter "\",\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ident\": \"" FMT:Formatter-write
+    $formatter $imp.ident L:Token-lexeme ~ STR:Str-unpack write-escaped
+    $formatter "\"\n" FMT:Formatter-write
+
+
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
+}
+
+fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
+    local i: i32
+    $formatter FMT:Formatter-write-indent
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ty\": \"function\",\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ident\": \"" FMT:Formatter-write
+    $formatter $fun AST:Function-ident L:Token-lexeme ~ STR:Str-unpack write-escaped
+    $formatter "\",\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"export\": " FMT:Formatter-write
+    $fun.export !i32 0 = if {
+        $formatter "null" FMT:Formatter-write
+    } else {
+        $formatter "\"" FMT:Formatter-write
+        $formatter $fun.export L:Token-lexeme ~ 1 STR:Str-drop 1 STR:Str-drop-end STR:Str-unpack write-escaped
+        $formatter "\"" FMT:Formatter-write
+    }
+    $formatter ",\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"body\": [\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    
+    loop {
+        $i &fun.body AST:Words-len = if { break }
+        
+        $formatter &fun.body $i AST:Words-get Word-json
+        $i 1 + &fun.body AST:Words-len /= if {
+            $formatter "," FMT:Formatter-write
+        }
+        $formatter "\n" FMT:Formatter-write
+
+        $i 1 + #i
+    }
+
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "]\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
+}
+
+fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
+    $formatter FMT:Formatter-write-indent
+    $formatter "{\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ty\": \"" FMT:Formatter-write
+
+    loop {
+        $word.ty AST:WORD_NUMBER = if {
+            $formatter "number\",\n" FMT:Formatter-write
+
+            $formatter FMT:Formatter-write-indent
+            $formatter "\"number\": " FMT:Formatter-write
+            $word.number $formatter U:i32-format
+            $formatter "\n" FMT:Formatter-write
+            break
+        }
+        $word.ty AST:WORD_STRING = if {
+            $formatter "string\",\n" FMT:Formatter-write
+
+            $formatter FMT:Formatter-write-indent
+            $formatter "\"string\": \"" FMT:Formatter-write
+            $formatter &word.string S:String-unpack write-escaped
+            $word.number $formatter U:i32-format
+            $formatter "\"\n" FMT:Formatter-write
+            break
+        }
+        $word.ty AST:WORD_CALL = if {
+            $formatter "call\",\n" FMT:Formatter-write
+
+            $formatter FMT:Formatter-write-indent
+            $formatter "\"ident\": \"" FMT:Formatter-write
+            $formatter $word.ident ~ STR:Str-unpack write-escaped
+            $formatter "\"" FMT:Formatter-write
+
+            $word.qualifier !i32 0 /= if {
+                $formatter ",\n" FMT:Formatter-write
+                $formatter FMT:Formatter-write-indent
+                $formatter "\"qualifier\": \"" FMT:Formatter-write
+                $formatter $word.qualifier ~ STR:Str-unpack write-escaped
+                $formatter "\"" FMT:Formatter-write
+            }
+            $formatter "\n" FMT:Formatter-write
+            break
+        }
+        $formatter $word.ty AST:word-ty-name FMT:Formatter-write
+        $formatter "\"\n" FMT:Formatter-write
+        break
+    } 
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "}" FMT:Formatter-write
+}

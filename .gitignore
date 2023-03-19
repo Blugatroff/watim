@@ -1,3 +1,5 @@
 *.wat
 test.watim
+*.json
+*.js
 

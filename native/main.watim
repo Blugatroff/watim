@@ -7,6 +7,7 @@ import "../std/io.watim" as IO
 import "../std/map.watim" as MAP
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
+import "../std/util.watim" as U
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -16,13 +17,25 @@ import "./mem.watim" as MEM
 import "./module.watim" as M
 import "./parser.watim" as P
 import "./resolver.watim" as R
+import "./dump.watim" as DUMP
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
     2 "Usage: wasmtime --dir=. ./watim.wasm <watim-source-file>\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
+    2 "  --parse-ast    Parse stdin into a watim AST in print it as JSON\n" IO:write-all IO:check
     1 CORE:exit
+}
+
+fn find-flag(args: .S:StringVec, ptr: .i32, len: i32) -> bool {
+    $args $ptr $len S:StringVec-find if { 
+        $args flip S:StringVec-remove S:String-free
+        1 1 =
+    } else { 
+        drop 
+        0 1 =
+    }
 }
 
 fn main() {
@@ -35,37 +48,44 @@ fn main() {
     local modules: M:Modules
     local stack-start: i32
 
-    enable-logging
     $alloc-mem 25165824 A:init
     FS:init
     ARGS:get-args #args
     S:String-empty #mem
 
+    enable-logging
+    COMPILE set-mode
+
+    &args "--quiet" find-flag if { disable-logging }
+    &args "-q" find-flag if { disable-logging }
+    &args "--parse-ast" find-flag if { PARSE_AST set-mode }
+
     &args S:StringVec-len 1 <= if { print-usage-and-exit }
-    &args 1 S:StringVec-get S:String-unpack "--quiet" STR:str-eq 
-    &args 1 S:StringVec-get S:String-unpack "-q" STR:str-eq or if {
-        &args S:StringVec-len 2 <= if { print-usage-and-exit }
-        disable-logging
-        &args 2 S:StringVec-get #path 
-    } else {
-        &args 1 S:StringVec-get #path 
+    &args 1 S:StringVec-get #path 
+ 
+    mode COMPILE = if {
+        M:Modules-new #modules
+        &modules &mem $path S:String-unpack load-module-recursive
+        &modules R:resolve
+        &mem S:String-len &modules MEM:process #stack-start
+        &modules C:check
+        &modules M:Modules-mark-reachable
+
+        FMT:Formatter-new #formatter
+        &formatter $stack-start &mem &modules GEN:generate
+        $formatter FMT:Formatter-into-string #formatted
+        1 &formatted S:String-unpack IO:write-all IO:check
+        1 "\n" IO:write-all IO:check
+        logging-enabled if { 2 A:report }
+        $formatted S:String-free
+
+        &modules M:Modules-free
     }
 
-    M:Modules-new #modules
-    &modules &mem $path S:String-unpack load-module-recursive
-    &modules R:resolve
-    &mem S:String-len &modules MEM:process #stack-start
-    &modules C:check
+    mode PARSE_AST = if {
+        parse-ast
+    }
 
-    FMT:Formatter-new #formatter
-    &formatter $stack-start &mem &modules GEN:generate
-    $formatter FMT:Formatter-into-string #formatted
-    1 &formatted S:String-unpack IO:write-all IO:check
-    1 "\n" IO:write-all IO:check
-    2 A:report
-    $formatted S:String-free
-
-    &modules M:Modules-free
     $args S:StringVec-free
     $mem S:String-free
     FS:uninit
@@ -75,7 +95,44 @@ fn main() {
         2 "MEMORY LEAK DETECTED\n" IO:write-all IO:check
         1 CORE:exit
     }
-    2 A:report
+    logging-enabled if { 2 A:report }
+}
+
+fn parse-ast() {
+    local input: S:String
+    local code: i32
+    local tokens: L:Tokens
+    local mem: S:String
+    local items: .AST:TopItems
+    local types: .AST:Types
+    local formatter: FMT:Formatter
+    local json: S:String
+
+    0 FS:read-all #code 
+    $code 0 /= if {
+        2 "Failed to read stdin, Error Code: " IO:write-all IO:check
+        2 $code IO:print-to-fd
+        drop
+    } else { 
+        #input 
+    }
+    &input "stdin.watim" STR:Str-new L:lex #tokens
+    S:String-empty #mem
+    &mem &tokens P:parse #types #items
+    
+    FMT:Formatter-new #formatter
+    &formatter $items DUMP:TopItems-json
+    &formatter "\n" FMT:Formatter-write
+
+    $items AST:TopItems-free
+    $input S:String-free
+    $tokens L:Tokens-free
+    $mem S:String-free
+    $types AST:Types-free
+
+    $formatter FMT:Formatter-into-string #json
+    1 &json S:String-unpack IO:write-all IO:check
+    $json S:String-free
 }
 
 fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
@@ -106,15 +163,16 @@ fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, pa
 }
 
 memory LOGGING: bool 4
-fn enable-logging() {
-    $LOGGING 0 0 = store
-}
-fn disable-logging() {
-    $LOGGING 0 1 = store
-}
-fn logging-enabled() -> bool {
-    $LOGGING ~
-}
+fn enable-logging() { $LOGGING 0 0 = store }
+fn disable-logging() { $LOGGING 0 1 = store }
+fn logging-enabled() -> bool { $LOGGING ~ }
+
+fn COMPILE() -> i32 { 1 }
+fn PARSE_AST() -> i32 { 2 }
+
+memory MODE: i32 4
+fn set-mode(mode: i32) { $MODE $mode store }
+fn mode() -> i32 { $MODE ~ }
 
 fn start "_start" () {
     // grow memory to 512 * 2B^16 = 32 MiB

@@ -105,7 +105,7 @@ fn String-unpack(self: .String) -> .i32, i32 {
 }
 fn String-free(self: String) {
     &self String-is-inline not 
-    $self.ptr 0 !i32 /= 
+    $self.ptr 0 !.i32 /= 
     and if {
         $self.ptr A:free
     }
@@ -191,20 +191,49 @@ fn StringVec-push(self: .StringVec, str: String) {
         $self $str StringVec-push
     }
 }
-fn StringVec-print(strings: .StringVec) {
+fn StringVec-print(fd: i32, strings: .StringVec) {
     local i: i32
     $strings StringVec-len 0 = if {
-        2 "[]" IO:write-all IO:check
+        $fd "[]" IO:write-all IO:check
     } else {
-        2 "[\n" IO:write-all IO:check
+        $fd "[\n" IO:write-all IO:check
         loop {
             $i $strings StringVec-len = if { break }
-            2 "  \"" IO:write-all IO:check
-            2 $strings $i StringVec-get String-unpack IO:write-all IO:check
-            2 "\",\n" IO:write-all IO:check
+            $fd "  \"" IO:write-all IO:check
+            $fd $strings $i StringVec-get String-unpack IO:write-all IO:check
+            $fd "\",\n" IO:write-all IO:check
             $i 1 + #i
         }
-        2 "]" IO:write-all IO:check
+        $fd "]" IO:write-all IO:check
+    }
+}
+fn StringVec-find(self: .StringVec, ptr: .i32, len: i32) -> i32, bool {
+    local i: i32
+    loop {
+        $i $self StringVec-len = if { 0 0 1 = break }
+        $self $i StringVec-get String-unpack $ptr $len S:str-eq if {
+            $i 1 1 = break
+        }
+        $i 1 + #i
+    }
+}
+fn StringVec-remove(self: .StringVec, index: i32) -> String {
+    local string: String
+    $self $index StringVec-get ~ #string
+    $self.ptr $index 1 + sizeof(String) * + !.i32
+    $self.ptr $index sizeof(String) * + !.i32
+    $self.len $index - 1 - sizeof(String) *
+    CORE:copy
+    $string
+}
+fn StringVec-find-remove(self: .StringVec, ptr: .i32, len: i32) -> i32, bool {
+    local i: i32
+    $self $ptr $len StringVec-find if {
+        #i
+        $self $i StringVec-remove String-free
+        $i 1 1 =
+    } else { 
+        0 1 =
     }
 }
 
@@ -266,6 +295,19 @@ fn StringVec-join-with(self: .StringVec, del-ptr: .i32, del-len: i32) -> String 
         $i 1 + $self StringVec-len /= if {
             &out $del-ptr $del-len String-append
         }
+        $i 1 + #i
+    }
+    $out
+}
+
+fn str-escape(str-ptr: .i32, str-len: i32) -> String {
+    memory buf: i32 4
+    local out: String
+    local i: i32
+    String-empty #out
+    loop {
+        $str-len $i = if { break }
+        &out $buf $str-ptr $i + load8 $buf CORE:escape String-append
         $i 1 + #i
     }
     $out

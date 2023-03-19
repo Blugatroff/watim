@@ -83,7 +83,7 @@ fn Module-check-for-duplicate-functions(self: .Module) {
                     STR:Str-eq if {
                         2 $ident L:Token-location L:print-location
                         2 "duplicate function: " IO:write-all IO:check
-                        2 $ident L:Token-lexeme STR:Str-unpack IO:write-all IO:check
+                        2 $ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
                         2 "\n" IO:write-all IO:check
                         1 CORE:exit
                     }
@@ -113,7 +113,7 @@ fn Module-extract-imports(self: .Module, module-path: .S:String) {
             $module-path S:String-unpack FS:path-dir S:String-new #path
             &path $imp AST:Import-path-content S:String-append
             $self.imports
-            $item.imp AST:Import-ident L:Token-lexeme STR:Str-unpack S:String-new 
+            $item.imp AST:Import-ident L:Token-lexeme ~ STR:Str-unpack S:String-new 
             &path S:String-unpack FS:normalize 
             AST:Imports-insert
             $path S:String-free
@@ -150,7 +150,7 @@ fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Str
         $items $i AST:TopItems-get #item
         $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
             $item AST:TopItem-struc #struc
-            $struc AST:Struct-ident L:Token-lexeme STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $struc AST:Struct-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $struc 0 0 = break
             }
         }
@@ -170,13 +170,13 @@ fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:
         $items $i AST:TopItems-get #item
         $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
             $item AST:TopItem-function #fun
-            $fun AST:Function-ident L:Token-lexeme STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $fun AST:Function-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 0 !.AST:Extern $fun 0 0 = break
             }
         }
         $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
             $item AST:TopItem-ext #ext
-            $ext AST:Extern-ident L:Token-lexeme STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $ext AST:Extern-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $ext 0 !.AST:Function 0 0 = break
             }
         }
@@ -194,8 +194,8 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Memor
         $i $items AST:TopItems-len = if { 0 !.AST:Memory 0 1 = break }
         $items $i AST:TopItems-get #item
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $item AST:TopItem-mem #mem
-            $mem AST:Memory-ident L:Token-lexeme STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $item.mem #mem
+            $mem AST:Memory-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $mem 0 0 = break 
             }
         }
@@ -277,6 +277,17 @@ fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: 
     }
 }
 
+fn Modules-find-function(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: .i32, ident-len: i32) -> .AST:Extern, .AST:Function, bool {
+    local i: i32
+    local module: .Module
+    $self $path-ptr $path-len Modules-get if {
+        #module $module $ident-ptr $ident-len Module-find-function
+    } else {
+        drop
+        0 !.AST:Extern 0 !.AST:Function 0 1 = 
+    }
+}
+
 fn Modules-find-index(self: .Modules, module: .Module) -> i32 {
     local i: i32
     loop {
@@ -288,6 +299,113 @@ fn Modules-find-index(self: .Modules, module: .Module) -> i32 {
             $i break 
         }
         $i 1 + #i
+    }
+}
+
+fn Modules-mark-reachable(self: .Modules) {
+    local module: .Module
+    local items: .AST:TopItems
+    local i: i32
+    local j: i32
+    local item: .AST:TopItem
+    local function: .AST:Function
+    loop {
+        $i $self Modules-len = if { break }
+        $self $i Modules-get-value #module
+
+        $module Module-items #items
+
+        0 #j
+        loop {
+            $items AST:TopItems-len $j = if { break }
+
+            $items $j AST:TopItems-get #item
+
+            $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+                $item AST:TopItem-function #function
+                $function.export 0 !.L:Token /= if {
+                    $self $module $function mark-reachable-function
+                }
+            }
+
+            $j 1 + #j
+        }
+
+        $i 1 + #i
+    }
+}
+
+fn mark-reachable-function(modules: .Modules, module: .Module, function: .AST:Function) {
+    $function.reachable not if {
+        $function AST:Function-mark-reachable
+        $modules $module $function AST:Function-body mark-reachable-words
+    }
+}
+
+fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
+    local word: .AST:Word
+    local i: i32
+
+    loop {
+        $words AST:Words-len $i = if { break }
+        $words $i AST:Words-get #word
+
+        $word AST:Word-ty AST:WORD_CALL = if {
+            $modules $module $word mark-reachable-call
+        }
+
+        $word AST:Word-ty AST:WORD_IF = if {
+            $modules $module $word AST:Word-iff mark-reachable-iff
+        }
+
+        $word AST:Word-ty AST:WORD_LOOP = if {
+            $modules $module $word AST:Word-lop mark-reachable-words
+        }
+
+        $i 1 + #i
+    }
+}
+
+fn mark-reachable-iff(modules: .Modules, module: .Module, iff: .AST:If) {
+    $modules $module &iff.body mark-reachable-words
+    $iff.has-el if {
+        $modules $module &iff.el mark-reachable-words
+    }
+}
+
+fn mark-reachable-call(modules: .Modules, module: .Module, caller: .AST:Word) {
+    local function: .AST:Function
+    local ext: .AST:Extern
+    local path: .S:String
+
+    $caller.qualifier 0 !.STR:Str = if { 
+        $module $caller.ident ~ STR:Str-unpack Module-find-function if {
+            #function #ext
+            $function 0 !.AST:Function /= if {
+                $modules $module $function mark-reachable-function
+            }
+            $ext 0 !.AST:Extern /= if {
+                $ext AST:Extern-mark-reachable
+            }
+
+        } else { drop drop }
+    } else {
+        $module Module-imports $caller.qualifier ~ STR:Str-unpack AST:Imports-get if {
+            #path
+            $modules $path S:String-unpack Modules-get if {
+                #module
+
+                $module $caller.ident ~ STR:Str-unpack Module-find-function if {
+                    #function #ext
+                    $function 0 !.AST:Function /= if {
+                        $modules $module $function mark-reachable-function
+                    }
+                    $ext 0 !.AST:Extern /= if {
+                        $ext AST:Extern-mark-reachable
+                    }
+                } else { drop drop }
+            } else { drop }
+        } else { drop }
     }
 }
 

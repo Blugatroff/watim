@@ -135,8 +135,8 @@ fn alloc(size: i32) -> .i32 {
             $block 12 + break
         }
         $next !i32 0 = if {
-            1 "ALLOC FAILED NO MEMORY size: " IO:write-all IO:check 
-            $size IO:print 1 "\n" IO:write-all IO:check
+            2 "ALLOC FAILED NO MEMORY size: " IO:write-all IO:check 
+            2 $size IO:print-to-fd 1 "\n" IO:write-all IO:check
             1 CORE:exit
             0 !.i32 break
         }

@@ -35,7 +35,7 @@ fn resolve-module(modules: .M:Modules, module: .M:Module) {
             $modules $module $item AST:TopItem-ext resolve-extern
         }
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $modules $module $item AST:TopItem-mem resolve-memory
+            $modules $module $item.mem resolve-memory
         }
         $i 1 + #i
     }
@@ -148,7 +148,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
             
             $module-token !i32 0 /= if {
                 $module M:Module-imports #imports
-                $imports $module-token L:Token-lexeme STR:Str-unpack AST:Imports-get if {
+                $imports $module-token L:Token-lexeme ~ STR:Str-unpack AST:Imports-get if {
                     #path
                 } else {
                     drop
@@ -157,7 +157,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, type: .AST:Type) {
             } else {
                 $module M:Module-path #path
             }
-            $modules $path S2:String-unpack $ident STR:Str-unpack M:Modules-find-struc if {
+            $modules $path S2:String-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {
                 #struc $type $struc AST:Type-set-struc
             } else {
                 drop $type AST:Type-ident L:Token-location "struct not found" U:abort-with-location

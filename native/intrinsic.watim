@@ -7,7 +7,9 @@ import "./util.watim" as U
 
 fn check-intrinsic(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bool {
     loop {
-        $word AST:Word-intrinsic AST:INTRINSIC_EQ = if { 
+        $word AST:Word-intrinsic AST:INTRINSIC_EQ = 
+        $word AST:Word-intrinsic AST:INTRINSIC_NOT_EQ = or
+        if { 
             $temp-types $stack $word check-intrinsic-eq break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_DROP = if {
@@ -34,7 +36,6 @@ fn check-intrinsic(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -
         }
         $word AST:Word-intrinsic AST:INTRINSIC_GREATER_EQ = 
         $word AST:Word-intrinsic AST:INTRINSIC_GREATER = or
-        $word AST:Word-intrinsic AST:INTRINSIC_NOT_EQ = or
         $word AST:Word-intrinsic AST:INTRINSIC_LESS = or
         $word AST:Word-intrinsic AST:INTRINSIC_LESS_EQ = or
         if {
@@ -146,11 +147,17 @@ fn check-intrinsic-and-or-or(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-pop drop
 }
 fn check-compare-intrinsics(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) {
+    local left: .AST:Type
+    local right: .AST:Type
     $stack AST:Types-len 2 < if {
         $stack $word "expected [i32, i32] got: " report-error
     }
-    $stack AST:Types-pop drop
-    $stack AST:Types-pop drop
+    $stack AST:Types-pop #left
+    $stack AST:Types-pop #right
+    $left AST:Type-ty AST:TYPE_I32 /= 
+    $right AST:Type-ty AST:TYPE_I32 /= or if {
+        $stack $word "expected a => [a, a] got: " report-error
+    }
     $stack $temp-types AST:Type-new-boolean U:push-temp-type AST:Types-push
 }
 fn check-intrinsic-load(stack: .AST:Types, word: .AST:Word) {

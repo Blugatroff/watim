@@ -176,7 +176,7 @@ fn check-word(
                 $module 
             } else {
                 $modules $module $word.qualifier $word resolve-module
-            } $word.ident STR:Str-unpack M:Module-find-struc if {
+            } $word.ident ~ STR:Str-unpack M:Module-find-struc if {
                 AST:Struct-size #word.number
             } else {
                 drop
@@ -191,6 +191,7 @@ fn check-word(
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
+    $word AST:Word-mark-checked
 }
 fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type
@@ -207,7 +208,7 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     0 1 =
 }
 fn check-locl-fields-access(locals: .LocalsMap, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
-    $locals $word AST:Word-ident STR:Str-unpack LocalsMap-get not if {
+    $locals $word AST:Word-ident ~ STR:Str-unpack LocalsMap-get not if {
         drop 
         0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
     } else {
@@ -240,7 +241,7 @@ fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type, .AST:
                     $type AST:Type-child #type
                 }
                 $type AST:Type-struc #struc
-                $struc $field L:Token-lexeme STR:Str-unpack AST:Struct-find-field not if {
+                $struc $field L:Token-lexeme ~ STR:Str-unpack AST:Struct-find-field not if {
                     $field L:Token-location "field not found" U:abort-with-location
                 }
                 $offset + #offset
@@ -267,7 +268,7 @@ fn check-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals:
         $stack $type AST:Types-push
     } else {
         drop drop drop
-        $module $word AST:Word-ident STR:Str-unpack M:Module-find-mem if {
+        $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             $modules $module M:Modules-find-index #word.module
             AST:WORD_GLOBAL #word.ty
             AST:Memory-type $stack flip AST:Types-push
@@ -296,7 +297,7 @@ fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals
         0 1 =
     } else {
         drop drop drop
-        $module $word AST:Word-ident STR:Str-unpack M:Module-find-mem if {
+        $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             #mem
             $modules $module M:Modules-find-index #word.module
             $mem AST:Memory-type $word check-fields-access #loads #type #src-type
@@ -371,7 +372,7 @@ fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bo
     $type AST:Type-ty AST:TYPE_STRUCT = if {
         $stack AST:Types-pop #type
         $type AST:Type-struc
-        $word AST:Word-ident STR:Str-unpack
+        $word AST:Word-ident ~ STR:Str-unpack
         $type #word.src-type
         AST:Struct-find-field if {
             #word.offset
@@ -391,7 +392,7 @@ fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bo
         $stack AST:Types-pop #type
         $type #word.src-type
         $type AST:Type-child AST:Type-struc 
-        $word AST:Word-ident STR:Str-unpack
+        $word AST:Word-ident ~ STR:Str-unpack
         AST:Struct-find-field if {
             #word.offset
             AST:Field-type AST:Type-new-ptr $temp-types flip U:push-temp-type #type
@@ -545,10 +546,10 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
     local ret: .AST:Types
     local i: i32
     $modules $module $word.qualifier $word resolve-module #module
-    $module $word AST:Word-ident STR:Str-unpack M:Module-find-function not if {
+    $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-function not if {
         drop drop
         "function: `" S:String-new #msg
-        &msg $word AST:Word-ident STR:Str-unpack S:String-append
+        &msg $word AST:Word-ident ~ STR:Str-unpack S:String-append
         &msg "` not found\n" S:String-append
         $word AST:Word-location &msg S:String-unpack U:abort-with-location
         $msg S:String-free
@@ -591,7 +592,7 @@ fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .STR:Str, w
     $qualifier !i32 0 = if {
         $module
     } else {
-        $module M:Module-imports $qualifier STR:Str-unpack AST:Imports-get #b #path 
+        $module M:Module-imports $qualifier ~ STR:Str-unpack AST:Imports-get #b #path 
         $b if {
             $modules $path S:String-unpack M:Modules-get if {
 
@@ -651,12 +652,12 @@ fn insert-local-into-map(map: .LocalsMap, locl: .AST:Local) {
 fn insert-type-into-map(map: .LocalsMap, locl: .AST:Local, type: .AST:Type) {
     local msg: S:String
     $map 
-    $locl AST:Local-ident L:Token-lexeme STR:Str-unpack S:String-new
+    $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack S:String-new
     $type
     LocalsMap-insert if {
         $locl AST:Local-ident L:Token-location 
         "local `" S:String-new #msg
-        &msg $locl AST:Local-ident L:Token-lexeme STR:Str-unpack S:String-append
+        &msg $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack S:String-append
         &msg "` already declared\n" S:String-append
         &msg S:String-unpack U:abort-with-location
         $msg S:String-free
