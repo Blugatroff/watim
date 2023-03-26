@@ -450,10 +450,8 @@ fn If-set-rets(self: .If, rets: .Types) {
 }
 
 struct Word {
-    file: STR:Str
     ty: i32
-    line: i32
-    column: i32
+    token: .L:Token
     ident: .STR:Str
     offset: i32
     qualifier: .STR:Str
@@ -473,12 +471,10 @@ struct Word {
     string: S:String
     checked: bool
 }
-fn Word-new(ty: i32, file: STR:Str, line: i32, column: i32) -> Word {
+fn Word-new(ty: i32, token: .L:Token) -> Word {
     local self: Word
-    $file #self.file
     $ty #self.ty
-    $line #self.line
-    $column #self.column
+    $token #self.token
     0 1 = #self.checked
     0 !.STR:Str #self.qualifier
     $self
@@ -520,7 +516,7 @@ fn Word-mark-checked(self: .Word) {
     1 1 = #self.checked
 }
 fn Word-location(self: .Word) -> .i32, i32, i32, i32 {
-    &self.file ~ STR:Str-unpack $self.line $self.column
+    $self.token L:Token-location
 }
 fn Word-ty(self: .Word) -> i32 {
     $self.ty

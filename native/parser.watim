@@ -515,122 +515,122 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
     $token L:Token-column #column
     loop {
         $token L:Token-lexeme ~ STR:Str-unpack "drop" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_DROP #word.intrinsic
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "flip" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_FLIP #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "+" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_ADD #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "<" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_LESS #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack ">" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_GREATER #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "=" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_EQ #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack ">=" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_GREATER_EQ #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "<=" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_LESS_EQ #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "not" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_NOT #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "mem-grow" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_MEM_GROW #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "-" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_SUB #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "and" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_AND #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "store8" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_STORE8 #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "load8" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_LOAD8 #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "%" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_MOD #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "/" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_DIV #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "/=" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_NOT_EQ #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "*" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_MUL #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "mem-copy" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_MEM_COPY #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "rotl" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_ROTL #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "rotr" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_ROTR #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "or" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_OR #word.intrinsic 
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "store" STR:str-eq if {
-            AST:WORD_INTRINSIC $file $line $column AST:Word-new #word
+            AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_STORE #word.intrinsic
             $word 0 0 = break
         }
         $token L:Token-lexeme ~ STR:Str-unpack "sizeof" STR:str-eq if {
-            AST:WORD_SIZEOF $file $line $column AST:Word-new #word
+            AST:WORD_SIZEOF $token AST:Word-new #word
             $self.current $self.tokens L:Tokens-len = if {
                 $self.file STR:Str-unpack "Expected ( found EOF" U:abort
             }
@@ -690,7 +690,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
             $self $token Parser-parse-intrinsic if {
                 break
             } else { drop }
-            AST:WORD_CALL $file $line $column AST:Word-new #word
+            AST:WORD_CALL $token AST:Word-new #word
             $self.current $self.tokens L:Tokens-len < if {
                 $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
                     $self Parser-advance drop
@@ -713,12 +713,12 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
             $self $file $line $column Parser-parse-get-locl break
         }
         $ty L:TOKEN_NUMBER = if {
-            AST:WORD_NUMBER $file $line $column AST:Word-new #word
+            AST:WORD_NUMBER $token AST:Word-new #word
             $token.number #word.number
             $word break
         }
         $ty L:TOKEN_STRING = if {
-            AST:WORD_STRING $file $line $column AST:Word-new #word
+            AST:WORD_STRING $token AST:Word-new #word
 
             &token.string S:String-len #word.size
             &token.string S:String-clone #word.string
@@ -734,25 +734,25 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
             $word break
         }
         $ty L:TOKEN_BREAK = if {
-            AST:WORD_BREAK $file $line $column AST:Word-new break
+            AST:WORD_BREAK $token AST:Word-new break
         }
         $ty L:TOKEN_IF = if {
-            AST:WORD_IF $file $line $column AST:Word-new #word
+            AST:WORD_IF $token AST:Word-new #word
             $self Parser-parse-iff #word.iff
             $word break
         }
         $ty L:TOKEN_BANG = if {
-            AST:WORD_CAST $file $line $column AST:Word-new #word
+            AST:WORD_CAST $token AST:Word-new #word
             $self Parser-parse-type #word.type
             $word break
         }
         $ty L:TOKEN_LOOP = if {
-            AST:WORD_LOOP $file $line $column AST:Word-new #word
+            AST:WORD_LOOP $token AST:Word-new #word
             $self Parser-parse-lop #word.lop
             $word break
         }
         $ty L:TOKEN_DOT = if {
-            AST:WORD_DEREF $file $line $column AST:Word-new #word
+            AST:WORD_DEREF $token AST:Word-new #word
             $self.current $self.tokens L:Tokens-len = if {
                 $self.file STR:Str-unpack "Expected identifier found EOF" U:abort
             }
@@ -764,18 +764,21 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
             $word break
         }
         $ty L:TOKEN_HASH = if {
-            $self $file $line $column Parser-parse-struc-set break
+            $self $file $line $column Parser-parse-set-locl break
+        }
+        $ty L:TOKEN_AT = if {
+            $self $file $line $column Parser-parse-init-locl break
         }
         $ty L:TOKEN_AMPERSAND = if {
-            $self $file $line $column Parser-parse-get-ref break
+            $self $token Parser-parse-get-ref break
         }
         $ty L:TOKEN_TILDE = if {
-            AST:WORD_LOAD $file $line $column AST:Word-new break
+            AST:WORD_LOAD $token AST:Word-new break
         }
         $ty L:TOKEN_RIGHT_RIGHT = if {
-            $self $file $line $column Parser-parse-store break
+            $self $token Parser-parse-store break
         }
-        $token L:Token-location "Unexpected Token" U:abort-with-location
+        $token L:Token-location "Unexpected Token\n" U:abort-with-location
         0 !.AST:Word break
     }
 }
@@ -783,7 +786,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
 fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local word: AST:Word
     local token: .L:Token
-    AST:WORD_GET_LOCAL $file $line $column AST:Word-new #word
+    AST:WORD_GET_LOCAL $token AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
         $file STR:Str-unpack "expected identifier found EOF" U:abort
     }
@@ -809,12 +812,11 @@ fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -
     }
     $word
 }
-fn Parser-parse-fields-access(self: .Parser, file: STR:Str, line: i32, column: i32) -> L:Tokens, .STR:Str {
-    local token: .L:Token
+fn Parser-parse-fields-access(self: .Parser, token: .L:Token) -> L:Tokens, .STR:Str {
     local fields: L:Tokens
     local ident: .L:Token
     $self.current $self.tokens L:Tokens-len = if {
-        $file STR:Str-unpack "expected identifier found EOF" U:abort
+        $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     $self Parser-advance #ident
     $ident L:Token-ty L:TOKEN_IDENT /= if {
@@ -827,7 +829,7 @@ fn Parser-parse-fields-access(self: .Parser, file: STR:Str, line: i32, column: i
         $token L:Token-ty L:TOKEN_DOT /= if { break }
         $self Parser-advance #token
         $self.current $self.tokens L:Tokens-len = if {
-            $file STR:Str-unpack "expected identifier found EOF" U:abort
+            $self.file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_IDENT /= if {
@@ -837,26 +839,36 @@ fn Parser-parse-fields-access(self: .Parser, file: STR:Str, line: i32, column: i
     }
     $fields $ident L:Token-lexeme
 }
-fn Parser-parse-get-ref(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+fn Parser-parse-get-ref(self: .Parser, token: .L:Token) -> AST:Word {
     local word: AST:Word
-    AST:WORD_GET_REF $file $line $column AST:Word-new #word
-    $self $file $line $column Parser-parse-fields-access 
+    AST:WORD_GET_REF $token AST:Word-new #word
+    $self $token Parser-parse-fields-access 
     #word.ident
     #word.fields
     $word
 }
-fn Parser-parse-store(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+fn Parser-parse-store(self: .Parser, token: .L:Token) -> AST:Word {
     local word: AST:Word
-    AST:WORD_STORE $file $line $column AST:Word-new #word
-    $self $file $line $column Parser-parse-fields-access 
+    AST:WORD_STORE $token AST:Word-new #word
+    $self $token Parser-parse-fields-access 
     #word.ident
     #word.fields
     $word
 }
-fn Parser-parse-struc-set(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+fn Parser-parse-init-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
+    local word: AST:Word
+    local token: .L:Token
+    $self.current $self.tokens L:Tokens-len = if {
+        $self.file STR:Str-unpack "Expected @ found EOF" U:abort
+    }
+    $self Parser-advance #token
+    $token L:Token-location "TODO" U:abort-with-location
+    $word
+}
+fn Parser-parse-set-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local token: .L:Token
     local word: AST:Word
-    AST:WORD_SET $file $line $column AST:Word-new #word
+    AST:WORD_SET $token AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
         $self.file STR:Str-unpack "Expected identifier found EOF" U:abort
     }
@@ -983,6 +995,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_LOOP = or
     $ty L:TOKEN_BREAK = or
     $ty L:TOKEN_HASH = or
+    $ty L:TOKEN_AT = or
     $ty L:TOKEN_STRING = or
     $ty L:TOKEN_BANG = or
     $ty L:TOKEN_DOT = or
