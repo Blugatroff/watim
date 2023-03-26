@@ -35,13 +35,11 @@ fn process-item(temp-types: .AST:Types, global-mem-address: .i32, item: .AST:Top
     }
 }
 
-fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Memory) {
+fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Local) {
     local address: i32
-    local size: i32
     $global-mem-address ~ #address
-    $mem AST:Memory-size #size
     $address 4 CORE:align-to #address
-    $address $size + >>global-mem-address 
-    $mem $address AST:Memory-set-address
+    $address $mem.size + >>global-mem-address 
+    $address #mem.address
 }
 

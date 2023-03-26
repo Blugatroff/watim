@@ -294,6 +294,7 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
             break
         }
         2 "invalid Type-ty" IO:write-all IO:check
+        0 0 / drop
         1 CORE:exit
     }
 }
@@ -558,16 +559,42 @@ fn Word-module(self: .Word) -> i32 {
     $self.module
 }
 
+fn LOCAL_ARGUMENT() -> i32 { 1 }
+fn LOCAL_LOCAL() -> i32 { 2 }
+fn LOCAL_MEMORY() -> i32 { 3 }
+
+fn locl-ty-name(ty: i32) -> .i32, i32 {
+    loop {
+        $ty LOCAL_ARGUMENT = if { "LOCAL_ARGUMENT" break }
+        $ty LOCAL_LOCAL = if { "LOCAL_LOCAL" break }
+        $ty LOCAL_MEMORY = if { "LOCAL_MEMORY" break }
+        "invalid local ty" break
+    }
+}
+
 struct Local {
     ident: .L:Token
     type: .Type
+    ty: i32
+    size: i32
+    address: i32
 }
-fn Local-new(ident: .L:Token, type: .Type) -> .Local {
+fn Local-new(ty: i32, ident: .L:Token, type: .Type) -> .Local {
     local self: .Local
     sizeof(Local) A:alloc !.Local #self
+    $ty #self.ty
     $ident #self.ident
     $type #self.type
     $self
+}
+fn Local-new-mem(ident: .L:Token, type: .Type, size: i32) -> .Local {
+    local self: .Local
+    LOCAL_MEMORY $ident $type Type-new-ptr Local-new #self
+    $size #self.size
+    $self
+}
+fn Local-ty(self: .Local) -> i32 {
+    $self.ty
 }
 fn Local-ident(self: .Local) -> .L:Token {
     $self.ident
@@ -586,66 +613,78 @@ fn Local-format(self: .Local, formatter: .FMT:Formatter) {
     $formatter " }" FMT:Formatter-write
 }
 fn Local-free(self: .Local) {
+    $self.ty LOCAL_MEMORY = if {
+        $self.type $self.type Type-child #self.type Type-free
+    }
     $self !.i32 A:free
 }
 fn Local-clone(self: .Local) -> .Local {
-    $self.ident $self.type Local-new
+    $self.ty $self.ident $self.type Local-new
+}
+fn Local-print(fd: i32, self: .Local) {
+    $fd $self.ty locl-ty-name IO:write-all IO:check
 }
 
 struct Locals {
     inner: IV:I32Vec
 }
-fn Locals-new() -> .Locals {
-    local self: .Locals
-    sizeof(Locals) A:alloc !.Locals #self
+fn Locals-new() -> Locals {
+    local self: Locals
     IV:I32Vec-new #self.inner
     $self
-}
-fn Locals-free(self: .Locals) {
-    local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Local Local-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Locals-get(self: .Locals, index: i32) -> .Local {
-    &self.inner $index IV:I32Vec-get !.Local
-}
-fn Locals-push(self: .Locals, mem: .Local) {
-    &self.inner $mem !i32 IV:I32Vec-push
 }
 fn Locals-len(self: .Locals) -> i32 {
     &self.inner IV:I32Vec-len
 }
-fn Locals-format(self: .Locals, formatter: .FMT:Formatter) {
-    local i: i32
-    $self Locals-len 0 = if { 
-        $formatter "[]" FMT:Formatter-write
-    } else {
-        $formatter "[\n" FMT:Formatter-write
-        $formatter FMT:Formatter-indent
-        loop {
-            $i $self Locals-len = if { break }
-            $formatter FMT:Formatter-write-indent
-            $self $i Locals-get $formatter Local-format
-            $formatter ",\n" FMT:Formatter-write
-            $i 1 + #i
-        }
-        $formatter FMT:Formatter-dedent
-        $formatter FMT:Formatter-write-indent
-        $formatter "]" FMT:Formatter-write
-    }
+fn Locals-get(self: .Locals, index: i32) -> .Local {
+    &self.inner $index IV:I32Vec-get !.Local
 }
-fn Locals-contains-struc(self: .Locals) -> bool {
+fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32) -> .Local, bool {
+    local i: i32
+    $self Locals-len 0 /= if {
+        $self Locals-len 1 - #i
+        loop {
+            $self $i Locals-get .ident ~ L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+                $self $i Locals-get 1 1 = break
+            }
+            // TODO: figure out why this isn't properly type checked
+            0 $i = if { 0 0 1 = break }
+            $i 1 - #i
+        }
+    } else { 0 !.Local 0 1 = }
+}
+fn Locals-push(self: .Locals, locl: .Local) {
+    &self.inner $locl !i32 IV:I32Vec-push
+}
+fn Locals-pop(self: .Locals) -> .Local {
+    &self.inner IV:I32Vec-pop !.Local
+}
+fn Locals-free(self: Locals) {
+    local i: i32
+    loop {
+        0 &self Locals-len = if { break }
+        &self Locals-pop Local-free
+    }
+    $self.inner IV:I32Vec-free
+}
+fn Locals-contains-mem-or-struc(self: .Locals) -> bool {
     local i: i32
     loop {
         $i $self Locals-len = if { 0 1 = break }
-        $self $i Locals-get Local-type Type-ty TYPE_STRUCT = if {
+        $self $i Locals-get Local-ty LOCAL_MEMORY =
+        $self $i Locals-get Local-type Type-ty TYPE_STRUCT = or if {
             0 0 = break 
         }
+        $i 1 + #i
+    }
+}
+fn Locals-print(fd: i32, self: .Locals) {
+    local i: i32
+    $fd $self Locals-len IO:print-to-fd
+
+    loop {
+        $i $self Locals-len = if { break }
+        $fd $self $i Locals-get Local-print
         $i 1 + #i
     }
 }
@@ -658,7 +697,7 @@ struct Memory {
 fn Memory-new(ident: .L:Token, type: .Type, size: i32) -> .Memory {
     local self: .Memory
     sizeof(Memory) A:alloc !.Memory #self
-    $ident $type Type-new-ptr Local-new #self.locl
+    LOCAL_LOCAL $ident $type Type-new-ptr Local-new #self.locl
     $size #self.size
     0 #self.address
     $self
@@ -725,10 +764,8 @@ fn Memories-len(self: .Memories) -> i32 {
 struct Function {
     ident: .L:Token
     export: .L:Token
-    parameters: .Locals
     ret: .Types
-    mems: .Memories
-    locals: .Locals
+    locals: Locals
     body: Words
     diverges: bool
     reachable: bool
@@ -736,43 +773,31 @@ struct Function {
 fn Function-new(
     ident: .L:Token, 
     export: .L:Token, 
-    parameters: .Locals,
     ret: .Types,
-    mems: .Memories,
-    locals: .Locals,
+    locals: Locals,
     body: Words
 ) -> .Function {
     local self: .Function
     sizeof(Function) A:alloc !.Function #self
     $ident #self.ident
     $export #self.export
-    $parameters #self.parameters
     $ret #self.ret
-    $mems #self.mems
     $locals #self.locals
     $body #self.body
     0 1 = #self.diverges
     $self
 }
 fn Function-free(self: .Function) {
-    $self.parameters Locals-free
     $self.ret Types-free-container
     $self.body Words-free
-    $self.mems Memories-free
     $self.locals Locals-free
     $self !.i32 A:free
 }
 fn Function-rets(self: .Function) -> .Types {
     $self.ret
 }
-fn Function-parameters(self: .Function) -> .Locals {
-    $self.parameters
-}
 fn Function-locals(self: .Function) -> .Locals {
-    $self.locals
-}
-fn Function-memories(self: .Function) -> .Memories {
-    $self.mems
+    &self.locals
 }
 fn Function-body(self: .Function) -> .Words {
     &self.body
@@ -783,14 +808,8 @@ fn Function-ident(self: .Function) -> .L:Token {
 fn Function-diverges(self: .Function) -> bool {
     $self.diverges
 }
-fn Function-has-struc-locl(self: .Function) -> bool {
-    local locals: .Locals
-    local i: i32
-    $self Function-locals Locals-contains-struc if { 
-        0 0 = 
-    } else {
-        $self Function-parameters Locals-contains-struc
-    }
+fn Function-has-mem-or-struc-locl(self: .Function) -> bool {
+    $self Function-locals Locals-contains-mem-or-struc
 }
 fn Function-mark-reachable(self: .Function) {
     1 1 = #self.reachable
@@ -829,7 +848,7 @@ struct Extern {
     module: .L:Token
     name: .L:Token
     ident: .L:Token
-    params: .Locals
+    params: Locals
     rets: .Types
     reachable: bool
 }
@@ -837,7 +856,7 @@ fn Extern-new(
     module: .L:Token,
     name: .L:Token,
     ident: .L:Token,
-    params: .Locals,
+    params: Locals,
     rets: .Types
 ) -> .Extern {
     local self: .Extern
@@ -860,7 +879,7 @@ fn Extern-rets(self: .Extern) -> .Types {
     $self.rets
 }
 fn Extern-parameters(self: .Extern) -> .Locals {
-    $self.params
+    &self.params
 }
 fn Extern-ident(self: .Extern) -> .L:Token {
     $self.ident
@@ -872,33 +891,6 @@ fn Extern-free(self: .Extern) {
     $self.params Locals-free
     $self.rets Types-free-container
     $self !.i32 A:free
-}
-fn Extern-format(self: .Extern, formatter: .FMT:Formatter) {
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    $formatter FMT:Formatter-write-indent
-    $formatter "module: \"" FMT:Formatter-write 
-    $formatter $self.module L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "name: \"" FMT:Formatter-write
-    $formatter $self.name L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "ident: \"" FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "params: " FMT:Formatter-write
-    $self.params $formatter Locals-format
-    $formatter ",\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "rets: " FMT:Formatter-write
-    $self.rets $formatter Types-format
-    $formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
 }
 
 struct Import {
@@ -1092,7 +1084,7 @@ fn top-item-ty-name(ty: i32) -> .i32, i32 {
 struct TopItem {
     ty: i32
     function: .Function
-    mem: .Memory
+    mem: .Local
     ext: .Extern
     imp: .Import
     struc: .Struct
@@ -1109,7 +1101,7 @@ fn TopItem-new-function(f: .Function) -> .TopItem {
     $f #self.function
     $self
 }
-fn TopItem-new-mem(mem: .Memory) -> .TopItem {
+fn TopItem-new-mem(mem: .Local) -> .TopItem {
     local self: .TopItem
     TOP_ITEM_MEM TopItem-new #self
     $mem #self.mem
@@ -1150,7 +1142,7 @@ fn TopItem-free(self: .TopItem) {
         $self.function Function-free
     }
     $self TopItem-ty TOP_ITEM_MEM = if {
-        $self.mem Memory-free
+        $self.mem Local-free
     }
     $self TopItem-ty TOP_ITEM_EXT = if {
         $self.ext Extern-free

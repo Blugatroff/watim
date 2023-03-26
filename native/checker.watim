@@ -53,7 +53,6 @@ fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
     $msg S:String-free
 }
 fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
-    local locals: Locals
     local stack: .AST:Types
     local temp-types: .AST:Types
     local words: .AST:Words
@@ -62,11 +61,9 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     AST:Types-new #stack
     AST:Types-new #temp-types
 
-    $function get-locals-in-function #locals
-
     $function AST:Function-body #words
     BS:BreakStacks-new #bs
-    $temp-types $bs $modules $module $stack &locals $words check-words not if {
+    $temp-types $bs $modules $module $stack &function.locals $words check-words not if {
         // if the function does not diverge, aka does return
         // then check wheter the remaining stack matches the return type
         $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
@@ -94,7 +91,7 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     }
     $temp-types AST:Types-free-container
 
-    $locals Locals-free
+    // $locals AST:Locals-free
     $bs BS:BreakStacks-free
 }
 fn check-words(
@@ -103,7 +100,7 @@ fn check-words(
     modules: .M:Modules, 
     module: .M:Module,
     stack: .AST:Types,
-    locals: .Locals,
+    locals: .AST:Locals,
     words: .AST:Words,
 ) -> bool {
     local i: i32
@@ -125,7 +122,7 @@ fn check-word(
     modules: .M:Modules,
     module: .M:Module,
     stack: .AST:Types,
-    locals: .Locals,
+    locals: .AST:Locals,
     word: .AST:Word
 ) -> bool {
     loop {
@@ -210,8 +207,8 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     $type #word.type
     0 1 =
 }
-fn check-locl-fields-access(locals: .Locals, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
-    $locals $word AST:Word-ident ~ STR:Str-unpack Locals-find flip .type ~ flip not if {
+fn check-locl-fields-access(locals: .AST:Locals, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
+    $locals $word AST:Word-ident ~ STR:Str-unpack AST:Locals-find flip .type ~ flip not if {
         drop 
         0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
     } else {
@@ -261,7 +258,7 @@ fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type, .AST:
     }
     $src-type $type $loads
 }
-fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .Locals, word: .AST:Word) -> bool {
+fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     local loads: IV:I32Vec
     $locals $word check-locl-fields-access if {
@@ -274,7 +271,7 @@ fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, loc
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             $modules $module M:Modules-find-index #word.module
             AST:WORD_GET_GLOBAL #word.ty
-            AST:Memory-type $stack flip AST:Types-push
+            AST:Local-type $stack flip AST:Types-push
         } else {
             drop
             $word AST:Word-location "local not found\n" U:abort-with-location
@@ -282,11 +279,11 @@ fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, loc
     }
     0 1 =
 }
-fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals: .Locals, word: .AST:Word) -> bool {
+fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     local loads: IV:I32Vec
     local src-type: .AST:Type
-    local mem: .AST:Memory
+    local mem: .AST:Local
     $locals $word check-locl-fields-access if {
         #loads #type #src-type
         $type AST:Type-ty AST:TYPE_PTR =
@@ -303,7 +300,7 @@ fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             #mem
             $modules $module M:Modules-find-index #word.module
-            $mem AST:Memory-type $word check-fields-access #loads #type #src-type
+            $mem AST:Local-type $word check-fields-access #loads #type #src-type
             AST:WORD_STORE_GLOBAL #word.ty
             $loads #word.loads
             $type AST:Type-child #word.type
@@ -319,7 +316,7 @@ fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals
     }
 }
 
-fn check-get-ref(stack: .AST:Types, locals: .Locals, temp-types: .AST:Types, word: .AST:Word) -> bool {
+fn check-get-ref(stack: .AST:Types, locals: .AST:Locals, temp-types: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
     local loads: IV:I32Vec
@@ -340,16 +337,17 @@ fn check-get-ref(stack: .AST:Types, locals: .Locals, temp-types: .AST:Types, wor
     $stack $temp-types $type AST:Type-new-ptr U:push-temp-type AST:Types-push
     0 1 =
 }
-fn check-init-locl(stack: .AST:Types, locals: .Locals, word: .AST:Word) -> bool {
+fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     $stack AST:Types-len 0 = if {
         $word AST:Word-location "stack is empty\n" U:abort-with-location
     }
     $stack AST:Types-pop #word.type
     IV:I32Vec-new #word.loads
+    $locals AST:LOCAL_LOCAL $word.token $word.type AST:Local-new AST:Locals-push
     0 1 =
 }
-fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .Locals, word: .AST:Word) -> bool {
+fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
     local loads: IV:I32Vec
@@ -432,7 +430,7 @@ fn check-iff(
     modules: .M:Modules,
     module: .M:Module,
     stack: .AST:Types,
-    locals: .Locals,
+    locals: .AST:Locals,
     word: .AST:Word
 ) -> bool {
     local iff: .AST:If
@@ -526,7 +524,7 @@ fn check-lop(
     modules: .M:Modules, 
     module: .M:Module,
     stack: .AST:Types,
-    locals: .Locals,
+    locals: .AST:Locals,
     word: .AST:Word,
 ) -> bool {
     local bs: .BS:BreakStacks
@@ -556,6 +554,7 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
     local params: .AST:Types
     local param-locals: .AST:Locals
     local ret: .AST:Types
+    local locl: .AST:Local
     local i: i32
     $modules $module $word.qualifier $word resolve-module #module
     $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-function not if {
@@ -569,20 +568,24 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
         #function #ext
     }
 
+    AST:Types-new #params
     $function !i32 0 /= if {
-        $function AST:Function-parameters #param-locals
+        $function AST:Function-locals #param-locals
         $function AST:Function-rets #ret
     } else {
         $ext AST:Extern-parameters #param-locals
         $ext AST:Extern-rets #ret
     }
-    $ret AST:Types-clone-container #word.rets
-    AST:Types-new #params
     loop {
         $i $param-locals AST:Locals-len = if { break }
-        $params $param-locals $i AST:Locals-get AST:Local-type AST:Types-push
+        $param-locals $i AST:Locals-get #locl
+        $locl AST:Local-ty AST:LOCAL_ARGUMENT = if {
+            $params $locl AST:Local-type AST:Types-push
+        }
         $i 1 + #i
     }
+
+    $ret AST:Types-clone-container #word.rets
     $modules $module M:Modules-find-index #word.module
     $stack 
     $params
@@ -621,20 +624,8 @@ fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .STR:Str, w
         }
     }
 }
-fn get-locals-in-function(function: .AST:Function) -> Locals {
-    local map: Locals
-    local locals: .AST:Locals
-    local i: i32
-    Locals-new #map
 
-    $function AST:Function-locals #locals
-    &map $function AST:Function-locals insert-locals-into-map 
-    &map $function AST:Function-memories insert-memories-into-map
-    &map $function AST:Function-parameters insert-locals-into-map 
-
-    $map
-}
-fn insert-locals-into-map(map: .Locals, locals: .AST:Locals) {
+fn insert-locals-into-map(map: .AST:Locals, locals: .AST:Locals) {
     local i: i32
     loop {
         $i $locals AST:Locals-len = if { break }
@@ -644,7 +635,7 @@ fn insert-locals-into-map(map: .Locals, locals: .AST:Locals) {
         $i 1 + #i
     }
 }
-fn insert-memories-into-map(map: .Locals, mems: .AST:Memories) {
+fn insert-memories-into-map(map: .AST:Locals, mems: .AST:Memories) {
     local i: i32
     loop {
         $mems AST:Memories-len $i = if { break }
@@ -654,56 +645,14 @@ fn insert-memories-into-map(map: .Locals, mems: .AST:Memories) {
         $i 1 + #i
     }
 }
-fn insert-local-into-map(map: .Locals, locl: .AST:Local) {
+fn insert-local-into-map(map: .AST:Locals, locl: .AST:Local) {
     $map $locl insert-type-into-map
 }
-fn insert-type-into-map(map: .Locals, locl: .AST:Local) {
+fn insert-type-into-map(map: .AST:Locals, locl: .AST:Local) {
     local msg: S:String
     $map 
     $locl
     AST:Local-clone 
-    Locals-push 
-}
-struct Locals {
-    inner: IV:I32Vec
-}
-fn Locals-new() -> Locals {
-    local self: Locals
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn Locals-len(self: .Locals) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn Locals-get(self: .Locals, index: i32) -> .AST:Local {
-    &self.inner $index IV:I32Vec-get !.AST:Local
-}
-fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32) -> .AST:Local, bool {
-    local i: i32
-    $self Locals-len 0 /= if {
-        $self Locals-len 1 - #i
-        loop {
-            $self $i Locals-get .ident ~ L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
-                $self $i Locals-get 1 1 = break
-            }
-            // TODO: figure out why this isn't properly type checked
-            0 $i = if { 0 0 1 = break }
-            $i 1 - #i
-        }
-    } else { 0 !.AST:Local 0 1 = }
-}
-fn Locals-push(self: .Locals, locl: .AST:Local) {
-    &self.inner $locl !i32 IV:I32Vec-push
-}
-fn Locals-pop(self: .Locals) -> .AST:Local {
-    &self.inner IV:I32Vec-pop !.AST:Local
-}
-fn Locals-free(self: Locals) {
-    local i: i32
-    loop {
-        0 &self Locals-len = if { break }
-        &self Locals-pop AST:Local-free
-    }
-    $self.inner IV:I32Vec-free
+    AST:Locals-push 
 }
 

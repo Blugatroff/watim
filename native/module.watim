@@ -184,18 +184,18 @@ fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:
     }
 }
 
-fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Memory, bool {
+fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local, bool {
     local items: .AST:TopItems
     local item: .AST:TopItem
-    local mem: .AST:Memory
+    local mem: .AST:Local
     local i: i32
     $self Module-items #items
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Memory 0 1 = break }
+        $i $items AST:TopItems-len = if { 0 !.AST:Local 0 1 = break }
         $items $i AST:TopItems-get #item
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
             $item.mem #mem
-            $mem AST:Memory-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $mem.ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $mem 0 0 = break 
             }
         }

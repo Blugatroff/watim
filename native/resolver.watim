@@ -1,8 +1,9 @@
-import "./ast.watim" as AST
 import "../std/io.watim" as IO
 import "../std/string.watim" as S2
 import "../std/str.watim" as STR
 import "../std/alloc.watim" as A
+
+import "./ast.watim" as AST
 import "./module.watim" as M
 import "./lexer.watim" as L
 import "./parser.watim" as P
@@ -60,9 +61,7 @@ fn resolve-struc(modules: .M:Modules, module: .M:Module, struc: .AST:Struct) {
 }
 fn resolve-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
     $modules $module $function AST:Function-rets resolve-types
-    $modules $module $function AST:Function-parameters resolve-parameters
     $modules $module $function AST:Function-locals resolve-locals
-    $modules $module $function AST:Function-memories resolve-memories
     $modules $module $function AST:Function-body resolve-words
 }
 fn resolve-words(modules: .M:Modules, module: .M:Module, words: .AST:Words) {
@@ -101,16 +100,8 @@ fn resolve-types(modules: .M:Modules, module: .M:Module, types: .AST:Types) {
         $i 1 + #i
     }
 }
-fn resolve-memories(modules: .M:Modules, module: .M:Module, memories: .AST:Memories) {
-    local i: i32
-    loop {
-        $i $memories AST:Memories-len = if { break }
-        $modules $module $memories $i AST:Memories-get resolve-memory
-        $i 1 + #i
-    }
-}
-fn resolve-memory(modules: .M:Modules, module: .M:Module, mem: .AST:Memory) {
-    $modules $module $mem AST:Memory-type resolve-type
+fn resolve-memory(modules: .M:Modules, module: .M:Module, mem: .AST:Local) {
+    $modules $module $mem.type resolve-type
 }
 fn resolve-locals(modules: .M:Modules, module: .M:Module, locals: .AST:Locals) {
     local i: i32
