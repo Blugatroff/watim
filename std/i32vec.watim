@@ -21,6 +21,7 @@ fn I32Vec-len(vec: .I32Vec) -> i32 {
 fn I32Vec-get(vec: .I32Vec, index: i32) -> i32 {
     $index $vec I32Vec-len >= if { 
         2 "Index out of bounds\n" IO:write-all IO:check
+        0 0 / drop
         1 CORE:exit
     }
     $vec.ptr $index 4 * + ~

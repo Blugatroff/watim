@@ -84,6 +84,7 @@ fn WORD_LOAD() -> i32 { 18 }
 fn WORD_SIZEOF() -> i32 { 19 }
 fn WORD_STORE() -> i32 { 20 }
 fn WORD_STORE_GLOBAL() -> i32 { 21 }
+fn WORD_INIT_LOCAL() -> i32 { 22 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -105,6 +106,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         $ty WORD_STORE = if { "WORD_STORE" break }
         $ty WORD_STORE_GLOBAL = if { "WORD_STORE_GLOBAL" break }
+        $ty WORD_INIT_LOCAL = if { "WORD_INIT_LOCAL" break }
         "INVALID WORD TY" break
     }
 }
@@ -294,6 +296,15 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
         2 "invalid Type-ty" IO:write-all IO:check
         1 CORE:exit
     }
+}
+fn Type-print(self: .Type) {
+    local formatter: FMT:Formatter
+    local string: S:String
+    FMT:Formatter-new #formatter
+    $self &formatter Type-format
+    $formatter FMT:Formatter-into-string #string
+    2 &string S:String-unpack IO:write-all IO:check
+    $string S:String-free
 }
 
 struct Types {
@@ -498,6 +509,7 @@ fn Word-free(self: Word) {
     $self.ty WORD_GET_REF = or
     $self.ty WORD_GET_LOCAL = or
     $self.ty WORD_STORE = or
+    $self.ty WORD_INIT_LOCAL = or
     $self.checked and
     if {
         $self.loads IV:I32Vec-free
@@ -576,6 +588,9 @@ fn Local-format(self: .Local, formatter: .FMT:Formatter) {
 fn Local-free(self: .Local) {
     $self !.i32 A:free
 }
+fn Local-clone(self: .Local) -> .Local {
+    $self.ident $self.type Local-new
+}
 
 struct Locals {
     inner: IV:I32Vec
@@ -643,12 +658,16 @@ struct Memory {
 fn Memory-new(ident: .L:Token, type: .Type, size: i32) -> .Memory {
     local self: .Memory
     sizeof(Memory) A:alloc !.Memory #self
-    $ident $type Local-new #self.locl
+    $ident $type Type-new-ptr Local-new #self.locl
     $size #self.size
     0 #self.address
     $self
 }
 fn Memory-free(self: .Memory) {
+    local type: .Type
+    $self.locl.type #type
+    $self.locl.type Type-child #self.locl.type
+    $type Type-free
     $self.locl Local-free
     $self !.i32 A:free
 }

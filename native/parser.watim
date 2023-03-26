@@ -69,7 +69,7 @@ fn Parser-parse-module(self: .Parser) -> .AST:TopItems {
                 $items $self Parser-parse-struc AST:TopItem-new-struc AST:TopItems-push
                 break
             }
-            1 $token L:Token-ty L:token-ty-name IO:write-all IO:check
+            2 $token L:Token-ty L:token-ty-name IO:write-all IO:check
             $token L:Token-location "expected function memory or import" U:abort-with-location
             break
         }
@@ -786,7 +786,6 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
 fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local word: AST:Word
     local token: .L:Token
-    AST:WORD_GET_LOCAL $token AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
         $file STR:Str-unpack "expected identifier found EOF" U:abort
     }
@@ -794,6 +793,7 @@ fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -
     $self.current $self.tokens L:Tokens-len = if {
         $file STR:Str-unpack $line $column "expected identifier" U:abort-with-location
     }
+    AST:WORD_GET_LOCAL $token AST:Word-new #word
     $token L:Token-lexeme #word.ident
     L:Tokens-new #word.fields
     loop {
@@ -859,10 +859,14 @@ fn Parser-parse-init-locl(self: .Parser, file: STR:Str, line: i32, column: i32) 
     local word: AST:Word
     local token: .L:Token
     $self.current $self.tokens L:Tokens-len = if {
-        $self.file STR:Str-unpack "Expected @ found EOF" U:abort
+        $self.file STR:Str-unpack "Expected identifier found EOF" U:abort
     }
     $self Parser-advance #token
-    $token L:Token-location "TODO" U:abort-with-location
+    $token L:Token-ty L:TOKEN_IDENT /= if {
+        $token L:Token-location "expected identifier" U:abort-with-location
+    }
+    AST:WORD_INIT_LOCAL $token AST:Word-new #word
+    $token L:Token-lexeme #word.ident
     $word
 }
 fn Parser-parse-set-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {

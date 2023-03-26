@@ -63,7 +63,12 @@ fn Memory-json(formatter: .FMT:Formatter, mem: .AST:Memory) {
     $formatter FMT:Formatter-indent
 
     $formatter FMT:Formatter-write-indent
-    $formatter "\"ty\": \"memory\"\n" FMT:Formatter-write
+    $formatter "\"ty\": \"memory\",\n" FMT:Formatter-write
+
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"type\": \"" FMT:Formatter-write
+    $mem AST:Memory-type $formatter AST:Type-format
+    $formatter "\"\n" FMT:Formatter-write
 
     $formatter FMT:Formatter-dedent
     $formatter FMT:Formatter-write-indent

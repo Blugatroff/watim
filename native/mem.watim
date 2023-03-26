@@ -43,7 +43,5 @@ fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Memor
     $address 4 CORE:align-to #address
     $address $size + >>global-mem-address 
     $mem $address AST:Memory-set-address
-
-    $mem $temp-types $mem AST:Memory-type AST:Type-new-ptr U:push-temp-type AST:Memory-set-type
 }
 
