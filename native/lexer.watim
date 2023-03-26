@@ -36,6 +36,7 @@ fn TOKEN_LOCAL() -> i32 { 27 }
 fn TOKEN_ELSE() -> i32 { 28 }
 fn TOKEN_STRUCT() -> i32 { 29 }
 fn TOKEN_AMPERSAND() -> i32 { 30 }
+fn TOKEN_AT() -> i32 { 31 }
 fn TOKEN_TILDE() -> i32 { 33 }
 fn TOKEN_RIGHT_RIGHT() -> i32 { 34 }
 
@@ -70,6 +71,7 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_ELSE = if { "TOKEN_ELSE" break }
         $ty TOKEN_STRUCT = if { "TOKEN_STRUCT" break }
         $ty TOKEN_AMPERSAND  = if { "TOKEN_AMPERSAND" break }
+        $ty TOKEN_AT  = if { "TOKEN_AT" break }
         $ty TOKEN_TILDE  = if { "TOKEN_TILDE" break }
         $ty TOKEN_RIGHT_RIGHT  = if { "TOKEN_RIGHT_RIGHT" break }
         "INVALID TOKEN TYPE" break
@@ -97,10 +99,6 @@ struct Token {
 fn Token-new(ty: i32, lexeme: STR:Str, file: STR:Str, line: i32, column: i32) -> .Token {
     local self: .Token
     sizeof(Token) A:alloc !.Token #self
-    $file STR:Str-unpack "import " STR:str-is-prefix if {
-        2 "HERE\n" IO:write-all IO:check
-        0 0 / drop
-    }
     $ty #self.ty
     $lexeme #self.lexeme
     $file #self.file
@@ -319,6 +317,12 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
         }
         $char "#" drop load8 = if {
             TOKEN_HASH $lexeme $lexer.file $lexer.line $lexer.column Token-new 
+            $lexer.index 1 + #lexer.index
+            $lexer.column 1 + #lexer.column
+            break
+        }
+        $char "@" drop load8 = if {
+            TOKEN_AT $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
             break

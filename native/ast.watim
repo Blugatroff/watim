@@ -76,10 +76,10 @@ fn WORD_STRING() -> i32 { 10 }
 fn WORD_FIELD() -> i32 { 11 }
 fn WORD_CAST() -> i32 { 12 }
 fn WORD_DEREF() -> i32 { 13 }
-fn WORD_GLOBAL() -> i32 { 14 }
+fn WORD_GET_GLOBAL() -> i32 { 14 }
 fn WORD_SET() -> i32 { 15 }
 fn WORD_GET_REF() -> i32 { 16 }
-fn WORD_LOCAL() -> i32 { 17 }
+fn WORD_GET_LOCAL() -> i32 { 17 }
 fn WORD_LOAD() -> i32 { 18 }
 fn WORD_SIZEOF() -> i32 { 19 }
 fn WORD_STORE() -> i32 { 20 }
@@ -97,10 +97,10 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_FIELD = if { "WORD_FIELD" break }
         $ty WORD_CAST = if { "WORD_CAST" break }
         $ty WORD_DEREF = if { "WORD_DEREF" break }
-        $ty WORD_GLOBAL = if { "WORD_GLOBAL" break }
+        $ty WORD_GET_GLOBAL = if { "WORD_GET_GLOBAL" break }
         $ty WORD_SET = if { "WORD_SET" break }
         $ty WORD_GET_REF = if { "WORD_GET_REF" break }
-        $ty WORD_LOCAL = if { "WORD_LOCAL" break }
+        $ty WORD_GET_LOCAL = if { "WORD_GET_LOCAL" break }
         $ty WORD_LOAD = if { "WORD_LOAD" break }
         $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         $ty WORD_STORE = if { "WORD_STORE" break }
@@ -492,15 +492,15 @@ fn Word-free(self: Word) {
     }
     $self.ty WORD_SET = 
     $self.ty WORD_GET_REF = or
-    $self.ty WORD_LOCAL = or
+    $self.ty WORD_GET_LOCAL = or
     $self.ty WORD_STORE = or
-    $self.ty WORD_GLOBAL = or
+    $self.ty WORD_GET_GLOBAL = or
     if {
         $self.fields L:Tokens-free-container
     }
     $self.ty WORD_SET = 
     $self.ty WORD_GET_REF = or
-    $self.ty WORD_LOCAL = or
+    $self.ty WORD_GET_LOCAL = or
     $self.ty WORD_STORE = or
     $self.checked and
     if {

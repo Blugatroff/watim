@@ -783,7 +783,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
 fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local word: AST:Word
     local token: .L:Token
-    AST:WORD_LOCAL $file $line $column AST:Word-new #word
+    AST:WORD_GET_LOCAL $file $line $column AST:Word-new #word
     $self.current $self.tokens L:Tokens-len = if {
         $file STR:Str-unpack "expected identifier found EOF" U:abort
     }

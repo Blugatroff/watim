@@ -379,7 +379,7 @@ fn mark-reachable-call(modules: .Modules, module: .Module, caller: .AST:Word) {
     local path: .S:String
 
     $caller.qualifier 0 !.STR:Str = if { 
-        $module $caller.ident ~ STR:Str-unpack Module-find-function if {
+        $module $caller AST:Word-ident ~ STR:Str-unpack Module-find-function if {
             #function #ext
             $function 0 !.AST:Function /= if {
                 $modules $module $function mark-reachable-function
@@ -395,7 +395,7 @@ fn mark-reachable-call(modules: .Modules, module: .Module, caller: .AST:Word) {
             $modules $path S:String-unpack Modules-get if {
                 #module
 
-                $module $caller.ident ~ STR:Str-unpack Module-find-function if {
+                $module $caller AST:Word-ident ~ STR:Str-unpack Module-find-function if {
                     #function #ext
                     $function 0 !.AST:Function /= if {
                         $modules $module $function mark-reachable-function

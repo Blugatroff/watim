@@ -178,7 +178,7 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
 
             $formatter FMT:Formatter-write-indent
             $formatter "\"ident\": \"" FMT:Formatter-write
-            $formatter $word.ident ~ STR:Str-unpack write-escaped
+            $formatter $word AST:Word-ident ~ STR:Str-unpack write-escaped
             $formatter "\"" FMT:Formatter-write
 
             $word.qualifier !i32 0 /= if {

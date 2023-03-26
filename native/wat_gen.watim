@@ -69,7 +69,7 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
         $self.ty AST:WORD_CALL = if {
             $formatter $struc-returnals-space-ptr $self generate-call break
         }
-        $self.ty AST:WORD_GLOBAL = if {
+        $self.ty AST:WORD_GET_GLOBAL = if {
             $formatter "global.get $" FMT:Formatter-write
             $self AST:Word-module $formatter U:i32-format
             $formatter ":" FMT:Formatter-write
@@ -132,8 +132,8 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             $formatter $self generate-get-ref
             break
         }
-        $self.ty AST:WORD_LOCAL = if {
-            $formatter $self $locl-copy-space-ptr generate-get-locl
+        $self.ty AST:WORD_GET_LOCAL = if {
+            $formatter $self $locl-copy-space-ptr generate-get
             break
         }
         $self.ty AST:WORD_LOAD = if {
@@ -221,7 +221,7 @@ fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
     $formatter "\n" FMT:Formatter-write
 }
 
-fn generate-get-locl(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
+fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
     local i: i32
     local offset: i32
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
@@ -813,7 +813,7 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
     loop {
         $i $words AST:Words-len = if { break }
         $words $i AST:Words-get #word
-        $word AST:Word-ty AST:WORD_LOCAL = if {
+        $word AST:Word-ty AST:WORD_GET_LOCAL = if {
             $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
                 $word AST:Word-type AST:Type-size $size + #size
                 $count 1 + #count
@@ -956,6 +956,11 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item AST:TopItem-function .reachable ~ if {
                     $formatter $i $item AST:TopItem-function generate-function
+                } else {
+                    2 $item AST:TopItem-function AST:Function-ident L:Token-location L:print-location
+                    2 " unused function: " IO:write-all IO:check
+                    2 $item AST:TopItem-function AST:Function-ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
+                    2 "\n" IO:write-all IO:check
                 }
             }
             $j 1 + #j
