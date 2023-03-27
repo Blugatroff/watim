@@ -1,60 +1,3 @@
-# Watim 
-
-Watim is a simple, low level, stack-based language which compiles to [Webassembly Text Format (WAT)](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format).
-Which can then be compiled to wasm and run in your favorite browser or by runtimes like [wasmtime](https://github.com/bytecodealliance/wasmtime) and [wasm3](https://github.com/wasm3/wasm3).
-
-The Watim compiler is written in Watim.
-
-This project was inspired by [Porth](https://gitlab.com/tsoding/porth).
-
-Watim = WAT Improved
-
-## Features
-- structs
-- inline string literals
-- loop expression with `break` keyword
-- if expression
-- static type checking
-- terse syntax
-- modules
-
-## TODO
-- `continue` instruction for loops.
-- Variable declaration and initiliziation anywhere in function.
-- Generics using monomorphization.
-- function pointers
-- closures?
-- Some sort of Typeclass/Trait system perhaps?
-
-## How to run
-First [install Wasmtime](https://wasmtime.dev/).
-
-Then compile:
-```bash
-wasmtime --dir=. ./watim.wasm <watim-source-file> > out.wat
-```
-
-Then run:
-```bash
-wasmtime --dir=. ./out.wat [args]...
-```
-
-Or just use the provided script:
-```bash
-./run.sh <watim-source-file> [args]...
-```
-
-For example:
-```bash
-./run.sh ./samples/cat.watim ./README.md
-```
-
-## Editor Support
-VIM syntax highlighting in [./editor/watim.vim](https://github.com/Blugatroff/watim/tree/main/editor/watim.vim)
-
-## Example Program
-This program exits with the exit code read from stdin.
-```
 // import standard WASI functions, see the docs: https://github.com/WebAssembly/WASI/blob/main/phases/snapshot/docs.md
 extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, read: .i32) -> i32
 extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
@@ -190,4 +133,3 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
 fn dup(a: i32) -> i32, i32 {
     $a $a
 }
-```

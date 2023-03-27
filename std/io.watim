@@ -51,12 +51,30 @@ fn write-byte(file: i32, b: i32) -> i32 {
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     memory iov: Iov 8
-    local writ: I32
+    local read: I32
     local code: i32
     $buf_addr #iov.ptr 
     $buf_size #iov.len 
-    $file $iov 1 &writ.inner raw_read #code
-    $writ.inner $code
+    $file $iov 1 &read.inner raw_read #code
+    $read.inner $code
+}
+
+fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
+    local read: i32
+    local read-total: i32
+    local code: i32
+    loop {
+        $file $buf-addr $read-total + $buf-size $read-total - read #code #read
+        $code 0 = if {
+            $read-total $read + #read-total
+            $read-total $buf-size >= 
+            $read 0 = or if {
+                $read-total 0 break
+            }
+        } else {
+            $read-total $code break
+        }
+    }
 }
 
 fn print-to-fd-fallible(fd: i32, n: i32) -> i32 {

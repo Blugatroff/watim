@@ -10,6 +10,7 @@ import "./ast.watim" as AST
 import "./lexer.watim" as L
 import "./module.watim" as M
 import "./checker.watim" as CHECKER
+import "./main.watim" as MAIN
 
 fn generate-type(formatter: .FMT:Formatter, self: .AST:Type) {
      loop {
@@ -989,10 +990,12 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
                 $item AST:TopItem-function .reachable ~ if {
                     $formatter $i $item AST:TopItem-function generate-function
                 } else {
-                    2 $item AST:TopItem-function AST:Function-ident L:Token-location L:print-location
-                    2 " unused function: " IO:write-all IO:check
-                    2 $item AST:TopItem-function AST:Function-ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
-                    2 "\n" IO:write-all IO:check
+                    MAIN:logging-enabled if {
+                        2 $item AST:TopItem-function AST:Function-ident L:Token-location L:print-location
+                        2 " unused function: " IO:write-all IO:check
+                        2 $item AST:TopItem-function AST:Function-ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
+                        2 "\n" IO:write-all IO:check
+                    }
                 }
             }
             $j 1 + #j

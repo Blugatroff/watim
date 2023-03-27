@@ -1,0 +1,6 @@
+
+fn accept-bool(b: bool) {}
+
+fn main () {
+    0 accept-bool
+}

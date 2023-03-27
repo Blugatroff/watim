@@ -535,6 +535,7 @@ fn check-lop(
 
     $bs BS:BreakStacks-len 0 = if {
         0 0 = 
+        AST:Types-new #word.rets
     } else {
         loop {
             $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-len $i = if { break }
