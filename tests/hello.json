@@ -1,0 +1,12 @@
+{
+    "compilation": {
+        "code": 0,
+        "stderr": ""
+    },
+    "runtime": {
+        "code": 42,
+        "stdin": "42",
+        "stdout": "42",
+        "stderr": ""
+    }
+}
