@@ -1,10 +1,12 @@
 #!/usr/bin/env python
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any, TypeVar, Callable
 import subprocess
 import glob
 import json
 import pathlib
+import sys
+import os
 
 from termcolor import colored
 
@@ -68,17 +70,50 @@ class TestSpec:
             runtime = Spec.parse(runtime_any)
         return TestSpec(compilation=compilation, runtime=runtime)
 
-tests = glob.glob("./tests/*.watim")
+
+default_code = '''extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
+
+fn main "_start" () {
+    0 proc_exit
+}
+'''
+default_spec = TestSpec(
+    compilation=Spec(code=0, stdout=None, stderr="", stdin=None), 
+    runtime=Spec(code=0, stdout="", stderr="", stdin=None)
+)
+
+if len(sys.argv) > 1:
+    if sys.argv[1] == 'new':
+        if len(sys.argv) < 3:
+            print('provide name of new test')
+            exit(1)
+        name = sys.argv[2]
+        path_watim = './tests/' + name + '.watim'
+        path_json = './tests/' + name + '.json'
+        if os.path.exists(path_watim) or os.path.exists(path_json):
+            print(colored('the tests files already exist', 'red'))
+            exit(1)
+
+        with open(path_watim, 'w') as file:
+            file.write(default_code)
+        with open(path_json, 'w') as file:
+            file.write(json.dumps(
+                asdict(default_spec),
+                indent=4
+            ))
+        exit(0)
+
+tests = glob.glob('./tests/*.watim')
 
 def compile(path, onCmd: Callable[[str], None]):
-    cmd = "wasmtime --dir=. ./watim.wasm -- -q " + path
+    cmd = 'wasmtime --dir=. ./watim.wasm -- -q ' + path
     onCmd(cmd)
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def run(onCmd: Callable[[str], None], wat: bytes, stdin: str):
     with open('./out.wat', 'wb') as outwat:
         outwat.write(wat)
-    cmd = "wasmtime ./out.wat"
+    cmd = 'wasmtime ./out.wat'
     onCmd(cmd)
     return subprocess.run(cmd, shell=True, input=bytes(stdin, 'ASCII'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -86,13 +121,13 @@ T = TypeVar('T')
 def check_equal(expected: T, got: T, name: str):
     if expected != got:
         print(name)
-        print("    expected: ", expected)
-        print("    got:      ", got)
-        print("    failed")
+        print('    expected: ', expected)
+        print('    got:      ', got)
+        print('    failed')
         exit(1)
 
 for path in tests:
-    print(colored("Running test " + path, 'cyan'))
+    print(colored('Running test ' + path, 'cyan'))
     onCmd= lambda cmd: print("  + " + colored(cmd, 'magenta'))
     compilation_output = compile(path, onCmd)
 
