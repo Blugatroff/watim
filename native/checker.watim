@@ -208,11 +208,14 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     0 1 =
 }
 fn check-locl-fields-access(locals: .AST:Locals, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
-    $locals $word AST:Word-ident ~ STR:Str-unpack AST:Locals-find flip .type ~ flip not if {
-        drop 
-        0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
+    local locl: .AST:Local
+    $locals $word AST:Word-ident ~ STR:Str-unpack AST:Locals-find if {
+        #locl
+        $locl.type $word check-fields-access 0 0 =
+        $locl.shadow-id #word.shadow-id
     } else {
-        $word check-fields-access 0 0 =
+        drop
+        0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
     }
 }
 fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec {
@@ -339,12 +342,20 @@ fn check-get-ref(stack: .AST:Types, locals: .AST:Locals, temp-types: .AST:Types,
 }
 fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
+    local shadow-id: i32
     $stack AST:Types-len 0 = if {
         $word AST:Word-location "stack is empty\n" U:abort-with-location
     }
     $stack AST:Types-pop #word.type
+    $locals $word.ident ~ STR:Str-unpack AST:Locals-find if {
+        .shadow-id ~ 1 + #shadow-id
+    } else {
+        0 #shadow-id
+        drop
+    }
     IV:I32Vec-new #word.loads
-    $locals AST:LOCAL_LOCAL $word.token $word.type AST:Local-new AST:Locals-push
+    $shadow-id #word.shadow-id
+    $locals AST:LOCAL_LOCAL $word.token $word.type $shadow-id AST:Local-new AST:Locals-push
     0 1 =
 }
 fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {

@@ -33,6 +33,7 @@ syntax match watimVariable "$[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimAssign "#[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimRef "&[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimStore ">>[0-9,a-z,A-Z,\-,*,_]*"
+syntax match watimDeclare "@[0-9,a-z,A-Z,\-,*,_]*"
 
 syntax keyword watimPrimitiveTypes i64 i32 bool
 
@@ -49,6 +50,7 @@ highlight default link watimVariable Identifier
 highlight default link watimAssign Identifier
 highlight default link watimRef Identifier
 highlight default link watimStore Identifier
+highlight default link watimDeclare Identifier
 highlight default link watimWord Function
 
 let b:current_syntax = "watim"

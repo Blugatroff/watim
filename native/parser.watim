@@ -226,7 +226,7 @@ fn Parser-parse-loc(self: .Parser) -> .AST:Local {
         $token L:Token-location "expected colon" U:abort-with-location
     }
     $self Parser-parse-type
-    AST:Local-new
+    0 AST:Local-new
 }
 fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     local token: .L:Token
@@ -454,6 +454,7 @@ fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
     AST:LOCAL_ARGUMENT
     $ident
     $self Parser-parse-type
+    0
     AST:Local-new
 }
 fn Parser-parse-type(self: .Parser) -> .AST:Type {

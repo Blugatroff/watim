@@ -235,6 +235,9 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr:
     }
     $formatter "local.get $" FMT:Formatter-write
     $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+    $word.shadow-id 0 /= if {
+        $word.shadow-id $formatter U:i32-format
+    }
     $formatter " " FMT:Formatter-write
     &word.loads IV:I32Vec-len 0 = if {
         $word.type AST:Type-ty AST:TYPE_STRUCT = if {
@@ -324,9 +327,11 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
     local i: i32
     // TODO: this can be simplified
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
+        $formatter "local.get $" FMT:Formatter-write
+        $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+        $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
         &word.loads IV:I32Vec-len 0 > if {
-            $formatter "local.get $" FMT:Formatter-write
-            $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+            $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
             loop {
                 &word.loads IV:I32Vec-len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
@@ -342,8 +347,6 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
                 $i 1 + #i
             }
         } else {
-            $formatter "local.get $" FMT:Formatter-write
-            $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
             $formatter " call $intrinsic:flip i32.const " FMT:Formatter-write
             $word.type AST:Type-size $formatter U:i32-format
             $formatter " memory.copy" FMT:Formatter-write
@@ -352,6 +355,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
         &word.loads IV:I32Vec-len 0 > if {
             $formatter "local.get $" FMT:Formatter-write
             $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+            $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
             loop {
                 &word.loads IV:I32Vec-len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
@@ -369,6 +373,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
         } else {
             $formatter "local.set $" FMT:Formatter-write
             $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+            $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
         }
     }
     $formatter "\n" FMT:Formatter-write
@@ -658,6 +663,9 @@ fn generate-locl(formatter: .FMT:Formatter, locl: .AST:Local) {
     $formatter FMT:Formatter-write-indent
     $formatter "(local $" FMT:Formatter-write
     $formatter $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    $locl.shadow-id 0 /= if {
+        $locl.shadow-id $formatter U:i32-format
+    }
     $formatter " " FMT:Formatter-write
     $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "i32" FMT:Formatter-write

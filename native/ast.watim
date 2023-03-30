@@ -482,6 +482,7 @@ struct Word {
     src-type: .Type
     string: S:String
     checked: bool
+    shadow-id: i32
 }
 fn Word-new(ty: i32, token: .L:Token) -> Word {
     local self: Word
@@ -489,6 +490,7 @@ fn Word-new(ty: i32, token: .L:Token) -> Word {
     $token #self.token
     0 1 = #self.checked
     0 !.STR:Str #self.qualifier
+    0 #self.shadow-id
     $self
 }
 fn Word-free(self: Word) {
@@ -578,18 +580,20 @@ struct Local {
     ty: i32
     size: i32
     address: i32
+    shadow-id: i32
 }
-fn Local-new(ty: i32, ident: .L:Token, type: .Type) -> .Local {
+fn Local-new(ty: i32, ident: .L:Token, type: .Type, shadow-id: i32) -> .Local {
     local self: .Local
     sizeof(Local) A:alloc !.Local #self
     $ty #self.ty
     $ident #self.ident
     $type #self.type
+    $shadow-id #self.shadow-id
     $self
 }
 fn Local-new-mem(ident: .L:Token, type: .Type, size: i32) -> .Local {
     local self: .Local
-    LOCAL_MEMORY $ident $type Type-new-ptr Local-new #self
+    LOCAL_MEMORY $ident $type Type-new-ptr 0 Local-new #self
     $size #self.size
     $self
 }
@@ -619,7 +623,7 @@ fn Local-free(self: .Local) {
     $self !.i32 A:free
 }
 fn Local-clone(self: .Local) -> .Local {
-    $self.ty $self.ident $self.type Local-new
+    $self.ty $self.ident $self.type $self.shadow-id Local-new
 }
 fn Local-print(fd: i32, self: .Local) {
     $fd $self.ty locl-ty-name IO:write-all IO:check
@@ -697,7 +701,7 @@ struct Memory {
 fn Memory-new(ident: .L:Token, type: .Type, size: i32) -> .Memory {
     local self: .Memory
     sizeof(Memory) A:alloc !.Memory #self
-    LOCAL_LOCAL $ident $type Type-new-ptr Local-new #self.locl
+    LOCAL_LOCAL $ident $type Type-new-ptr 0 Local-new #self.locl
     $size #self.size
     0 #self.address
     $self
