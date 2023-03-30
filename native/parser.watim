@@ -226,7 +226,9 @@ fn Parser-parse-loc(self: .Parser) -> .AST:Local {
         $token L:Token-location "expected colon" U:abort-with-location
     }
     $self Parser-parse-type
-    0 AST:Local-new
+    0
+    0
+    AST:Local-new
 }
 fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     local token: .L:Token
@@ -454,6 +456,7 @@ fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
     AST:LOCAL_ARGUMENT
     $ident
     $self Parser-parse-type
+    0
     0
     AST:Local-new
 }
@@ -746,7 +749,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
         }
         $ty L:TOKEN_LOOP = if {
             AST:WORD_LOOP $token AST:Word-new #word
-            $self Parser-parse-lop #word.lop
+            $token $self Parser-parse-lop AST:Loop-new #word.lop
             $word break
         }
         $ty L:TOKEN_DOT = if {

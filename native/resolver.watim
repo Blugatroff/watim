@@ -80,7 +80,7 @@ fn resolve-word(modules: .M:Modules, module: .M:Module, word: .AST:Word) {
         $modules $module $word AST:Word-iff resolve-iff
     }
     $word AST:Word-ty AST:WORD_LOOP = if {
-        $modules $module $word AST:Word-lop resolve-words
+        $modules $module &word.lop.body resolve-words
     }
 }
 fn resolve-iff(modules: .M:Modules, module: .M:Module, iff: .AST:If) {

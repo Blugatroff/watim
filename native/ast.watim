@@ -192,11 +192,11 @@ fn type-ty-name(ty: i32) -> .i32, i32 {
 struct Type {
     ty: i32
     // for TYPE_PTR
-    child: .i32 // actually of type .Type but recursive type not yet possible
+    child: .Type // actually of type .Type but recursive type not yet possible
     // for TYPE_STRUCT
     ident: .L:Token
     module: .L:Token
-    struc: .i32 // actually of type .Struct but indirect recursive type not yet possible
+    struc: .Struct // actually of type .Struct but indirect recursive type not yet possible
 }
 fn Type-size(self: .Type) -> i32 {
     $self.ty TYPE_STRUCT = if { 
@@ -222,7 +222,7 @@ fn Type-new(ty: i32) -> .Type {
     local self: .Type
     20 A:alloc !.Type #self
     $ty #self.ty
-    0 !.i32 #self.child
+    0 !.Type #self.child
     $self
 }
 fn Type-clone(self: .Type) -> .Type {
@@ -243,7 +243,7 @@ fn Type-new-boolean() -> .Type {
 fn Type-new-ptr(child: .Type) -> .Type {
     local self: .Type
     TYPE_PTR Type-new #self
-    $child !.i32 #self.child
+    $child !.Type #self.child
     $self
 }
 fn Type-new-struc(module: .L:Token, ident: .L:Token) -> .Type {
@@ -251,11 +251,11 @@ fn Type-new-struc(module: .L:Token, ident: .L:Token) -> .Type {
     TYPE_STRUCT Type-new #self
     $module #self.module
     $ident #self.ident
-    0 !.i32 #self.struc
+    0 !.Struct #self.struc
     $self
 }
 fn Type-set-struc(self: .Type, struc: .Struct) {
-    $struc !.i32 #self.struc
+    $struc !.Struct #self.struc
 }
 fn Type-module(self: .Type) -> .L:Token {
     $self.module
@@ -404,6 +404,7 @@ struct If {
     el: Words
     params: .Types
     rets: .Types
+    locals: Locals
 }
 fn If-new(token: .L:Token, body: Words) -> .If {
     local self: .If
@@ -413,6 +414,7 @@ fn If-new(token: .L:Token, body: Words) -> .If {
     0 1 = #self.has-el
     0 !.Types #self.params
     0 !.Types #self.rets
+    Locals-new #self.locals
     $self
 }
 fn If-new-with-el(token: .L:Token, body: Words, el: Words) -> .If {
@@ -424,6 +426,7 @@ fn If-new-with-el(token: .L:Token, body: Words, el: Words) -> .If {
     $el #self.el
     0 !.Types #self.params
     0 !.Types #self.rets
+    Locals-new #self.locals
     $self
 }
 fn If-free(self: .If) {
@@ -437,6 +440,7 @@ fn If-free(self: .If) {
     $self.rets !i32 0 /= if {
         $self.rets Types-free
     }
+    $self.locals Locals-free
     $self !.i32 A:free
 }
 fn If-token(self: .If) -> .L:Token {
@@ -454,11 +458,26 @@ fn If-params(self: .If) -> .Types {
 fn If-set-params(self: .If, params: .Types) {
     $params #self.params
 }
-fn If-rets(self: .If) -> .Types {
-    $self.rets
+
+struct Loop {
+    token: .L:Token
+    body: Words
+    rets: .Types
+    locals: Locals
 }
-fn If-set-rets(self: .If, rets: .Types) {
-    $rets #self.rets
+fn Loop-new(token: .L:Token, body: Words) -> .Loop {
+    local self: .Loop
+    sizeof(Loop) A:alloc !.Loop #self
+    $token #self.token
+    $body #self.body
+    Locals-new #self.locals
+    $self
+}
+fn Loop-free(self: .Loop) {
+    $self.body Words-free
+    $self.locals Locals-free
+    $self.rets Types-free-container
+    $self !.i32 A:free
 }
 
 struct Word {
@@ -475,7 +494,7 @@ struct Word {
     module: i32
     fields: L:Tokens
     loads: IV:I32Vec
-    lop: Words
+    lop: .Loop
     rets: .Types
     iff: .If
     type: .Type
@@ -483,6 +502,7 @@ struct Word {
     string: S:String
     checked: bool
     shadow-id: i32
+    scope-id: i32
 }
 fn Word-new(ty: i32, token: .L:Token) -> Word {
     local self: Word
@@ -491,6 +511,7 @@ fn Word-new(ty: i32, token: .L:Token) -> Word {
     0 1 = #self.checked
     0 !.STR:Str #self.qualifier
     0 #self.shadow-id
+    0 #self.scope-id
     $self
 }
 fn Word-free(self: Word) {
@@ -498,7 +519,7 @@ fn Word-free(self: Word) {
         $self.iff If-free
     }
     $self.ty WORD_LOOP = if {
-        $self.lop Words-free
+        $self.lop Loop-free
     }
     $self.ty WORD_SET = 
     $self.ty WORD_GET_REF = or
@@ -517,8 +538,7 @@ fn Word-free(self: Word) {
     if {
         $self.loads IV:I32Vec-free
     }
-    $self.ty WORD_LOOP = 
-    $self.ty WORD_CALL = or 
+    $self.ty WORD_CALL =
     $self.checked and
     if {
         $self.rets Types-free-container
@@ -542,14 +562,8 @@ fn Word-type(self: .Word) -> .Type {
 fn Word-iff(self: .Word) -> .If {
     $self.iff
 }
-fn Word-lop(self: .Word) -> .Words {
-    &self.lop
-}
 fn Word-ident(self: .Word) -> .STR:Str {
     $self.ident
-}
-fn Word-words(self: .Word) -> .Words {
-    &self.lop
 }
 fn Word-rets(self: .Word) -> .Types {
     $self.rets
@@ -581,19 +595,21 @@ struct Local {
     size: i32
     address: i32
     shadow-id: i32
+    scope-id: i32
 }
-fn Local-new(ty: i32, ident: .L:Token, type: .Type, shadow-id: i32) -> .Local {
+fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i32) -> .Local {
     local self: .Local
     sizeof(Local) A:alloc !.Local #self
     $ty #self.ty
     $ident #self.ident
     $type #self.type
     $shadow-id #self.shadow-id
+    $scope-id #self.scope-id
     $self
 }
 fn Local-new-mem(ident: .L:Token, type: .Type, size: i32) -> .Local {
     local self: .Local
-    LOCAL_MEMORY $ident $type Type-new-ptr 0 Local-new #self
+    LOCAL_MEMORY $ident $type Type-new-ptr 0 0 Local-new #self
     $size #self.size
     $self
 }
@@ -623,7 +639,7 @@ fn Local-free(self: .Local) {
     $self !.i32 A:free
 }
 fn Local-clone(self: .Local) -> .Local {
-    $self.ty $self.ident $self.type $self.shadow-id Local-new
+    $self.ty $self.ident $self.type $self.scope-id $self.shadow-id Local-new
 }
 fn Local-print(fd: i32, self: .Local) {
     $fd $self.ty locl-ty-name IO:write-all IO:check
@@ -631,10 +647,14 @@ fn Local-print(fd: i32, self: .Local) {
 
 struct Locals {
     inner: IV:I32Vec
+    parent: .Locals
+    id: i32
 }
 fn Locals-new() -> Locals {
     local self: Locals
     IV:I32Vec-new #self.inner
+    0 !.Locals #self.parent
+    0 #self.id
     $self
 }
 fn Locals-len(self: .Locals) -> i32 {
@@ -643,7 +663,7 @@ fn Locals-len(self: .Locals) -> i32 {
 fn Locals-get(self: .Locals, index: i32) -> .Local {
     &self.inner $index IV:I32Vec-get !.Local
 }
-fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32) -> .Local, bool {
+fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: bool) -> .Local, bool {
     local i: i32
     $self Locals-len 0 /= if {
         $self Locals-len 1 - #i
@@ -652,10 +672,22 @@ fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32) -> .Local, bool {
                 $self $i Locals-get 1 1 = break
             }
             // TODO: figure out why this isn't properly type checked
-            0 $i = if { 0 0 1 = break }
+            0 $i = if { 
+                $self.parent 0 !.Locals /= $search-parents and if {
+                    $self.parent $ident-ptr $ident-len $search-parents Locals-find break
+                } else {
+                    0 0 1 = break 
+                }
+            }
             $i 1 - #i
         }
-    } else { 0 !.Local 0 1 = }
+    } else { 
+        $self.parent 0 !.Locals /= $search-parents and if {
+            $self.parent $ident-ptr $ident-len $search-parents Locals-find
+        } else {
+            0 !.Local 0 1 = 
+        }
+    }
 }
 fn Locals-push(self: .Locals, locl: .Local) {
     &self.inner $locl !i32 IV:I32Vec-push
@@ -701,7 +733,7 @@ struct Memory {
 fn Memory-new(ident: .L:Token, type: .Type, size: i32) -> .Memory {
     local self: .Memory
     sizeof(Memory) A:alloc !.Memory #self
-    LOCAL_LOCAL $ident $type Type-new-ptr 0 Local-new #self.locl
+    LOCAL_LOCAL $ident $type Type-new-ptr 0 0 Local-new #self.locl
     $size #self.size
     0 #self.address
     $self

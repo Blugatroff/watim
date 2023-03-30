@@ -58,12 +58,16 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     local words: .AST:Words
     local bs: .BS:BreakStacks
     local i: i32
+    local scope-id: IO:I32
     AST:Types-new #stack
     AST:Types-new #temp-types
 
+    0 #scope-id.inner
+    $scope-id.inner #function.locals.id
+
     $function AST:Function-body #words
     BS:BreakStacks-new #bs
-    $temp-types $bs $modules $module $stack &function.locals $words check-words not if {
+    $temp-types $bs $modules $module $stack &function.locals &scope-id.inner $words check-words not if {
         // if the function does not diverge, aka does return
         // then check wheter the remaining stack matches the return type
         $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
@@ -101,6 +105,7 @@ fn check-words(
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
+    scope-id: .i32,
     words: .AST:Words,
 ) -> bool {
     local i: i32
@@ -108,7 +113,7 @@ fn check-words(
     loop {
         $i $words AST:Words-len = if { break }
         $diverges
-        $temp-types $bs $modules $module $stack $locals $words $i AST:Words-get check-word
+        $temp-types $bs $modules $module $stack $locals $scope-id $words $i AST:Words-get check-word
         or
         #diverges
         $i 1 + #i
@@ -123,6 +128,7 @@ fn check-word(
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
+    scope-id: .i32,
     word: .AST:Word
 ) -> bool {
     loop {
@@ -139,7 +145,7 @@ fn check-word(
             $modules $module $stack $word check-call break
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $temp-types $modules $module $stack $locals $word check-lop break
+            $temp-types $modules $module $stack $locals $scope-id $word check-lop break
         }
         $word AST:Word-ty AST:WORD_BREAK = if {
             $bs $stack $word check-brek break
@@ -148,7 +154,7 @@ fn check-word(
             $temp-types $stack $word INTR:check-intrinsic break
         }
         $word AST:Word-ty AST:WORD_IF = if {
-            $temp-types $bs $modules $module $stack $locals $word check-iff break
+            $temp-types $bs $modules $module $stack $locals $scope-id $word check-iff break
         }
         $word AST:Word-ty AST:WORD_CAST = if {
             $stack $word check-cast break
@@ -209,10 +215,11 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
 }
 fn check-locl-fields-access(locals: .AST:Locals, word: .AST:Word) -> .AST:Type, .AST:Type, IV:I32Vec, bool {
     local locl: .AST:Local
-    $locals $word AST:Word-ident ~ STR:Str-unpack AST:Locals-find if {
+    $locals $word AST:Word-ident ~ STR:Str-unpack 0 0 = AST:Locals-find if {
         #locl
         $locl.type $word check-fields-access 0 0 =
         $locl.shadow-id #word.shadow-id
+        $locl.scope-id #word.scope-id
     } else {
         drop
         0 !.AST:Type 0 !.AST:Type IV:I32Vec-new 0 1 =
@@ -347,15 +354,16 @@ fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> b
         $word AST:Word-location "stack is empty\n" U:abort-with-location
     }
     $stack AST:Types-pop #word.type
-    $locals $word.ident ~ STR:Str-unpack AST:Locals-find if {
+    $locals $word.ident ~ STR:Str-unpack 0 1 = AST:Locals-find if {
         .shadow-id ~ 1 + #shadow-id
     } else {
         0 #shadow-id
         drop
     }
     IV:I32Vec-new #word.loads
+    $locals.id #word.scope-id
     $shadow-id #word.shadow-id
-    $locals AST:LOCAL_LOCAL $word.token $word.type $shadow-id AST:Local-new AST:Locals-push
+    $locals AST:LOCAL_LOCAL $word.token $word.type $locals.id $shadow-id AST:Local-new AST:Locals-push
     0 1 =
 }
 fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
@@ -442,6 +450,7 @@ fn check-iff(
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
+    scope-id: .i32,
     word: .AST:Word
 ) -> bool {
     local iff: .AST:If
@@ -469,13 +478,17 @@ fn check-iff(
 
     $word AST:Word-iff #iff
 
-    $temp-types $bs $modules $module $iff-stack $locals $iff AST:If-body check-words #true-branch-diverges
+    $locals #iff.locals.parent
+    $scope-id ~ 1 + >>scope-id
+    $scope-id ~ #iff.locals.id
+    
+    $temp-types $bs $modules $module $iff-stack &iff.locals $scope-id $iff AST:If-body check-words #true-branch-diverges
 
     $stack $iff-stack AST:Types-min $stack AST:Types-len AST:Types-clone-slice #params
     $iff-stack $iff-stack AST:Types-min $iff-stack AST:Types-len AST:Types-clone-slice #rets
 
     $iff.has-el if {
-        $temp-types $bs $modules $module $el-stack $locals $iff AST:If-el check-words #false-branch-diverges
+        $temp-types $bs $modules $module $el-stack &iff.locals $scope-id $iff AST:If-el check-words #false-branch-diverges
         loop {
             $iff-stack AST:Types-len $el-stack AST:Types-len /= if {
                 0 0 = break
@@ -513,7 +526,7 @@ fn check-iff(
     }
 
     $iff $params AST:If-set-params 
-    $iff $rets AST:If-set-rets
+    $rets #iff.rets
     $iff-stack AST:Types-free-container
     $el-stack !i32 0 /= if {
         $el-stack AST:Types-free-container
@@ -536,24 +549,30 @@ fn check-lop(
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
+    scope-id: .i32,
     word: .AST:Word,
 ) -> bool {
     local bs: .BS:BreakStacks
     local i: i32
     BS:BreakStacks-new #bs
-    $temp-types $bs $modules $module $stack $locals $word AST:Word-words check-words drop
+
+    $locals #word.lop.locals.parent
+    $scope-id ~ 1 + >>scope-id
+    $scope-id ~ #word.lop.locals.id
+
+    $temp-types $bs $modules $module $stack &word.lop.locals $scope-id &word.lop.body check-words drop
     // TODO: check whether all breakstacks in `bs` are equal
 
     $bs BS:BreakStacks-len 0 = if {
         0 0 = 
-        AST:Types-new #word.rets
+        AST:Types-new #word.lop.rets
     } else {
         loop {
             $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-len $i = if { break }
             $stack $bs 0 BS:BreakStacks-get BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container #word.rets
+        $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container #word.lop.rets
         0 1 =
     }
     $bs BS:BreakStacks-free

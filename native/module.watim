@@ -359,7 +359,7 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
         }
 
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $modules $module $word AST:Word-lop mark-reachable-words
+            $modules $module &word.lop.body mark-reachable-words
         }
 
         $i 1 + #i

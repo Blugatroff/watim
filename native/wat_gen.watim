@@ -80,7 +80,7 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             break
         }
         $self.ty AST:WORD_LOOP = if {
-            $formatter $struc-returnals-space-ptr $locl-copy-space-ptr $self AST:Word-lop $self AST:Word-rets generate-lop
+            $formatter $struc-returnals-space-ptr $locl-copy-space-ptr &self.lop.body $self.lop.rets generate-lop
             break
         }
         $self.ty AST:WORD_BREAK = if {
@@ -328,6 +328,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
     // TODO: this can be simplified
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "local.get $" FMT:Formatter-write
+        $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
         $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
         $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
         &word.loads IV:I32Vec-len 0 > if {
@@ -354,6 +355,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
     } else {
         &word.loads IV:I32Vec-len 0 > if {
             $formatter "local.get $" FMT:Formatter-write
+            $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
             $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
             $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
             loop {
@@ -372,6 +374,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
             }
         } else {
             $formatter "local.set $" FMT:Formatter-write
+            $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
             $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
             $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
         }
@@ -493,7 +496,7 @@ fn generate-iff-params(formatter: .FMT:Formatter, params: .AST:Types) {
 fn generate-iff(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, locl-copy-space-ptr: .i32, iff: .AST:If) {
     $formatter "(if " FMT:Formatter-write
     $formatter $iff AST:If-params generate-iff-params
-    $formatter $iff AST:If-rets generate-rets
+    $formatter $iff.rets generate-rets
     $formatter "\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
     $formatter FMT:Formatter-write-indent
@@ -662,10 +665,9 @@ fn generate-words(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, lo
 fn generate-locl(formatter: .FMT:Formatter, locl: .AST:Local) {
     $formatter FMT:Formatter-write-indent
     $formatter "(local $" FMT:Formatter-write
+    $locl.scope-id 0 /= if { $locl.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
     $formatter $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $locl.shadow-id 0 /= if {
-        $locl.shadow-id $formatter U:i32-format
-    }
+    $locl.shadow-id 0 /= if { $locl.shadow-id $formatter U:i32-format }
     $formatter " " FMT:Formatter-write
     $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "i32" FMT:Formatter-write
@@ -680,6 +682,26 @@ fn generate-locl(formatter: .FMT:Formatter, locl: .AST:Local) {
     $formatter "\n" FMT:Formatter-write
 }
 
+fn generate-word-locals(formatter: .FMT:Formatter, words: .AST:Words) {
+    local i: i32
+    local word: .AST:Word
+    loop {
+        $i $words AST:Words-len = if { break }
+        $words $i AST:Words-get #word
+        $word AST:Word-ty AST:WORD_IF = if {
+            $formatter $word AST:Word-iff .locals generate-locals
+            $formatter $word AST:Word-iff AST:If-body generate-word-locals
+            $word AST:Word-iff .has-el ~ if { 
+                $formatter $word AST:Word-iff AST:If-el generate-word-locals 
+            }
+        }
+        $word AST:Word-ty AST:WORD_LOOP = if {
+            $formatter &word.lop.locals generate-locals
+            $formatter &word.lop.body generate-word-locals
+        }
+        $i 1 + #i
+    }
+}
 fn generate-locals(formatter: .FMT:Formatter, locals: .AST:Locals) {
     local i: i32
     local locl: .AST:Local
@@ -828,7 +850,7 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
             }
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $word AST:Word-words measure-struc-returnals-space 
+            &word.lop.body measure-struc-returnals-space 
             $max-args CORE:max #max-args 
             $size + #size
         }
@@ -873,7 +895,7 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
             }
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $word AST:Word-words measure-locl-copy-space
+            &word.lop.body measure-locl-copy-space
             $count + #count
             $size + #size
         }
@@ -915,6 +937,7 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
     $formatter FMT:Formatter-indent
 
     $formatter $function AST:Function-locals generate-locals
+    $formatter $function AST:Function-body generate-word-locals
 
     $function AST:Function-body measure-struc-returnals-space #max-args #struc-returnals-space
     $struc-returnals-space-ptr 0 store

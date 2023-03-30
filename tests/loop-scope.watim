@@ -1,0 +1,10 @@
+extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
+
+fn main "_start" () {
+    1 @x
+    loop {
+        2 @x
+        break
+    }
+    $x proc_exit
+}

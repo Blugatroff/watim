@@ -118,15 +118,16 @@ def run(onCmd: Callable[[str], None], wat: bytes, stdin: str):
     return subprocess.run(cmd, shell=True, input=bytes(stdin, 'ASCII'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 T = TypeVar('T')
-def check_equal(expected: T, got: T, name: str):
+def check_equal(expected: T, got: T, name: str) -> bool:
     if expected != got:
         print(name)
         print('    expected: ', expected)
         print('    got:      ', got)
         print('    failed')
-        exit(1)
+        return True
+    return False
 
-for path in tests:
+def run_test(path: str) -> bool:
     print(colored('Running test ' + path, 'cyan'))
     onCmd= lambda cmd: print("  + " + colored(cmd, 'magenta'))
     compilation_output = compile(path, onCmd)
@@ -136,23 +137,34 @@ for path in tests:
 
         spec = TestSpec.parse(spec)
 
-        check_equal(spec.compilation.code, compilation_output.returncode, 'compilation exit code')
+        if check_equal(spec.compilation.code, compilation_output.returncode, 'compilation exit code'):
+            return True
 
         if spec.compilation.stdout != None:
-            check_equal(bytes(spec.compilation.stdout, 'ASCII'), compilation_output.stdout, 'compilation stdout')
+            if check_equal(bytes(spec.compilation.stdout, 'ASCII'), compilation_output.stdout, 'compilation stdout'):
+                return True
 
         if spec.compilation.stderr != None:
-            check_equal(bytes(spec.compilation.stderr, 'ASCII'), compilation_output.stderr, 'compilation stderr')
+            if check_equal(bytes(spec.compilation.stderr, 'ASCII'), compilation_output.stderr, 'compilation stderr'):
+                return True
 
         if spec.runtime != None:
             stdin: str = spec.runtime.stdin or ''
             runtime_output = run(onCmd, compilation_output.stdout, stdin)
-            check_equal(spec.runtime.code, runtime_output.returncode, 'runtime exit code')
+            if check_equal(spec.runtime.code, runtime_output.returncode, 'runtime exit code'):
+                return True
             if spec.runtime.stdout != None:
-                check_equal(bytes(spec.runtime.stdout, 'ASCII'), runtime_output.stdout, 'runtime stdout')
+                if check_equal(bytes(spec.runtime.stdout, 'ASCII'), runtime_output.stdout, 'runtime stdout'):
+                    return True
 
             if spec.runtime.stderr != None:
-                check_equal(bytes(spec.runtime.stderr, 'ASCII'), runtime_output.stderr, 'runtime sterr')
-    print(colored('PASSED', 'green'))
-    print()
+                if check_equal(bytes(spec.runtime.stderr, 'ASCII'), runtime_output.stderr, 'runtime sterr'):
+                    return True
+    return False
+
+for path in tests:
+    failed = run_test(path) 
+    if not failed:
+        print(colored('PASSED', 'green'))
+        print()
 
