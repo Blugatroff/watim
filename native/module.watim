@@ -255,10 +255,6 @@ fn Modules-get(self: .Modules, path-ptr: .i32, path-len: i32) -> .Module, bool {
     }
 }
 
-fn Modules-get-key(self: .Modules, index: i32) -> .S:String {
-    &self.inner $index MAP:StringMap-get-key
-}
-
 fn Modules-get-value(self: .Modules, index: i32) -> .Module {
     &self.inner $index MAP:StringMap-get-value !.Module
 }
@@ -274,17 +270,6 @@ fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: 
         #module $module $ident-ptr $ident-len Module-find-struc
     } else {
         drop 0 !.AST:Struct 0 1 = 
-    }
-}
-
-fn Modules-find-function(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: .i32, ident-len: i32) -> .AST:Extern, .AST:Function, bool {
-    local i: i32
-    local module: .Module
-    $self $path-ptr $path-len Modules-get if {
-        #module $module $ident-ptr $ident-len Module-find-function
-    } else {
-        drop
-        0 !.AST:Extern 0 !.AST:Function 0 1 = 
     }
 }
 

@@ -82,13 +82,3 @@ fn push-temp-type(temp-types: .AST:Types, type: .AST:Type) -> .AST:Type {
     $type
 }
 
-fn print-bytes(ptr: .i32, len: i32) {
-    local i: i32
-    loop {
-        $i $len = if { break }
-        $ptr $i + load8 IO:print
-        1 ", " IO:write-all IO:check
-        $i 1 + #i
-    }
-}
-

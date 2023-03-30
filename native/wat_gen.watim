@@ -720,21 +720,6 @@ fn generate-mem(formatter: .FMT:Formatter, size: i32, ident-ptr: .i32, ident-len
     $formatter " i32.add global.set $stac:k local.set $" FMT:Formatter-write
     $formatter $ident-ptr $ident-len FMT:Formatter-write
 }
-fn generate-memories(formatter: .FMT:Formatter, memories: .AST:Memories) {
-    local i: i32
-    local mem: .AST:Memory
-    loop {
-        $i $memories AST:Memories-len = if { break }
-        $memories $i AST:Memories-get #mem
-        $formatter FMT:Formatter-write-indent
-        $formatter 
-        $mem AST:Memory-size 
-        $mem AST:Memory-ident L:Token-lexeme ~ STR:Str-unpack
-        generate-mem
-        $formatter "\n" FMT:Formatter-write
-        $i 1 + #i
-    }
-}
 fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
     local i: i32
     local locl: .AST:Local

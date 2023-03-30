@@ -67,22 +67,6 @@ fn I32Vec-pop(self: .I32Vec) -> i32 {
     $self $self I32Vec-len 1 - I32Vec-get
     $self.len 1 - #self.len
 }
-fn I32Vec-print(vec: .I32Vec) {
-    local i: i32
-    $vec I32Vec-len 0 = if { 
-        1 "[]" IO:write-all IO:check
-    } else {
-        1 "[\n" IO:write-all IO:check
-        loop {
-            $i $vec I32Vec-len = if { break }
-            1 "  " IO:write-all IO:check
-            $vec $i I32Vec-get IO:print
-            1 ",\n" IO:write-all IO:check
-            $i 1 + #i
-        }
-        1 "]" IO:write-all IO:check
-    }
-}
 fn I32Vec-clone(self: .I32Vec) -> I32Vec {
     local new: I32Vec
     local i: i32

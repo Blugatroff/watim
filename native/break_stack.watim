@@ -17,9 +17,6 @@ fn BreakStack-free(self: .BreakStack) {
     $self.types AST:Types-free-container
     $self !.i32 A:free
 }
-fn BreakStack-word(self: .BreakStack) -> .AST:Word {
-    $self.word
-}
 fn BreakStack-types(self: .BreakStack) -> .AST:Types {
     $self.types
 }

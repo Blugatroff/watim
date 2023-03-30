@@ -32,9 +32,6 @@ fn Parser-free(self: Parser) -> .AST:Types {
 fn Parser-peek(self: .Parser) -> .L:Token {
     $self.tokens $self.current L:Tokens-get
 }
-fn Parser-peek2(self: .Parser) -> .L:Token {
-    $self.tokens $self.current 2 + L:Tokens-get
-}
 fn Parser-advance(self: .Parser) -> .L:Token {
     $self Parser-peek
     $self.current 1 + #self.current

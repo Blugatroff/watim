@@ -656,34 +656,3 @@ fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .STR:Str, w
     }
 }
 
-fn insert-locals-into-map(map: .AST:Locals, locals: .AST:Locals) {
-    local i: i32
-    loop {
-        $i $locals AST:Locals-len = if { break }
-        $map 
-        $locals $i AST:Locals-get
-        insert-local-into-map
-        $i 1 + #i
-    }
-}
-fn insert-memories-into-map(map: .AST:Locals, mems: .AST:Memories) {
-    local i: i32
-    loop {
-        $mems AST:Memories-len $i = if { break }
-        $map 
-        $mems $i AST:Memories-get AST:Memory-local
-        insert-type-into-map
-        $i 1 + #i
-    }
-}
-fn insert-local-into-map(map: .AST:Locals, locl: .AST:Local) {
-    $map $locl insert-type-into-map
-}
-fn insert-type-into-map(map: .AST:Locals, locl: .AST:Local) {
-    local msg: S:String
-    $map 
-    $locl
-    AST:Local-clone 
-    AST:Locals-push 
-}
-

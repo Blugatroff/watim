@@ -293,19 +293,12 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
             $formatter $self Type-struc Struct-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
             break
         }
-        2 "invalid Type-ty" IO:write-all IO:check
+        2 "Type-format unhandled Type-ty: " IO:write-all IO:check
+        2 $self Type-ty type-ty-name IO:write-all IO:check
+        2 "\n" IO:write-all IO:check
         0 0 / drop
         1 CORE:exit
     }
-}
-fn Type-print(self: .Type) {
-    local formatter: FMT:Formatter
-    local string: S:String
-    FMT:Formatter-new #formatter
-    $self &formatter Type-format
-    $formatter FMT:Formatter-into-string #string
-    2 &string S:String-unpack IO:write-all IO:check
-    $string S:String-free
 }
 
 struct Types {
@@ -443,9 +436,6 @@ fn If-free(self: .If) {
     $self.locals Locals-free
     $self !.i32 A:free
 }
-fn If-token(self: .If) -> .L:Token {
-    $self.token
-}
 fn If-body(self: .If) -> .Words {
     &self.body
 }
@@ -476,7 +466,7 @@ fn Loop-new(token: .L:Token, body: Words) -> .Loop {
 fn Loop-free(self: .Loop) {
     $self.body Words-free
     $self.locals Locals-free
-    $self.rets Types-free-container
+    $self.rets 0 !.Types /= if { $self.rets Types-free-container }
     $self !.i32 A:free
 }
 
@@ -622,27 +612,11 @@ fn Local-ident(self: .Local) -> .L:Token {
 fn Local-type(self: .Local) -> .Type {
     $self.type
 }
-fn Local-set-type(self: .Local, type: .Type) {
-    $type #self.type
-}
-fn Local-format(self: .Local, formatter: .FMT:Formatter) {
-    $formatter "{ ident: \"" FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\", type: " FMT:Formatter-write
-    $self.type $formatter Type-format
-    $formatter " }" FMT:Formatter-write
-}
 fn Local-free(self: .Local) {
     $self.ty LOCAL_MEMORY = if {
         $self.type $self.type Type-child #self.type Type-free
     }
     $self !.i32 A:free
-}
-fn Local-clone(self: .Local) -> .Local {
-    $self.ty $self.ident $self.type $self.scope-id $self.shadow-id Local-new
-}
-fn Local-print(fd: i32, self: .Local) {
-    $fd $self.ty locl-ty-name IO:write-all IO:check
 }
 
 struct Locals {
@@ -714,88 +688,6 @@ fn Locals-contains-mem-or-struc(self: .Locals) -> bool {
         $i 1 + #i
     }
 }
-fn Locals-print(fd: i32, self: .Locals) {
-    local i: i32
-    $fd $self Locals-len IO:print-to-fd
-
-    loop {
-        $i $self Locals-len = if { break }
-        $fd $self $i Locals-get Local-print
-        $i 1 + #i
-    }
-}
-
-struct Memory {
-    locl: .Local
-    size: i32
-    address: i32
-}
-fn Memory-new(ident: .L:Token, type: .Type, size: i32) -> .Memory {
-    local self: .Memory
-    sizeof(Memory) A:alloc !.Memory #self
-    LOCAL_LOCAL $ident $type Type-new-ptr 0 0 Local-new #self.locl
-    $size #self.size
-    0 #self.address
-    $self
-}
-fn Memory-free(self: .Memory) {
-    local type: .Type
-    $self.locl.type #type
-    $self.locl.type Type-child #self.locl.type
-    $type Type-free
-    $self.locl Local-free
-    $self !.i32 A:free
-}
-fn Memory-ident(self: .Memory) -> .L:Token {
-    $self.locl Local-ident
-}
-fn Memory-type(self: .Memory) -> .Type {
-    $self.locl Local-type
-}
-fn Memory-set-type(self: .Memory, type: .Type) {
-    $self.locl $type Local-set-type
-}
-fn Memory-local(self: .Memory) -> .Local {
-    $self.locl
-}
-fn Memory-address(self: .Memory) -> i32 {
-    $self.address
-}
-fn Memory-set-address(self: .Memory, address: i32) {
-    $address #self.address
-}
-fn Memory-size(self: .Memory) -> i32 {
-    $self.size
-}
-
-struct Memories {
-    inner: IV:I32Vec
-}
-fn Memories-new() -> .Memories {
-    local self: .Memories
-    sizeof(Memories) A:alloc !.Memories #self
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn Memories-free(self: .Memories) {
-    local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Memory Memory-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Memories-get(self: .Memories, index: i32) -> .Memory {
-    &self.inner $index IV:I32Vec-get !.Memory
-}
-fn Memories-push(self: .Memories, mem: .Memory) {
-    &self.inner $mem !i32 IV:I32Vec-push
-}
-fn Memories-len(self: .Memories) -> i32 {
-    &self.inner IV:I32Vec-len
-}
 
 struct Function {
     ident: .L:Token
@@ -849,35 +741,6 @@ fn Function-has-mem-or-struc-locl(self: .Function) -> bool {
 }
 fn Function-mark-reachable(self: .Function) {
     1 1 = #self.reachable
-}
-
-struct Functions {
-    inner: IV:I32Vec
-}
-fn Functions-new() -> .Functions {
-    local self: .Functions
-    sizeof(Functions) A:alloc !.Functions #self 
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn Functions-free(self: .Functions) {
-    local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Function Function-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Functions-push(self: .Functions, f: .Function) {
-    &self.inner $f !i32 IV:I32Vec-push
-}
-fn Functions-len(self: .Functions) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn Functions-get(self: .Functions, index: i32) -> .Function {
-    &self.inner $index IV:I32Vec-get !.Function
 }
 
 struct Extern {
@@ -949,13 +812,6 @@ fn Import-path(self: .Import) -> .L:Token {
 fn Import-ident(self: .Import) -> .L:Token {
     $self.ident
 }
-fn Import-format(self: .Import, formatter: .FMT:Formatter) {
-    $formatter "{ path: " FMT:Formatter-write
-    $formatter $self Import-path L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter ", ident: \"" FMT:Formatter-write
-    $formatter $self Import-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\" }" FMT:Formatter-write
-}
 fn Import-path-content(self: .Import) -> .i32, i32 {
     $self Import-path L:Token-lexeme ~ 1 STR:Str-drop 1 STR:Str-drop-end STR:Str-unpack 
 }
@@ -980,14 +836,6 @@ fn Field-ident(self: .Field) -> .L:Token {
 fn Field-type(self: .Field) -> .Type {
     $self.type
 }
-fn Field-format(self: .Field, formatter: .FMT:Formatter) {
-    $formatter "{ ident: \"" FMT:Formatter-write
-    $formatter $self Field-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\", type: " FMT:Formatter-write
-    $self Field-type $formatter Type-format
-    $formatter " }" FMT:Formatter-write
-}
-
 struct Fields {
     inner: IV:I32Vec
 }
@@ -1016,26 +864,6 @@ fn Fields-len(self: .Fields) -> i32 {
 fn Fields-get(self: .Fields, index: i32) -> .Field {
     &self.inner $index IV:I32Vec-get !.Field
 }
-fn Fields-format(self: .Fields, formatter: .FMT:Formatter) {
-    local i: i32
-    0 $self Fields-len = if {
-        $formatter "[]" FMT:Formatter-write
-    } else {
-        $formatter "[\n" FMT:Formatter-write
-        $formatter FMT:Formatter-indent
-        loop {
-            $i $self Fields-len = if { break }
-            $formatter FMT:Formatter-write-indent
-            $self $i Fields-get $formatter Field-format
-            $formatter ",\n" FMT:Formatter-write
-            $i 1 + #i 
-        }
-        $formatter FMT:Formatter-dedent
-        $formatter FMT:Formatter-write-indent
-        $formatter "]" FMT:Formatter-write
-    }
-}
-
 struct Struct {
     ident: .L:Token
     fields: .Fields
@@ -1050,21 +878,6 @@ fn Struct-new(ident: .L:Token, fields: .Fields) -> .Struct {
 fn Struct-free(self: .Struct) {
     $self.fields Fields-free
     $self !.i32 A:free
-}
-fn Struct-format(self: .Struct, formatter: .FMT:Formatter) {
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-    $formatter FMT:Formatter-write-indent
-    $formatter "ident: \"" FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter "\"\n" FMT:Formatter-write
-    $formatter FMT:Formatter-write-indent
-    $formatter "fields: " FMT:Formatter-write
-    $self.fields $formatter Fields-format
-    $formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
 }
 fn Struct-ident(self: .Struct) -> .L:Token {
     $self.ident
@@ -1251,9 +1064,6 @@ fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
     } else {
         drop
     }
-}
-fn Imports-get-key(self: .Imports, index: i32) -> .S:String {
-    &self.map $index M:StringMap-get-key
 }
 fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
     &self.map $index M:StringMap-get-value !.S:String

@@ -3,6 +3,7 @@ import "../std/format.watim" as FMT
 import "../std/util.watim" as U
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
+import "../std/io.watim" as IO
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -39,12 +40,10 @@ fn TopItem-json(formatter: .FMT:Formatter, item: .AST:TopItem) {
     $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
         $formatter $item.imp Import-json
     }
-    $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
-        
-    }
-    $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
-        
-    }
+    2 "TopItem-json TopItem-ty: " IO:write-all IO:check
+    2 $item AST:TopItem-ty AST:top-item-ty-name IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    1 CORE:exit
 }
 
 fn write-escaped(formatter: .FMT:Formatter, ptr: .i32, len: i32) {
@@ -55,25 +54,6 @@ fn write-escaped(formatter: .FMT:Formatter, ptr: .i32, len: i32) {
         $formatter $buf $ptr $i + load8 $buf CORE:escape FMT:Formatter-write
         $i 1 + #i
     }
-}
-
-fn Memory-json(formatter: .FMT:Formatter, mem: .AST:Memory) {
-    $formatter FMT:Formatter-write-indent
-    $formatter "{\n" FMT:Formatter-write
-    $formatter FMT:Formatter-indent
-
-    $formatter FMT:Formatter-write-indent
-    $formatter "\"ty\": \"memory\",\n" FMT:Formatter-write
-
-    $formatter FMT:Formatter-write-indent
-    $formatter "\"type\": \"" FMT:Formatter-write
-    $mem AST:Memory-type $formatter AST:Type-format
-    $formatter "\"\n" FMT:Formatter-write
-
-    $formatter FMT:Formatter-dedent
-    $formatter FMT:Formatter-write-indent
-    $formatter "}" FMT:Formatter-write
-
 }
 
 fn Import-json(formatter: .FMT:Formatter, imp: .AST:Import) {
