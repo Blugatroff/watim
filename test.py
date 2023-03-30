@@ -120,10 +120,9 @@ def run(onCmd: Callable[[str], None], wat: bytes, stdin: str):
 T = TypeVar('T')
 def check_equal(expected: T, got: T, name: str) -> bool:
     if expected != got:
-        print(name)
-        print('    expected: ', expected)
-        print('    got:      ', got)
-        print('    failed')
+        print(colored('  ' + name + ':', 'red'))
+        print(colored('    expected: ', 'cyan'), colored(str(expected), 'green'))
+        print(colored('    got:      ', 'cyan'), colored(str(got), 'red'))
         return True
     return False
 
@@ -158,13 +157,18 @@ def run_test(path: str) -> bool:
                     return True
 
             if spec.runtime.stderr != None:
-                if check_equal(bytes(spec.runtime.stderr, 'ASCII'), runtime_output.stderr, 'runtime sterr'):
+                if check_equal(bytes(spec.runtime.stderr, 'ASCII'), runtime_output.stderr, 'runtime stderr'):
                     return True
     return False
 
+some_test_failed = False
 for path in tests:
     failed = run_test(path) 
     if not failed:
         print(colored('PASSED', 'green'))
         print()
+        continue
+    some_test_failed = True
 
+if some_test_failed:
+    exit(1)
