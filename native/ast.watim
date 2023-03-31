@@ -85,6 +85,7 @@ fn WORD_SIZEOF() -> i32 { 19 }
 fn WORD_STORE() -> i32 { 20 }
 fn WORD_STORE_GLOBAL() -> i32 { 21 }
 fn WORD_INIT_LOCAL() -> i32 { 22 }
+fn WORD_ANNOTATION() -> i32 { 23 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -106,7 +107,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         $ty WORD_STORE = if { "WORD_STORE" break }
         $ty WORD_STORE_GLOBAL = if { "WORD_STORE_GLOBAL" break }
-        $ty WORD_INIT_LOCAL = if { "WORD_INIT_LOCAL" break }
+        $ty WORD_ANNOTATION = if { "WORD_ANNOTATION" break }
         "INVALID WORD TY" break
     }
 }
@@ -299,6 +300,13 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
         0 0 / drop
         1 CORE:exit
     }
+}
+fn Type-print(self: .Type, fd: i32) {
+    FMT:Formatter-new @formatter
+    $self &formatter Type-format
+    $formatter FMT:Formatter-into-string @string
+    $fd &string S:String-unpack IO:write-all IO:check
+    $string S:String-free
 }
 
 struct Types {
@@ -503,6 +511,11 @@ fn Word-new(ty: i32, token: .L:Token) -> Word {
     0 #self.shadow-id
     0 #self.scope-id
     $self
+}
+fn Word-new-annotation(token: .L:Token, type: .Type) -> Word {
+    WORD_ANNOTATION $token Word-new @word
+    $type #word.type
+    $word
 }
 fn Word-free(self: Word) {
     $self.ty WORD_IF = if {

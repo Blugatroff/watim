@@ -194,10 +194,30 @@ fn check-word(
         $word AST:Word-ty AST:WORD_INIT_LOCAL = if {
             $stack $locals $word check-init-locl break
         }
+        $word AST:Word-ty AST:WORD_ANNOTATION = if {
+            $stack $word check-annotation break
+        }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
     $word AST:Word-mark-checked
+}
+fn check-annotation(stack: .AST:Types, word: .AST:Word) -> bool {
+    $stack AST:Types-len 0 = if {
+        $word AST:Word-location "cannot annotate empty stack\n" U:abort-with-location
+    }
+    $stack AST:Types-last @type
+    $type $word.type AST:Type-eq not if {
+        2 $word AST:Word-location L:print-location
+        2 "Type mismatch with annotation:\n" IO:write-all IO:check
+        2 "\t" IO:write-all IO:check
+        $type 2 AST:Type-print
+        2 "\n\t" IO:write-all IO:check
+        $word.type 2 AST:Type-print
+        2 "\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    0 1 =
 }
 fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type

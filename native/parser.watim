@@ -776,9 +776,17 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
         $ty L:TOKEN_RIGHT_RIGHT = if {
             $self $token Parser-parse-store break
         }
+        $ty L:TOKEN_COLON_COLON = if {
+            $self $token Parser-parse-annotation break
+        }
         $token L:Token-location "Unexpected Token\n" U:abort-with-location
         0 !.AST:Word break
     }
+}
+
+fn Parser-parse-annotation(self: .Parser, token: .L:Token) -> AST:Word {
+    $self Parser-parse-type @type
+    $token $type AST:Word-new-annotation
 }
 
 fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
@@ -1002,6 +1010,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_AMPERSAND = or
     $ty L:TOKEN_TILDE = or
     $ty L:TOKEN_RIGHT_RIGHT = or
+    $ty L:TOKEN_COLON_COLON = or
 }
 
 fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {
