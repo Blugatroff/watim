@@ -205,10 +205,15 @@ fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
         $formatter "global.get $" FMT:Formatter-write
         $word AST:Word-module $formatter U:i32-format
         $formatter ":" FMT:Formatter-write
+        $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
     } else {
         $formatter "local.get $" FMT:Formatter-write
+        $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
+        $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+        $word.shadow-id 0 /= if {
+            $word.shadow-id $formatter U:i32-format
+        }
     }
-    $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
     $formatter " " FMT:Formatter-write
     loop {
         $i &word.loads IV:I32Vec-len = if { break }
@@ -240,6 +245,7 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr:
         $locl-copy-space-ptr ~ $word.type AST:Type-size + >>locl-copy-space-ptr 
     }
     $formatter "local.get $" FMT:Formatter-write
+    $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
     $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
     $word.shadow-id 0 /= if {
         $word.shadow-id $formatter U:i32-format
@@ -697,7 +703,7 @@ fn generate-word-locals(formatter: .FMT:Formatter, words: .AST:Words) {
         $word AST:Word-ty AST:WORD_IF = if {
             $formatter $word AST:Word-iff .locals generate-locals
             $formatter $word AST:Word-iff AST:If-body generate-word-locals
-            $word AST:Word-iff .has-el ~ if { 
+            $word AST:Word-iff .has-el ~ if {
                 $formatter $word AST:Word-iff AST:If-el generate-word-locals 
             }
         }
