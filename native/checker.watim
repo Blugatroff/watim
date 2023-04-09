@@ -197,10 +197,87 @@ fn check-word(
         $word AST:Word-ty AST:WORD_ANNOTATION = if {
             $stack $word check-annotation break
         }
+        $word AST:Word-ty AST:WORD_ARRAY_WRITE = if {
+            $stack $word check-array-write break
+        }
+        $word AST:Word-ty AST:WORD_ARRAY_READ = if {
+            $stack $word check-array-read break
+        }
+        $word AST:Word-ty AST:WORD_ARRAY_REF = if {
+            $stack $word $temp-types check-array-ref break
+        }
         $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
     $word AST:Word-mark-checked
+}
+fn check-array-write(stack: .AST:Types, word: .AST:Word) -> bool {
+    $stack AST:Types-len 3 < if {
+        $word AST:Word-location "expected at least 3 arguments for array write\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @type
+    $stack AST:Types-pop @index-type
+    $index-type AST:Type-ty AST:TYPE_I32 /= if {
+        $word AST:Word-location "can only index array with i32\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @array-type
+    $array-type AST:Type-ty AST:TYPE_PTR /= if {
+        $word $array-type array-access-mismatch 1 CORE:exit
+    }   
+    $array-type AST:Type-child AST:Type-child $type AST:Type-eq not if {
+        $word $array-type array-access-mismatch 1 CORE:exit
+    }
+    0 1 =
+}
+
+fn array-access-mismatch(word: .AST:Word, array-type: .AST:Type) {
+    2 $word AST:Word-location L:print-location
+    2 "Type mismatch in array access:" IO:write-all IO:check
+    2 "\n\t expected: .[a: n]" IO:write-all IO:check
+    2 "\n\t got:      " IO:write-all IO:check
+    $array-type 2 AST:Type-print
+    2 "\n" IO:write-all IO:check
+}
+fn check-array-read(stack: .AST:Types, word: .AST:Word) -> bool {
+    $stack AST:Types-len 2 < if {
+        $word AST:Word-location "expected at least 2 arguments for array read\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @index-type
+    $index-type AST:Type-ty AST:TYPE_I32 /= if {
+        $word AST:Word-location "can only read array with i32 index\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @array-type
+    $array-type AST:Type-ty AST:TYPE_PTR /= if {
+        $word $array-type array-access-mismatch 1 CORE:exit
+    }
+    $array-type AST:Type-child AST:Type-ty AST:TYPE_ARRAY /= if {
+        $word $array-type array-access-mismatch 1 CORE:exit
+    }
+    $array-type AST:Type-child AST:Type-child #word.type
+    $stack $array-type AST:Type-child AST:Type-child AST:Types-push
+    0 1 =
+}
+fn check-array-ref(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Types) -> bool {
+    $stack AST:Types-len 2 < if {
+        $word AST:Word-location "expected at least 2 arguments for array read\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @index-type
+    $index-type AST:Type-ty AST:TYPE_I32 /= if {
+        $word AST:Word-location "can only read array with i32 index\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @array-type
+    $array-type AST:Type-ty AST:TYPE_PTR /= if {
+        $word $array-type array-access-mismatch 1 CORE:exit
+    }
+    $array-type AST:Type-child AST:Type-ty AST:TYPE_ARRAY /= if {
+        $word $array-type array-access-mismatch 1 CORE:exit
+    }
+    $array-type AST:Type-child AST:Type-child #word.type
+    $stack 
+    $temp-types
+    $array-type AST:Type-child AST:Type-child AST:Type-new-ptr U:push-temp-type
+    AST:Types-push
+    0 1 =
 }
 fn check-annotation(stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 0 = if {
@@ -209,8 +286,7 @@ fn check-annotation(stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-last @type
     $type $word.type AST:Type-eq not if {
         2 $word AST:Word-location L:print-location
-        2 "Type mismatch with annotation:\n" IO:write-all IO:check
-        2 "\t" IO:write-all IO:check
+        2 " Type mismatch with annotation:\n\t" IO:write-all IO:check
         $type 2 AST:Type-print
         2 "\n\t" IO:write-all IO:check
         $word.type 2 AST:Type-print
@@ -355,7 +431,9 @@ fn check-get-ref(stack: .AST:Types, locals: .AST:Locals, temp-types: .AST:Types,
         $word AST:Word-location "local not found\n" U:abort-with-location
     }
     #loads #type #src-type
-    $src-type AST:Type-ty AST:TYPE_STRUCT /= if {
+    $src-type AST:Type-ty AST:TYPE_STRUCT /= 
+    $src-type AST:Type-ty AST:TYPE_ARRAY /= and
+    if {
         $src-type AST:Type-ty AST:TYPE_PTR = if {
             $src-type AST:Type-child AST:Type-ty AST:TYPE_STRUCT =
         } else { 0 1 = } not if {

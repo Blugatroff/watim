@@ -331,11 +331,11 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Locals, .AST
         }
         $self Parser-parse-parameters #parameters
         $self.current $self.tokens L:Tokens-len = if {
-            $self.file STR:Str-unpack "expected ) found EOF" U:abort
+            $self.file STR:Str-unpack "expected ) found EOF\n" U:abort
         }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
-            $token L:Token-location "expected )" U:abort-with-location
+            $token L:Token-location "expected )\n" U:abort-with-location
         }
         $self.current $self.tokens L:Tokens-len < if {
             $self Parser-peek L:Token-ty L:TOKEN_ARROW = if {
@@ -500,7 +500,24 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             }
             0 !.L:Token $token AST:Type-new-struc break
         }
-        $token L:Token-location "expected type" U:abort-with-location
+        $token L:Token-ty L:TOKEN_LEFT_BRACKET = if {
+            $self Parser-parse-type @type
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_COLON /= if {
+                $token L:Token-location "expected :\n" U:abort-with-location
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_NUMBER /= if {
+                $token L:Token-location "expected number\n" U:abort-with-location
+            }
+            $token.number @length
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_RIGHT_BRACKET /= if {
+                $token L:Token-location "expected ]\n" U:abort-with-location
+            }
+            $type $length AST:Type-new-array break
+        }
+        $token L:Token-location "expected type\n" U:abort-with-location
     }
 }
 fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
@@ -661,7 +678,7 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
                 $self Parser-advance #token
             }
             $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
-                $token L:Token-location "expected )" U:abort-with-location
+                $token L:Token-location "expected )\n" U:abort-with-location
             }
             $word 0 0 = break
         }
@@ -779,9 +796,36 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
         $ty L:TOKEN_COLON_COLON = if {
             $self $token Parser-parse-annotation break
         }
+        $ty L:TOKEN_LEFT_BRACKET = if {
+            $self $token Parser-parse-array-access break
+        }
         $token L:Token-location "Unexpected Token\n" U:abort-with-location
         0 !.AST:Word break
     }
+}
+
+fn Parser-parse-array-access(self: .Parser, token: .L:Token) -> AST:Word {
+    $self.current $self.tokens L:Tokens-len = if {
+        $self.file STR:Str-unpack "expected #, $ or & found EOF" U:abort
+    }
+    $self Parser-advance #token
+    loop {
+        $token L:Token-ty L:TOKEN_HASH = if { AST:WORD_ARRAY_WRITE break }
+        $token L:Token-ty L:TOKEN_DOLLAR = if { AST:WORD_ARRAY_READ break }
+        $token L:Token-ty L:TOKEN_AMPERSAND = if { AST:WORD_ARRAY_REF break }
+
+        $token L:Token-location "Expected #, $ or &\n" U:abort-with-location
+
+        // TODO: insert this automatically because of unreachability
+        0
+        break
+    } $token AST:Word-new @word
+
+    $self Parser-advance #token
+    $token L:Token-ty L:TOKEN_RIGHT_BRACKET /= if {
+        $token L:Token-location "Expected ]\n" U:abort-with-location
+    }
+    $word
 }
 
 fn Parser-parse-annotation(self: .Parser, token: .L:Token) -> AST:Word {
@@ -1011,6 +1055,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_TILDE = or
     $ty L:TOKEN_RIGHT_RIGHT = or
     $ty L:TOKEN_COLON_COLON = or
+    $ty L:TOKEN_LEFT_BRACKET = or
 }
 
 fn parse(mem: .S:String, tokens: .L:Tokens) -> .AST:TopItems, .AST:Types {

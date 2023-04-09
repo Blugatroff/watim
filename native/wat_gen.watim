@@ -18,6 +18,7 @@ fn generate-type(formatter: .FMT:Formatter, self: .AST:Type) {
         $self AST:Type-ty AST:TYPE_BOOL = or
         $self AST:Type-ty AST:TYPE_PTR = or
         $self AST:Type-ty AST:TYPE_STRUCT = or
+        $self AST:Type-ty AST:TYPE_ARRAY = or
         if { 
             $formatter "i32" FMT:Formatter-write break
         }
@@ -140,13 +141,7 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             break
         }
         $self.ty AST:WORD_LOAD = if {
-            $self.type AST:Type-ty AST:TYPE_STRUCT = if {
-                $formatter $self.type $locl-copy-space-ptr generate-load-struc
-                $formatter "\n" FMT:Formatter-write
-            } else {
-                $formatter $self.type generate-type
-                $formatter ".load" FMT:Formatter-write
-            }
+            $formatter $self.type $locl-copy-space-ptr generate-load 
             break
         }
         $self.ty AST:WORD_SIZEOF = if {
@@ -157,7 +152,7 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
         }
         $self.ty AST:WORD_STORE = 
         $self.ty AST:WORD_STORE_GLOBAL = or if {
-            $formatter $self generate-store break
+            $formatter $self generate-store-word break
         }
         $self.ty AST:WORD_ANNOTATION = if {
             $formatter ";; ::" FMT:Formatter-write
@@ -165,9 +160,47 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
             $formatter "\n" FMT:Formatter-write
             break
         }
+        $self.ty AST:WORD_ARRAY_WRITE = if {
+            $formatter $self generate-array-write break
+        }
+        $self.ty AST:WORD_ARRAY_READ = if {
+            $formatter $self $locl-copy-space-ptr generate-array-read break
+        }
+        $self.ty AST:WORD_ARRAY_REF = if {
+            $formatter $self generate-array-ref break
+        }
         $formatter $self.ty AST:word-ty-name FMT:Formatter-write
         break
     } 
+}
+fn generate-load(formatter: .FMT:Formatter, type: .AST:Type, locl-copy-space-ptr: .i32) {
+    $type AST:Type-ty AST:TYPE_STRUCT = if {
+        $formatter $type $locl-copy-space-ptr generate-load-struc
+        $formatter "\n" FMT:Formatter-write
+    } else {
+        $formatter $type generate-type
+        $formatter ".load" FMT:Formatter-write
+        $formatter "\n" FMT:Formatter-write
+    }
+}
+fn generate-array-write(formatter: .FMT:Formatter, word: .AST:Word) {
+    $formatter "call $intrinsic:rotate-right" FMT:Formatter-write
+    $formatter " i32.const " FMT:Formatter-write
+    $word.type AST:Type-size $formatter U:i32-format
+    $formatter " i32.mul " FMT:Formatter-write
+    $formatter " i32.add " FMT:Formatter-write
+    $formatter "call $intrinsic:flip " FMT:Formatter-write
+    $formatter $word.type generate-store
+}
+fn generate-array-read(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
+    $formatter $word generate-array-ref
+    $formatter $word.type $locl-copy-space-ptr generate-load
+}
+fn generate-array-ref(formatter: .FMT:Formatter, word: .AST:Word) {
+    $formatter "i32.const " FMT:Formatter-write
+    $word.type AST:Type-size $formatter U:i32-format
+    $formatter " i32.mul" FMT:Formatter-write
+    $formatter " i32.add " FMT:Formatter-write
 }
 fn generate-load-struc(formatter: .FMT:Formatter, type: .AST:Type, locl-copy-space-ptr: .i32) { 
     $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
@@ -198,7 +231,8 @@ fn generate-get-ref(formatter: .FMT:Formatter, word: .AST:Word) {
     }
     $formatter "\n" FMT:Formatter-write
 }
-fn generate-store(formatter: .FMT:Formatter, word: .AST:Word) {
+
+fn generate-store-word(formatter: .FMT:Formatter, word: .AST:Word) {
     local i: i32
     local offset: i32
     $word AST:Word-ty AST:WORD_STORE_GLOBAL = if {
@@ -393,6 +427,19 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
     }
     $formatter "\n" FMT:Formatter-write
 }
+fn generate-store(formatter: .FMT:Formatter, type: .AST:Type) {
+    $type AST:Type-ty AST:TYPE_STRUCT =
+    $type AST:Type-size 4 /= and if {
+        $formatter "i32.const " FMT:Formatter-write
+        $type AST:Type-size $formatter U:i32-format
+        $formatter " memory.copy" FMT:Formatter-write
+    } else {
+        // TODO: this crashes:
+        // $formatter "i32.store" FMT:Formatter-write break
+        $formatter "i32.store" FMT:Formatter-write
+    }
+    $formatter "\n" FMT:Formatter-write
+}
 fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
     loop {
         $word.intrinsic AST:INTRINSIC_ADD = if {
@@ -422,14 +469,7 @@ fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
             $formatter "i32.ne" FMT:Formatter-write break
         }
         $word.intrinsic AST:INTRINSIC_STORE = if {
-            $word.type AST:Type-ty AST:TYPE_STRUCT =
-            $word.type AST:Type-size 4 /= and if {
-                $formatter "i32.const " FMT:Formatter-write
-                $word.type AST:Type-size $formatter U:i32-format
-                $formatter " memory.copy" FMT:Formatter-write
-            } else {
-                $formatter "i32.store" FMT:Formatter-write break
-            }
+            $formatter $word.type generate-store break
         }
         $word.intrinsic AST:INTRINSIC_GREATER_EQ = if {
             $formatter "i32.ge_u" FMT:Formatter-write break
@@ -488,9 +528,9 @@ fn generate-intrinsic(formatter: .FMT:Formatter, word: .AST:Word) {
                 $formatter "i32.or" FMT:Formatter-write break
             }
         }
-        1 $word.intrinsic AST:intrinsic-name IO:write-all IO:check
+        2 "unhandled intrinsic in wat_gen " IO:write-all IO:check
+        2 $word.intrinsic AST:intrinsic-name IO:write-all IO:check
         1 CORE:exit
-        $formatter $word.intrinsic AST:intrinsic-name FMT:Formatter-write
         break
     }
     $formatter "\n" FMT:Formatter-write
@@ -681,7 +721,9 @@ fn generate-locl(formatter: .FMT:Formatter, locl: .AST:Local) {
     $formatter $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $locl.shadow-id 0 /= if { $locl.shadow-id $formatter U:i32-format }
     $formatter " " FMT:Formatter-write
-    $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
+    $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = 
+    $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = or
+    if {
         $formatter "i32" FMT:Formatter-write
     } else {
         $formatter $locl AST:Local-type generate-type
@@ -690,6 +732,9 @@ fn generate-locl(formatter: .FMT:Formatter, locl: .AST:Local) {
     $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter " ;; " FMT:Formatter-write
         $formatter $locl AST:Local-type AST:Type-struc AST:Struct-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    }
+    $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = if {
+        $formatter " ;; array" FMT:Formatter-write
     }
     $formatter "\n" FMT:Formatter-write
 }
@@ -743,6 +788,14 @@ fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
                 $formatter FMT:Formatter-write-indent
                 $formatter 
                 $locl AST:Local-type AST:Type-struc AST:Struct-size
+                $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
+                generate-mem
+                $formatter "\n" FMT:Formatter-write
+            }
+            $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = if {
+                $formatter FMT:Formatter-write-indent
+                $formatter 
+                $locl AST:Local-type AST:Type-size
                 $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
                 generate-mem
                 $formatter "\n" FMT:Formatter-write
@@ -840,6 +893,9 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
                 $rets $j AST:Types-get AST:Type-ty AST:TYPE_STRUCT = if {
                     $size $rets $j AST:Types-get AST:Type-struc AST:Struct-size + #size
                 }
+                $rets $j AST:Types-get AST:Type-ty AST:TYPE_ARRAY = if {
+                    $size $rets $j AST:Types-get AST:Type-size + #size
+                }
                 $j 1 + #j
             }
             $j 0 > if {
@@ -873,23 +929,19 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
     loop {
         $i $words AST:Words-len = if { break }
         $words $i AST:Words-get #word
-        $word AST:Word-ty AST:WORD_GET_LOCAL = if {
+        $word AST:Word-ty AST:WORD_GET_LOCAL = 
+        $word AST:Word-ty AST:WORD_DEREF = or
+        $word AST:Word-ty AST:WORD_LOAD = or
+        if {
             $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
                 $word AST:Word-type AST:Type-size $size + #size
                 $count 1 + #count
             }
-        }
-        $word AST:Word-ty AST:WORD_DEREF = if {
-            $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
+            $word AST:Word-type AST:Type-ty AST:TYPE_ARRAY = if {
                 $word AST:Word-type AST:Type-size $size + #size
                 $count 1 + #count
             }
-        }
-        $word AST:Word-ty AST:WORD_LOAD = if {
-            $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
-                $word AST:Word-type AST:Type-size $size + #size
-                $count 1 + #count
-            }
+
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
             &word.lop.body measure-locl-copy-space
@@ -1052,6 +1104,8 @@ fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules
     $formatter "(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "(func $intrinsic:rotate-right (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $c local.get $a local.get $b)\n" FMT:Formatter-write
 
     $formatter $mem S:String-len $modules generate-global-mems
 

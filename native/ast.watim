@@ -86,6 +86,9 @@ fn WORD_STORE() -> i32 { 20 }
 fn WORD_STORE_GLOBAL() -> i32 { 21 }
 fn WORD_INIT_LOCAL() -> i32 { 22 }
 fn WORD_ANNOTATION() -> i32 { 23 }
+fn WORD_ARRAY_WRITE() -> i32 { 24 }
+fn WORD_ARRAY_READ() -> i32 { 25 }
+fn WORD_ARRAY_REF() -> i32 { 26 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -108,6 +111,9 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_STORE = if { "WORD_STORE" break }
         $ty WORD_STORE_GLOBAL = if { "WORD_STORE_GLOBAL" break }
         $ty WORD_ANNOTATION = if { "WORD_ANNOTATION" break }
+        $ty WORD_ARRAY_WRITE = if { "WORD_ARRAY_WRITE" break }
+        $ty WORD_ARRAY_READ = if { "WORD_ARRAY_READ" break }
+        $ty WORD_ARRAY_REF = if { "WORD_ARRAY_REF" break }
         "INVALID WORD TY" break
     }
 }
@@ -178,6 +184,7 @@ fn TYPE_I64() -> i32 { 2 }
 fn TYPE_BOOL() -> i32 { 3 }
 fn TYPE_PTR() -> i32 { 4 }
 fn TYPE_STRUCT() -> i32 { 5 }
+fn TYPE_ARRAY() -> i32 { 6 }
 
 fn type-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -186,24 +193,31 @@ fn type-ty-name(ty: i32) -> .i32, i32 {
         $ty TYPE_BOOL = if { "TYPE_BOOL" break }
         $ty TYPE_PTR = if { "TYPE_PTR" break }
         $ty TYPE_STRUCT = if { "TYPE_STRUCT" break }
+        $ty TYPE_ARRAY = if { "TYPE_ARRAY" break }
         "invalid TYPE TY" break
     }
 }
 
 struct Type {
     ty: i32
-    // for TYPE_PTR
-    child: .Type // actually of type .Type but recursive type not yet possible
+    // for TYPE_PTR, TYPE_ARRAY
+    child: .Type
     // for TYPE_STRUCT
     ident: .L:Token
     module: .L:Token
-    struc: .Struct // actually of type .Struct but indirect recursive type not yet possible
+    struc: .Struct
+    // FOR TYPE_ARRAY
+    length: i32
 }
 fn Type-size(self: .Type) -> i32 {
-    $self.ty TYPE_STRUCT = if { 
-        $self Type-struc Struct-size
-    } else {
-        4
+    loop {
+        $self.ty TYPE_STRUCT = if { 
+            $self Type-struc Struct-size break
+        }
+        $self.ty TYPE_ARRAY = if {
+            $self.child Type-size $self.length * break
+        }
+        4 break
     }
 }
 fn Type-eq(a: .Type, b: .Type) -> bool {
@@ -216,12 +230,17 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
         $a.ty TYPE_STRUCT = if {
             $a.struc $b.struc = break
         }
+        $a.ty TYPE_ARRAY = if {
+            $a Type-child $b Type-child Type-eq 
+            $a.length $b.length = and
+            break
+        }
         0 0 = break
     }
 }
 fn Type-new(ty: i32) -> .Type {
     local self: .Type
-    20 A:alloc !.Type #self
+    sizeof(Type) A:alloc !.Type #self
     $ty #self.ty
     0 !.Type #self.child
     $self
@@ -253,6 +272,12 @@ fn Type-new-struc(module: .L:Token, ident: .L:Token) -> .Type {
     $module #self.module
     $ident #self.ident
     0 !.Struct #self.struc
+    $self
+}
+fn Type-new-array(type: .Type, length: i32) -> .Type {
+    TYPE_ARRAY Type-new @self
+    $type #self.child
+    $length #self.length
     $self
 }
 fn Type-set-struc(self: .Type, struc: .Struct) {
@@ -292,6 +317,14 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
                 $formatter ":" FMT:Formatter-write
             }
             $formatter $self Type-struc Struct-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+            break
+        }
+        $self Type-ty TYPE_ARRAY = if {
+            $formatter "[" FMT:Formatter-write
+            $self.child $formatter Type-format
+            $formatter ": " FMT:Formatter-write
+            $self.length $formatter U:i32-format
+            $formatter "]" FMT:Formatter-write
             break
         }
         2 "Type-format unhandled Type-ty: " IO:write-all IO:check

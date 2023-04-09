@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, asdict
 from typing import Any, TypeVar, Callable
+from shutil import copyfile
 import subprocess
 import glob
 import json
@@ -83,24 +84,33 @@ default_spec = TestSpec(
 )
 
 if len(sys.argv) > 1:
+    path_watim = lambda name: './tests/' + name + '.watim'
+    path_json = lambda name: './tests/' + name + '.json'
     if sys.argv[1] == 'new':
         if len(sys.argv) < 3:
-            print('provide name of new test')
+            print('./test.py new <name>')
             exit(1)
         name = sys.argv[2]
-        path_watim = './tests/' + name + '.watim'
-        path_json = './tests/' + name + '.json'
-        if os.path.exists(path_watim) or os.path.exists(path_json):
+        if os.path.exists(path_watim(name)) or os.path.exists(path_json(name)):
             print(colored('the tests files already exist', 'red'))
             exit(1)
 
-        with open(path_watim, 'w') as file:
+        with open(path_watim(name), 'w') as file:
             file.write(default_code)
-        with open(path_json, 'w') as file:
+        with open(path_json(name), 'w') as file:
             file.write(json.dumps(
                 asdict(default_spec),
                 indent=4
             ))
+        exit(0)
+    if sys.argv[1] == 'copy':
+        if len(sys.argv) < 4:
+            print('./test.py copy <template> <name>')
+            exit(1)
+        template = sys.argv[2]
+        name = sys.argv[3]
+        copyfile(path_watim(template), path_watim(name))
+        copyfile(path_json(template), path_json(name))
         exit(0)
 
 tests = glob.glob('./tests/*.watim')
@@ -126,9 +136,9 @@ def check_equal(expected: T, got: T, name: str) -> bool:
         return True
     return False
 
-def run_test(path: str) -> bool:
-    print(colored('Running test ' + path, 'cyan'))
-    onCmd= lambda cmd: print("  + " + colored(cmd, 'magenta'))
+quiet = True
+
+def run_test(path: str, onCmd) -> bool:
     compilation_output = compile(path, onCmd)
 
     with open(pathlib.Path(path).with_suffix('.json'), 'r') as reader:
@@ -163,10 +173,16 @@ def run_test(path: str) -> bool:
 
 some_test_failed = False
 for path in tests:
-    failed = run_test(path) 
+    print(colored('Running test ' + path + ' ', 'cyan'))
+    def onCmd(cmd):
+        if not quiet:
+            print("  + " + colored(cmd, 'magenta'))
+    
+    failed = run_test(path, onCmd)
     if not failed:
         print(colored('PASSED', 'green'))
-        print()
+        if not quiet:
+            print()
         continue
     some_test_failed = True
 

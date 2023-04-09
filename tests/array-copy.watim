@@ -1,0 +1,12 @@
+extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
+
+fn main "_start" () {
+    local arr: [i32: 4]
+    &arr 1 42 [#]
+    $arr foo
+}
+
+fn foo(arr: [i32: 4]) {
+    &arr 1 [$] proc_exit
+}
+

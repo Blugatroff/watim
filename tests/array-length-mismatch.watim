@@ -1,0 +1,7 @@
+fn main() {
+    local arr: [i32: 4]
+    $arr foo
+}
+
+fn foo(arr: [i32: 3]) { }
+
