@@ -347,6 +347,10 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
             $modules $module &word.lop.body mark-reachable-words
         }
 
+        $word AST:Word-ty AST:WORD_BLOCK = if {
+            $modules $module &word.blok.body mark-reachable-words
+        }
+
         $i 1 + #i
     }
 }

@@ -772,6 +772,10 @@ fn generate-word-locals(formatter: .FMT:Formatter, words: .AST:Words) {
             $formatter &word.lop.locals generate-locals
             $formatter &word.lop.body generate-word-locals
         }
+        $word AST:Word-ty AST:WORD_BLOCK = if {
+            $formatter &word.blok.locals generate-locals
+            $formatter &word.blok.body generate-word-locals
+        }
         $i 1 + #i
     }
 }
@@ -923,6 +927,11 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
             $max-args CORE:max #max-args 
             $size + #size
         }
+        $word AST:Word-ty AST:WORD_BLOCK = if {
+            &word.blok.body measure-struc-returnals-space 
+            $max-args CORE:max #max-args 
+            $size + #size
+        }
         $word AST:Word-ty AST:WORD_IF = if {
             $word AST:Word-iff AST:If-body measure-struc-returnals-space
             $max-args CORE:max #max-args 
@@ -961,6 +970,11 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
             &word.lop.body measure-locl-copy-space
+            $count + #count
+            $size + #size
+        }
+        $word AST:Word-ty AST:WORD_BLOCK = if {
+            &word.blok.body measure-locl-copy-space
             $count + #count
             $size + #size
         }

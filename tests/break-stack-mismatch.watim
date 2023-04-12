@@ -1,0 +1,6 @@
+fn main() {
+    loop {
+        0 break
+        0 1 = break
+    } drop
+}

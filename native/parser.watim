@@ -528,7 +528,7 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
     $token L:Token-file ~ #file
     $token L:Token-line #line
     $token L:Token-column #column
-    loop {
+    block {
         $token L:Token-lexeme ~ STR:Str-unpack "drop" STR:str-eq if {
             AST:WORD_INTRINSIC $token AST:Word-new #word
             AST:INTRINSIC_DROP #word.intrinsic
@@ -682,7 +682,7 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
             }
             $word 0 0 = break
         }
-        0 !.AST:Word 0 1 = break
+        AST:Word-new-uninit 0 1 =
     }
 }
 fn Parser-parse-word(self: .Parser) -> AST:Word {
@@ -700,7 +700,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
     $token L:Token-file ~ #file
     $token L:Token-line #line
     $token L:Token-column #column
-    loop {
+    block {
         $ty L:TOKEN_IDENT = if {
             $self $token Parser-parse-intrinsic if {
                 break
@@ -805,7 +805,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
             $self $token Parser-parse-array-access break
         }
         $token L:Token-location "Unexpected Token\n" U:abort-with-location
-        0 !.AST:Word break
+        AST:Word-new-uninit
     }
 }
 

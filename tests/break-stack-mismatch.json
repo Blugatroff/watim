@@ -1,0 +1,8 @@
+{
+    "compilation": {
+        "code": 1,
+        "stdout": null,
+        "stderr": "type mismatch in loop:\n\t./tests/break-stack-mismatch.watim:3:11: [i32]\n\t./tests/break-stack-mismatch.watim:4:15: [bool]\n",
+        "stdin": null
+    }
+}

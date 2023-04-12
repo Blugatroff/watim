@@ -432,6 +432,19 @@ fn Types-print(self: .Types, fd: i32) {
 fn Types-last(self: .Types) -> .Type {
     $self $self Types-len 1 - Types-get
 }
+fn Types-eq(self: .Types, other: .Types) -> bool {
+    0 @i
+    loop {
+        $i $self Types-len =
+        $i $other Types-len = or if { 
+            0 0 = break 
+        }
+        $self $i Types-get $other $i Types-get Type-eq not if {
+            0 1 = break
+        }
+        $i 1 + #i
+    }
+}
 
 struct If {
     token: .L:Token
@@ -558,6 +571,10 @@ struct Word {
     checked: bool
     shadow-id: i32
     scope-id: i32
+}
+fn Word-new-uninit() -> Word {
+    local self: Word
+    $self
 }
 fn Word-new(ty: i32, token: .L:Token) -> Word {
     local self: Word
@@ -723,7 +740,7 @@ fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: b
                 $self.parent 0 !.Locals /= $search-parents and if {
                     $self.parent $ident-ptr $ident-len $search-parents Locals-find break
                 } else {
-                    0 0 1 = break 
+                    0 !.Local 0 1 = break 
                 }
             }
             $i 1 - #i
