@@ -53,6 +53,18 @@ fn generate-lop(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, locl
     $formatter FMT:Formatter-write-indent
     $formatter ")\n" FMT:Formatter-write
 }
+fn generate-block(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, locl-copy-space-ptr: .i32, lop: .AST:Words, rets: .AST:Types) {
+    $formatter "(block $block " FMT:Formatter-write
+    $rets !i32 0 /= if {
+        $formatter $rets generate-rets
+    }
+    $formatter "\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+    $formatter $struc-returnals-space-ptr $locl-copy-space-ptr $lop generate-words
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter ")\n" FMT:Formatter-write
+}
 fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, locl-copy-space-ptr: .i32, self: .AST:Word) {
     loop {
         $self.ty AST:WORD_NUMBER = if {
@@ -82,6 +94,10 @@ fn generate-word(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, loc
         }
         $self.ty AST:WORD_LOOP = if {
             $formatter $struc-returnals-space-ptr $locl-copy-space-ptr &self.lop.body $self.lop.rets generate-lop
+            break
+        }
+        $self.ty AST:WORD_BLOCK = if {
+            $formatter $struc-returnals-space-ptr $locl-copy-space-ptr &self.blok.body $self.blok.rets generate-block
             break
         }
         $self.ty AST:WORD_BREAK = if {

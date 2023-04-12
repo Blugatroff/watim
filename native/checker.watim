@@ -206,7 +206,10 @@ fn check-word(
         $word AST:Word-ty AST:WORD_ARRAY_REF = if {
             $stack $word $temp-types check-array-ref break
         }
-        $word AST:Word-location "unhandled word in checker\n" U:abort-with-location
+        $word AST:Word-ty AST:WORD_BLOCK = if {
+            $temp-types $modules $module $stack $locals $scope-id $word check-blok break
+        }
+        $word AST:Word-location " unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
     $word AST:Word-mark-checked
@@ -632,6 +635,7 @@ fn check-iff(
 
     $true-branch-diverges $false-branch-diverges or
 }
+
 fn check-brek(bs: .BS:BreakStacks, stack: .AST:Types, word: .AST:Word) -> bool {
     local break_stack: .BS:BreakStack
     $bs $word $stack AST:Types-clone-container BS:BreakStack-new BS:BreakStacks-push
@@ -641,6 +645,7 @@ fn check-brek(bs: .BS:BreakStacks, stack: .AST:Types, word: .AST:Word) -> bool {
     }
     0 1 =
 }
+
 fn check-lop(
     temp-types: .AST:Types,
     modules: .M:Modules, 
@@ -671,6 +676,54 @@ fn check-lop(
             $i 1 + #i
         }
         $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container #word.lop.rets
+        0 1 =
+    }
+    $bs BS:BreakStacks-free
+}
+
+fn check-blok(
+    temp-types: .AST:Types,
+    modules: .M:Modules, 
+    module: .M:Module,
+    stack: .AST:Types,
+    locals: .AST:Locals,
+    scope-id: .i32,
+    word: .AST:Word
+) -> bool {
+    BS:BreakStacks-new @bs
+
+    $locals #word.blok.locals.parent
+    $scope-id ~ 1 + >>scope-id
+    $scope-id ~ #word.blok.locals.id
+    
+    $stack AST:Types-len @orig-stack-len
+    $temp-types $bs $modules $module $stack &word.blok.locals $scope-id &word.blok.body check-words drop
+    // TODO: check whether all breakstacks in `bs` are equal
+
+    AST:Types-new @remaining-types
+    $orig-stack-len @i
+    loop {
+        $i $stack AST:Types-len >= if { break }
+        $remaining-types $stack $i AST:Types-get AST:Types-push
+        $i 1 + #i
+    }
+    loop {
+        $stack AST:Types-len $orig-stack-len <= if { break }
+        $stack AST:Types-pop drop
+    }
+    $bs $word $remaining-types BS:BreakStack-new BS:BreakStacks-push
+
+    $bs BS:BreakStacks-len 0 = if {
+        0 0 = 
+        AST:Types-new #word.blok.rets
+    } else {
+        0 @i
+        loop {
+            $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-len $i = if { break }
+            $stack $bs 0 BS:BreakStacks-get BS:BreakStack-types $i AST:Types-get AST:Types-push
+            $i 1 + #i
+        }
+        $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container #word.blok.rets
         0 1 =
     }
     $bs BS:BreakStacks-free

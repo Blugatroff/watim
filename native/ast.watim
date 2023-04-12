@@ -89,6 +89,7 @@ fn WORD_ANNOTATION() -> i32 { 23 }
 fn WORD_ARRAY_WRITE() -> i32 { 24 }
 fn WORD_ARRAY_READ() -> i32 { 25 }
 fn WORD_ARRAY_REF() -> i32 { 26 }
+fn WORD_BLOCK() -> i32 { 27 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -114,6 +115,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_ARRAY_WRITE = if { "WORD_ARRAY_WRITE" break }
         $ty WORD_ARRAY_READ = if { "WORD_ARRAY_READ" break }
         $ty WORD_ARRAY_REF = if { "WORD_ARRAY_REF" break }
+        $ty WORD_BLOCK = if { "WORD_BLOCK" break }
         "INVALID WORD TY" break
     }
 }
@@ -511,6 +513,27 @@ fn Loop-free(self: .Loop) {
     $self !.i32 A:free
 }
 
+struct Block {
+    token: .L:Token
+    body: Words
+    rets: .Types
+    locals: Locals
+}
+fn Block-new(token: .L:Token, body: Words) -> .Block {
+    local self: .Block
+    sizeof(Block) A:alloc !.Block #self
+    $token #self.token
+    $body #self.body
+    Locals-new #self.locals
+    $self
+}
+fn Block-free(self: .Block) {
+    $self.body Words-free
+    $self.locals Locals-free
+    $self.rets 0 !.Types /= if { $self.rets Types-free-container }
+    $self !.i32 A:free
+}
+
 struct Word {
     ty: i32
     token: .L:Token
@@ -526,6 +549,7 @@ struct Word {
     fields: L:Tokens
     loads: IV:I32Vec
     lop: .Loop
+    blok: .Block
     rets: .Types
     iff: .If
     type: .Type
@@ -556,6 +580,9 @@ fn Word-free(self: Word) {
     }
     $self.ty WORD_LOOP = if {
         $self.lop Loop-free
+    }
+    $self.ty WORD_BLOCK = if {
+        $self.blok Block-free
     }
     $self.ty WORD_SET = 
     $self.ty WORD_GET_REF = or

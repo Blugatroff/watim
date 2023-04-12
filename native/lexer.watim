@@ -42,6 +42,8 @@ fn TOKEN_RIGHT_RIGHT() -> i32 { 34 }
 fn TOKEN_COLON_COLON() -> i32 { 35 }
 fn TOKEN_LEFT_BRACKET() -> i32 { 36 }
 fn TOKEN_RIGHT_BRACKET() -> i32 { 37 }
+fn TOKEN_I8() -> i32 { 38 }
+fn TOKEN_BLOCK() -> i32 { 39 }
 
 fn token-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -80,6 +82,8 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_COLON_COLON = if { "TOKEN_COLON_COLON" break }
         $ty TOKEN_LEFT_BRACKET = if { "TOKEN_LEFT_BRACKET" break }
         $ty TOKEN_RIGHT_BRACKET = if { "TOKEN_RIGHT_BRACKET" break }
+        $ty TOKEN_I8 = if { "TOKEN_I8" break }
+        $ty TOKEN_BLOCK = if { "TOKEN_BLOCK" break }
         "INVALID TOKEN TYPE" break
     }
 }
@@ -439,6 +443,9 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
         &ident ~ STR:Str-unpack "i32" STR:str-eq if {
             TOKEN_I32 $ident $lexer.file $line $column Token-new break
         }
+        &ident ~ STR:Str-unpack "i8" STR:str-eq if {
+            TOKEN_I8 $ident $lexer.file $line $column Token-new break
+        }
         &ident ~ STR:Str-unpack "i64" STR:str-eq if {
             TOKEN_I64 $ident $lexer.file $line $column Token-new break
         }
@@ -474,6 +481,9 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
         }
         &ident ~ STR:Str-unpack "struct" STR:str-eq if {
             TOKEN_STRUCT $ident $lexer.file $line $column Token-new break
+        }
+        &ident ~ STR:Str-unpack "block" STR:str-eq if {
+            TOKEN_BLOCK $ident $lexer.file $line $column Token-new break
         }
         TOKEN_IDENT $ident $lexer.file $line $column Token-new break
     }

@@ -79,6 +79,7 @@ fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32)
     $word AST:Word-location
     &formatter $msg-ptr $msg-len FMT:Formatter-write
     $stack &formatter AST:Types-format
+    &formatter " " FMT:Formatter-write
     $formatter FMT:Formatter-into-string #formatted
     &formatted S:String-unpack 
     U:abort-with-location

@@ -92,7 +92,7 @@ fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
     } else {
         loop {
             $n 0 = if { break }
-            $buf $l + !.i32
+            $buf $l +
             $n 10 % // rightmost digit
             48 + // + ascii 'a'
             store8
@@ -102,8 +102,8 @@ fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
     }
     0 #i
     loop {
-        $buf-reversed !i32 $i + !.i32
-        $buf !i32 $l 1 - $i - + !.i32 load8
+        $buf-reversed $i +
+        $buf $l 1 - $i - + load8
         store8
         $i 1 + #i
         $i $l = if { break }
