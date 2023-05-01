@@ -90,6 +90,8 @@ fn WORD_ARRAY_WRITE() -> i32 { 24 }
 fn WORD_ARRAY_READ() -> i32 { 25 }
 fn WORD_ARRAY_REF() -> i32 { 26 }
 fn WORD_BLOCK() -> i32 { 27 }
+fn WORD_ARRAY_INIT() -> i32 { 28 }
+fn WORD_ARRAY_INIT_ZERO() -> i32 { 29 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -116,6 +118,8 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_ARRAY_READ = if { "WORD_ARRAY_READ" break }
         $ty WORD_ARRAY_REF = if { "WORD_ARRAY_REF" break }
         $ty WORD_BLOCK = if { "WORD_BLOCK" break }
+        $ty WORD_ARRAY_INIT = if { "WORD_ARRAY_INIT" break }
+        $ty WORD_ARRAY_INIT_ZERO = if { "WORD_ARRAY_INIT_ZERO" break }
         "INVALID WORD TY" break
     }
 }

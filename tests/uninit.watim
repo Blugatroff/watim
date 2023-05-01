@@ -1,0 +1,13 @@
+struct Foo {
+    x: i32
+    y: i32
+}
+
+fn main() {
+    uninit<Foo,Foo,Foo> @foo
+}
+
+fn uninit2<T>() -> T, T {
+    uninit<T> dup
+}
+

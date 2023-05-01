@@ -69,7 +69,7 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     BS:BreakStacks-new #bs
     $temp-types $bs $modules $module $stack &function.locals &scope-id.inner $words check-words not if {
         // if the function does not diverge, aka does return
-        // then check wheter the remaining stack matches the return type
+        // then check whether the remaining stack matches the return type
         $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
             $stack $function report-return-type-mismatch
         }
@@ -209,11 +209,54 @@ fn check-word(
         $word AST:Word-ty AST:WORD_BLOCK = if {
             $temp-types $modules $module $stack $locals $scope-id $word check-blok break
         }
+        $word AST:Word-ty AST:WORD_ARRAY_INIT = if {
+            // TODO: this results in miscompilation when the break is missing
+            $stack $word $temp-types check-array-init break
+        }
+        $word AST:Word-ty AST:WORD_ARRAY_INIT_ZERO = if {
+            $stack $word $temp-types check-array-init-zero break
+        }
         $word AST:Word-location " unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
     $word AST:Word-mark-checked
 }
+
+fn check-array-init(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Types) -> bool {
+    $word.number @len
+    $stack AST:Types-len $len < if {
+        $word AST:Word-location "not enough values on stack to construct array\n" U:abort-with-location
+    }
+    $stack AST:Types-len 0 = if {
+        $word AST:Word-location "empty arrays not yet supported\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @elem-type
+    $elem-type #word.type
+
+    $len 1 - #len
+    loop {
+        $len 0 = if { break }
+        $stack AST:Types-pop @type
+        $type $elem-type AST:Type-eq not if {
+            $word AST:Word-location "all elements in array need to be of the same type\n" U:abort-with-location
+        }
+        $len 1 - #len
+    }
+
+    $temp-types $elem-type $word.number AST:Type-new-array U:push-temp-type 
+    @array-type
+
+    $stack $array-type AST:Types-push
+    $array-type #word.type
+    0 1 =
+}
+
+fn check-array-init-zero(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Types) -> bool {
+    2 "check-array-init-zero TODO\n" IO:write-all IO:check // TODO
+    1 CORE:exit
+    0 1 =
+}
+
 fn check-array-write(stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 3 < if {
         $word AST:Word-location "expected at least 3 arguments for array write\n" U:abort-with-location

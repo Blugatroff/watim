@@ -1,12 +1,21 @@
 extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
 
+struct Vec2 {
+    x: i32
+    y: i32
+}
 
 fn main "_start" () {
-    local arr: [i32: 4]
-    
     // 0 1 2 3 [4] @arr
 
-    // 4 &arr [$]
+    0 1 2 3 [4] @arr
 
-    0 proc_exit
+    // 4 &arr [&] -- .i32
+    // 4 &arr [$] --  i32
+
+    // 1 struct Vec2 {
+        // 0 #x #y
+    // }
+
+    &arr 3 [$] proc_exit
 }
