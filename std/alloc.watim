@@ -81,9 +81,9 @@ fn alloc(size: i32) -> .i32 {
         $blok 8 + ~ 0 = #unused
 
         // Test whether this blok has enough space for the requested size + the BLOCK_SIZE.
-        $blok-size $size 12 + >= $unused and if {
+        $blok-size $size 12 + ge $unused and if {
             // Is there enough remaining space to split this blok in two$
-            $blok-size $size 12 + 12 + >= if {
+            $blok-size $size 12 + 12 + ge if {
                 // Calculate the position of the new blok.
                 $blok 12 $size + + #new-blok
                 // Load the blok after the one we are splitting.
@@ -151,7 +151,7 @@ fn find-next-free(blok: .i32) -> .i32 {
     loop {
         $b !i32 0 = if { 0 !.i32 break }
         $b 8 + ~ 0 =
-        $b !i32 $blok !i32 > 
+        $b !i32 $blok !i32 gt
         and
         if {
             $b break
@@ -164,7 +164,7 @@ fn find-prev-free(blok: .i32) -> .i32 {
     local b: .i32
     root #b
     loop {
-        $b ~ $blok !i32 >= if {
+        $b ~ $blok !i32 ge if {
             $b break
         }
         $b ~ !.i32 #b
@@ -194,7 +194,7 @@ fn free(ptr: .i32) {
     $blok $next-free !i32 store
     $blok 8 + 0 store
 
-    root !i32 $blok !i32 > if {
+    root !i32 $blok !i32 gt if {
         $blok set-root
     } else {
         $blok root = // The root blok is being freed
@@ -262,7 +262,7 @@ fn print-alloc-list(start: .i32) {
         $blok !i32 0 = if { break }
         $blok ~ !.i32 #next
         $blok 4 + ~ #size
-        $blok 8 + ~ 0 > #used
+        $blok 8 + ~ 0 gt #used
 
         2 "\t" IO:write-all IO:check 
         2 $blok !i32 IO:print-to-fd

@@ -88,14 +88,14 @@ fn Str-unpack(self: Str) -> .i32, i32 {
     $self.ptr $self.len
 }
 fn Str-get(self: .Str, index: i32) -> i32 {
-    $index $self Str-len >= if { 
+    $index $self Str-len ge if { 
         1 "Str-get Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
     $self.ptr $index + load8
 }
 fn Str-slice(self: .Str, index: i32, len: i32) -> Str {
-    $index $len + $self Str-len > if { 
+    $index $len + $self Str-len gt if { 
         1 "Str-slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }

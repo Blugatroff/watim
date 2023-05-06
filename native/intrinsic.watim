@@ -86,7 +86,7 @@ fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32)
     $formatted S:String-free
 }
 fn check-intrinsic-rotl(stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected [i32 | i64, i32] got: " report-error
     }
     $stack $stack AST:Types-len 2 - AST:Types-get AST:Type-ty AST:TYPE_I32 = 
@@ -99,7 +99,7 @@ fn check-intrinsic-rotl(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-pop drop
 }
 fn check-intrinsic-mem-copy(stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 3 < if {
+    $stack AST:Types-len 3 lt if {
         $stack $word "expected [.i32, .i32, i32] got: " report-error
     }
     // TODO: actually check the types :D
@@ -108,7 +108,7 @@ fn check-intrinsic-mem-copy(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-pop drop
 }
 fn check-intrinsic-mod(stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected [i32, i32] got: " report-error
     }
     $stack $stack AST:Types-len 2 - AST:Types-get AST:Type-ty AST:TYPE_I32 = 
@@ -121,7 +121,7 @@ fn check-intrinsic-mod(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-pop drop
 }
 fn check-intrinsic-flip(stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected 2 values on stack got: " report-error
     }
     $stack AST:Types-pop
@@ -131,7 +131,7 @@ fn check-intrinsic-flip(stack: .AST:Types, word: .AST:Word) {
     $stack flip AST:Types-push
 }
 fn check-intrinsic-and-or-or(stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected [bool, bool] or [i32, i32] or [i64, i64] got: " report-error
     }
     $stack $stack AST:Types-len 1 - AST:Types-get AST:Type-ty AST:TYPE_BOOL /= 
@@ -150,7 +150,7 @@ fn check-intrinsic-and-or-or(stack: .AST:Types, word: .AST:Word) {
 fn check-compare-intrinsics(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) {
     local left: .AST:Type
     local right: .AST:Type
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected [i32, i32] got: " report-error
     }
     $stack AST:Types-pop #left
@@ -176,7 +176,7 @@ fn check-intrinsic-load(stack: .AST:Types, word: .AST:Word) {
 fn check-intrinsic-store(stack: .AST:Types, word: .AST:Word) {
     local right: .AST:Type
     local left: .AST:Type
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected a => [.a, a] got: " report-error
     }
     $stack $stack AST:Types-len 1 - AST:Types-get #right
@@ -216,7 +216,7 @@ fn check-intrinsic-not(stack: .AST:Types, word: .AST:Word) {
 fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
     local right: .AST:Type
     local left: .AST:Type
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected [a, a] got: " report-error
     }
     $stack AST:Types-pop #right
@@ -229,7 +229,7 @@ fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
     $stack $left AST:Types-push
 }
 fn check-intrinsic-eq(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $stack $word "expected [a, a] got: " report-error
     }
     $stack $stack AST:Types-len 1 - AST:Types-get

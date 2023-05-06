@@ -22,6 +22,7 @@ Watim = WAT Improved
 - [ ] `continue` instruction for loops.
 - [X] Variable declaration and initiliziation anywhere in function.
 - [ ] Generics using monomorphization.
+- [ ] Type inference
 - [ ] function pointers
 - [ ] closures?
 - [ ] Some sort of Typeclass/Trait system perhaps?
@@ -129,7 +130,7 @@ fn parse(pt: .i32, len: i32) -> i32 {
     0 @n
     loop {
         $pt load8 @d
-        $d 48 >= $d 58 <= and if { // 48 is ascii '0'
+        $d 48 ge $d 58 le and if { // 48 is ascii '0'
             $n $d 48 - + #n
         } else {
             1 "Failed to parse: '" write drop

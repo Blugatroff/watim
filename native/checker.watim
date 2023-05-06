@@ -42,10 +42,11 @@ fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
     local formatter: FMT:Formatter
     local msg: S:String
     FMT:Formatter-new #formatter
-    &formatter "return type mismatch expected: " FMT:Formatter-write
+    &formatter "return type mismatch:\nexpected: " FMT:Formatter-write
     $function AST:Function-rets &formatter AST:Types-format
-    &formatter " got: " FMT:Formatter-write
+    &formatter "\ngot:      " FMT:Formatter-write
     $stack &formatter AST:Types-format
+    &formatter "\n" FMT:Formatter-write
     $formatter FMT:Formatter-into-string #msg
     $function AST:Function-ident L:Token-location
     &msg S:String-unpack
@@ -224,7 +225,7 @@ fn check-word(
 
 fn check-array-init(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Types) -> bool {
     $word.number @len
-    $stack AST:Types-len $len < if {
+    $stack AST:Types-len $len lt if {
         $word AST:Word-location "not enough values on stack to construct array\n" U:abort-with-location
     }
     $stack AST:Types-len 0 = if {
@@ -258,7 +259,7 @@ fn check-array-init-zero(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Ty
 }
 
 fn check-array-write(stack: .AST:Types, word: .AST:Word) -> bool {
-    $stack AST:Types-len 3 < if {
+    $stack AST:Types-len 3 lt if {
         $word AST:Word-location "expected at least 3 arguments for array write\n" U:abort-with-location
     }
     $stack AST:Types-pop @type
@@ -285,7 +286,7 @@ fn array-access-mismatch(word: .AST:Word, array-type: .AST:Type) {
     2 "\n" IO:write-all IO:check
 }
 fn check-array-read(stack: .AST:Types, word: .AST:Word) -> bool {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $word AST:Word-location "expected at least 2 arguments for array read\n" U:abort-with-location
     }
     $stack AST:Types-pop @index-type
@@ -304,7 +305,7 @@ fn check-array-read(stack: .AST:Types, word: .AST:Word) -> bool {
     0 1 =
 }
 fn check-array-ref(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Types) -> bool {
-    $stack AST:Types-len 2 < if {
+    $stack AST:Types-len 2 lt if {
         $word AST:Word-location "expected at least 2 arguments for array read\n" U:abort-with-location
     }
     $stack AST:Types-pop @index-type
@@ -785,12 +786,12 @@ fn check-blok(
     AST:Types-new @remaining-types
     $orig-stack-len @i
     loop {
-        $i $stack AST:Types-len >= if { break }
+        $i $stack AST:Types-len ge if { break }
         $remaining-types $stack $i AST:Types-get AST:Types-push
         $i 1 + #i
     }
     loop {
-        $stack AST:Types-len $orig-stack-len <= if { break }
+        $stack AST:Types-len $orig-stack-len le if { break }
         $stack AST:Types-pop drop
     }
     $bs $word $remaining-types BS:BreakStack-new BS:BreakStacks-push

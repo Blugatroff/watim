@@ -60,7 +60,7 @@ fn main() {
     &args "-q" find-flag if { disable-logging }
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
 
-    &args S:StringVec-len 1 <= if { print-usage-and-exit }
+    &args S:StringVec-len 1 le if { print-usage-and-exit }
     &args 1 S:StringVec-get #path 
  
     mode COMPILE = if {

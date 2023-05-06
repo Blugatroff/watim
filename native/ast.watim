@@ -140,7 +140,7 @@ fn Words-len(self: .Words) -> i32 {
     $self.len
 }
 fn Words-get(self: .Words, index: i32) -> .Word {
-    $index $self.len >= if {
+    $index $self.len ge if {
         2 "Words: Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
@@ -150,7 +150,7 @@ fn Words-push(self: .Words, word: Word) {
     local new-buf: .Word
     local size: i32
     local dst-ptr: .Word
-    $self.len 1 + $self.cap <= if {
+    $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(Word) * + #dst-ptr
         $word >>dst-ptr
         $self.len 1 + #self.len
@@ -162,7 +162,7 @@ fn Words-push(self: .Words, word: Word) {
         $self.len sizeof(Word) *
         CORE:copy
         $size #self.cap
-        $self.len 0 > if {
+        $self.len 0 gt if {
             $self.ptr !.i32 A:free
         }
         $new-buf #self.ptr
@@ -182,7 +182,7 @@ fn Words-free(self: Words) {
         $self.len 0 = if { break }
         &self Words-pop Word-free
     }
-    $self.cap 0 > if { $self.ptr !.i32 A:free }
+    $self.cap 0 gt if { $self.ptr !.i32 A:free }
 }
 
 fn TYPE_I32() -> i32 { 1 }
@@ -191,6 +191,7 @@ fn TYPE_BOOL() -> i32 { 3 }
 fn TYPE_PTR() -> i32 { 4 }
 fn TYPE_STRUCT() -> i32 { 5 }
 fn TYPE_ARRAY() -> i32 { 6 }
+fn TYPE_HOLE() -> i32 { 7 }
 
 fn type-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -200,6 +201,7 @@ fn type-ty-name(ty: i32) -> .i32, i32 {
         $ty TYPE_PTR = if { "TYPE_PTR" break }
         $ty TYPE_STRUCT = if { "TYPE_STRUCT" break }
         $ty TYPE_ARRAY = if { "TYPE_ARRAY" break }
+        $ty TYPE_HOLE = if { "TYPE_HOLE" break }
         "invalid TYPE TY" break
     }
 }
@@ -222,6 +224,10 @@ fn Type-size(self: .Type) -> i32 {
         }
         $self.ty TYPE_ARRAY = if {
             $self.child Type-size $self.length * break
+        }
+        $self.ty TYPE_HOLE = if {
+            2 "cannot get size of TYPE_HOLE\n" IO:write-all IO:check
+            0 0 / drop
         }
         4 break
     }
@@ -286,6 +292,9 @@ fn Type-new-array(type: .Type, length: i32) -> .Type {
     $length #self.length
     $self
 }
+fn Type-new-hole() -> .Type {
+    TYPE_HOLE Type-new
+}
 fn Type-set-struc(self: .Type, struc: .Struct) {
     $struc !.Struct #self.struc
 }
@@ -332,6 +341,9 @@ fn Type-format(self: .Type, formatter: .FMT:Formatter) {
             $self.length $formatter U:i32-format
             $formatter "]" FMT:Formatter-write
             break
+        }
+        $self Type-ty TYPE_ARRAY = if {
+            $formatter "<a>" FMT:Formatter-write break
         }
         2 "Type-format unhandled Type-ty: " IO:write-all IO:check
         2 $self Type-ty type-ty-name IO:write-all IO:check
@@ -416,7 +428,7 @@ fn Types-format(self: .Types, formatter: .FMT:Formatter) {
         loop {
             $i $self Types-len = if { break }
             $self $i Types-get $formatter Type-format
-            $i 1 + $self Types-len < if {
+            $i 1 + $self Types-len lt if {
                 $formatter ", " FMT:Formatter-write
             }
             $i 1 + #i
@@ -783,6 +795,78 @@ fn Locals-contains-mem-or-struc(self: .Locals) -> bool {
     }
 }
 
+struct Generic {
+    ident: .L:Token
+}
+fn Generic-new(ident: .L:Token) -> Generic {
+    local self: Generic
+    $ident #self.ident
+    $self
+}
+fn Generic-free(self: Generic) { }
+
+struct Generics {
+    ptr: .Generic
+    cap: i32
+    len: i32
+}
+
+fn Generics-new() -> Generics {
+    local self: Generics
+    0 !.Generic #self.ptr
+    0 #self.len
+    0 #self.cap
+    $self
+}
+fn Generics-len(self: .Generics) -> i32 {
+    $self.len
+}
+fn Generics-get(self: .Generics, index: i32) -> .Generic {
+    $index $self.len ge if {
+        2 "Generics: Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self.ptr $index sizeof(Generic) * +
+}
+fn Generics-push(self: .Generics, word: Generic) {
+    local new-buf: .Generic
+    local size: i32
+    local dst-ptr: .Generic
+    $self.len 1 + $self.cap le if {
+        $self.ptr $self.len sizeof(Generic) * + #dst-ptr
+        $word >>dst-ptr
+        $self.len 1 + #self.len
+    } else {
+        $self.cap 2 CORE:max 2 * #size
+        $size sizeof(Generic) * A:alloc !.Generic #new-buf
+        $self.ptr !.i32
+        $new-buf !.i32
+        $self.len sizeof(Generic) *
+        CORE:copy
+        $size #self.cap
+        $self.len 0 gt if {
+            $self.ptr !.i32 A:free
+        }
+        $new-buf #self.ptr
+        $self $word Generics-push
+    }
+}
+fn Generics-pop(self: .Generics) -> Generic {
+    $self.len 0 = if {
+        2 "Cannot pop from empty Generics" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self $self.len 1 - Generics-get ~
+    $self.len 1 - #self.len
+}
+fn Generics-free(self: Generics) {
+    loop {
+        $self.len 0 = if { break }
+        &self Generics-pop Generic-free
+    }
+    $self.cap 0 gt if { $self.ptr !.i32 A:free }
+}
+
 struct Function {
     ident: .L:Token
     export: .L:Token
@@ -791,10 +875,12 @@ struct Function {
     body: Words
     diverges: bool
     reachable: bool
+    generics: Generics
 }
 fn Function-new(
     ident: .L:Token, 
     export: .L:Token, 
+    generics: Generics,
     ret: .Types,
     locals: Locals,
     body: Words
@@ -803,6 +889,7 @@ fn Function-new(
     sizeof(Function) A:alloc !.Function #self
     $ident #self.ident
     $export #self.export
+    $generics #self.generics
     $ret #self.ret
     $locals #self.locals
     $body #self.body
@@ -813,6 +900,7 @@ fn Function-free(self: .Function) {
     $self.ret Types-free-container
     $self.body Words-free
     $self.locals Locals-free
+    $self.generics Generics-free
     $self !.i32 A:free
 }
 fn Function-rets(self: .Function) -> .Types {

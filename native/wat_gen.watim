@@ -335,7 +335,7 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr:
         $i &word.loads IV:I32Vec-len = if { break }
         &word.loads $i IV:I32Vec-get #offset
 
-        &word.loads IV:I32Vec-len $i 1 + < 
+        &word.loads IV:I32Vec-len $i 1 + lt
         $word.type AST:Type-ty AST:TYPE_STRUCT /= 
         or if {
             $formatter "i32.load offset=" FMT:Formatter-write
@@ -416,7 +416,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
         $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
         $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
         $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
-        &word.loads IV:I32Vec-len 0 > if {
+        &word.loads IV:I32Vec-len 0 gt if {
             $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
             loop {
                 &word.loads IV:I32Vec-len $i = if { break }
@@ -438,7 +438,7 @@ fn generate-set(formatter: .FMT:Formatter, word: .AST:Word) {
             $formatter " memory.copy" FMT:Formatter-write
         }
     } else {
-        &word.loads IV:I32Vec-len 0 > if {
+        &word.loads IV:I32Vec-len 0 gt if {
             $formatter "local.get $" FMT:Formatter-write
             $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
             $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
@@ -625,7 +625,7 @@ fn generate-params(formatter: .FMT:Formatter, params: .AST:Locals) {
         $params $i AST:Locals-get #locl
         $locl AST:Local-ty AST:LOCAL_ARGUMENT = if {
             $formatter $locl generate-param
-            $i 1 + $params AST:Locals-len < if { 
+            $i 1 + $params AST:Locals-len lt if { 
                 $formatter " " FMT:Formatter-write
             }
         }
@@ -642,7 +642,7 @@ fn generate-rets(formatter: .FMT:Formatter, rets: .AST:Types) {
     loop {
         $i $rets AST:Types-len = if { break }
         $formatter $rets $i AST:Types-get generate-ret
-        $i 1 + $rets AST:Types-len < if {
+        $i 1 + $rets AST:Types-len lt if {
             $formatter " " FMT:Formatter-write
         }
         $i 1 + #i
@@ -941,7 +941,7 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
                 }
                 $j 1 + #j
             }
-            $j 0 > if {
+            $j 0 gt if {
                 $max-args $j CORE:max #max-args
             }
         }
@@ -1052,11 +1052,11 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
     0 >>locl-copy-space-ptr
 
     $function AST:Function-has-mem-or-struc-locl
-    $struc-returnals-space 0 > or
-    $locl-copy-count 0 > or
+    $struc-returnals-space 0 gt or
+    $locl-copy-count 0 gt or
     #uses-stack
 
-    $struc-returnals-space 0 > if { loop {
+    $struc-returnals-space 0 gt if { loop {
         $i $max-args = if { break }
         $formatter FMT:Formatter-write-indent
         $formatter "(local $s" FMT:Formatter-write
@@ -1066,7 +1066,7 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
     } }
     0 #i
 
-    $locl-copy-count 0 > if {
+    $locl-copy-count 0 gt if {
         $formatter FMT:Formatter-write-indent
         $formatter "(local $locl-copy-spac:e i32)\n" FMT:Formatter-write
     }
@@ -1077,7 +1077,7 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
         $formatter FMT:Formatter-write-indent
         $formatter "(local $stac:k i32)\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
-        $struc-returnals-space 0 > if {
+        $struc-returnals-space 0 gt if {
             $formatter "(local $struc-returnals-spac:e i32)\n" FMT:Formatter-write
             $formatter FMT:Formatter-write-indent
             $formatter "global.get $stac:k local.set $stac:k\n" FMT:Formatter-write
@@ -1088,7 +1088,7 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
         }
     }
     $formatter $function generate-params-receiving
-    $locl-copy-space 0 > if {
+    $locl-copy-space 0 gt if {
         $formatter FMT:Formatter-write-indent
         $formatter $locl-copy-space "locl-copy-spac:e\n" generate-mem
     }

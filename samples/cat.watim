@@ -15,7 +15,7 @@ fn main "_start" () {
 
     ARGS:get-args #args
 
-    &args S:StringVec-len 1 <= if {
+    &args S:StringVec-len 1 le if {
         2 "\ncat written in Watim\n" IO:write-all IO:check
          2 "\ncat written in Watim\n" IO:write-all IO:check
         2 "\tUsage: ./run.sh ./samples/cat.watim <file>\n" IO:write-all IO:check

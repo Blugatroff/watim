@@ -19,7 +19,7 @@ fn I32Vec-len(vec: .I32Vec) -> i32 {
     $vec.len
 }
 fn I32Vec-get(vec: .I32Vec, index: i32) -> i32 {
-    $index $vec I32Vec-len >= if { 
+    $index $vec I32Vec-len ge if { 
         2 "Index out of bounds\n" IO:write-all IO:check
         0 0 / drop
         1 CORE:exit
@@ -28,7 +28,7 @@ fn I32Vec-get(vec: .I32Vec, index: i32) -> i32 {
 }
 
 fn I32Vec-set(self: .I32Vec, index: i32, value: i32) -> i32 {
-    $index $self I32Vec-len >= if {
+    $index $self I32Vec-len ge if {
         2 "Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
@@ -36,12 +36,12 @@ fn I32Vec-set(self: .I32Vec, index: i32, value: i32) -> i32 {
     $self.ptr $index 4 * + $value store
 }
 fn I32Vec-free(self: I32Vec) {
-    $self.cap 0 > if { $self.ptr A:free }
+    $self.cap 0 gt if { $self.ptr A:free }
 }
 fn I32Vec-push(vec: .I32Vec, val: i32) {
     local new-buf: .i32
     local size: i32
-    $vec.len 1 + $vec.cap <= if {
+    $vec.len 1 + $vec.cap le if {
         $vec.ptr $vec.len 4 * + $val store
         $vec.len 1 + #vec.len
     } else {
@@ -52,7 +52,7 @@ fn I32Vec-push(vec: .I32Vec, val: i32) {
         $vec.len 4 *
         CORE:copy
         $size #vec.cap
-        $vec.len 0 > if {
+        $vec.len 0 gt if {
             $vec.ptr !.i32 A:free
         }
         $new-buf #vec.ptr

@@ -63,7 +63,7 @@ fn parse(pt: .i32, len: i32) -> i32 {
     $len #original-len
     loop {
         $pt load8 #d
-        $d 48 >= $d 58 <= and if { // 48 is ascii '0'
+        $d 48 ge $d 58 le and if { // 48 is ascii '0'
             $n $d 48 - + #n
         } else {
             2 "Failed to parse: '" write drop
@@ -105,7 +105,7 @@ fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
         $file $buf-addr $read-total + $buf-size $read-total - read #code #read
         $code 0 = if {
             $read-total $read + #read-total
-            $read-total $buf-size >= 
+            $read-total $buf-size ge
             $read 0 = or if {
                 $read-total 0 break
             }

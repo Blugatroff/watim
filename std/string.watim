@@ -50,7 +50,7 @@ fn String-new-inline(ptr: .i32, len: i32) -> String {
     $self
 }
 fn String-new(ptr: .i32, len: i32) -> String {
-    $len sizeof(String) 4 - <= if {
+    $len sizeof(String) 4 - le if {
         $ptr $len String-new-inline
     } else {
         $ptr $len String-new-heap
@@ -68,7 +68,7 @@ fn String-push(self: .String, char: i32) {
     local size: i32
     $self String-is-inline if {
         $self String-len #size
-        $size sizeof(String) 4 - < if {
+        $size sizeof(String) 4 - lt if {
             &self.len $self String-len + $char store8
             $size 1 + 1 rotl 1 or !.i32 #self.ptr
         } else {
@@ -76,7 +76,7 @@ fn String-push(self: .String, char: i32) {
             $self $size $char String-set
         }
     } else {
-        $self.len 1 + $self.cap > if {
+        $self.len 1 + $self.cap gt if {
             $self.cap 2 CORE:max 2 * #size
             $size A:alloc #new-buf
             $self.ptr $new-buf $self.len CORE:copy
@@ -122,7 +122,7 @@ fn String-merge(self: String, other: String) -> String {
     $self
 }
 fn String-set(self: .String, index: i32, char: i32) {
-    $index $self String-len >= if {
+    $index $self String-len ge if {
         2 "Index out of bounds: " IO:write-all IO:check
         2 $index IO:print-to-fd
         2 ", len is: " IO:write-all IO:check
@@ -149,7 +149,7 @@ fn StringVec-len(self: .StringVec) -> i32 {
     $self.len
 }
 fn StringVec-get(self: .StringVec, index: i32) -> .String {
-    $index $self StringVec-len >= if { 
+    $index $self StringVec-len ge if { 
         1 "Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
@@ -163,7 +163,7 @@ fn StringVec-free(self: StringVec) {
         &self $i StringVec-get ~ String-free
         $i 1 + #i
     }
-    &self StringVec-len 0 > if { 
+    &self StringVec-len 0 gt if { 
         $self.ptr !.i32 A:free 
     }
 }
@@ -171,7 +171,7 @@ fn StringVec-push(self: .StringVec, str: String) {
     local new-buf: .String
     local size: i32
     local ptr: .String
-    $self.len 1 + $self.cap <= if {
+    $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(String) * + #ptr
         $str >>ptr
         // increment len
@@ -184,7 +184,7 @@ fn StringVec-push(self: .StringVec, str: String) {
         $self.len sizeof(String) * 
         CORE:copy
         $size #self.cap
-        $self.len 0 > if {
+        $self.len 0 gt if {
             $self.ptr !.i32 A:free
         }
         $new-buf #self.ptr
