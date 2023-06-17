@@ -741,22 +741,50 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
                 break
             } else { drop }
             AST:WORD_CALL $token AST:Word-new #word
-            $self.current $self.tokens L:Tokens-len lt if {
-                $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
-                    $self Parser-advance drop
-                    $self.current $self.tokens L:Tokens-len = if { 
-                        $self.file STR:Str-unpack "Expected ident found EOF" U:abort
-                    }
-                    $token L:Token-lexeme #word.qualifier
-                    $self Parser-advance #token
-                    $token L:Token-ty L:TOKEN_IDENT /= if {
-                        $token L:Token-location "expected ident" U:abort-with-location
-                    }
-                    $token L:Token-lexeme #word.ident
-                    $word break
-                }
-            }
             $token L:Token-lexeme #word.ident
+            $self.current $self.tokens L:Tokens-len ge if {
+                $word break
+            }
+            $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
+                $self Parser-advance drop
+                $self.current $self.tokens L:Tokens-len = if { 
+                    $self.file STR:Str-unpack "Expected ident found EOF" U:abort
+                }
+                $token L:Token-lexeme #word.qualifier
+                $self Parser-advance #token
+                $token L:Token-ty L:TOKEN_IDENT /= if {
+                    $token L:Token-location "expected ident" U:abort-with-location
+                }
+                $token L:Token-lexeme #word.ident
+            }
+            $self.current $self.tokens L:Tokens-len ge if {
+                $word break
+            }
+            $self Parser-peek L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if {
+                $word break
+            }
+            $self Parser-advance drop
+            AST:Types-new #word.generics
+            loop {
+                $self.current $self.tokens L:Tokens-len ge if { break }
+                $self Parser-peek L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
+
+                $self Parser-parse-type @type
+
+                $word.generics $type AST:Types-push
+
+                $self.current $self.tokens L:Tokens-len ge if { 
+                    $self.file STR:Str-unpack "Expected > or , found EOF" U:abort
+                }
+                $self Parser-peek L:Token-ty L:TOKEN_COMMA /= if { break }
+            }
+            $self.current $self.tokens L:Tokens-len ge if {
+                $self.file STR:Str-unpack "Expected > found EOF" U:abort
+            }
+            $self Parser-advance #token
+            $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE /= if {
+                $self.file STR:Str-unpack "Expected >" U:abort
+            }
             $word break
         }
         $ty L:TOKEN_DOLLAR = if {

@@ -828,26 +828,81 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
         &msg $word AST:Word-ident ~ STR:Str-unpack S:String-append
         &msg "` not found\n" S:String-append
         $word AST:Word-location &msg S:String-unpack U:abort-with-location
-        $msg S:String-free
     } else { 
         #function #ext
     }
 
-    AST:Types-new #params
     $function !i32 0 /= if {
-        $function AST:Function-locals #param-locals
-        $function AST:Function-rets #ret
+        $function AST:Function-locals
+        $function AST:Function-rets
+        &function.generics
     } else {
-        $ext AST:Extern-parameters #param-locals
-        $ext AST:Extern-rets #ret
+        $ext AST:Extern-parameters
+        $ext AST:Extern-rets
+        0 !.AST:Generics
+    } @generics @ret @param-locals
+
+    $word.generics 0 !.AST:Types = if { 0 } else { 
+        $word.generics AST:Types-len 
+    } @number-generics-call
+    $generics 0 !.AST:Generics = if { 0 } else { $generics AST:Generics-len } @number-generics-function
+ 
+    $number-generics-call
+    $number-generics-function
+    /= if {
+        $word AST:Word-location "mismatched number of generics" U:abort-with-location
     }
+
+    $word.generics 0 !.AST:Types /= // there are generic arguments
+    $generics 0 !.AST:Generics /=   // the function has generics
+    and if {
+        AST:Types-new @instance
+        0 @i
+        loop {
+            $generics AST:Generics-len $i = if { break }
+
+            $instance 
+            $word.generics $i AST:Types-get
+            AST:Types-push
+
+            $i 1 + #i
+        }
+        $instance
+    } else {
+        0 !.AST:Types
+    } @instance
+
+    AST:Types-new #params
+    0 @instance-index
     loop {
         $i $param-locals AST:Locals-len = if { break }
         $param-locals $i AST:Locals-get #locl
         $locl AST:Local-ty AST:LOCAL_ARGUMENT = if {
-            $params $locl AST:Local-type AST:Types-push
+            $params $locl AST:Local-type @type
+
+            $type AST:Type-ty AST:TYPE_GENERIC = 
+            $instance 0 !.AST:Types /= and if {
+                $instance $instance-index AST:Types-get
+                AST:Types-push
+                $instance-index 1 + #instance-index
+            } else {
+                $type AST:Types-push
+            }
         }
         $i 1 + #i
+    }
+
+    $function !i32 0 /= $instance 0 !.AST:Types /= and if {
+        $function.instances $instance AST:TypesTypes-contains if {
+            #word.instance-index
+            $instance AST:Types-free-container
+        } else {
+            drop
+            $function.instances AST:TypesTypes-len #word.instance-index
+            $function.instances $instance AST:TypesTypes-push
+        }
+    } else {
+        0 #word.instance-index
     }
 
     $ret AST:Types-clone-container #word.rets
