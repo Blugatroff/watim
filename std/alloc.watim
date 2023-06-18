@@ -100,7 +100,7 @@ fn alloc(size: i32) -> .i32 {
             $new-blok !i32 0 = if {
                 $blok !..i32 $next store
             } else {
-                $new-blok !i32 >>blok
+                $new-blok !i32 =>blok
 
                 // only adjust the size of the blok if it was split
                 $blok 4 + $size 12 + store

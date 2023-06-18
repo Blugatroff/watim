@@ -858,7 +858,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
         $ty L:TOKEN_TILDE = if {
             AST:WORD_LOAD $token AST:Word-new break
         }
-        $ty L:TOKEN_RIGHT_RIGHT = if {
+        $ty L:TOKEN_DOUBLE_ARROW = if {
             $self $token Parser-parse-store break
         }
         $ty L:TOKEN_COLON_COLON = if {
@@ -1149,7 +1149,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_DOT = or
     $ty L:TOKEN_AMPERSAND = or
     $ty L:TOKEN_TILDE = or
-    $ty L:TOKEN_RIGHT_RIGHT = or
+    $ty L:TOKEN_DOUBLE_ARROW = or
     $ty L:TOKEN_COLON_COLON = or
     $ty L:TOKEN_LEFT_BRACKET = or
     $ty L:TOKEN_BLOCK = or

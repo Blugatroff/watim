@@ -152,7 +152,7 @@ fn Words-push(self: .Words, word: Word) {
     local dst-ptr: .Word
     $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(Word) * + #dst-ptr
-        $word >>dst-ptr
+        $word =>dst-ptr
         $self.len 1 + #self.len
     } else {
         $self.cap 2 CORE:max 2 * #size
@@ -913,7 +913,7 @@ fn Generics-push(self: .Generics, word: Generic) {
     local dst-ptr: .Generic
     $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(Generic) * + #dst-ptr
-        $word >>dst-ptr
+        $word =>dst-ptr
         $self.len 1 + #self.len
     } else {
         $self.cap 2 CORE:max 2 * #size
@@ -1331,7 +1331,7 @@ fn Imports-free(self: .Imports) {
 fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
     local alloced-path: .S:String
     sizeof(S:String) A:alloc !.S:String #alloced-path
-    $path >>alloced-path
+    $path =>alloced-path
     &self.map $ident $alloced-path !i32 M:StringMap-insert if {
         1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
         !.S:String ~ S:String-free

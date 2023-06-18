@@ -624,7 +624,7 @@ fn check-iff(
     $word AST:Word-iff #iff
 
     $locals #iff.locals.parent
-    $scope-id ~ 1 + >>scope-id
+    $scope-id ~ 1 + =>scope-id
     $scope-id ~ #iff.locals.id
     
     $temp-types $bs $modules $module $iff-stack &iff.locals $scope-id $iff AST:If-body check-words #true-branch-diverges
@@ -704,7 +704,7 @@ fn check-lop(
     BS:BreakStacks-new #bs
 
     $locals #word.lop.locals.parent
-    $scope-id ~ 1 + >>scope-id
+    $scope-id ~ 1 + =>scope-id
     $scope-id ~ #word.lop.locals.id
 
     $temp-types $bs $modules $module $stack &word.lop.locals $scope-id &word.lop.body check-words drop
@@ -777,7 +777,7 @@ fn check-blok(
     BS:BreakStacks-new @bs
 
     $locals #word.blok.locals.parent
-    $scope-id ~ 1 + >>scope-id
+    $scope-id ~ 1 + =>scope-id
     $scope-id ~ #word.blok.locals.id
     
     $stack AST:Types-len @orig-stack-len

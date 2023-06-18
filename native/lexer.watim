@@ -38,7 +38,7 @@ fn TOKEN_STRUCT() -> i32 { 29 }
 fn TOKEN_AMPERSAND() -> i32 { 30 }
 fn TOKEN_AT() -> i32 { 31 }
 fn TOKEN_TILDE() -> i32 { 33 }
-fn TOKEN_RIGHT_RIGHT() -> i32 { 34 }
+fn TOKEN_DOUBLE_ARROW() -> i32 { 34 }
 fn TOKEN_COLON_COLON() -> i32 { 35 }
 fn TOKEN_LEFT_BRACKET() -> i32 { 36 }
 fn TOKEN_RIGHT_BRACKET() -> i32 { 37 }
@@ -81,7 +81,7 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_AMPERSAND  = if { "TOKEN_AMPERSAND" break }
         $ty TOKEN_AT  = if { "TOKEN_AT" break }
         $ty TOKEN_TILDE  = if { "TOKEN_TILDE" break }
-        $ty TOKEN_RIGHT_RIGHT = if { "TOKEN_RIGHT_RIGHT" break }
+        $ty TOKEN_DOUBLE_ARROW = if { "TOKEN_DOUBLE_ARROW" break }
         $ty TOKEN_COLON_COLON = if { "TOKEN_COLON_COLON" break }
         $ty TOKEN_LEFT_BRACKET = if { "TOKEN_LEFT_BRACKET" break }
         $ty TOKEN_RIGHT_BRACKET = if { "TOKEN_RIGHT_BRACKET" break }
@@ -393,19 +393,21 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             break
         }
         $char ">" drop load8 = if {
+            &lexer.input $lexer.index 1 STR:Str-slice #lexeme
+            $lexer.index 1 + #lexer.index
+            $lexer.column 1 + #lexer.column
+            TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new break
+        } 
+        $char "=" drop load8 = if {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 
                 &lexer.input $lexer.index 1 + STR:Str-get ">" drop load8 = if {
                     &lexer.input $lexer.index 2 STR:Str-slice #lexeme
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
-                    TOKEN_RIGHT_RIGHT $lexeme $lexer.file $lexer.line $lexer.column Token-new 
+                    TOKEN_DOUBLE_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
                     break
                 }
             }
-            &lexer.input $lexer.index 1 STR:Str-slice #lexeme
-            $lexer.index 1 + #lexer.index
-            $lexer.column 1 + #lexer.column
-            TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new break
         } 
         $char "-" drop load8 = if {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 

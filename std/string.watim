@@ -72,7 +72,7 @@ fn String-push(self: .String, char: i32) {
             &self.len $self String-len + $char store8
             $size 1 + 1 rotl 1 or !.i32 #self.ptr
         } else {
-            &self.len $size 1 + String-new >>self
+            &self.len $size 1 + String-new =>self
             $self $size $char String-set
         }
     } else {
@@ -173,7 +173,7 @@ fn StringVec-push(self: .StringVec, str: String) {
     local ptr: .String
     $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(String) * + #ptr
-        $str >>ptr
+        $str =>ptr
         // increment len
         $self.len 1 + #self.len
     } else {

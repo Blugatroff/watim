@@ -32,7 +32,7 @@ syn match watimNumber "\<\d\+\>"
 syntax match watimVariable "$[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimAssign "#[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimRef "&[0-9,a-z,A-Z,\-,*,_]*"
-syntax match watimStore ">>[0-9,a-z,A-Z,\-,*,_]*"
+syntax match watimStore "=>[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimDeclare "@[0-9,a-z,A-Z,\-,*,_]*"
 
 syntax keyword watimPrimitiveTypes i64 i32 bool

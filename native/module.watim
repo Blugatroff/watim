@@ -235,7 +235,7 @@ fn Modules-free(self: .Modules) {
 fn Modules-insert(self: .Modules, path: S:String, module: Module) {
     local alloced-module: .Module
     sizeof(Module) A:alloc !.Module #alloced-module
-    $module >>alloced-module
+    $module =>alloced-module
     &self.inner $path $alloced-module !i32 MAP:StringMap-insert if {
         !.Module #alloced-module
         2 "WARNING: overwrote module: " IO:write-all IO:check 1 &path S:String-unpack IO:write-all IO:check

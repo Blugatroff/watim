@@ -105,8 +105,8 @@ memory PREOPENED_PATHS: S:StringVec 12
 fn init() {
     local a: .IV:I32Vec
     local b: .S:StringVec
-    $PREOPENED_FDS #a IV:I32Vec-new >>a
-    $PREOPENED_PATHS #b S:StringVec-new >>b
+    $PREOPENED_FDS #a IV:I32Vec-new =>a
+    $PREOPENED_PATHS #b S:StringVec-new =>b
 }
 fn uninit() {
     $PREOPENED_FDS ~ IV:I32Vec-free
@@ -122,7 +122,7 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
     $PREOPENED ~ not if {
         3 #fd
         $PREOPENED_FDS IV:I32Vec-new store
-        S:StringVec-new >>PREOPENED_PATHS
+        S:StringVec-new =>PREOPENED_PATHS
         loop {
             $fd &prestat fd_prestat_get #code
             // 8 = Bad file descriptor
@@ -144,7 +144,7 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
             $buf A:free
             $fd 1 + #fd
         }
-        1 1 = >>PREOPENED
+        1 1 = =>PREOPENED
     }
     $PREOPENED_FDS $PREOPENED_PATHS $code
 }

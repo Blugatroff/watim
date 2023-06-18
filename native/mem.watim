@@ -9,7 +9,7 @@ import "./lexer.watim" as L
 fn process(global-mem-start: i32, modules: .M:Modules) -> i32 {
     memory mem-start: i32 4
     local i: i32
-    $global-mem-start >>mem-start
+    $global-mem-start =>mem-start
     loop {
         $i $modules M:Modules-len = if { break }
         $mem-start $modules $i M:Modules-get-value process-module
@@ -39,7 +39,7 @@ fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Local
     local address: i32
     $global-mem-address ~ #address
     $address 4 CORE:align-to #address
-    $address $mem.size + >>global-mem-address 
+    $address $mem.size + =>global-mem-address 
     $address #mem.address
 }
 

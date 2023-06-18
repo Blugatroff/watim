@@ -208,7 +208,7 @@ fn generate-load(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Typ
 fn generate-array-init(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
     $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
     $locl-copy-space-ptr ~ $formatter U:i32-format
-    $locl-copy-space-ptr ~ $word.type AST:Type-size + >>locl-copy-space-ptr
+    $locl-copy-space-ptr ~ $word.type AST:Type-size + =>locl-copy-space-ptr
     $formatter " i32.add\n" FMT:Formatter-write
     $word.number @len
     $len 1 - @i
@@ -246,7 +246,7 @@ fn generate-array-ref(formatter: .FMT:Formatter, word: .AST:Word) {
 fn generate-load-struc(formatter: .FMT:Formatter, type: .AST:Type, locl-copy-space-ptr: .i32) { 
     $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
     $locl-copy-space-ptr ~ $formatter U:i32-format
-    $locl-copy-space-ptr ~ $type AST:Type-size + >>locl-copy-space-ptr 
+    $locl-copy-space-ptr ~ $type AST:Type-size + =>locl-copy-space-ptr 
     $formatter " i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const " FMT:Formatter-write
     $type AST:Type-size $formatter U:i32-format
     $formatter " memory.copy" FMT:Formatter-write
@@ -318,7 +318,7 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr:
         $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
         $locl-copy-space-ptr ~ $formatter U:i32-format
         $formatter " i32.add call $intrinsic:dupi32 " FMT:Formatter-write
-        $locl-copy-space-ptr ~ $word.type AST:Type-size + >>locl-copy-space-ptr 
+        $locl-copy-space-ptr ~ $word.type AST:Type-size + =>locl-copy-space-ptr 
     }
     $formatter "local.get $" FMT:Formatter-write
     $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
@@ -405,7 +405,7 @@ fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, wor
                 $type AST:Type-struc AST:Struct-size #struc-size
                 $struc-size $formatter U:i32-format
                 $formatter " memory.copy\n" FMT:Formatter-write
-                $struc-returnals-space-ptr ~ $struc-size + >>struc-returnals-space-ptr 
+                $struc-returnals-space-ptr ~ $struc-size + =>struc-returnals-space-ptr 
             } else {
                 $formatter "local.get $s" FMT:Formatter-write
                 $i 1 - $formatter U:i32-format
@@ -1072,10 +1072,10 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
     $formatter $instance $function AST:Function-body generate-word-locals
 
     $function AST:Function-body measure-struc-returnals-space #max-args #struc-returnals-space
-    0 >>struc-returnals-space-ptr
+    0 =>struc-returnals-space-ptr
 
     $function AST:Function-body measure-locl-copy-space #locl-copy-count #locl-copy-space
-    0 >>locl-copy-space-ptr
+    0 =>locl-copy-space-ptr
 
     $function AST:Function-has-mem-or-struc-locl
     $struc-returnals-space 0 gt or
