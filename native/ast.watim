@@ -1141,12 +1141,14 @@ fn Fields-get(self: .Fields, index: i32) -> .Field {
 struct Struct {
     ident: .L:Token
     fields: .Fields
+    generics: Generics
 }
-fn Struct-new(ident: .L:Token, fields: .Fields) -> .Struct {
+fn Struct-new(ident: .L:Token, fields: .Fields, generics: Generics) -> .Struct {
     local self: .Struct
     sizeof(Struct) A:alloc !.Struct #self
     $ident #self.ident
     $fields #self.fields
+    $generics #self.generics
     $self
 }
 fn Struct-free(self: .Struct) {

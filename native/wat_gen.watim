@@ -823,11 +823,14 @@ fn generate-locals(formatter: .FMT:Formatter, generics: .AST:Types, locals: .AST
         $i 1 + #i
     }
 }
-fn generate-mem(formatter: .FMT:Formatter, size: i32, ident-ptr: .i32, ident-len: i32) {
+fn generate-mem(formatter: .FMT:Formatter, size: i32, ident-ptr: .i32, ident-len: i32, scope-id: i32, shadow-id: i32) {
     $formatter "global.get $stac:k global.get $stac:k i32.const " FMT:Formatter-write
     $size 4 CORE:align-to $formatter U:i32-format
     $formatter " i32.add global.set $stac:k local.set $" FMT:Formatter-write
+
+    $scope-id 0 /= if { $scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
     $formatter $ident-ptr $ident-len FMT:Formatter-write
+    $shadow-id 0 /= if { $shadow-id $formatter U:i32-format }
 }
 fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
     local i: i32
@@ -841,6 +844,8 @@ fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
                 $formatter 
                 $locl AST:Local-type AST:Type-struc AST:Struct-size
                 $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
+                $locl.scope-id
+                $locl.shadow-id
                 generate-mem
                 $formatter "\n" FMT:Formatter-write
             }
@@ -849,6 +854,8 @@ fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
                 $formatter 
                 $locl AST:Local-type AST:Type-size
                 $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
+                $locl.scope-id
+                $locl.shadow-id
                 generate-mem
                 $formatter "\n" FMT:Formatter-write
             }
@@ -858,12 +865,50 @@ fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
             $formatter 
             $locl.size
             $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
+            $locl.scope-id
+            $locl.shadow-id
             generate-mem
             $formatter "\n" FMT:Formatter-write
         }
         $i 1 + #i
     }
 }
+fn generate-word-strucs(formatter: .FMT:Formatter, generics: .AST:Types, words: .AST:Words) {
+    local i: i32
+    local word: .AST:Word
+    loop {
+        $i $words AST:Words-len = if { break }
+        $words $i AST:Words-get #word
+        $word AST:Word-ty AST:WORD_IF = if {
+            $formatter $generics $word AST:Word-iff AST:If-body generate-word-strucs
+            $word AST:Word-iff .has-el ~ if {
+                $formatter $generics $word AST:Word-iff AST:If-el generate-word-strucs
+            }
+        }
+        $word AST:Word-ty AST:WORD_LOOP = if {
+            $formatter $generics &word.lop.body generate-word-strucs
+        }
+        $word AST:Word-ty AST:WORD_BLOCK = if {
+            $formatter $generics &word.blok.body generate-word-strucs
+        }
+        $word AST:Word-ty AST:WORD_INIT_LOCAL = if {
+            $word.type AST:Type-ty AST:TYPE_STRUCT = if {
+                $formatter FMT:Formatter-write-indent
+
+                $formatter
+                $word.type AST:Type-size
+                $word.token L:Token-lexeme ~ STR:Str-unpack
+                $word.scope-id
+                $word.shadow-id
+                generate-mem
+                $formatter " ;; @" FMT:Formatter-write
+                $formatter "\n" FMT:Formatter-write
+            }
+        }
+        $i 1 + #i
+    }
+}
+
 fn generate-mem-locals(formatter: .FMT:Formatter, locals: .AST:Locals) {
     local i: i32
     local locl: .AST:Local
@@ -909,7 +954,14 @@ fn generate-param-receiving(formatter: .FMT:Formatter, param: .AST:Local) {
         $formatter $param AST:Local-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
         $formatter "\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
-        $formatter $struc AST:Struct-size $param AST:Local-ident L:Token-lexeme ~ STR:Str-unpack generate-mem
+
+        $formatter 
+        $struc AST:Struct-size 
+        $param AST:Local-ident L:Token-lexeme ~ STR:Str-unpack 
+        $param.scope-id
+        $param.shadow-id
+        generate-mem
+
         $formatter "\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
         $formatter "local.get $" FMT:Formatter-write
@@ -1108,7 +1160,7 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
             $formatter FMT:Formatter-write-indent
             $formatter "global.get $stac:k local.set $stac:k\n" FMT:Formatter-write
             $formatter FMT:Formatter-write-indent
-            $formatter $struc-returnals-space "struc-returnals-spac:e\n" generate-mem
+            $formatter $struc-returnals-space "struc-returnals-spac:e\n" 0 0 generate-mem
         } else {
             $formatter "global.get $stac:k local.set $stac:k" FMT:Formatter-write
         }
@@ -1116,9 +1168,11 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
     $formatter $function generate-params-receiving
     $locl-copy-space 0 gt if {
         $formatter FMT:Formatter-write-indent
-        $formatter $locl-copy-space "locl-copy-spac:e\n" generate-mem
+        $formatter $locl-copy-space "locl-copy-spac:e\n" 0 0 generate-mem
     }
     $formatter $function AST:Function-locals generate-strucs
+    $formatter $instance $function AST:Function-body generate-word-strucs
+
     $formatter $instance $struc-returnals-space-ptr $locl-copy-space-ptr $function AST:Function-body generate-words
     $uses-stack if {
         $formatter FMT:Formatter-write-indent
