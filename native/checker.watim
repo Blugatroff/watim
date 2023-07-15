@@ -508,7 +508,11 @@ fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> b
     IV:I32Vec-new #word.loads
     $locals.id #word.scope-id
     $shadow-id #word.shadow-id
-    $locals AST:LOCAL_LOCAL $word.token $word.type $locals.id $shadow-id AST:Local-new AST:Locals-push
+
+    $locals 
+    AST:LOCAL_LOCAL $word.token $word.type $locals.id $shadow-id AST:Local-new 
+    AST:Locals-push
+
     0 1 =
 }
 fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
@@ -907,6 +911,7 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
 
     $ret AST:Types-clone-container #word.rets
     $modules $module M:Modules-find-index #word.module
+
     $stack 
     $params
     $word U:expect-stack

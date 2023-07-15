@@ -82,6 +82,9 @@ fn resolve-word(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
     $word AST:Word-ty AST:WORD_LOOP = if {
         $modules $module $generics &word.lop.body resolve-words
     }
+    $word AST:Word-ty AST:WORD_BLOCK = if {
+        $modules $module $generics &word.blok.body resolve-words
+    }
     $word AST:Word-ty AST:WORD_CALL = if {
         $modules $module $generics $word resolve-call
     }
