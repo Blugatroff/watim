@@ -17,6 +17,7 @@ fn TopItems-json(formatter: .FMT:Formatter, items: .AST:TopItems) {
     $formatter FMT:Formatter-indent
     loop {
         $len $i = if { break }
+        $formatter FMT:Formatter-write-indent
         $formatter $items $i AST:TopItems-get TopItem-json
         
         $i 1 + $len /= if {
@@ -30,21 +31,21 @@ fn TopItems-json(formatter: .FMT:Formatter, items: .AST:TopItems) {
     $formatter "]" FMT:Formatter-write
 }
 
-fn TopItem-json(formatter: .FMT:Formatter, item: .AST:TopItem) {
+fn TopItem-json(formatter: .FMT:Formatter, item: .AST:TopItem) { block {
     $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-        $formatter $item AST:TopItem-function Function-json
+        $formatter $item AST:TopItem-function Function-json break
     }
     $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-        $formatter $item.mem Local-json 
+        $formatter $item.mem Local-json break
     }
     $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
-        $formatter $item.imp Import-json
+        $formatter $item.imp Import-json break
     }
     2 "TopItem-json TopItem-ty: " IO:write-all IO:check
     2 $item AST:TopItem-ty AST:top-item-ty-name IO:write-all IO:check
     2 "\n" IO:write-all IO:check
     1 CORE:exit
-}
+} }
 
 fn write-escaped(formatter: .FMT:Formatter, ptr: .i32, len: i32) {
     memory buf: i32 1
@@ -57,7 +58,6 @@ fn write-escaped(formatter: .FMT:Formatter, ptr: .i32, len: i32) {
 }
 
 fn Import-json(formatter: .FMT:Formatter, imp: .AST:Import) {
-    $formatter FMT:Formatter-write-indent
     $formatter "{\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
 
@@ -82,7 +82,6 @@ fn Import-json(formatter: .FMT:Formatter, imp: .AST:Import) {
 
 fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
     local i: i32
-    $formatter FMT:Formatter-write-indent
     $formatter "{\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
 
@@ -133,6 +132,7 @@ fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
     loop {
         $i &fun.locals AST:Locals-len = if { break }
         
+        $formatter FMT:Formatter-write-indent
         $formatter &fun.locals $i AST:Locals-get Local-json
         $i 1 + &fun.locals AST:Locals-len /= if {
             $formatter "," FMT:Formatter-write
@@ -145,7 +145,6 @@ fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
     $formatter FMT:Formatter-dedent
     $formatter FMT:Formatter-write-indent
     $formatter "]\n" FMT:Formatter-write
-
 
     $formatter FMT:Formatter-dedent
     $formatter FMT:Formatter-write-indent
@@ -198,6 +197,14 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
             $formatter "\n" FMT:Formatter-write
             break
         }
+        $word.ty AST:WORD_GET_LOCAL = if {
+            $formatter "get_local\",\n" FMT:Formatter-write
+            $formatter FMT:Formatter-write-indent
+            $formatter "\"token\": " FMT:Formatter-write
+            $formatter $word.token Token-json
+            $formatter "\n" FMT:Formatter-write
+            break
+        }
         $formatter $word.ty AST:word-ty-name FMT:Formatter-write
         $formatter "\"\n" FMT:Formatter-write
         break
@@ -208,14 +215,19 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
 }
 
 fn Local-json(formatter: .FMT:Formatter, locl: .AST:Local) {
-    $formatter FMT:Formatter-write-indent
+    $formatter "{ \"ident\": \"" FMT:Formatter-write
+    $formatter $locl.ident L:Token-lexeme ~ STR:Str-unpack write-escaped
+    $formatter "\" }" FMT:Formatter-write
+}
+
+fn Token-json(formatter: .FMT:Formatter, token: .L:Token) {
     $formatter "{\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
 
     $formatter FMT:Formatter-write-indent
-    $formatter "\"ident\": \"" FMT:Formatter-write
-    $formatter $locl.ident L:Token-lexeme ~ STR:Str-unpack write-escaped
-    $formatter "\"" FMT:Formatter-write
+    $formatter "\"lexeme\": \"" FMT:Formatter-write
+    $formatter $token.lexeme STR:Str-unpack write-escaped
+    $formatter "\"\n" FMT:Formatter-write
 
     $formatter FMT:Formatter-dedent
     $formatter FMT:Formatter-write-indent
