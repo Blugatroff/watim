@@ -1,0 +1,22 @@
+struct Foo<T> {
+    a: T
+    b: T
+}
+
+struct Bla {
+
+}
+
+fn main "_start" () {
+    local a: Foo<i32>
+    local b: Foo<Foo<i32>>
+    // local c: Foo<Bla, Bla>
+    // local d: Foo<Bla, Bla>
+    test<Foo<i32>>
+}
+
+fn test<T>() {
+    local a: Foo<i32>
+    local b: Foo<T>
+}
+

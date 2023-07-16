@@ -5,6 +5,7 @@ import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
+import "../std/format.watim" as FMT
 import "../native/util.watim" as CU
 
 fn TOKEN_FN() -> i32 { 1 }
@@ -94,6 +95,13 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
     }
 }
 
+fn format-location(formatter: .FMT:Formatter, file-ptr: .i32, file-len: i32, line: i32, column: i32) {
+    $formatter $file-ptr $file-len FMT:Formatter-write
+    $formatter ":" FMT:Formatter-write
+    $line $formatter U:i32-format
+    $formatter ":" FMT:Formatter-write
+    $column $formatter U:i32-format
+}
 fn print-location(fd: i32, file-ptr: .i32, file-len: i32, line: i32, column: i32) {
     $fd $file-ptr $file-len IO:write-all IO:check
     $fd ":" IO:write-all IO:check
@@ -146,7 +154,16 @@ fn Token-free(token: .Token) {
 fn Token-location(self: .Token) -> .i32, i32, i32, i32 {
     $self.file STR:Str-unpack $self.line $self.column
 }
-fn Token-print(self: .Token, fd: i32) {
+fn Token-format(formatter: .FMT:Formatter, self: .Token) {
+    $formatter $self Token-location format-location
+    $formatter " lexeme: \"" FMT:Formatter-write
+    $formatter $self Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    $formatter "\", type: " FMT:Formatter-write
+    $formatter $self Token-ty token-ty-name FMT:Formatter-write
+    $formatter "\n" FMT:Formatter-write
+}
+
+fn Token-print(fd: i32, self: .Token) {
     $fd $self Token-location print-location
     $fd " lexeme: \"" IO:write-all IO:check
     $fd $self Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
@@ -185,11 +202,11 @@ fn Tokens-len(tokens: .Tokens) -> i32 {
 fn Tokens-free-container(self: Tokens) {
     $self.inner IV:I32Vec-free
 }
-fn Tokens-print(self: .Tokens, fd: i32) {
+fn Tokens-print(fd: i32, self: .Tokens) {
     local i: i32
     loop {
         $i $self Tokens-len = if { break }
-        $self $i Tokens-get $fd Token-print
+        $fd $self $i Tokens-get Token-print
         $i 1 + #i
     }
 }

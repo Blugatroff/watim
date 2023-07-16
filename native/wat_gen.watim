@@ -11,6 +11,7 @@ import "./lexer.watim" as L
 import "./module.watim" as M
 import "./checker.watim" as CHECKER
 import "./main.watim" as MAIN
+import "./util.watim" as NU
 
 fn generate-type(formatter: .FMT:Formatter, generics: .AST:Types, self: .AST:Type) {
      loop {
@@ -85,7 +86,7 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
             break
         }
         $self.ty AST:WORD_CALL = if {
-            $formatter $struc-returnals-space-ptr $self generate-call break
+            $formatter $generics $struc-returnals-space-ptr $self generate-call break
         }
         $self.ty AST:WORD_GET_GLOBAL = if {
             $formatter "global.get $" FMT:Formatter-write
@@ -112,8 +113,7 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
             break
         }
         $self.ty AST:WORD_INTRINSIC = if {
-            $formatter $generics $self generate-intrinsic
-            break
+            $formatter $generics $self generate-intrinsic break
         }
         $self.ty AST:WORD_CAST = if {
             $self.type AST:Type-ty AST:TYPE_I64 =
@@ -129,34 +129,25 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
                 $formatter "i32.wrap_i64\n" FMT:Formatter-write break
             }
             $formatter ";; CAST from " FMT:Formatter-write
-            $self.src-type $formatter AST:Type-format
+            $formatter $generics $self.src-type AST:Type-format
             $formatter " to " FMT:Formatter-write
-            $self.type $formatter AST:Type-format
+            $formatter $generics $self.type AST:Type-format
             $formatter "\n" FMT:Formatter-write
             break
         }
         $self.ty AST:WORD_DEREF = if {
-            $formatter "i32.const " FMT:Formatter-write
-            $self.offset $formatter U:i32-format
-            $formatter " i32.add " FMT:Formatter-write
-            $self.src-type AST:Type-ty AST:TYPE_PTR = if { break }
-            $self.type AST:Type-ty AST:TYPE_STRUCT = if {
-                $formatter $self.type $locl-copy-space-ptr generate-load-struc
-            } else {
-                $formatter "i32.load\n" FMT:Formatter-write
-            }
-            break
+            $formatter $generics $self generate-deref break
         }
         $self.ty AST:WORD_SET = 
         $self.ty AST:WORD_INIT_LOCAL = or if {
             $formatter $generics $self generate-set break
         }
         $self.ty AST:WORD_GET_REF = if {
-            $formatter $self generate-get-ref
+            $formatter $generics $self generate-get-ref
             break
         }
         $self.ty AST:WORD_GET_LOCAL = if {
-            $formatter $self $locl-copy-space-ptr generate-get
+            $formatter $self $generics $locl-copy-space-ptr generate-get
             break
         }
         $self.ty AST:WORD_LOAD = if {
@@ -165,7 +156,7 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
         }
         $self.ty AST:WORD_SIZEOF = if {
             $formatter "i32.const " FMT:Formatter-write
-            $self.number $formatter U:i32-format
+            $self.type $generics AST:Type-size $formatter U:i32-format
             $formatter "\n" FMT:Formatter-write
             break
         }
@@ -175,21 +166,21 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
         }
         $self.ty AST:WORD_ANNOTATION = if {
             $formatter ";; ::" FMT:Formatter-write
-            $self.type $formatter AST:Type-format
+            $formatter $generics $self.type AST:Type-format
             $formatter "\n" FMT:Formatter-write
             break
         }
         $self.ty AST:WORD_ARRAY_WRITE = if {
-            $formatter $self generate-array-write break
+            $formatter $generics $self generate-array-write break
         }
         $self.ty AST:WORD_ARRAY_READ = if {
             $formatter $generics $self $locl-copy-space-ptr generate-array-read break
         }
         $self.ty AST:WORD_ARRAY_REF = if {
-            $formatter $self generate-array-ref break
+            $formatter $generics $self generate-array-ref break
         }
         $self.ty AST:WORD_ARRAY_INIT = if {
-            $formatter $self $locl-copy-space-ptr generate-array-init break
+            $formatter $self $generics $locl-copy-space-ptr generate-array-init break
         }
         $formatter $self.ty AST:word-ty-name FMT:Formatter-write
         break
@@ -197,7 +188,7 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
 }
 fn generate-load(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Type, locl-copy-space-ptr: .i32) {
     $type AST:Type-ty AST:TYPE_STRUCT = if {
-        $formatter $type $locl-copy-space-ptr generate-load-struc
+        $formatter $type $generics $locl-copy-space-ptr generate-load-struc
         $formatter "\n" FMT:Formatter-write
     } else {
         $formatter $generics $type generate-type
@@ -205,10 +196,10 @@ fn generate-load(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Typ
         $formatter "\n" FMT:Formatter-write
     }
 }
-fn generate-array-init(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
+fn generate-array-init(formatter: .FMT:Formatter, word: .AST:Word, generics: .AST:Types, locl-copy-space-ptr: .i32) {
     $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
     $locl-copy-space-ptr ~ $formatter U:i32-format
-    $locl-copy-space-ptr ~ $word.type AST:Type-size + =>locl-copy-space-ptr
+    $locl-copy-space-ptr ~ $word.type $generics AST:Type-size + =>locl-copy-space-ptr
     $formatter " i32.add\n" FMT:Formatter-write
     $word.number @len
     $len 1 - @i
@@ -216,52 +207,50 @@ fn generate-array-init(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-spa
         $len 0 = if { break }
         $formatter FMT:Formatter-write-indent
         $formatter "call $intrinsic:dupi32 i32.const " FMT:Formatter-write
-        $word.type.child AST:Type-size $i * $formatter U:i32-format
+        $word.type.child $generics AST:Type-size $i * $formatter U:i32-format
         $formatter " i32.add call $intrinsic:rotate-left " FMT:Formatter-write
-        $formatter $word.type.child generate-store
+        $formatter $generics $word.type.child generate-store
 
         $i 0 = if { break }
         $i 1 - #i
     }
 }
-fn generate-array-write(formatter: .FMT:Formatter, word: .AST:Word) {
+fn generate-array-write(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
     $formatter "call $intrinsic:rotate-right" FMT:Formatter-write
     $formatter " i32.const " FMT:Formatter-write
-    $word.type AST:Type-size $formatter U:i32-format
+    $word.type $generics AST:Type-size $formatter U:i32-format
     $formatter " i32.mul " FMT:Formatter-write
     $formatter " i32.add " FMT:Formatter-write
     $formatter "call $intrinsic:flip " FMT:Formatter-write
-    $formatter $word.type generate-store
+    $formatter $generics $word.type generate-store
 }
 fn generate-array-read(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word, locl-copy-space-ptr: .i32) {
-    $formatter $word generate-array-ref
+    $formatter $generics $word generate-array-ref
     $formatter $generics $word.type $locl-copy-space-ptr generate-load
 }
-fn generate-array-ref(formatter: .FMT:Formatter, word: .AST:Word) {
+fn generate-array-ref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
     $formatter "i32.const " FMT:Formatter-write
-    $word.type AST:Type-size $formatter U:i32-format
+    $word.type $generics AST:Type-size $formatter U:i32-format
     $formatter " i32.mul" FMT:Formatter-write
     $formatter " i32.add " FMT:Formatter-write
 }
-fn generate-load-struc(formatter: .FMT:Formatter, type: .AST:Type, locl-copy-space-ptr: .i32) { 
+fn generate-load-struc(formatter: .FMT:Formatter, type: .AST:Type, generics: .AST:Types, locl-copy-space-ptr: .i32) { 
     $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
     $locl-copy-space-ptr ~ $formatter U:i32-format
-    $locl-copy-space-ptr ~ $type AST:Type-size + =>locl-copy-space-ptr 
+    $locl-copy-space-ptr ~ $type $generics AST:Type-size + =>locl-copy-space-ptr 
     $formatter " i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const " FMT:Formatter-write
-    $type AST:Type-size $formatter U:i32-format
+    $type $generics AST:Type-size $formatter U:i32-format
     $formatter " memory.copy" FMT:Formatter-write
 }
-fn generate-get-ref(formatter: .FMT:Formatter, word: .AST:Word) {
+fn generate-deref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
     local i: i32
     local offset: i32
-    $formatter "local.get $" FMT:Formatter-write
-    $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
-    $formatter " " FMT:Formatter-write
+    $generics $word determine-loads @loads
     loop {
-        $i &word.loads IV:I32Vec-len = if { break }
-        &word.loads $i IV:I32Vec-get #offset
+        $i &loads IV:I32Vec-len = if { break }
+        &loads $i IV:I32Vec-get #offset
 
-        $i 1 + &word.loads IV:I32Vec-len = if {
+        $i 1 + &loads IV:I32Vec-len = if {
             $formatter " i32.const " FMT:Formatter-write
             $offset $formatter U:i32-format
             $formatter " i32.add" FMT:Formatter-write
@@ -272,8 +261,77 @@ fn generate-get-ref(formatter: .FMT:Formatter, word: .AST:Word) {
         $i 1 + #i
     }
     $formatter "\n" FMT:Formatter-write
+    $loads IV:I32Vec-free
 }
+fn generate-get-ref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
+    local i: i32
+    local offset: i32
+    $formatter "local.get $" FMT:Formatter-write
+    $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
+    $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
+    $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
+    $formatter " " FMT:Formatter-write
 
+    $generics $word determine-loads @loads
+
+    loop {
+        $i &loads IV:I32Vec-len = if { break }
+        &loads $i IV:I32Vec-get #offset
+
+        $i 1 + &loads IV:I32Vec-len = if {
+            $formatter " i32.const " FMT:Formatter-write
+            $offset $formatter U:i32-format
+            $formatter " i32.add" FMT:Formatter-write
+        } else {
+            $formatter " i32.load offset=" FMT:Formatter-write
+            $offset $formatter U:i32-format
+        }
+        $i 1 + #i
+    }
+    $formatter "\n" FMT:Formatter-write
+    $loads IV:I32Vec-free
+}
+fn determine-loads(generics: .AST:Types, word: .AST:Word) -> IV:I32Vec {
+    $word.src-type @type
+    IV:I32Vec-new @loads
+    0 @i
+    loop {
+        $i &word.fields L:Tokens-len = if { break }
+        $i 0 = 
+        $type AST:Type-ty AST:TYPE_STRUCT =
+        and
+        $type AST:Type-ty AST:TYPE_PTR = if { $type AST:Type-child AST:Type-ty AST:TYPE_STRUCT = } else { 0 1 = }
+        or
+        if {
+            0 @offset
+            loop { // loop for every field access which can be reduced to one load with offset
+                $i &word.fields L:Tokens-len = if { break }
+                &word.fields $i L:Tokens-get @field
+
+                $type AST:Type-ty AST:TYPE_PTR = if {
+                    $type AST:Type-child #type
+                }
+                $type AST:Type-struc @struc
+                $struc $field L:Token-lexeme ~ STR:Str-unpack $generics AST:Struct-find-field-with-offset not if {
+                    $field L:Token-location "field not found" NU:abort-with-location
+                }
+                $offset + #offset
+                AST:Field-type #type
+                $i 1 + #i
+                $type AST:Type-ty AST:TYPE_STRUCT /= if {
+                    break
+                }
+            }
+            &loads $offset IV:I32Vec-push
+        } else {
+
+            2 $word.token L:Token-location L:print-location
+            // this case should already be catched in the checker
+            0 0 / drop
+        }
+    }
+    $loads
+}
 fn generate-store-word(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
     local i: i32
     local offset: i32
@@ -290,10 +348,13 @@ fn generate-store-word(formatter: .FMT:Formatter, generics: .AST:Types, word: .A
             $word.shadow-id $formatter U:i32-format
         }
     }
+
+    $generics $word determine-loads @loads
+
     $formatter " " FMT:Formatter-write
     loop {
-        $i &word.loads IV:I32Vec-len = if { break }
-        &word.loads $i IV:I32Vec-get #offset
+        $i &loads IV:I32Vec-len = if { break }
+        &loads $i IV:I32Vec-get #offset
 
         $formatter " i32.load offset=" FMT:Formatter-write
         $offset $formatter U:i32-format
@@ -302,43 +363,46 @@ fn generate-store-word(formatter: .FMT:Formatter, generics: .AST:Types, word: .A
     $formatter " call $intrinsic:flip " FMT:Formatter-write
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter " i32.const " FMT:Formatter-write
-        $word.type AST:Type-size $formatter U:i32-format
+        $word.type $generics AST:Type-size $formatter U:i32-format
         $formatter " memory.copy" FMT:Formatter-write
     } else {
         $formatter $generics $word.type generate-type
         $formatter ".store" FMT:Formatter-write
     }
     $formatter "\n" FMT:Formatter-write
+
+    $loads IV:I32Vec-free
 }
 
-fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr: .i32) {
+fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, generics: .AST:Types, locl-copy-space-ptr: .i32) {
     local i: i32
     local offset: i32
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "local.get $locl-copy-spac:e i32.const " FMT:Formatter-write
         $locl-copy-space-ptr ~ $formatter U:i32-format
         $formatter " i32.add call $intrinsic:dupi32 " FMT:Formatter-write
-        $locl-copy-space-ptr ~ $word.type AST:Type-size + =>locl-copy-space-ptr 
+        $locl-copy-space-ptr ~ $word.type $generics AST:Type-size + =>locl-copy-space-ptr 
     }
     $formatter "local.get $" FMT:Formatter-write
     $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
     $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
-    $word.shadow-id 0 /= if {
-        $word.shadow-id $formatter U:i32-format
-    }
+    $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
     $formatter " " FMT:Formatter-write
-    &word.loads IV:I32Vec-len 0 = if {
+
+    $generics $word determine-loads @loads
+
+    &loads IV:I32Vec-len 0 = if {
         $word.type AST:Type-ty AST:TYPE_STRUCT = if {
             $formatter " i32.const " FMT:Formatter-write
-            $word.type AST:Type-size $formatter U:i32-format
+            $word.type $generics AST:Type-size $formatter U:i32-format
             $formatter " memory.copy" FMT:Formatter-write
         }
     }
     loop {
-        $i &word.loads IV:I32Vec-len = if { break }
-        &word.loads $i IV:I32Vec-get #offset
+        $i &loads IV:I32Vec-len = if { break }
+        &loads $i IV:I32Vec-get #offset
 
-        &word.loads IV:I32Vec-len $i 1 + lt
+        &loads IV:I32Vec-len $i 1 + lt
         $word.type AST:Type-ty AST:TYPE_STRUCT /= 
         or if {
             $formatter "i32.load offset=" FMT:Formatter-write
@@ -348,14 +412,16 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, locl-copy-space-ptr:
             $formatter " i32.const " FMT:Formatter-write
             $offset $formatter U:i32-format
             $formatter " i32.add i32.const " FMT:Formatter-write
-            $word.type AST:Type-size $formatter U:i32-format
+            $word.type $generics AST:Type-size $formatter U:i32-format
             $formatter " memory.copy" FMT:Formatter-write
         }
         $i 1 + #i
     }
     $formatter "\n" FMT:Formatter-write
+
+    $loads IV:I32Vec-free
 }
-fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, word: .AST:Word) {
+fn generate-call(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnals-space-ptr: .i32, word: .AST:Word) {
     local i: i32
     local rets: .AST:Types
     local type: .AST:Type
@@ -402,7 +468,7 @@ fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, wor
                 $i 1 - $formatter U:i32-format
                 $formatter ":a " FMT:Formatter-write
                 $formatter " i32.const " FMT:Formatter-write
-                $type AST:Type-struc AST:Struct-size #struc-size
+                $type AST:Type-struc $generics AST:Struct-size #struc-size
                 $struc-size $formatter U:i32-format
                 $formatter " memory.copy\n" FMT:Formatter-write
                 $struc-returnals-space-ptr ~ $struc-size + =>struc-returnals-space-ptr 
@@ -416,23 +482,24 @@ fn generate-call(formatter: .FMT:Formatter, struc-returnals-space-ptr: .i32, wor
     }
 }
 fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
-    local i: i32
+    $word AST:Word-ty AST:WORD_INIT_LOCAL = if { IV:I32Vec-new } else { $generics $word determine-loads } @loads
     // TODO: this can be simplified
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "local.get $" FMT:Formatter-write
         $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
         $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
         $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
-        &word.loads IV:I32Vec-len 0 gt if {
+        &loads IV:I32Vec-len 0 gt if {
             $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
+            0 @i
             loop {
-                &word.loads IV:I32Vec-len $i = if { break }
+                &loads IV:I32Vec-len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
-                &word.loads $i IV:I32Vec-get $formatter U:i32-format
+                &loads $i IV:I32Vec-get $formatter U:i32-format
                 $formatter " i32.add " FMT:Formatter-write
-                $i 1 + &word.loads IV:I32Vec-len = if {
+                $i 1 + &loads IV:I32Vec-len = if {
                     $formatter " call $intrinsic:flip i32.const " FMT:Formatter-write
-                    $word.type AST:Type-size $formatter U:i32-format
+                    $word.type $generics AST:Type-size $formatter U:i32-format
                     $formatter " memory.copy" FMT:Formatter-write
                 } else {
                     $formatter "i32.load" FMT:Formatter-write
@@ -441,21 +508,22 @@ fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word
             }
         } else {
             $formatter " call $intrinsic:flip i32.const " FMT:Formatter-write
-            $word.type AST:Type-size $formatter U:i32-format
+            $word.type $generics AST:Type-size $formatter U:i32-format
             $formatter " memory.copy" FMT:Formatter-write
         }
     } else {
-        &word.loads IV:I32Vec-len 0 gt if {
+        &loads IV:I32Vec-len 0 gt if {
             $formatter "local.get $" FMT:Formatter-write
             $word.scope-id 0 /= if { $word.scope-id $formatter U:i32-format $formatter ":" FMT:Formatter-write }
             $formatter $word AST:Word-ident ~ STR:Str-unpack FMT:Formatter-write
             $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
+            0 @i
             loop {
-                &word.loads IV:I32Vec-len $i = if { break }
+                &loads IV:I32Vec-len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
-                &word.loads $i IV:I32Vec-get $formatter U:i32-format
+                &loads $i IV:I32Vec-get $formatter U:i32-format
                 $formatter " i32.add " FMT:Formatter-write
-                $i 1 + &word.loads IV:I32Vec-len = if {
+                $i 1 + &loads IV:I32Vec-len = if {
                     $formatter " call $intrinsic:flip " FMT:Formatter-write
                     $formatter $generics $word.type generate-type
                     $formatter ".store" FMT:Formatter-write
@@ -472,12 +540,13 @@ fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word
         }
     }
     $formatter "\n" FMT:Formatter-write
+    $loads IV:I32Vec-free
 }
-fn generate-store(formatter: .FMT:Formatter, type: .AST:Type) {
+fn generate-store(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Type) {
     $type AST:Type-ty AST:TYPE_STRUCT =
-    $type AST:Type-size 4 /= and if {
+    $type $generics AST:Type-size 4 /= and if {
         $formatter "i32.const " FMT:Formatter-write
-        $type AST:Type-size $formatter U:i32-format
+        $type $generics AST:Type-size $formatter U:i32-format
         $formatter " memory.copy" FMT:Formatter-write
     } else {
         // TODO: this crashes:
@@ -515,7 +584,7 @@ fn generate-intrinsic(formatter: .FMT:Formatter, generics: .AST:Types, word: .AS
             $formatter "i32.ne" FMT:Formatter-write break
         }
         $word.intrinsic AST:INTRINSIC_STORE = if {
-            $formatter $word.type generate-store break
+            $formatter $generics $word.type generate-store break
         }
         $word.intrinsic AST:INTRINSIC_GREATER_EQ = if {
             $formatter "i32.ge_u" FMT:Formatter-write break
@@ -701,7 +770,8 @@ fn generate-externs(formatter: .FMT:Formatter, modules: .M:Modules) {
             $j $module M:Module-items AST:TopItems-len = if { break }
             $module M:Module-items $j AST:TopItems-get #item
             $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
-                $item AST:TopItem-ext .reachable ~ if {
+                $item AST:TopItem-ext @top-item
+                $top-item.reachable if {
                     $formatter $i $item AST:TopItem-ext generate-ext
                 }
             }
@@ -779,10 +849,14 @@ fn generate-locl(formatter: .FMT:Formatter, generics: .AST:Types, locl: .AST:Loc
     $formatter ")" FMT:Formatter-write
     $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter " ;; " FMT:Formatter-write
-        $formatter $locl AST:Local-type AST:Type-struc AST:Struct-ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+        $formatter $generics $locl AST:Local-type AST:Type-format
     }
     $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = if {
         $formatter " ;; array" FMT:Formatter-write
+    }
+    $locl AST:Local-type AST:Type-ty AST:TYPE_GENERIC = if {
+        $formatter " ;; " FMT:Formatter-write
+        $formatter $generics $locl AST:Local-type AST:Type-format
     }
     $formatter "\n" FMT:Formatter-write
 }
@@ -790,13 +864,16 @@ fn generate-locl(formatter: .FMT:Formatter, generics: .AST:Types, locl: .AST:Loc
 fn generate-word-locals(formatter: .FMT:Formatter, generics: .AST:Types, words: .AST:Words) {
     local i: i32
     local word: .AST:Word
+    local iff: .AST:If
     loop {
         $i $words AST:Words-len = if { break }
         $words $i AST:Words-get #word
         $word AST:Word-ty AST:WORD_IF = if {
-            $formatter $generics $word AST:Word-iff .locals generate-locals
+            $word AST:Word-iff #iff
+            $formatter $generics 
+            &iff.locals generate-locals
             $formatter $generics $word AST:Word-iff AST:If-body generate-word-locals
-            $word AST:Word-iff .has-el ~ if {
+            $iff.has-el if {
                 $formatter $generics $word AST:Word-iff AST:If-el generate-word-locals 
             }
         }
@@ -832,7 +909,7 @@ fn generate-mem(formatter: .FMT:Formatter, size: i32, ident-ptr: .i32, ident-len
     $formatter $ident-ptr $ident-len FMT:Formatter-write
     $shadow-id 0 /= if { $shadow-id $formatter U:i32-format }
 }
-fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
+fn generate-strucs(formatter: .FMT:Formatter, generics: .AST:Types, locals: .AST:Locals) {
     local i: i32
     local locl: .AST:Local
     loop {
@@ -840,23 +917,51 @@ fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
         $locals $i AST:Locals-get #locl
         $locl AST:Local-ty AST:LOCAL_LOCAL = if {
             $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
+                AST:Types-new @resolved-generics
+                0 @i
+                loop {
+                    $locl.type.generics AST:Types-len $i = if { break }
+                    $locl.type.generics $i AST:Types-get @type
+                    $type AST:Type-ty AST:TYPE_GENERIC = if {
+                        $generics $type.generic AST:Types-get @resolved-generic
+                        $resolved-generics $resolved-generic AST:Types-push
+                    } else {
+                        $resolved-generics $type AST:Types-push
+                    }
+                    $i 1 + #i
+                }
+
                 $formatter FMT:Formatter-write-indent
                 $formatter 
-                $locl AST:Local-type AST:Type-struc AST:Struct-size
+                $locl AST:Local-type AST:Type-struc $resolved-generics AST:Struct-size
+                $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
+                $locl.scope-id
+                $locl.shadow-id
+                generate-mem
+                $formatter "\n" FMT:Formatter-write
+
+                $resolved-generics AST:Types-free-container
+            }
+            $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = if {
+                $formatter FMT:Formatter-write-indent
+                $formatter 
+                $locl AST:Local-type $generics AST:Type-size
                 $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
                 $locl.scope-id
                 $locl.shadow-id
                 generate-mem
                 $formatter "\n" FMT:Formatter-write
             }
-            $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = if {
+            $locl AST:Local-type AST:Type-ty AST:TYPE_GENERIC = if {
                 $formatter FMT:Formatter-write-indent
-                $formatter 
-                $locl AST:Local-type AST:Type-size
+
+                $formatter
+                $locl AST:Local-type $generics AST:Type-size
                 $locl AST:Local-ident L:Token-lexeme ~ STR:Str-unpack
                 $locl.scope-id
                 $locl.shadow-id
                 generate-mem
+
                 $formatter "\n" FMT:Formatter-write
             }
         }
@@ -876,12 +981,14 @@ fn generate-strucs(formatter: .FMT:Formatter, locals: .AST:Locals) {
 fn generate-word-strucs(formatter: .FMT:Formatter, generics: .AST:Types, words: .AST:Words) {
     local i: i32
     local word: .AST:Word
+    local iff: .AST:If
     loop {
         $i $words AST:Words-len = if { break }
         $words $i AST:Words-get #word
         $word AST:Word-ty AST:WORD_IF = if {
-            $formatter $generics $word AST:Word-iff AST:If-body generate-word-strucs
-            $word AST:Word-iff .has-el ~ if {
+            $word AST:Word-iff #iff
+            $formatter $generics $iff AST:If-body generate-word-strucs
+            $iff.has-el if {
                 $formatter $generics $word AST:Word-iff AST:If-el generate-word-strucs
             }
         }
@@ -896,7 +1003,7 @@ fn generate-word-strucs(formatter: .FMT:Formatter, generics: .AST:Types, words: 
                 $formatter FMT:Formatter-write-indent
 
                 $formatter
-                $word.type AST:Type-size
+                $word.type $generics AST:Type-size
                 $word.token L:Token-lexeme ~ STR:Str-unpack
                 $word.scope-id
                 $word.shadow-id
@@ -927,7 +1034,7 @@ fn generate-mem-locl(formatter: .FMT:Formatter, mem: .AST:Local) {
     $formatter $mem.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter " i32)\n" FMT:Formatter-write
 }
-fn generate-params-receiving(formatter: .FMT:Formatter, function: .AST:Function) {
+fn generate-params-receiving(formatter: .FMT:Formatter, generics: .AST:Types, function: .AST:Function) {
     local i: i32
     local locals: .AST:Locals
     local locl: .AST:Local
@@ -936,7 +1043,7 @@ fn generate-params-receiving(formatter: .FMT:Formatter, function: .AST:Function)
         $i $locals AST:Locals-len = if { break }
         $formatter $locals $i AST:Locals-get #locl
         $locl AST:Local-ty AST:LOCAL_ARGUMENT = if {
-            $locl generate-param-receiving
+            $generics $locl generate-param-receiving
         } else {
             // TODO: removing this else branch results in miscompilation
             drop 
@@ -944,7 +1051,7 @@ fn generate-params-receiving(formatter: .FMT:Formatter, function: .AST:Function)
         $i 1 + #i
     }
 }
-fn generate-param-receiving(formatter: .FMT:Formatter, param: .AST:Local) {
+fn generate-param-receiving(formatter: .FMT:Formatter, generics: .AST:Types, param: .AST:Local) {
     local struc: .AST:Struct
     $param AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "\n" FMT:Formatter-write
@@ -956,7 +1063,7 @@ fn generate-param-receiving(formatter: .FMT:Formatter, param: .AST:Local) {
         $formatter FMT:Formatter-write-indent
 
         $formatter 
-        $struc AST:Struct-size 
+        $struc $generics AST:Struct-size 
         $param AST:Local-ident L:Token-lexeme ~ STR:Str-unpack 
         $param.scope-id
         $param.shadow-id
@@ -971,13 +1078,13 @@ fn generate-param-receiving(formatter: .FMT:Formatter, param: .AST:Local) {
         $formatter "call $intrinsic:flip\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
         $formatter "i32.const " FMT:Formatter-write
-        $struc AST:Struct-size $formatter U:i32-format
+        $struc $generics AST:Struct-size $formatter U:i32-format
         $formatter "\n" FMT:Formatter-write
         $formatter FMT:Formatter-write-indent
         $formatter "memory.copy\n" FMT:Formatter-write
     }
 }
-fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
+fn measure-struc-returnals-space(words: .AST:Words, generics: .AST:Types) -> i32, i32 {
     local size: i32
     local max-args: i32
     local i: i32
@@ -985,6 +1092,7 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
     local word: .AST:Word
     local function: .AST:Function
     local rets: .AST:Types
+    local iff: .AST:If
 
     loop {
         $i $words AST:Words-len = if { break }
@@ -995,10 +1103,10 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
             loop {
                 $j $rets AST:Types-len = if { break }
                 $rets $j AST:Types-get AST:Type-ty AST:TYPE_STRUCT = if {
-                    $size $rets $j AST:Types-get AST:Type-struc AST:Struct-size + #size
+                    $size $rets $j AST:Types-get AST:Type-struc $generics AST:Struct-size + #size
                 }
                 $rets $j AST:Types-get AST:Type-ty AST:TYPE_ARRAY = if {
-                    $size $rets $j AST:Types-get AST:Type-size + #size
+                    $size $rets $j AST:Types-get $generics AST:Type-size + #size
                 }
                 $j 1 + #j
             }
@@ -1007,21 +1115,22 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
             }
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            &word.lop.body measure-struc-returnals-space 
+            &word.lop.body $generics measure-struc-returnals-space 
             $max-args CORE:max #max-args 
             $size + #size
         }
         $word AST:Word-ty AST:WORD_BLOCK = if {
-            &word.blok.body measure-struc-returnals-space 
+            &word.blok.body $generics measure-struc-returnals-space 
             $max-args CORE:max #max-args 
             $size + #size
         }
         $word AST:Word-ty AST:WORD_IF = if {
-            $word AST:Word-iff AST:If-body measure-struc-returnals-space
+            $word AST:Word-iff #iff
+            $iff AST:If-body $generics measure-struc-returnals-space
             $max-args CORE:max #max-args 
             $size + #size
-            $word AST:Word-iff .has-el ~ if {
-                $word AST:Word-iff AST:If-el measure-struc-returnals-space
+            $iff.has-el if {
+                $word AST:Word-iff AST:If-el $generics measure-struc-returnals-space
                 $max-args CORE:max #max-args 
                 $size + #size
             }
@@ -1030,10 +1139,11 @@ fn measure-struc-returnals-space(words: .AST:Words) -> i32, i32 {
     }
     $size $max-args
 }
-fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
+fn measure-locl-copy-space(words: .AST:Words, generics: .AST:Types) -> i32, i32 {
     local size: i32
     local count: i32
     local word: .AST:Word
+    local iff: .AST:If
     local i: i32
     loop {
         $i $words AST:Words-len = if { break }
@@ -1043,37 +1153,38 @@ fn measure-locl-copy-space(words: .AST:Words) -> i32, i32 {
         $word AST:Word-ty AST:WORD_LOAD = or
         if {
             $word AST:Word-type AST:Type-ty AST:TYPE_STRUCT = if {
-                $word AST:Word-type AST:Type-size $size + #size
+                $word AST:Word-type $generics AST:Type-size $size + #size
                 $count 1 + #count
             }
             $word AST:Word-type AST:Type-ty AST:TYPE_ARRAY = if {
-                $word AST:Word-type AST:Type-size $size + #size
+                $word AST:Word-type $generics AST:Type-size $size + #size
                 $count 1 + #count
             }
 
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            &word.lop.body measure-locl-copy-space
+            &word.lop.body $generics measure-locl-copy-space
             $count + #count
             $size + #size
         }
         $word AST:Word-ty AST:WORD_BLOCK = if {
-            &word.blok.body measure-locl-copy-space
+            &word.blok.body $generics measure-locl-copy-space
             $count + #count
             $size + #size
         }
         $word AST:Word-ty AST:WORD_IF = if {
-            $word AST:Word-iff AST:If-body measure-locl-copy-space
+            $word AST:Word-iff #iff
+            $iff AST:If-body $generics measure-locl-copy-space
             $count + #count
             $size + #size
-            $word AST:Word-iff .has-el ~ if {
-                $word AST:Word-iff AST:If-el measure-locl-copy-space
+            $iff.has-el if {
+                $word AST:Word-iff AST:If-el $generics measure-locl-copy-space
                 $count + #count
                 $size + #size
             }
         }
         $word AST:Word-ty AST:WORD_ARRAY_INIT = if {
-            $word AST:Word-type AST:Type-size $size + #size
+            $word AST:Word-type $generics AST:Type-size $size + #size
             $count 1 + #count
         }
         $i 1 + #i
@@ -1123,10 +1234,10 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
     $formatter $instance $function AST:Function-locals generate-locals
     $formatter $instance $function AST:Function-body generate-word-locals
 
-    $function AST:Function-body measure-struc-returnals-space #max-args #struc-returnals-space
+    $function AST:Function-body $instance measure-struc-returnals-space #max-args #struc-returnals-space
     0 =>struc-returnals-space-ptr
 
-    $function AST:Function-body measure-locl-copy-space #locl-copy-count #locl-copy-space
+    $function AST:Function-body $instance measure-locl-copy-space #locl-copy-count #locl-copy-space
     0 =>locl-copy-space-ptr
 
     $function AST:Function-has-mem-or-struc-locl
@@ -1165,12 +1276,12 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
             $formatter "global.get $stac:k local.set $stac:k" FMT:Formatter-write
         }
     }
-    $formatter $function generate-params-receiving
+    $formatter $instance $function generate-params-receiving
     $locl-copy-space 0 gt if {
         $formatter FMT:Formatter-write-indent
         $formatter $locl-copy-space "locl-copy-spac:e\n" 0 0 generate-mem
     }
-    $formatter $function AST:Function-locals generate-strucs
+    $formatter $instance $function AST:Function-locals generate-strucs
     $formatter $instance $function AST:Function-body generate-word-strucs
 
     $formatter $instance $struc-returnals-space-ptr $locl-copy-space-ptr $function AST:Function-body generate-words
@@ -1204,7 +1315,8 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
             $j $module M:Module-items AST:TopItems-len = if { break }
             $module M:Module-items $j AST:TopItems-get #item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-                $item AST:TopItem-function .reachable ~ if {
+                $item AST:TopItem-function @function
+                $function.reachable if {
                     $formatter $i $item AST:TopItem-function generate-function
                 }
             }

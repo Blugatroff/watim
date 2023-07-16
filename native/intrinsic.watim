@@ -78,7 +78,7 @@ fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32)
     FMT:Formatter-new #formatter
     $word AST:Word-location
     &formatter $msg-ptr $msg-len FMT:Formatter-write
-    $stack &formatter AST:Types-format
+    &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter " " FMT:Formatter-write
     $formatter FMT:Formatter-into-string #formatted
     &formatted S:String-unpack 
@@ -187,7 +187,7 @@ fn check-intrinsic-store(stack: .AST:Types, word: .AST:Word) {
     $left AST:Type-child $right AST:Type-eq not if {
         $stack $word "expected a => [.a, a] got: " report-error
     }
-    $stack AST:Types-pop drop
+    $stack AST:Types-pop #word.type
     $stack AST:Types-pop drop
 }
 fn check-intrinsic-mem-grow(stack: .AST:Types, word: .AST:Word) {

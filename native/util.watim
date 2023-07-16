@@ -68,9 +68,9 @@ fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Wor
     local msg: S:String
     FMT:Formatter-new #formatter
     &formatter "\n\texpected: " FMT:Formatter-write
-    $expected &formatter AST:Types-format
+    &formatter 0 !.AST:Types $expected AST:Types-format
     &formatter "\n\tgot:      " FMT:Formatter-write
-    $stack &formatter AST:Types-format
+    &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter "\n" FMT:Formatter-write
     $formatter FMT:Formatter-into-string #msg
     $word AST:Word-location &msg S:String-unpack abort-with-location

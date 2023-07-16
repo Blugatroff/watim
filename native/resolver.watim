@@ -55,7 +55,8 @@ fn resolve-struc(modules: .M:Modules, module: .M:Module, struc: .AST:Struct) {
         $i $fields AST:Fields-len = if { break }
         $fields $i AST:Fields-get #field
         $field AST:Field-type #type
-        $modules $module 0 !.AST:Generics $field resolve-field
+
+        $modules $module &struc.generics $field resolve-field
         $i 1 + #i
     }
 }
@@ -87,6 +88,9 @@ fn resolve-word(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
     }
     $word AST:Word-ty AST:WORD_CALL = if {
         $modules $module $generics $word resolve-call
+    }
+    $word AST:Word-ty AST:WORD_SIZEOF = if {
+        $modules $module $generics $word AST:Word-type resolve-type
     }
 }
 fn resolve-call(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word) { block {
@@ -156,6 +160,8 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
                     AST:TYPE_GENERIC #type.ty
                     break
                 } else { drop }
+            } else {
+                // 0 0 / drop
             }
 
             $type AST:Type-module @module-token
@@ -171,10 +177,18 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
             } else {
                 $module M:Module-path #path
             }
+
             $modules $path S:String-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {
                 $type flip AST:Type-set-struc
             } else {
                 drop $type AST:Type-ident L:Token-location "struct not found" U:abort-with-location
+            }
+
+            0 @i
+            loop {
+                $type.generics AST:Types-len $i = if { break }
+                $modules $module $generics $type.generics $i AST:Types-get resolve-type
+                $i 1 + #i
             }
             break
         }
