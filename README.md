@@ -21,14 +21,20 @@ Watim = WAT Improved
 ## TODO
 - [ ] `continue` instruction for loops.
 - [X] Variable declaration and initiliziation anywhere in function.
-- [ ] Generics using monomorphization.
+- [X] Generics using monomorphization.
 - [ ] Type inference
 - [ ] function pointers
 - [ ] closures?
 - [ ] Some sort of Typeclass/Trait system perhaps?
 
 ## How to run
-First [install Wasmtime](https://wasmtime.dev/).
+With nix: `nix develop`
+
+Or manually install:
+- [Wasmtime](https://wasmtime.dev/) 
+- [Wabt](https://github.com/WebAssembly/wabt).
+- [Python3](https://www.python.org/)
+- [termcolor](https://pypi.org/project/termcolor/)
 
 Then compile:
 ```bash
@@ -64,15 +70,18 @@ struct Iov {
     ptr: .i32
     len: i32
 }
-struct I32 { inner: i32 }
+
+// local variable of a primitive type (i32, bool) cannot be referenced by pointer because they don't live in wasm linear memory.
+// To explicitly store them in memory they can be wrapped in a struct.
+struct OnStack<T> { value: T }
 
 fn write(file: i32, ptr: .i32, len: i32) -> i32 {
     local iov: Iov
-    local written-ptr: I32
+    local written-ptr: OnStack<i32>
     $ptr #iov.ptr
     $len #iov.len
-    $file &iov 1 &written-ptr.inner raw_write drop
-    $written-ptr.inner @written
+    $file &iov 1 &written-ptr.value raw_write drop
+    $written-ptr.value @written
     $written $len = if {
         $len
     } else {
@@ -82,11 +91,11 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
 
 fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
     local iov: Iov
-    local nread: I32
+    local nread: OnStack<i32>
     $buf-addr #iov.ptr
     $buf-size #iov.len
-    $file &iov 1 &nread.inner raw_read drop
-    $nread.inner
+    $file &iov 1 &nread.value raw_read drop
+    $nread.value
 }
 
 fn print(n: i32) {
@@ -147,14 +156,15 @@ fn parse(pt: .i32, len: i32) -> i32 {
     }
 }
 
-fn dup(a: i32) -> i32, i32 { $a $a }
+fn dup<T>(a: T) -> T, T { $a $a }
 
 fn main "_start" () {
     memory buf: i32 32
     0 $buf 32 read @nread
     $buf $nread 1 - parse
-    dup print 
+    dup<i32> print 
     1 "\n" write drop
     exit
 }
+
 ```

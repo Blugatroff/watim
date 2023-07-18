@@ -6,6 +6,9 @@ struct Iov {
     ptr: .i32
     len: i32
 }
+
+// local variable of a primitive type (i32, bool) cannot be referenced by pointer because they don't live in wasm linear memory.
+// To explicitly store them in memory they can be wrapped in a struct.
 struct OnStack<T> { value: T }
 
 fn write(file: i32, ptr: .i32, len: i32) -> i32 {
@@ -14,7 +17,7 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
     $ptr #iov.ptr
     $len #iov.len
     $file &iov 1 &written-ptr.value raw_write drop
-    $written-ptr.inner @written
+    $written-ptr.value @written
     $written $len = if {
         $len
     } else {
@@ -27,8 +30,8 @@ fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
     local nread: OnStack<i32>
     $buf-addr #iov.ptr
     $buf-size #iov.len
-    $file &iov 1 &nread.inner raw_read drop
-    $nread.inner
+    $file &iov 1 &nread.value raw_read drop
+    $nread.value
 }
 
 fn print(n: i32) {

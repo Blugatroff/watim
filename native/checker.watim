@@ -399,9 +399,15 @@ fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type {
     $type
 }
 fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
-    local type: .AST:Type
     $locals $word check-locl-fields-access if {
-        #type drop
+        @type @src-type
+
+        $type AST:Type-ty AST:TYPE_GENERIC = 
+        $src-type AST:Type-ty AST:TYPE_STRUCT = 
+        and if {
+            $src-type.generics $type.generic AST:Types-get #type
+        }
+
         $type #word.type
         $stack $type AST:Types-push
     } else {
@@ -466,13 +472,10 @@ fn check-deref(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bo
     0 1 =
 }
 fn check-get-ref(stack: .AST:Types, locals: .AST:Locals, temp-types: .AST:Types, word: .AST:Word) -> bool {
-    local type: .AST:Type
-    local struc: .AST:Struct
-    local src-type: .AST:Type
     $locals $word check-locl-fields-access not if {
         $word AST:Word-location "local not found\n" U:abort-with-location
     }
-    #type #src-type
+    @type @src-type
     $src-type AST:Type-ty AST:TYPE_STRUCT /= 
     $src-type AST:Type-ty AST:TYPE_ARRAY /= and
     if {
@@ -482,6 +485,12 @@ fn check-get-ref(stack: .AST:Types, locals: .AST:Locals, temp-types: .AST:Types,
             $word AST:Word-location "cannot get pointer of non-struct local" U:abort-with-location
         }
     }
+    $type AST:Type-ty AST:TYPE_GENERIC = 
+    $src-type AST:Type-ty AST:TYPE_STRUCT = 
+    and if {
+        $src-type.generics $type.generic AST:Types-get #type
+    }
+
     $type #word.type
     $stack $temp-types $type AST:Type-new-ptr U:push-temp-type AST:Types-push
     0 1 =
