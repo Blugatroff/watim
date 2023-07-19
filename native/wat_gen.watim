@@ -1303,17 +1303,19 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
 }
 
 fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
-    local i: i32
-    local j: i32
-    local module: .M:Module
-    local item: .AST:TopItem
+    0 @i
     loop {
         $i $modules M:Modules-len = if { break }
-        $modules $i M:Modules-get-value #module
-        0 #j
+        $modules $i M:Modules-get-value @module
+        MAIN:logging-enabled if {
+            2 "Codegen for module: " IO:write-all IO:check
+            2 $module M:Module-path S:String-unpack IO:write-all IO:check
+            2 "\n" IO:write-all IO:check
+        }
+        0 @j
         loop {
             $j $module M:Module-items AST:TopItems-len = if { break }
-            $module M:Module-items $j AST:TopItems-get #item
+            $module M:Module-items $j AST:TopItems-get @item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item AST:TopItem-function @function
                 $function.reachable if {
