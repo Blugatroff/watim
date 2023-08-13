@@ -48,6 +48,7 @@ fn TOKEN_BLOCK() -> i32 { 39 }
 fn TOKEN_BRACKET_EQUAL() -> i32 { 40 }
 fn TOKEN_LEFT_TRIANGLE() -> i32 { 41 }
 fn TOKEN_RIGHT_TRIANGLE() -> i32 { 42 }
+fn TOKEN_BACKSLASH() -> i32 { 43 }
 
 fn token-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -91,6 +92,7 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_BRACKET_EQUAL = if { "TOKEN_BRACKET_EQUAL" break }
         $ty TOKEN_LEFT_TRIANGLE = if { "TOKEN_LEFT_TRIANGLE" break }
         $ty TOKEN_RIGHT_TRIANGLE = if { "TOKEN_RIGHT_TRIANGLE" break }
+        $ty TOKEN_BACKSLASH = if { "TOKEN_BACKSLASH" break }
         "INVALID TOKEN TYPE" break
     }
 }
@@ -415,6 +417,12 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             $lexer.column 1 + #lexer.column
             TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new break
         } 
+        $char "\\" drop load8 = if {
+            TOKEN_BACKSLASH $lexeme $lexer.file $lexer.line $lexer.column Token-new 
+            $lexer.index 1 + #lexer.index
+            $lexer.column 1 + #lexer.column
+            break
+        }
         $char "=" drop load8 = if {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 
                 &lexer.input $lexer.index 1 + STR:Str-get ">" drop load8 = if {

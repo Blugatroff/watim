@@ -92,6 +92,8 @@ fn WORD_ARRAY_REF() -> i32 { 26 }
 fn WORD_BLOCK() -> i32 { 27 }
 fn WORD_ARRAY_INIT() -> i32 { 28 }
 fn WORD_ARRAY_INIT_ZERO() -> i32 { 29 }
+fn WORD_CALL_INDIRECT() -> i32 { 30 }
+fn WORD_REF_FUNCTION() -> i32 { 31 }
 
 fn word-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -120,6 +122,8 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_BLOCK = if { "WORD_BLOCK" break }
         $ty WORD_ARRAY_INIT = if { "WORD_ARRAY_INIT" break }
         $ty WORD_ARRAY_INIT_ZERO = if { "WORD_ARRAY_INIT_ZERO" break }
+        $ty WORD_CALL_INDIRECT = if { "WORD_CALL_INDIRECT" break }
+        $ty WORD_REF_FUNCTION = if { "WORD_REF_FUNCTION" break }
         "INVALID WORD TY" break
     }
 }
@@ -192,6 +196,7 @@ fn TYPE_PTR() -> i32 { 4 }
 fn TYPE_STRUCT() -> i32 { 5 }
 fn TYPE_ARRAY() -> i32 { 6 }
 fn TYPE_GENERIC() -> i32 { 7 }
+fn TYPE_FUNCTION() -> i32 { 8 }
 
 fn type-ty-name(ty: i32) -> .i32, i32 {
     loop {
@@ -202,6 +207,7 @@ fn type-ty-name(ty: i32) -> .i32, i32 {
         $ty TYPE_STRUCT = if { "TYPE_STRUCT" break }
         $ty TYPE_ARRAY = if { "TYPE_ARRAY" break }
         $ty TYPE_GENERIC = if { "TYPE_GENERIC" break }
+        $ty TYPE_FUNCTION = if { "TYPE_FUNCTION" break }
         "invalid TYPE TY" break
     }
 }
@@ -219,6 +225,8 @@ struct Type {
     length: i32
     // FOR TYPE_GENERIC, index into the generics of the function
     generic: i32
+    // FOR TYPE_FUNCTION. 
+    function: FunctionPtr
 }
 fn Type-size(self: .Type, generics: .Types) -> i32 {
     loop {
@@ -308,6 +316,12 @@ fn Type-new-array(type: .Type, length: i32) -> .Type {
     0 !.Types #self.generics
     $self
 }
+fn Type-new-function(args: .Types, rets: .Types) -> .Type {
+    TYPE_FUNCTION Type-new @self
+    $args #self.function.args
+    $rets #self.function.rets
+    $self
+}
 fn Type-set-struc(self: .Type, struc: .Struct) {
     $struc #self.struc
 }
@@ -325,8 +339,11 @@ fn Type-free(self: .Type) {
     $self.ty TYPE_GENERIC = or
     if {
         $self.generics Types-free-container
-    }     
-
+    }
+    $self.ty TYPE_FUNCTION = if {
+        $self.function.args Types-free-container
+        $self.function.rets Types-free-container
+    }
     $self !.i32 A:free
 }
 fn Type-ty(self: .Type) -> i32 {
@@ -390,6 +407,32 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
         }
         break
     }
+    $self Type-ty TYPE_FUNCTION = if {
+        0 @i
+        $formatter "(" FMT:Formatter-write
+        loop {
+            $self.function.args Types-len $i = if { break } 
+            $i 0 /= if {
+                $formatter ", " FMT:Formatter-write
+            }
+            $formatter $generics $self.function.args $i Types-get Type-format
+            $i 1 + #i
+        }
+
+        $formatter " -> " FMT:Formatter-write
+
+        0 #i
+        loop {
+            $self.function.rets Types-len $i = if { break } 
+            $i 0 /= if {
+                $formatter ", " FMT:Formatter-write
+            }
+            $formatter $generics $self.function.rets $i Types-get Type-format
+            $i 1 + #i
+        }
+        $formatter ")" FMT:Formatter-write
+        break
+    }
     2 "Type-format unhandled Type-ty: " IO:write-all IO:check
     2 $self Type-ty type-ty-name IO:write-all IO:check
     2 "\n" IO:write-all IO:check
@@ -408,19 +451,25 @@ fn Type-print(fd: i32, generics: .Types, self: .Type) {
 struct Types {
     inner: IV:I32Vec
     min-size: i32
+    ref-count: i32
 }
 fn Types-new() -> .Types {
     local self: .Types
     sizeof(Types) A:alloc !.Types #self
     IV:I32Vec-new #self.inner
+    1 #self.ref-count
     $self
 }
 fn Types-free(self: .Types) {
     local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Type Type-free
-        $i 1 + #i
+    $self.ref-count 1 = if {
+        loop {
+            $i &self.inner IV:I32Vec-len = if { break }
+            &self.inner $i IV:I32Vec-get !.Type Type-free
+            $i 1 + #i
+        }
+    } else {
+        $self.ref-count 1 - #self.ref-count
     }
     $self Types-free-container
 }
@@ -435,11 +484,16 @@ fn Types-clone-container(self: .Types) -> .Types {
     sizeof(Types) A:alloc !.Types #new
     &self.inner IV:I32Vec-clone #new.inner
     $self Types-min #new.min-size
+    1 #new.ref-count
     $new
 }
 fn Types-free-container(self: .Types) {
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
+    $self.ref-count 1 = if {
+        $self.inner IV:I32Vec-free
+        $self !.i32 A:free
+    } else {
+        $self.ref-count 1 - #self.ref-count
+    }
 }
 fn Types-push(self: .Types, f: .Type) {
     &self.inner $f !i32 IV:I32Vec-push
@@ -535,9 +589,6 @@ fn TypesTypes-free(self: .TypesTypes) {
 fn TypesTypes-push(self: .TypesTypes, f: .Types) {
     &self.inner $f !i32 IV:I32Vec-push
 }
-fn TypesTypes-pop(self: .TypesTypes) -> .Types {
-    &self.inner IV:I32Vec-pop !.Types
-}
 fn TypesTypes-len(self: .TypesTypes) -> i32 {
     &self.inner IV:I32Vec-len
 }
@@ -572,9 +623,6 @@ fn TypesTypes-print(fd: i32, generics: .Types, self: .TypesTypes) {
     $fd &out S:String-unpack IO:write-all IO:check
     $out S:String-free
 }
-fn TypesTypes-last(self: .TypesTypes) -> .Types {
-    $self $self TypesTypes-len 1 - TypesTypes-get
-}
 fn TypesTypes-contains(self: .TypesTypes, types: .Types) -> i32, bool {
     0 @i
     loop {
@@ -584,6 +632,17 @@ fn TypesTypes-contains(self: .TypesTypes, types: .Types) -> i32, bool {
         }
         $i 1 + #i
     }
+}
+
+struct FunctionPtr {
+    args: .Types
+    rets: .Types
+}
+fn FunctionPtr-new(args: .Types, rets: .Types) -> FunctionPtr {
+    local self: FunctionPtr
+    $args #self.args
+    $rets #self.rets
+    $self
 }
 
 struct If {
@@ -707,6 +766,8 @@ struct Word {
     type: .Type
     src-type: .Type
     string: S:String
+    function: .Function
+    ext: .Extern
     checked: bool
     shadow-id: i32
     scope-id: i32
@@ -724,6 +785,8 @@ fn Word-new(ty: i32, token: .L:Token) -> Word {
     0 #self.shadow-id
     0 #self.scope-id
     0 !.Types #self.generics
+    0 !.Function #self.function
+    0 !.Extern #self.ext
     $self
 }
 fn Word-new-annotation(token: .L:Token, type: .Type) -> Word {
@@ -755,7 +818,14 @@ fn Word-free(self: Word) {
     if {
         $self.rets Types-free-container
     }
-    $self.ty WORD_CALL = $self.generics 0 !.Types /= and if {
+    $self.ty WORD_CALL_INDIRECT =
+    $self.checked and
+    if {
+        $self.type Type-free
+    }
+    $self.ty WORD_CALL = 
+    $self.ty WORD_CALL_INDIRECT = or
+    $self.generics 0 !.Types /= and if {
         $self.generics Types-free-container
     }
     $self.ty WORD_STRING = if {
@@ -1038,6 +1108,7 @@ struct Function {
     reachable: bool
     generics: Generics
     instances: .TypesTypes
+    table-index: i32
 }
 fn Function-new(
     ident: .L:Token, 
@@ -1056,6 +1127,7 @@ fn Function-new(
     $locals #self.locals
     $body #self.body
     0 1 = #self.diverges
+    0 #self.table-index
     TypesTypes-new #self.instances
     $self
 }
@@ -1096,6 +1168,7 @@ struct Extern {
     params: Locals
     rets: .Types
     reachable: bool
+    table-index: i32
 }
 fn Extern-new(
     module: .L:Token,
@@ -1112,6 +1185,7 @@ fn Extern-new(
     $params #self.params
     $rets #self.rets
     0 1 = #self.reachable
+    0 #self.table-index
     $self
 }
 fn Extern-module(self: .Extern) -> .L:Token {
@@ -1128,9 +1202,6 @@ fn Extern-parameters(self: .Extern) -> .Locals {
 }
 fn Extern-ident(self: .Extern) -> .L:Token {
     $self.ident
-}
-fn Extern-mark-reachable(self: .Extern) {
-    1 1 = #self.reachable
 }
 fn Extern-free(self: .Extern) {
     $self.params Locals-free

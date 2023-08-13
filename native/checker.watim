@@ -15,7 +15,19 @@ import "./break_stack.watim" as BS
 import "./intrinsic.watim" as INTR
 import "./main.watim" as MAIN
 
-fn check(modules: .M:Modules) {
+struct Checker {
+    modules: .M:Modules
+    table-index: i32
+}
+fn Checker-new(modules: .M:Modules) -> Checker {
+    local self: Checker
+    $modules #self.modules
+    1 #self.table-index
+    $self
+}
+
+fn check(modules: .M:Modules) -> i32 {
+    $modules Checker-new @checker
     0 @i
     loop {
         $i $modules M:Modules-len = if { break }
@@ -25,23 +37,24 @@ fn check(modules: .M:Modules) {
             2 $module M:Module-path S:String-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
         }
-        $modules $module check-module
+        &checker $module check-module
         $i 1 + #i
     }
+    $checker.table-index
 }
-fn check-module(modules: .M:Modules, module: .M:Module) {
+fn check-module(self: .Checker, module: .M:Module) {
     local items: .AST:TopItems
     local i: i32
     $module M:Module-items #items
     loop {
         $i $items AST:TopItems-len = if { break }
-        $modules $module $items $i AST:TopItems-get check-item
+        $self $module $items $i AST:TopItems-get check-item
         $i 1 + #i
     }
 }
-fn check-item(modules: .M:Modules, module: .M:Module, item: .AST:TopItem) {
+fn check-item(self: .Checker, module: .M:Module, item: .AST:TopItem) {
     $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-        $modules $module $item AST:TopItem-function check-function
+        $self $module $item AST:TopItem-function check-function
     }
 }
 
@@ -60,27 +73,24 @@ fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
     U:abort-with-location
     $msg S:String-free
 }
-fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Function) {
-    local stack: .AST:Types
-    local temp-types: .AST:Types
-    local words: .AST:Words
-    local bs: .BS:BreakStacks
-    local i: i32
+fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     local scope-id: IO:I32
-    AST:Types-new #stack
-    AST:Types-new #temp-types
-
     0 #scope-id.inner
+
+    AST:Types-new @stack
+    AST:Types-new @temp-types
+
     $scope-id.inner #function.locals.id
 
-    $function AST:Function-body #words
-    BS:BreakStacks-new #bs
-    $temp-types $bs $modules $module $stack &function.locals &scope-id.inner $words check-words not if {
+    $function AST:Function-body @words
+    BS:BreakStacks-new @bs
+    $temp-types $bs $self $module $stack &function.locals &scope-id.inner $words check-words not if {
         // if the function does not diverge, aka does return
         // then check whether the remaining stack matches the return type
         $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
             $stack $function report-return-type-mismatch
         }
+        0 @i
         loop {
             $i $function AST:Function-rets AST:Types-len = if { break }
             $stack $stack AST:Types-len 1 - $i - AST:Types-get 
@@ -95,7 +105,7 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
     }
 
     $stack AST:Types-free-container
-    0 #i 
+    0 @i 
     loop {
         $i $temp-types AST:Types-len = if { break }
         $module.types $temp-types $i AST:Types-get AST:Types-push
@@ -109,7 +119,7 @@ fn check-function(modules: .M:Modules, module: .M:Module, function: .AST:Functio
 fn check-words(
     temp-types: .AST:Types, 
     bs: .BS:BreakStacks, 
-    modules: .M:Modules, 
+    self: .Checker,
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -121,7 +131,7 @@ fn check-words(
     loop {
         $i $words AST:Words-len = if { break }
         $diverges
-        $temp-types $bs $modules $module $stack $locals $scope-id $words $i AST:Words-get check-word
+        $temp-types $bs $self $module $stack $locals $scope-id $words $i AST:Words-get check-word
         or
         #diverges
         $i 1 + #i
@@ -132,7 +142,7 @@ fn check-words(
 fn check-word(
     temp-types: .AST:Types,
     bs: .BS:BreakStacks,
-    modules: .M:Modules,
+    self: .Checker,
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -150,10 +160,10 @@ fn check-word(
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_CALL = if {
-            $modules $module $stack $word check-call break
+            $self $module $stack $word check-call break
         }
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $temp-types $modules $module $stack $locals $scope-id $word check-lop break
+            $temp-types $self $module $stack $locals $scope-id $word check-lop break
         }
         $word AST:Word-ty AST:WORD_BREAK = if {
             $bs $stack $word check-brek break
@@ -162,7 +172,7 @@ fn check-word(
             $temp-types $stack $word INTR:check-intrinsic break
         }
         $word AST:Word-ty AST:WORD_IF = if {
-            $temp-types $bs $modules $module $stack $locals $scope-id $word check-iff break
+            $temp-types $bs $self $module $stack $locals $scope-id $word check-iff break
         }
         $word AST:Word-ty AST:WORD_CAST = if {
             $stack $word check-cast break
@@ -171,13 +181,13 @@ fn check-word(
             $temp-types $stack $word check-deref break
         }
         $word AST:Word-ty AST:WORD_SET = if {
-            $modules $module $stack $locals $word check-set break
+            $stack $locals $word check-set break
         }
         $word AST:Word-ty AST:WORD_GET_REF = if {
             $stack $locals $temp-types $word check-get-ref break
         }
         $word AST:Word-ty AST:WORD_GET_LOCAL = if {
-            $modules $module $stack $locals $word check-get-locl break
+            $self $module $stack $locals $word check-get-locl break
         }
         $word AST:Word-ty AST:WORD_LOAD = if {
             $stack $word check-load break
@@ -187,7 +197,7 @@ fn check-word(
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_STORE = if {
-            $stack $modules $module $locals $word check-store break
+            $stack $self $module $locals $word check-store break
         }
         $word AST:Word-ty AST:WORD_INIT_LOCAL = if {
             $stack $locals $word check-init-locl break
@@ -205,7 +215,7 @@ fn check-word(
             $stack $word $temp-types check-array-ref break
         }
         $word AST:Word-ty AST:WORD_BLOCK = if {
-            $temp-types $modules $module $stack $locals $scope-id $word check-blok break
+            $temp-types $self $module $stack $locals $scope-id $word check-blok break
         }
         $word AST:Word-ty AST:WORD_ARRAY_INIT = if {
             // TODO: this results in miscompilation when the break is missing
@@ -214,10 +224,54 @@ fn check-word(
         $word AST:Word-ty AST:WORD_ARRAY_INIT_ZERO = if {
             $stack $word $temp-types check-array-init-zero break
         }
+        $word AST:Word-ty AST:WORD_CALL_INDIRECT = if {
+            $stack $word check-call-indirect break
+        }
+        $word AST:Word-ty AST:WORD_REF_FUNCTION = if {
+            $temp-types $self $module $stack $word check-ref-function break
+        }
         $word AST:Word-location " unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
     $word AST:Word-mark-checked
+}
+
+fn check-ref-function(temp-types: .AST:Types, self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
+    $self $module $stack $word 1 1 = check-function-usage drop @rets @params
+    
+    $stack 
+
+    $temp-types
+    $params
+    $rets AST:Type-new-function 
+    U:push-temp-type 
+
+    AST:Types-push
+
+    0 1 =
+}
+
+fn check-call-indirect(stack: .AST:Types, word: .AST:Word) -> bool {
+    $stack AST:Types-len 0 = if {
+        $word AST:Word-location "call indirect expected function pointer\n" U:abort-with-location
+    }
+    $stack AST:Types-pop @fn-type
+    $stack $fn-type.function.args $word U:expect-stack
+
+    $fn-type.function.args AST:Types-clone-container
+    $fn-type.function.rets AST:Types-clone-container
+    AST:Type-new-function #word.type
+
+    $fn-type.function.rets @rets
+
+    0 @i
+    loop {
+        $i $rets AST:Types-len = if { break }
+        $rets $i AST:Types-get @type
+        $stack $type AST:Types-push
+        $i 1 + #i
+    }
+    0 1 =
 }
 
 fn check-array-init(stack: .AST:Types, word: .AST:Word, temp-types: .AST:Types) -> bool {
@@ -405,7 +459,7 @@ fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type {
     }
     $type
 }
-fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
+fn check-get-locl(self: .Checker, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     $locals $word check-locl-fields-access if {
         @type @src-type
 
@@ -420,7 +474,7 @@ fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, loc
     } else {
         drop drop
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
-            $modules $module M:Modules-find-index #word.module
+            $self.modules $module M:Modules-find-index #word.module
             AST:WORD_GET_GLOBAL #word.ty
             AST:Local-type $stack flip AST:Types-push
         } else {
@@ -430,7 +484,7 @@ fn check-get-locl(modules: .M:Modules, module: .M:Module, stack: .AST:Types, loc
     }
     0 1 =
 }
-fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals: .AST:Locals, word: .AST:Word) -> bool {
+fn check-store(stack: .AST:Types, self: .Checker, module: .M:Module, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     local src-type: .AST:Type
     local mem: .AST:Local
@@ -448,7 +502,7 @@ fn check-store(stack: .AST:Types, modules: .M:Modules, module: .M:Module, locals
         drop drop
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             #mem
-            $modules $module M:Modules-find-index #word.module
+            $self.modules $module M:Modules-find-index #word.module
             $mem AST:Local-type $word check-fields-access #type
             AST:WORD_STORE_GLOBAL #word.ty
             $type AST:Type-child #word.type
@@ -525,7 +579,7 @@ fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> b
 
     0 1 =
 }
-fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
+fn check-set(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     local struc: .AST:Struct
     local src-type: .AST:Type
@@ -536,18 +590,6 @@ fn check-set(modules: .M:Modules, module: .M:Module, stack: .AST:Types, locals: 
     $type #word.type
     $stack $type $word U:expect-stack-one
     0 1 =
-}
-fn report-check-deref-error(stack: .AST:Types, word: .AST:Word) {
-    local formatter: FMT:Formatter
-    local msg: S:String
-    FMT:Formatter-new #formatter
-    &formatter "expected a pointer to a struct or a struct, got: " FMT:Formatter-write
-    &formatter 0 !.AST:Types $stack AST:Types-format
-    $formatter FMT:Formatter-into-string #msg
-    $word AST:Word-location
-    &msg S:String-unpack
-    U:abort-with-location
-    $msg S:String-free
 }
 fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 0 = if { 
@@ -563,7 +605,7 @@ fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
 fn check-iff(
     temp-types: .AST:Types,
     bs: .BS:BreakStacks,
-    modules: .M:Modules,
+    self: .Checker,
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -571,27 +613,22 @@ fn check-iff(
     word: .AST:Word
 ) -> bool {
     local iff: .AST:If
-    local true-branch-diverges: bool
-    local false-branch-diverges: bool
-    local boolean: .AST:Type
-    local iff-stack: .AST:Types
-    local el-stack: .AST:Types
     local params: .AST:Types
     local rets: .AST:Types
     local i: i32
 
-    AST:Type-new-boolean #boolean
+    AST:Type-new-boolean @boolean
     $stack $boolean $word U:expect-stack-one
     $boolean AST:Type-free
 
-    $stack AST:Types-clone-container #iff-stack
-    $stack AST:Types-clone-container #el-stack
+    $stack AST:Types-clone-container @iff-stack
+    $stack AST:Types-clone-container @el-stack
 
     $iff-stack AST:Types-reset-min
     $el-stack AST:Types-reset-min
 
-    0 1 = #true-branch-diverges
-    0 1 = #false-branch-diverges
+    0 1 = @true-branch-diverges
+    0 1 = @false-branch-diverges
 
     $word AST:Word-iff #iff
 
@@ -599,13 +636,13 @@ fn check-iff(
     $scope-id ~ 1 + =>scope-id
     $scope-id ~ #iff.locals.id
     
-    $temp-types $bs $modules $module $iff-stack &iff.locals $scope-id $iff AST:If-body check-words #true-branch-diverges
+    $temp-types $bs $self $module $iff-stack &iff.locals $scope-id $iff AST:If-body check-words #true-branch-diverges
 
     $stack $iff-stack AST:Types-min $stack AST:Types-len AST:Types-clone-slice #params
     $iff-stack $iff-stack AST:Types-min $iff-stack AST:Types-len AST:Types-clone-slice #rets
 
     $iff.has-el if {
-        $temp-types $bs $modules $module $el-stack &iff.locals $scope-id $iff AST:If-el check-words #false-branch-diverges
+        $temp-types $bs $self $module $el-stack &iff.locals $scope-id $iff AST:If-el check-words #false-branch-diverges
         loop {
             $iff-stack AST:Types-len $el-stack AST:Types-len /= if {
                 0 0 = break
@@ -664,7 +701,7 @@ fn check-brek(bs: .BS:BreakStacks, stack: .AST:Types, word: .AST:Word) -> bool {
 
 fn check-lop(
     temp-types: .AST:Types,
-    modules: .M:Modules, 
+    self: .Checker,
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -679,7 +716,7 @@ fn check-lop(
     $scope-id ~ 1 + =>scope-id
     $scope-id ~ #word.lop.locals.id
 
-    $temp-types $bs $modules $module $stack &word.lop.locals $scope-id &word.lop.body check-words drop
+    $temp-types $bs $self $module $stack &word.lop.locals $scope-id &word.lop.body check-words drop
     $bs "loop" check-brek-stacks
 
     $bs BS:BreakStacks-len 0 = if {
@@ -739,7 +776,7 @@ fn report-brek-stack-mismatch(bs: .BS:BreakStacks, name-ptr: .i32, name-len: i32
 
 fn check-blok(
     temp-types: .AST:Types,
-    modules: .M:Modules, 
+    self: .Checker,
     module: .M:Module,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -753,7 +790,7 @@ fn check-blok(
     $scope-id ~ #word.blok.locals.id
     
     $stack AST:Types-len @orig-stack-len
-    $temp-types $bs $modules $module $stack &word.blok.locals $scope-id &word.blok.body check-words @diverges
+    $temp-types $bs $self $module $stack &word.blok.locals $scope-id &word.blok.body check-words @diverges
 
     AST:Types-new @remaining-types
     $orig-stack-len @i
@@ -784,33 +821,32 @@ fn check-blok(
     $diverges
 }
 
-fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
-    local msg: S:String
-    local function: .AST:Function
-    local ext: .AST:Extern
-    local params: .AST:Types
-    local param-locals: .AST:Locals
-    local ret: .AST:Types
+fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word, mark-indirect: bool) -> .AST:Types, .AST:Types, .M:Module {
     local locl: .AST:Local
-    local i: i32
-    $modules $module $word.qualifier $word resolve-module #module
+    $self.modules $module $word.qualifier $word resolve-module #module
     $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-function not if {
         drop drop
-        "function: `" S:String-new #msg
+        "function: `" S:String-new @msg
         &msg $word AST:Word-ident ~ STR:Str-unpack S:String-append
         &msg "` not found\n" S:String-append
         $word AST:Word-location &msg S:String-unpack U:abort-with-location
     } else { 
-        #function #ext
+        #word.function #word.ext
     }
 
-    $function !i32 0 /= if {
-        $function AST:Function-locals
-        $function AST:Function-rets
-        &function.generics
+    $word.function !i32 0 /= if {
+        $word.function AST:Function-locals
+        $word.function AST:Function-rets
+        &word.function.generics
+        $mark-indirect if { 
+            $self.table-index $self.table-index 1 + #self.table-index #word.function.table-index 
+        }
     } else {
-        $ext AST:Extern-parameters
-        $ext AST:Extern-rets
+        $word.ext AST:Extern-parameters
+        $word.ext AST:Extern-rets
+        $mark-indirect if { 
+            $self.table-index $self.table-index 1 + #self.table-index #word.ext.table-index 
+        }
         0 !.AST:Generics
     } @generics @ret @param-locals
 
@@ -844,8 +880,9 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
         0 !.AST:Types
     } @instance
 
-    AST:Types-new #params
+    AST:Types-new @params
     0 @instance-index
+    0 @i
     loop {
         $i $param-locals AST:Locals-len = if { break }
         $param-locals $i AST:Locals-get #locl
@@ -864,28 +901,33 @@ fn check-call(modules: .M:Modules, module: .M:Module, stack: .AST:Types, word: .
         $i 1 + #i
     }
 
-    $function !i32 0 /= $instance 0 !.AST:Types /= and if {
-        $function.instances $instance AST:TypesTypes-contains if {
+    $word.function !i32 0 /= $instance 0 !.AST:Types /= and if {
+        $word.function.instances $instance AST:TypesTypes-contains if {
             #word.instance-index
             $instance AST:Types-free-container
         } else {
             drop
-            $function.instances AST:TypesTypes-len #word.instance-index
-            $function.instances $instance AST:TypesTypes-push
+            $word.function.instances AST:TypesTypes-len #word.instance-index
+            $word.function.instances $instance AST:TypesTypes-push
         }
     } else {
         0 #word.instance-index
     }
 
+    $params $ret $module
+}
+
+fn check-call(self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
+    $self $module $stack $word 0 1 = check-function-usage #module @ret @params
     $ret AST:Types-clone-container #word.rets
-    $modules $module M:Modules-find-index #word.module
+    $self.modules $module M:Modules-find-index #word.module
 
     $stack 
     $params
     $word U:expect-stack
     $params AST:Types-free-container
 
-    0 #i
+    0 @i
     loop {
         $i $ret AST:Types-len = if { break }
         $ret $i AST:Types-get @type

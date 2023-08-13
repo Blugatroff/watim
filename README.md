@@ -23,7 +23,7 @@ Watim = WAT Improved
 - [X] Variable declaration and initiliziation anywhere in function.
 - [X] Generics using monomorphization.
 - [ ] Type inference
-- [ ] function pointers
+- [X] function pointers
 - [ ] closures?
 - [ ] Some sort of Typeclass/Trait system perhaps?
 

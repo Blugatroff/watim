@@ -5,6 +5,7 @@ import "../std/util.watim" as U
 import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/i32vec.watim" as IV
+import "../std/alloc.watim" as A
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -20,6 +21,7 @@ fn generate-type(formatter: .FMT:Formatter, generics: .AST:Types, self: .AST:Typ
         $self AST:Type-ty AST:TYPE_PTR = or
         $self AST:Type-ty AST:TYPE_STRUCT = or
         $self AST:Type-ty AST:TYPE_ARRAY = or
+        $self AST:Type-ty AST:TYPE_FUNCTION = or
         if { 
             $formatter "i32" FMT:Formatter-write break
         }
@@ -182,9 +184,42 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
         $self.ty AST:WORD_ARRAY_INIT = if {
             $formatter $self $generics $locl-copy-space-ptr generate-array-init break
         }
+        $self.ty AST:WORD_REF_FUNCTION = if {
+            $formatter $self generate-ref-function break
+        }
+        $self.ty AST:WORD_CALL_INDIRECT = if {
+            $formatter $generics $self generate-call-indirect break
+        }
         $formatter $self.ty AST:word-ty-name FMT:Formatter-write
         break
     } 
+}
+fn generate-call-indirect(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
+    $formatter "(call_indirect " FMT:Formatter-write
+    $word.type.function.args @args
+    0 @i
+    loop {
+        $i $args AST:Types-len = if { break }
+        $formatter "(param " FMT:Formatter-write
+        $formatter $generics $args $i AST:Types-get generate-type
+        $formatter ") " FMT:Formatter-write
+        $i 1 + #i
+    }
+    $word.type.function.args @rets
+    0 #i
+    loop {
+        $i $rets AST:Types-len = if { break }
+        $formatter "(result " FMT:Formatter-write
+        $formatter $generics $args $i AST:Types-get generate-type
+        $formatter ") " FMT:Formatter-write
+        $i 1 + #i
+    }
+    $formatter ")\n" FMT:Formatter-write
+}
+fn generate-ref-function(formatter: .FMT:Formatter, word: .AST:Word) {
+    $formatter "i32.const " FMT:Formatter-write
+    $word.function.table-index $formatter U:i32-format
+    $formatter "\n" FMT:Formatter-write
 }
 fn generate-load(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Type, locl-copy-space-ptr: .i32) {
     $type AST:Type-ty AST:TYPE_STRUCT = if {
@@ -1320,6 +1355,14 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
                 $item AST:TopItem-function @function
                 $function.reachable if {
                     $formatter $i $item AST:TopItem-function generate-function
+                } else {
+                    MAIN:logging-enabled if {
+                        2 "Unused function: " IO:write-all IO:check
+                        2 $function.ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
+                        2 ", in module: " IO:write-all IO:check
+                        2 $module M:Module-path S:String-unpack IO:write-all IO:check
+                        2 "\n" IO:write-all IO:check
+                    }
                 }
             }
             $j 1 + #j
@@ -1328,7 +1371,67 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
     }
 }
 
-fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules: .M:Modules) {
+struct ExternOrFunction {
+    ext: .AST:Extern
+    function: .AST:Function
+    module: i32
+}
+
+fn generate-table(formatter: .FMT:Formatter, table-size: i32, modules: .M:Modules) {
+    $table-size sizeof(ExternOrFunction) * A:alloc !.ExternOrFunction @fs
+
+    0 @i
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $modules $i M:Modules-get-value @module
+        $module M:Module-items @items
+        0 @j
+        loop {
+            $j $items AST:TopItems-len = if { break }
+            $items $j AST:TopItems-get @item
+            $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+                $item.function.table-index 0 /= if {
+                    $fs sizeof(ExternOrFunction) $item.function.table-index * + @ptr
+                    0 !.AST:Extern #ptr.ext
+                    $item.function #ptr.function
+                    $i #ptr.module
+                }
+            }
+            $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
+                $item.ext.table-index 0 /= if {
+                    $fs sizeof(ExternOrFunction) $item.ext.table-index * + @ptr
+                    0 !.AST:Function #ptr.function
+                    $item.ext #ptr.ext
+                    $i #ptr.module
+                }
+            }
+            $j 1 + #j
+        }
+        $i 1 + #i
+    }
+
+    $formatter "(table funcref (elem $intrinsic:flip " FMT:Formatter-write
+    1 @i 
+    loop {
+        $i $table-size = if { break }
+        $fs sizeof(ExternOrFunction) $i * + @f
+        $f.ext 0 !.AST:Extern /= if {
+            $formatter $f.ext.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+        }
+        $f.function 0 !.AST:Function /= if {
+            $formatter "$" FMT:Formatter-write
+            $f.module $formatter U:i32-format
+            $formatter ":" FMT:Formatter-write
+            $formatter $f.function.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+        }
+        $formatter " " FMT:Formatter-write
+        $i 1 + #i
+    }
+    $formatter "))\n" FMT:Formatter-write
+    $fs !.i32 A:free
+}
+
+fn generate(formatter: .FMT:Formatter, table-size: i32, stack-start: i32, mem: .S:String, modules: .M:Modules) {
     $formatter "(module\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
 
@@ -1350,6 +1453,8 @@ fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules
     $formatter "(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
     $formatter "(func $intrinsic:rotate-right (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $c local.get $a local.get $b)\n" FMT:Formatter-write
+
+    $formatter $table-size $modules generate-table
 
     $formatter $mem S:String-len $modules generate-global-mems
 

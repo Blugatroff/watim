@@ -335,8 +335,14 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
         $words AST:Words-len $i = if { break }
         $words $i AST:Words-get #word
 
-        $word AST:Word-ty AST:WORD_CALL = if {
-            $modules $module $word mark-reachable-call
+        $word AST:Word-ty AST:WORD_REF_FUNCTION = 
+        $word AST:Word-ty AST:WORD_CALL = or if {
+            $word.function 0 !.AST:Function /= if {
+                $modules $module $word.function mark-reachable-function
+            }
+            $word.ext 0 !.AST:Extern /= if {
+                1 1 = #word.ext.reachable
+            }
         }
 
         $word AST:Word-ty AST:WORD_IF = if {
@@ -359,42 +365,6 @@ fn mark-reachable-iff(modules: .Modules, module: .Module, iff: .AST:If) {
     $modules $module &iff.body mark-reachable-words
     $iff.has-el if {
         $modules $module &iff.el mark-reachable-words
-    }
-}
-
-fn mark-reachable-call(modules: .Modules, module: .Module, caller: .AST:Word) {
-    local function: .AST:Function
-    local ext: .AST:Extern
-    local path: .S:String
-
-    $caller.qualifier 0 !.STR:Str = if { 
-        $module $caller AST:Word-ident ~ STR:Str-unpack Module-find-function if {
-            #function #ext
-            $function 0 !.AST:Function /= if {
-                $modules $module $function mark-reachable-function
-            }
-            $ext 0 !.AST:Extern /= if {
-                $ext AST:Extern-mark-reachable
-            }
-
-        } else { drop drop }
-    } else {
-        $module Module-imports $caller.qualifier ~ STR:Str-unpack AST:Imports-get if {
-            #path
-            $modules $path S:String-unpack Modules-get if {
-                #module
-
-                $module $caller AST:Word-ident ~ STR:Str-unpack Module-find-function if {
-                    #function #ext
-                    $function 0 !.AST:Function /= if {
-                        $modules $module $function mark-reachable-function
-                    }
-                    $ext 0 !.AST:Extern /= if {
-                        $ext AST:Extern-mark-reachable
-                    }
-                } else { drop drop }
-            } else { drop }
-        } else { drop }
     }
 }
 
