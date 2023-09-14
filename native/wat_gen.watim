@@ -1242,8 +1242,8 @@ fn generate-function(formatter: .FMT:Formatter, module: i32, function: .AST:Func
 }
 
 fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: .AST:Types, instance-index: i32, function: .AST:Function) {
-    memory struc-returnals-space-ptr: i32 4
-    memory locl-copy-space-ptr: i32 4
+    local locl-copy-space-ptr: CORE:I32
+    local struc-returnals-space-ptr: CORE:I32
     local i: i32
     local uses-stack: bool
     local struc-returnals-space: i32
@@ -1270,10 +1270,10 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
     $formatter $instance $function AST:Function-body generate-word-locals
 
     $function AST:Function-body $instance measure-struc-returnals-space #max-args #struc-returnals-space
-    0 =>struc-returnals-space-ptr
+    0 #struc-returnals-space-ptr.inner
 
     $function AST:Function-body $instance measure-locl-copy-space #locl-copy-count #locl-copy-space
-    0 =>locl-copy-space-ptr
+    0 #locl-copy-space-ptr.inner
 
     $function AST:Function-has-mem-or-struc-locl
     $struc-returnals-space 0 gt or
@@ -1319,7 +1319,7 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
     $formatter $instance $function AST:Function-locals generate-strucs
     $formatter $instance $function AST:Function-body generate-word-strucs
 
-    $formatter $instance $struc-returnals-space-ptr $locl-copy-space-ptr $function AST:Function-body generate-words
+    $formatter $instance &struc-returnals-space-ptr.inner &locl-copy-space-ptr.inner $function AST:Function-body generate-words
     $uses-stack if {
         $formatter FMT:Formatter-write-indent
         $formatter "local.get $stac:k global.set $stac:k\n" FMT:Formatter-write

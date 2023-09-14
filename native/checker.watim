@@ -74,7 +74,7 @@ fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
     $msg S:String-free
 }
 fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
-    local scope-id: IO:I32
+    local scope-id: CORE:I32
     0 #scope-id.inner
 
     AST:Types-new @stack
