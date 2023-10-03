@@ -18,6 +18,8 @@ import "./module.watim" as M
 import "./parser.watim" as P
 import "./resolver.watim" as R
 import "./dump.watim" as DUMP
+import "./graph.watim" as GRAPH
+import "./monomorph.watim" as MONO
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -59,6 +61,7 @@ fn main() {
     &args "--quiet" find-flag if { disable-logging }
     &args "-q" find-flag if { disable-logging }
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
+    &args "--call-graph" find-flag if { CALL_GRAPH set-mode }
 
     &args S:StringVec-len 1 le if { print-usage-and-exit }
     &args 1 S:StringVec-get #path 
@@ -70,6 +73,7 @@ fn main() {
         &mem S:String-len &modules MEM:process #stack-start
         &modules C:check @table-size
         &modules M:Modules-mark-reachable
+        &modules MONO:gather-instances
 
         FMT:Formatter-new #formatter
         &formatter $table-size $stack-start &mem &modules GEN:generate
@@ -79,6 +83,20 @@ fn main() {
         logging-enabled if { 2 A:report }
         $formatted S:String-free
 
+        &modules M:Modules-free
+    }
+    mode CALL_GRAPH = if {
+        M:Modules-new #modules
+        &modules &mem $path S:String-unpack load-module-recursive
+        &modules R:resolve
+        &mem S:String-len &modules MEM:process #stack-start
+        &modules C:check @table-size
+        &modules M:Modules-mark-reachable
+        &modules GRAPH:call-graph-modules #formatted
+        
+        1 &formatted S:String-unpack IO:write-all IO:check
+        
+        $formatted S:String-free
         &modules M:Modules-free
     }
 
@@ -118,7 +136,7 @@ fn parse-ast() {
     }
     &input "stdin.watim" STR:Str-new L:lex #tokens
     S:String-empty #mem
-    &mem &tokens P:parse #types #items
+    &mem &tokens P:parse @fields #types #items
     
     FMT:Formatter-new #formatter
     &formatter $items DUMP:TopItems-json
@@ -129,6 +147,7 @@ fn parse-ast() {
     $tokens L:Tokens-free
     $mem S:String-free
     $types AST:Types-free
+    $fields AST:Fields-free
 
     $formatter FMT:Formatter-into-string #json
     1 &json S:String-unpack IO:write-all IO:check
@@ -169,6 +188,7 @@ fn logging-enabled() -> bool { $LOGGING ~ }
 
 fn COMPILE() -> i32 { 1 }
 fn PARSE_AST() -> i32 { 2 }
+fn CALL_GRAPH() -> i32 { 3 }
 
 memory MODE: i32 4
 fn set-mode(mode: i32) { $MODE $mode store }

@@ -1,0 +1,63 @@
+import "../std/io.watim" as IO
+import "../std/str.watim" as STR
+import "../std/string.watim" as S
+import "../std/format.watim" as FMT
+
+import "./ast.watim" as AST
+import "./lexer.watim" as L
+import "./module.watim" as M
+
+fn call-graph-modules(modules: .M:Modules) -> S:String {
+    FMT:Formatter-new @fmt
+    0 @i
+    &fmt "digraph {\n" FMT:Formatter-write
+    &fmt FMT:Formatter-indent
+    loop {
+        $i $modules M:Modules-len = if { break }
+        &fmt $modules $i M:Modules-get-value call-graph-module
+        $i 1 + #i
+    }
+    &fmt FMT:Formatter-dedent
+    &fmt "}\n" FMT:Formatter-write
+    $fmt FMT:Formatter-into-string
+}
+
+fn call-graph-module(fmt: .FMT:Formatter, module: .M:Module) {
+    $module M:Module-items @items
+    0 @i
+    loop {
+        $i $items AST:TopItems-len = if { break }
+        $items $i AST:TopItems-get @item
+        $fmt $item call-graph-item
+        $i 1 + #i
+    }
+}
+
+fn call-graph-item(fmt: .FMT:Formatter, item: .AST:TopItem) {
+    $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+        $fmt $item AST:TopItem-function call-graph-function
+    }
+}
+
+fn call-graph-function(fmt: .FMT:Formatter, function: .AST:Function) {
+    0 @i
+    loop {
+        $i $function.body AST:Words-len = if { break }
+        $function.body $i AST:Words-get @word
+        $word.ty AST:WORD_CALL = if {
+            $fmt FMT:Formatter-write-indent
+
+            $fmt "\"" FMT:Formatter-write
+            $fmt $function.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+            $fmt "\" -> \"" FMT:Formatter-write
+            $word.function 0 !.AST:Function /= if { 
+                $fmt $word.function.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+            } else { 
+                $fmt $word.ext.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+            }
+            $fmt "\"\n" FMT:Formatter-write
+        }
+        $i 1 + #i
+    }
+}
+

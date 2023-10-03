@@ -109,10 +109,10 @@ fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
     $formatter FMT:Formatter-indent
     
     loop {
-        $i &fun.body AST:Words-len = if { break }
+        $i $fun.body AST:Words-len = if { break }
         
-        $formatter &fun.body $i AST:Words-get Word-json
-        $i 1 + &fun.body AST:Words-len /= if {
+        $formatter $fun.body $i AST:Words-get Word-json
+        $i 1 + $fun.body AST:Words-len /= if {
             $formatter "," FMT:Formatter-write
         }
         $formatter "\n" FMT:Formatter-write

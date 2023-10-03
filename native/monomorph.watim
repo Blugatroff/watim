@@ -1,0 +1,312 @@
+import "../std/io.watim" as IO
+import "../std/str.watim" as STR
+import "../std/string.watim" as S
+
+import "./ast.watim" as AST
+import "./lexer.watim" as L
+import "./module.watim" as M
+
+struct GenericsMap {
+    current: .AST:Types
+    parent: .GenericsMap
+}
+
+fn GenericsMap-new(parent: .GenericsMap, current: .AST:Types) -> GenericsMap {
+    local self: GenericsMap
+    $parent #self.parent
+    $current #self.current
+    $self
+}
+fn GenericsMap-new-root(current: .AST:Types) -> GenericsMap { 0 !.GenericsMap $current GenericsMap-new }
+fn GenericsMap-resolve-in-current(self: .GenericsMap, type: .AST:Type) -> .AST:Type {
+    $type.ty AST:TYPE_GENERIC = if {
+        $self.current 0 !.AST:Types = if {
+            0 0 / drop
+        }
+        $self.current $type.generic AST:Types-get
+    } else { $type }
+}
+
+fn gather-instances(modules: .M:Modules) {
+    0 @i
+    loop {
+        $i $modules M:Modules-len = if { break }
+        $modules $i M:Modules-get-value gather-instances-module
+        $i 1 + #i
+    }
+}
+
+fn gather-instances-module(module: .M:Module) {
+    $module M:Module-items @items
+    0 @i
+    loop {
+        $i $items AST:TopItems-len = if { break }
+        $items $i AST:TopItems-get @item
+        $module $item gather-instances-item
+        $i 1 + #i
+    }
+}
+
+fn gather-instances-item(module: .M:Module, item: .AST:TopItem) {
+    $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
+        $item AST:TopItem-function @function
+        &function.generics AST:Generics-len 0 = if { // only start gathering at non-generic functions
+            AST:Types-new @generics
+            $module.types-types $generics AST:TypesTypes-push
+
+            $generics GenericsMap-new-root @generics-map
+            $module &generics-map $function gather-instances-function @new-words
+            &module.words-words $new-words AST:WordsWords-push
+            $generics $new-words AST:Instance-new @instance
+            $function.instances $instance AST:Instances-push
+        }
+    }
+}
+
+fn gather-instances-function(module: .M:Module, generics-map: .GenericsMap, function: .AST:Function) -> .AST:Words {
+    $module $generics-map $function.body gather-instances-words
+}
+
+fn gather-instances-words(module: .M:Module, generics-map: .GenericsMap, words: .AST:Words) -> .AST:Words {
+    AST:Words-new @new-words
+    0 @i
+    loop {
+        $i $words AST:Words-len = if { break }
+        $words $i AST:Words-get @word
+        $module $generics-map $word gather-instances-word
+        $new-words flip AST:Words-push
+        $i 1 + #i
+    }
+    $new-words
+}
+
+fn gather-instances-word(module: .M:Module, generics-map: .GenericsMap, word: .AST:Word) -> AST:Word { block {
+    $word.ty $word.token AST:Word-new @new-word
+    $word.ty AST:WORD_CALL = if {
+        $word.ident #new-word.ident
+        $word.module #new-word.module
+        $word.function 0 !.AST:Function /= $word.generics 0 !.AST:Types /= and if {
+            $word.generics AST:Types-len 0 /= if {
+                AST:Types-new @new-generics
+                0 @i
+                loop {
+                    $i $word.generics AST:Types-len = if { break }
+                    $word.generics $i AST:Types-get @type
+                    $generics-map $type GenericsMap-resolve-in-current #type
+                    $new-generics $type AST:Types-push
+                    $i 1 + #i
+                }
+                $word.function.instances $new-generics AST:Instances-contains-types not if {
+                    drop
+                    $word.function.instances AST:Instances-len @instance-index
+                    $new-generics #new-word.generics
+
+                    $word.rets $new-generics $module AST:Types-apply-generics drop #new-word.rets
+                    $word.args $new-generics $module AST:Types-apply-generics drop #new-word.args
+
+                    $generics-map $new-generics GenericsMap-new @child-generics-map
+
+                    $child-generics-map.current 0 !.AST:Words AST:Instance-new @new-instance
+                    $word.function.instances $new-instance AST:Instances-push
+
+                    $module &child-generics-map $word.function gather-instances-function @new-words
+                    &module.words-words $new-words AST:WordsWords-push
+                    $word.function.instances $instance-index AST:Instances-get .body $new-words store
+                    $instance-index
+                } else {
+                    @instance-index
+                    $new-generics AST:Types-free-container
+
+                    $word.function.instances $instance-index AST:Instances-get .generics ~ @generics
+                    $word.rets $generics $module AST:Types-apply-generics drop #new-word.rets
+                    $word.args $generics $module AST:Types-apply-generics drop #new-word.args
+
+                    $instance-index
+                } @instance-index
+                // $module.types-types $new-generics AST:TypesTypes-push
+                $instance-index #new-word.instance-index
+                $new-word break
+            }
+        }
+        $word.rets AST:Types-clone-container #new-word.rets
+        $word.args AST:Types-clone-container #new-word.args
+        0 #new-word.instance-index
+        $new-word break
+    }
+    $word.ty AST:WORD_NUMBER = if {
+        $word.number #new-word.number
+        $new-word break
+    }
+    $word.ty AST:WORD_STRING = if {
+        $word.addr #new-word.addr
+        $word.size #new-word.size
+        &word.string S:String-clone #new-word.string
+        $new-word break
+    }
+    $word.ty AST:WORD_SET = 
+    $word.ty AST:WORD_GET_LOCAL = or
+    $word.ty AST:WORD_GET_REF = or
+    if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.ident #new-word.ident
+        $word.shadow-id #new-word.shadow-id
+        $word.scope-id #new-word.scope-id
+        $word.src-type $generics-map.current $module AST:Type-apply-generics drop #new-word.src-type
+        &word.fields L:Tokens-clone-container #new-word.fields
+        $new-word break
+    }
+    $word.ty AST:WORD_INIT_LOCAL = if {
+        $word.ident #new-word.ident
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.ident #new-word.ident
+        $word.shadow-id #new-word.shadow-id
+        $word.scope-id #new-word.scope-id
+        $new-word break
+    }
+    $word.ty AST:WORD_STORE = if {
+        $word.ident #new-word.ident
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.src-type $generics-map.current $module AST:Type-apply-generics drop #new-word.src-type
+        $word.shadow-id #new-word.shadow-id
+        $word.scope-id #new-word.scope-id
+        &word.fields L:Tokens-clone-container #new-word.fields
+        $new-word break
+    }
+    $word.ty AST:WORD_GET_GLOBAL = 
+    $word.ty AST:WORD_STORE_GLOBAL = or
+    if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.ident #new-word.ident
+        $word.module #new-word.module
+        &word.fields L:Tokens-clone-container #new-word.fields
+        $new-word break
+    }
+    $word.ty AST:WORD_IF = if {
+        $module $generics-map $word.iff gather-instances-iff #new-word.iff
+        $new-word break
+    }
+    $word.ty AST:WORD_LOOP = if {
+        $module $generics-map $word.lop gather-instances-lop #new-word.lop
+        $new-word break
+    }
+    $word.ty AST:WORD_BLOCK = if {
+        $module $generics-map $word.blok gather-instances-blok #new-word.blok
+        $new-word break
+    }
+    $word.ty AST:WORD_INTRINSIC = if {
+        $module $generics-map $word &new-word gather-instances-intrinsic
+        $new-word break
+    }
+    $word.ty AST:WORD_BREAK = if { $new-word break }
+    $word.ty AST:WORD_DEREF = if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.src-type $generics-map.current $module AST:Type-apply-generics drop #new-word.src-type
+        &word.fields L:Tokens-clone-container #new-word.fields
+        $new-word break
+    }
+    $word.ty AST:WORD_CAST = if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.src-type $generics-map.current $module AST:Type-apply-generics drop #new-word.src-type
+        $new-word break
+    }
+    $word.ty AST:WORD_LOAD = 
+    $word.ty AST:WORD_SIZEOF = or 
+    if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $new-word break
+    }
+    $word.ty AST:WORD_REF_FUNCTION = if {
+        $word.function #new-word.function
+        $new-word break
+    }
+    $word.ty AST:WORD_CALL_INDIRECT = if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $new-word break
+    }
+    $word.ty AST:WORD_ARRAY_WRITE = 
+    $word.ty AST:WORD_ARRAY_READ = or
+    $word.ty AST:WORD_ARRAY_REF = or if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $new-word break
+    }
+    $word.ty AST:WORD_ARRAY_INIT = if {
+        $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type
+        $word.size #new-word.size
+        $new-word break
+    }
+    2 "gather-instances-word: unhandled word type: " IO:write-all IO:check
+    2 $word.ty AST:word-ty-name IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    0 0 / !AST:Word
+} }
+fn gather-instances-iff(module: .M:Module, generics-map: .GenericsMap, iff: .AST:If) -> .AST:If {
+    $iff.token $module $generics-map $iff.body gather-instances-words AST:If-new @new-if
+    $iff.has-el #new-if.has-el
+    $module $generics-map &iff.locals gather-instances-locals #new-if.locals
+    $iff.has-el if {
+        $module $generics-map $iff.el gather-instances-words #new-if.el
+    }
+    $iff.params 0 !.AST:Types = if { 0 !.AST:Types #new-if.params } else { $iff.params $generics-map.current $module AST:Types-apply-generics drop #new-if.params }
+    $iff.rets 0 !.AST:Types = if { 0 !.AST:Types #new-if.rets } else { $iff.rets $generics-map.current $module AST:Types-apply-generics drop #new-if.rets }
+    $new-if
+}
+fn gather-instances-lop(module: .M:Module, generics-map: .GenericsMap, lop: .AST:Loop) -> .AST:Loop {
+    $lop.token $module $generics-map $lop.body gather-instances-words AST:Loop-new @new-lop
+    $module $generics-map &lop.locals gather-instances-locals #new-lop.locals
+    $lop.rets 0 !.AST:Types = if { 0 !.AST:Types #new-lop.rets } else { $lop.rets $generics-map.current $module AST:Types-apply-generics drop #new-lop.rets }
+    $new-lop
+}
+fn gather-instances-blok(module: .M:Module, generics-map: .GenericsMap, blok: .AST:Block) -> .AST:Block {
+    $blok.token $module $generics-map $blok.body gather-instances-words AST:Block-new @new-blok
+    $module $generics-map &blok.locals gather-instances-locals #new-blok.locals
+    $blok.rets 0 !.AST:Types = if { 0 !.AST:Types #new-blok.rets } else { $blok.rets $generics-map.current $module AST:Types-apply-generics drop #new-blok.rets }
+    $new-blok
+}
+fn gather-instances-locals(module: .M:Module, generics-map: .GenericsMap, locals: .AST:Locals) -> AST:Locals {
+    AST:Locals-new @new-locals
+    0 @i
+    loop {
+        $i $locals AST:Locals-len = if { break }
+        $locals $i AST:Locals-get @locl
+        &new-locals $module $generics-map $locl gather-instances-locl AST:Locals-push
+        $i 1 + #i
+    }
+    $new-locals
+}
+
+fn gather-instances-locl(module: .M:Module, generics-map: .GenericsMap, locl: .AST:Local) -> .AST:Local {
+    $locl.type $generics-map.current $module AST:Type-apply-generics drop @new-type
+    $locl.ty $locl.ident $new-type $locl.scope-id $locl.shadow-id AST:Local-new
+}
+
+fn gather-instances-intrinsic(module: .M:Module, generics-map: .GenericsMap, word: .AST:Word, new-word: .AST:Word) { block {
+    $word.intrinsic #new-word.intrinsic
+    $word.intrinsic AST:INTRINSIC_FLIP = if { break }
+    $word.intrinsic AST:INTRINSIC_EQ = if { break }
+    $word.intrinsic AST:INTRINSIC_DROP = if { break }
+    $word.intrinsic AST:INTRINSIC_LESS_EQ = if { break }
+    $word.intrinsic AST:INTRINSIC_ADD = if { break }
+    $word.intrinsic AST:INTRINSIC_SUB = if { break }
+    $word.intrinsic AST:INTRINSIC_STORE8 = if { break }
+    $word.intrinsic AST:INTRINSIC_MOD = if { break }
+    $word.intrinsic AST:INTRINSIC_DIV = if { break }
+    $word.intrinsic AST:INTRINSIC_LOAD8 = if { break }
+    $word.intrinsic AST:INTRINSIC_GREATER_EQ = if { break }
+    $word.intrinsic AST:INTRINSIC_GREATER = if { break }
+    $word.intrinsic AST:INTRINSIC_LESS = if { break }
+    $word.intrinsic AST:INTRINSIC_AND = if { break }
+    $word.intrinsic AST:INTRINSIC_MUL = if { break }
+    $word.intrinsic AST:INTRINSIC_MEM_COPY = if { break }
+    $word.intrinsic AST:INTRINSIC_ROTR = if { break }
+    $word.intrinsic AST:INTRINSIC_ROTL = if { $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_OR = if { $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_NOT_EQ = if { break }
+    $word.intrinsic AST:INTRINSIC_NOT = if { $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_MEM_GROW = if { break }
+    $word.intrinsic AST:INTRINSIC_STORE = if { $word.type $generics-map.current $module AST:Type-apply-generics drop #new-word.type break }
+    2 "gather-instances-intrinsic: unhandled intrinsic-type: " IO:write-all IO:check
+    2 $word.intrinsic AST:intrinsic-name IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    0 0 / drop
+} }
+

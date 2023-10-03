@@ -137,7 +137,7 @@ fn alloc(size: i32) -> .i32 {
         $next !i32 0 = if {
             2 "ALLOC FAILED NO MEMORY size: " IO:write-all IO:check 
             2 $size IO:print-to-fd 1 "\n" IO:write-all IO:check
-            1 CORE:exit
+            0 0 / CORE:exit
             0 !.i32 break
         }
         $blok #prev
@@ -257,7 +257,7 @@ fn print-alloc-list(start: .i32) {
     local size: i32
     local used: bool
     $start #blok
-    2 "BLOCK LIST STARTING AT: " IO:write-all IO:check $blok !i32 IO:print 1 10 IO:write-byte IO:check
+    2 "BLOCK LIST STARTING AT: " IO:write-all IO:check 2 $blok !i32 IO:print-to-fd 2 10 IO:write-byte IO:check
     loop {
         $blok !i32 0 = if { break }
         $blok ~ !.i32 #next

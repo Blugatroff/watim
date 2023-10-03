@@ -18,18 +18,15 @@ struct Module {
     tokens: L:Tokens
     types: .AST:Types
     path: S:String
+    structs: .AST:Structs
+    fields: .AST:Fields
+    types-types: .AST:TypesTypes
+    words-words: AST:WordsWords
 }
 
 fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
-    local str: S:String
-    local tokens: L:Tokens
-    local items: .AST:TopItems
-    local types: .AST:Types
-    local path: S:String
-    local code: i32
-
-    $path-ptr $path-len S:String-new-heap #path
-    &path S:String-unpack FS:read-file #code #str 
+    $path-ptr $path-len S:String-new-heap @path
+    &path S:String-unpack FS:read-file @code @str
     $code 0 /= if {
         2 "Failed to read file: \"" IO:write-all IO:check
         2 $path-ptr $path-len IO:write-all IO:check
@@ -38,22 +35,26 @@ fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
         2 "\n" IO:write-all IO:check
         1 CORE:exit
     }
-    &str &path S:String-unpack STR:Str-new L:lex #tokens
-    $mem &tokens P:parse #types #items 
+    &str &path S:String-unpack STR:Str-new L:lex @tokens
+    $mem &tokens P:parse @fields @types @items
     
-    $items $path $str $tokens $types Module-new
+    $items $path $str $tokens $types $fields Module-new
 }
 
-fn Module-new(items: .AST:TopItems, path: S:String, file: S:String, tokens: L:Tokens, types: .AST:Types) -> Module {
+fn Module-new(items: .AST:TopItems, path: S:String, file: S:String, tokens: L:Tokens, types: .AST:Types, fields: .AST:Fields) -> Module {
     local self: Module
     $items #self.items
     $file #self.file
     $tokens #self.tokens
     $types #self.types
     $path #self.path
+    AST:Structs-new #self.structs
+    $fields #self.fields
     &self &self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
-    // TODO check for duplicate structs and memories
+    AST:TypesTypes-new #self.types-types
+    AST:WordsWords-new #self.words-words
+    // TODO: check for duplicate structs and memories
     $self
 }
 
@@ -127,12 +128,16 @@ fn Module-imports(self: .Module) -> .AST:Imports {
 }
 
 fn Module-free(self: Module) {
+    $self.types-types AST:TypesTypes-free
     $self.items AST:TopItems-free
+    $self.words-words AST:WordsWords-free
     $self.file S:String-free
     $self.tokens L:Tokens-free
     $self.types AST:Types-free
     $self.imports AST:Imports-free
     $self.path S:String-free
+    $self.structs AST:Structs-free
+    $self.fields AST:Fields-free
 }
 
 fn Module-items(self: .Module) -> .AST:TopItems {
@@ -350,11 +355,11 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
         }
 
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $modules $module &word.lop.body mark-reachable-words
+            $modules $module $word.lop.body mark-reachable-words
         }
 
         $word AST:Word-ty AST:WORD_BLOCK = if {
-            $modules $module &word.blok.body mark-reachable-words
+            $modules $module $word.blok.body mark-reachable-words
         }
 
         $i 1 + #i
@@ -362,9 +367,9 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
 }
 
 fn mark-reachable-iff(modules: .Modules, module: .Module, iff: .AST:If) {
-    $modules $module &iff.body mark-reachable-words
+    $modules $module $iff.body mark-reachable-words
     $iff.has-el if {
-        $modules $module &iff.el mark-reachable-words
+        $modules $module $iff.el mark-reachable-words
     }
 }
 

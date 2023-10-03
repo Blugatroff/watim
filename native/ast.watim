@@ -5,10 +5,12 @@ import "../std/i32vec.watim" as IV
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
-import "../std/map.watim" as M
+import "../std/map.watim" as MAP
 import "../std/format.watim" as FMT
 
 import "./lexer.watim" as L
+import "./util.watim" as CU
+import "./module.watim" as M
 
 fn INTRINSIC_ADD() -> i32 { 1 }
 fn INTRINSIC_STORE() -> i32 { 2 }
@@ -115,6 +117,7 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
         $ty WORD_SIZEOF = if { "WORD_SIZEOF" break }
         $ty WORD_STORE = if { "WORD_STORE" break }
         $ty WORD_STORE_GLOBAL = if { "WORD_STORE_GLOBAL" break }
+        $ty WORD_INIT_LOCAL = if { "WORD_INIT_LOCAL" break }
         $ty WORD_ANNOTATION = if { "WORD_ANNOTATION" break }
         $ty WORD_ARRAY_WRITE = if { "WORD_ARRAY_WRITE" break }
         $ty WORD_ARRAY_READ = if { "WORD_ARRAY_READ" break }
@@ -133,8 +136,8 @@ struct Words {
     len: i32
     cap: i32
 }
-fn Words-new() -> Words {
-    local self: Words
+fn Words-new() -> .Words {
+    sizeof(Words) A:alloc !.Words @self
     0 !.Word #self.ptr
     0 #self.len
     0 #self.cap
@@ -181,12 +184,40 @@ fn Words-pop(self: .Words) -> Word {
     $self $self.len 1 - Words-get ~
     $self.len 1 - #self.len
 }
-fn Words-free(self: Words) {
+fn Words-free(self: .Words) {
     loop {
         $self.len 0 = if { break }
-        &self Words-pop Word-free
+        $self Words-pop Word-free
     }
     $self.cap 0 gt if { $self.ptr !.i32 A:free }
+    $self !.i32 A:free
+}
+
+struct WordsWords {
+    inner: IV:I32Vec
+}
+fn WordsWords-new() -> WordsWords {
+    local self: WordsWords
+    IV:I32Vec-new #self.inner
+    $self
+}
+fn WordsWords-free(self: WordsWords) {
+    0 @i
+    loop {
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Words Words-free
+        $i 1 + #i
+    }
+    $self.inner IV:I32Vec-free
+}
+fn WordsWords-push(self: .WordsWords, words: .Words) {
+    &self.inner $words !i32 IV:I32Vec-push
+}
+fn WordWords-len(self: .WordsWords) -> i32 {
+    &self.inner IV:I32Vec-len
+}
+fn WordsWords-get(self: .WordsWords, index: i32) -> .Words {
+    &self.inner $index IV:I32Vec-get !.Words
 }
 
 fn TYPE_I32() -> i32 { 1 }
@@ -231,7 +262,7 @@ struct Type {
 fn Type-size(self: .Type, generics: .Types) -> i32 {
     loop {
         $self.ty TYPE_STRUCT = if { 
-            $self Type-struc $self.generics Struct-size break
+            $self.struc $self.generics Struct-size break
         }
         $self.ty TYPE_ARRAY = if {
             $self.child $generics Type-size $self.length * break
@@ -250,23 +281,29 @@ fn Type-size(self: .Type, generics: .Types) -> i32 {
     }
 }
 fn Type-eq(a: .Type, b: .Type) -> bool {
-    loop {
+    block {
         $a $b = if { 0 0 = break }
         $a.ty $b.ty /= if { 0 1 = break }
         $a.ty TYPE_PTR = if {
             $a Type-child $b Type-child Type-eq break
         }
         $a.ty TYPE_STRUCT = if {
-            $a.struc $b.struc = break
+            $a.struc $b.struc Struct-eq break
         }
         $a.ty TYPE_ARRAY = if {
             $a Type-child $b Type-child Type-eq 
             $a.length $b.length = and
             break
         }
+        $a.ty TYPE_FUNCTION = if {
+            $a.function.args $b.function.args Types-eq
+            $a.function.rets $b.function.rets Types-eq 
+            and break
+        }
         0 0 = break
     }
 }
+
 fn Type-new(ty: i32) -> .Type {
     local self: .Type
     sizeof(Type) A:alloc !.Type #self
@@ -352,6 +389,57 @@ fn Type-ty(self: .Type) -> i32 {
 fn Type-child(self: .Type) -> .Type {
     $self.child !.Type
 }
+
+fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Type, bool { block {
+    $self.ty TYPE_PTR = if {
+        $self Type-child $generics $module Type-apply-generics if {
+            Type-new-ptr $module.types flip CU:push-temp-type 1 1 = break
+        } else {
+            drop $self 0 1 = break
+        }
+    }
+    $self.ty TYPE_ARRAY = if {
+        $self Type-child $generics $module Type-apply-generics if {
+            $self.length Type-new-array $module.types flip CU:push-temp-type 1 1 = break 
+        } else {
+            drop $self 0 1 = break
+        }
+    }
+    $self.ty TYPE_STRUCT = if {
+        $self.generics $generics $module Types-apply-generics if { 
+            $self.module $self.ident $self.generics Type-new-struc $module.types flip CU:push-temp-type @new
+            #new.generics
+            $self.struc $new.generics $module Struct-apply-generics if { #new.struc } else { drop }
+            $new 1 1 = break
+        } else {
+            drop
+            $self.struc $self.generics $module Struct-apply-generics if {
+                $self.module $self.ident $self.generics Type-new-struc $module.types flip CU:push-temp-type @new
+                #new.struc
+                $new 1 1 = break
+            } else {
+                drop $self 0 1 = break
+            }
+        } 
+    }
+    $self.ty TYPE_FUNCTION = if {
+        $self.function.args $generics $module Types-apply-generics @new-args
+        $self.function.rets $generics $module Types-apply-generics @new-rets 
+        $new-args $new-rets or if {
+            $new-rets if { } else { drop $self.function.rets }
+            flip
+            $new-args if { } else { drop $self.function.args }
+            flip 
+            Type-new-function $module.types flip CU:push-temp-type
+            1 1 = break
+        } else { drop drop $self 0 1 = break }
+    }
+    $self.ty TYPE_GENERIC = if {
+        $generics $self.generic Types-get 1 1 = break
+    }
+    $self 0 1 = break
+} }
+
 // argument `generics` is optional/null
 fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block {
     $self Type-ty TYPE_I32 = if { $formatter "i32" FMT:Formatter-write break }
@@ -401,9 +489,7 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
         $generics 0 !.Types /= if {
             $formatter 0 !.Types $generics $self.generic Types-get Type-format
         } else {
-            $formatter "<" FMT:Formatter-write
             $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-            $formatter ">" FMT:Formatter-write
         }
         break
     }
@@ -447,6 +533,22 @@ fn Type-print(fd: i32, generics: .Types, self: .Type) {
     $fd &string S:String-unpack IO:write-all IO:check
     $string S:String-free
 }
+fn Type-is-generic(self: .Type) -> bool { block {
+    $self Type-ty TYPE_I32 = if { 0 1 = break }
+    $self Type-ty TYPE_I64 = if { 0 1 = break }
+    $self Type-ty TYPE_BOOL = if { 0 1 = break }
+    $self Type-ty TYPE_PTR = if { $self.child Type-is-generic break }
+    $self Type-ty TYPE_STRUCT = if { $self.generics Types-is-generic break }
+    $self Type-ty TYPE_ARRAY = if { $self.child Type-is-generic break }
+    $self Type-ty TYPE_GENERIC = if { 1 1 = break }
+    $self Type-ty TYPE_FUNCTION = if { $self.function.args Types-is-generic $self.function.rets Types-is-generic or break }
+    2 "Type-is-generic unhandled Type-ty: " IO:write-all IO:check
+    2 $self Type-ty type-ty-name IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    0 0 / drop
+    1 CORE:exit
+    0 1 = break
+} }
 
 struct Types {
     inner: IV:I32Vec
@@ -454,14 +556,13 @@ struct Types {
     ref-count: i32
 }
 fn Types-new() -> .Types {
-    local self: .Types
-    sizeof(Types) A:alloc !.Types #self
+    sizeof(Types) A:alloc !.Types @self
     IV:I32Vec-new #self.inner
     1 #self.ref-count
     $self
 }
 fn Types-free(self: .Types) {
-    local i: i32
+    0 @i
     $self.ref-count 1 = if {
         loop {
             $i &self.inner IV:I32Vec-len = if { break }
@@ -480,8 +581,7 @@ fn Types-min(self: .Types) -> i32 {
     $self.min-size
 }
 fn Types-clone-container(self: .Types) -> .Types {
-    local new: .Types
-    sizeof(Types) A:alloc !.Types #new
+    sizeof(Types) A:alloc !.Types @new
     &self.inner IV:I32Vec-clone #new.inner
     $self Types-min #new.min-size
     1 #new.ref-count
@@ -521,6 +621,9 @@ fn Types-len(self: .Types) -> i32 {
 fn Types-get(self: .Types, index: i32) -> .Type {
     &self.inner $index IV:I32Vec-get !.Type
 }
+fn Types-get-ref(self: .Types, index: i32) -> ..Type {
+    &self.inner $index IV:I32Vec-get-ref !..Type
+}
 // argument `generics` is optional/null
 fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
     local i: i32
@@ -539,6 +642,39 @@ fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
         $formatter "]" FMT:Formatter-write
     }
 }
+fn Types-apply-generics(self: .Types, generics: .Types, module: .M:Module) -> .Types, bool {
+    $self Types-len 0 = if { $self 0 1 = } else {
+        Types-new @new
+        0 1 = @use-new
+        0 @i
+        loop {
+            $i $self Types-len = if { break }
+            $self $i Types-get @type
+            $type $generics $module Type-apply-generics if {
+                1 1 = #use-new
+                $new flip Types-push
+            } else {
+                drop
+                $new $type Types-push
+            }
+            $i 1 + #i
+        }
+        $use-new if {
+            $module.types-types $new TypesTypes-push
+            $new
+        } else { $new Types-free-container $self }
+        $use-new
+    }
+}
+fn Types-is-generic(self: .Types) -> bool {
+    0 @i
+    loop {
+        $i $self Types-len = if { 0 1 = break }
+        $self $i Types-get Type-is-generic if { 1 1 = break }
+        $i 1 + #i
+    }
+}
+
 // argument `generics` is optional/null
 fn Types-print(fd: i32, generics: .Types, self: .Types) {
     local formatter: FMT:Formatter
@@ -634,27 +770,47 @@ fn TypesTypes-contains(self: .TypesTypes, types: .Types) -> i32, bool {
     }
 }
 
+struct Structs {
+    inner: IV:I32Vec
+}
+fn Structs-new() -> .Structs {
+    local self: .Structs
+    sizeof(Structs) A:alloc !.Structs #self
+    IV:I32Vec-new #self.inner
+    $self
+}
+fn Structs-free(self: .Structs) {
+    local i: i32
+    loop {
+        $i &self.inner IV:I32Vec-len = if { break }
+        &self.inner $i IV:I32Vec-get !.Struct Struct-free
+        $i 1 + #i
+    }
+    $self.inner IV:I32Vec-free
+    $self !.i32 A:free
+}
+fn Structs-push(self: .Structs, f: .Struct) {
+    &self.inner $f !i32 IV:I32Vec-push
+}
+fn Structs-pop(self: .Structs) -> .Struct {
+    &self.inner IV:I32Vec-pop !.Struct
+}
+
 struct FunctionPtr {
     args: .Types
     rets: .Types
 }
-fn FunctionPtr-new(args: .Types, rets: .Types) -> FunctionPtr {
-    local self: FunctionPtr
-    $args #self.args
-    $rets #self.rets
-    $self
-}
 
 struct If {
     token: .L:Token
-    body: Words
+    body: .Words
     has-el: bool
-    el: Words
+    el: .Words
     params: .Types
     rets: .Types
     locals: Locals
 }
-fn If-new(token: .L:Token, body: Words) -> .If {
+fn If-new(token: .L:Token, body: .Words) -> .If {
     local self: .If
     sizeof(If) A:alloc !.If #self
     $token #self.token
@@ -665,7 +821,7 @@ fn If-new(token: .L:Token, body: Words) -> .If {
     Locals-new #self.locals
     $self
 }
-fn If-new-with-el(token: .L:Token, body: Words, el: Words) -> .If {
+fn If-new-with-el(token: .L:Token, body: .Words, el: .Words) -> .If {
     local self: .If
     sizeof(If) A:alloc !.If #self
     $token #self.token
@@ -692,10 +848,10 @@ fn If-free(self: .If) {
     $self !.i32 A:free
 }
 fn If-body(self: .If) -> .Words {
-    &self.body
+    $self.body
 }
 fn If-el(self: .If) -> .Words {
-    &self.el
+    $self.el
 }
 fn If-params(self: .If) -> .Types {
     $self.params
@@ -706,11 +862,11 @@ fn If-set-params(self: .If, params: .Types) {
 
 struct Loop {
     token: .L:Token
-    body: Words
+    body: .Words
     rets: .Types
     locals: Locals
 }
-fn Loop-new(token: .L:Token, body: Words) -> .Loop {
+fn Loop-new(token: .L:Token, body: .Words) -> .Loop {
     local self: .Loop
     sizeof(Loop) A:alloc !.Loop #self
     $token #self.token
@@ -727,11 +883,11 @@ fn Loop-free(self: .Loop) {
 
 struct Block {
     token: .L:Token
-    body: Words
+    body: .Words
     rets: .Types
     locals: Locals
 }
-fn Block-new(token: .L:Token, body: Words) -> .Block {
+fn Block-new(token: .L:Token, body: .Words) -> .Block {
     local self: .Block
     sizeof(Block) A:alloc !.Block #self
     $token #self.token
@@ -760,6 +916,7 @@ struct Word {
     lop: .Loop
     blok: .Block
     rets: .Types
+    args: .Types
     generics: .Types
     instance-index: i32
     iff: .If
@@ -771,6 +928,7 @@ struct Word {
     checked: bool
     shadow-id: i32
     scope-id: i32
+    recursive-call: bool
 }
 fn Word-new-uninit() -> Word {
     local self: Word
@@ -787,6 +945,10 @@ fn Word-new(ty: i32, token: .L:Token) -> Word {
     0 !.Types #self.generics
     0 !.Function #self.function
     0 !.Extern #self.ext
+    0 1 = #self.recursive-call
+    0 #self.instance-index
+    0 !.Types #self.rets
+    0 !.Types #self.args
     $self
 }
 fn Word-new-annotation(token: .L:Token, type: .Type) -> Word {
@@ -813,19 +975,9 @@ fn Word-free(self: Word) {
     if {
         $self.fields L:Tokens-free-container
     }
-    $self.ty WORD_CALL =
-    $self.checked and
-    if {
-        $self.rets Types-free-container
-    }
-    $self.ty WORD_CALL_INDIRECT =
-    $self.checked and
-    if {
-        $self.type Type-free
-    }
-    $self.ty WORD_CALL = 
-    $self.ty WORD_CALL_INDIRECT = or
-    $self.generics 0 !.Types /= and if {
+    $self.rets 0 !.Types /= if { $self.rets Types-free-container }
+    $self.args 0 !.Types /= if { $self.args Types-free-container }
+    $self.generics 0 !.Types /= if {
         $self.generics Types-free-container
     }
     $self.ty WORD_STRING = if {
@@ -883,8 +1035,7 @@ struct Local {
     scope-id: i32
 }
 fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i32) -> .Local {
-    local self: .Local
-    sizeof(Local) A:alloc !.Local #self
+    sizeof(Local) A:alloc !.Local @self
     $ty #self.ty
     $ident #self.ident
     $type #self.type
@@ -892,9 +1043,8 @@ fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i3
     $scope-id #self.scope-id
     $self
 }
-fn Local-new-mem(ident: .L:Token, type: .Type, size: i32) -> .Local {
-    local self: .Local
-    LOCAL_MEMORY $ident $type Type-new-ptr 0 0 Local-new #self
+fn Local-new-mem(types: .Types, ident: .L:Token, type: .Type, size: i32) -> .Local {
+    LOCAL_MEMORY $ident $type Type-new-ptr $types flip CU:push-temp-type 0 0 Local-new @self
     $size #self.size
     $self
 }
@@ -908,9 +1058,6 @@ fn Local-type(self: .Local) -> .Type {
     $self.type
 }
 fn Local-free(self: .Local) {
-    $self.ty LOCAL_MEMORY = if {
-        $self.type $self.type Type-child #self.type Type-free
-    }
     $self !.i32 A:free
 }
 
@@ -1097,17 +1244,87 @@ fn Generics-print(fd: i32, self: .Generics) {
     $out S:String-free
 }
 
+struct Instance {
+    generics: .Types
+    body: .Words
+}
+fn Instance-new(generics: .Types, body: .Words) -> Instance {
+    local self: Instance
+    $generics #self.generics
+    $body #self.body
+    $self
+}
+
+struct Instances {
+    ptr: .Instance
+    len: i32
+    cap: i32
+}
+fn Instances-new() -> .Instances {
+    sizeof(Instances) A:alloc !.Instances @self
+    0 #self.len
+    0 #self.cap
+    $self
+}
+fn Instances-len(self: .Instances) -> i32 {
+    $self.len
+}
+fn Instances-get(self: .Instances, index: i32) -> .Instance {
+    $index $self.len ge if {
+        2 "Instances: Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self.ptr $index sizeof(Instance) * +
+}
+fn Instances-push(self: .Instances, instance: Instance) {
+    local new-buf: .Instance
+    local size: i32
+    local dst-ptr: .Instance
+    $self.len 1 + $self.cap le if {
+        $self.ptr $self.len sizeof(Instance) * + #dst-ptr
+        $instance =>dst-ptr
+        $self.len 1 + #self.len
+    } else {
+        $self.cap 2 CORE:max 2 * #size
+        $size sizeof(Instance) * A:alloc !.Instance #new-buf
+        $self.ptr !.i32
+        $new-buf !.i32
+        $self.len sizeof(Instance) *
+        CORE:copy
+        $size #self.cap
+        $self.len 0 gt if {
+            $self.ptr !.i32 A:free
+        }
+        $new-buf #self.ptr
+        $self $instance Instances-push
+    }
+}
+fn Instances-free(self: .Instances) {
+    $self.cap 0 gt if { $self.ptr !.i32 A:free }
+    $self !.i32 A:free
+}
+fn Instances-contains-types(self: .Instances, types: .Types) -> i32, bool {
+    0 @i
+    loop {
+        $self Instances-len $i = if { 0 0 1 = break }
+        $self $i Instances-get .generics ~ $types Types-eq if {
+            $i 0 0 = break
+        }
+        $i 1 + #i
+    }
+}
 
 struct Function {
     ident: .L:Token
     export: .L:Token
     ret: .Types
     locals: Locals
-    body: Words
+    body: .Words
     diverges: bool
     reachable: bool
     generics: Generics
-    instances: .TypesTypes
+    generics-types: .Types
+    instances: .Instances
     table-index: i32
 }
 fn Function-new(
@@ -1116,7 +1333,7 @@ fn Function-new(
     generics: Generics,
     ret: .Types,
     locals: Locals,
-    body: Words
+    body: .Words
 ) -> .Function {
     local self: .Function
     sizeof(Function) A:alloc !.Function #self
@@ -1128,7 +1345,8 @@ fn Function-new(
     $body #self.body
     0 1 = #self.diverges
     0 #self.table-index
-    TypesTypes-new #self.instances
+    Instances-new #self.instances
+    Types-new #self.generics-types 
     $self
 }
 fn Function-free(self: .Function) {
@@ -1136,8 +1354,20 @@ fn Function-free(self: .Function) {
     $self.body Words-free
     $self.locals Locals-free
     $self.generics Generics-free
-    $self.instances TypesTypes-free
+    $self.instances Instances-free
+    $self.generics-types Types-free-container
     $self !.i32 A:free
+}
+fn Function-gather-generics-types(self: .Function) { // should be called after resolving
+    0 @i
+    loop {
+        $i &self.locals Locals-len = if { break }
+        &self.locals $i Locals-get @locl
+        $locl.type.ty TYPE_GENERIC = if {
+            $self.generics-types $locl.type Types-push
+        }
+        $i 1 + #i
+    }
 }
 fn Function-rets(self: .Function) -> .Types {
     $self.ret
@@ -1146,7 +1376,7 @@ fn Function-locals(self: .Function) -> .Locals {
     &self.locals
 }
 fn Function-body(self: .Function) -> .Words {
-    &self.body
+    $self.body
 }
 fn Function-ident(self: .Function) -> .L:Token {
     $self.ident
@@ -1253,6 +1483,31 @@ fn Field-ident(self: .Field) -> .L:Token {
 fn Field-type(self: .Field) -> .Type {
     $self.type
 }
+fn Field-apply-generics(self: .Field, generics: .Types, module: .M:Module) -> .Field, bool {
+    $self.type $generics $module Type-apply-generics if {
+        $self.ident flip Field-new @new
+        $module.fields $new Fields-push
+        $new 1 1 =
+    } else { drop $self 0 1 = }
+}
+fn Field-eq(self: .Field, other: .Field) -> bool { block {
+    $self $other = if { 1 1 = break }
+    $self.ident $other.ident /= if { 0 1 = break }
+    $self.type $other.type Type-eq
+} }
+fn Field-format(formatter: .FMT:Formatter, self: .Field) {
+    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    $formatter ": " FMT:Formatter-write
+    $formatter 0 !.Types $self.type Type-format
+}
+fn Field-print(fd: i32, self: .Field) {
+    FMT:Formatter-new @formatter
+    &formatter $self Field-format
+    $formatter FMT:Formatter-into-string @string
+    $fd &string S:String-unpack IO:write-all IO:check
+    $string S:String-free
+}
+
 struct Fields {
     inner: IV:I32Vec
 }
@@ -1272,6 +1527,9 @@ fn Fields-free(self: .Fields) {
         &self.inner $i IV:I32Vec-get !.Field Field-free
         $i 1 + #i
     }
+    $self Fields-free-container
+}
+fn Fields-free-container(self: .Fields) {
     $self.inner IV:I32Vec-free
     $self !.i32 A:free
 }
@@ -1281,22 +1539,73 @@ fn Fields-len(self: .Fields) -> i32 {
 fn Fields-get(self: .Fields, index: i32) -> .Field {
     &self.inner $index IV:I32Vec-get !.Field
 }
+fn Fields-eq(self: .Fields, other: .Fields) -> bool { block {
+    $self $other = if { 1 1 = break }
+    $self Fields-len $other Fields-len /= if { 0 1 = break }
+    0 @i
+    loop {
+        $i $self Fields-len = if { 1 1 = break }
+        $self $i Fields-get 
+        $other $i Fields-get Field-eq not if { 0 1 = break }
+        $i 1 + #i
+    }
+} }
+fn Fields-apply-generics(self: .Fields, generics: .Types, module: .M:Module) -> .Fields, bool {
+    Fields-new @new
+    0 1 = @use-new
+    0 @i
+    loop {
+        $i $self Fields-len = if { break }
+        $self $i Fields-get @field
+        $field $generics $module Field-apply-generics if {
+            1 1 = #use-new
+            $new flip Fields-push
+        } else {
+            drop $new $field Fields-push
+        }
+        $i 1 + #i
+    }
+    $use-new if { $new 1 1 = } else { $new Fields-free-container $self 1 0 = }
+}
+fn Fields-format(formatter: .FMT:Formatter, self: .Fields) {
+    0 @i
+    loop {
+        $i $self Fields-len = if { break }
+        $formatter $self $i Fields-get Field-format
+        $i 1 + #i
+        $i $self Fields-len /= if {
+            $formatter ", " FMT:Formatter-write
+        }
+    }
+}
+fn Fields-print(fd: i32, self: .Fields) {
+    FMT:Formatter-new @formatter
+    &formatter $self Fields-format
+    $formatter FMT:Formatter-into-string @string
+    $fd &string S:String-unpack IO:write-all IO:check
+    $string S:String-free
+}
+
 struct Struct {
     ident: .L:Token
     fields: .Fields
     generics: Generics
+    owns-generics: bool
+    generics-being-applied: bool
 }
-fn Struct-new(ident: .L:Token, fields: .Fields, generics: Generics) -> .Struct {
+fn Struct-new(ident: .L:Token, fields: .Fields, generics: Generics, owns-generics: bool) -> .Struct {
     local self: .Struct
     sizeof(Struct) A:alloc !.Struct #self
     $ident #self.ident
     $fields #self.fields
     $generics #self.generics
+    $owns-generics #self.owns-generics
+    0 1 = #self.generics-being-applied
     $self
 }
 fn Struct-free(self: .Struct) {
-    $self.fields Fields-free
-    $self.generics Generics-free
+    $self.fields Fields-free-container
+    $self.owns-generics if { $self.generics Generics-free }
     $self !.i32 A:free
 }
 fn Struct-ident(self: .Struct) -> .L:Token {
@@ -1343,6 +1652,43 @@ fn Struct-size(self: .Struct, generics: .Types) -> i32 {
         $i 1 + #i
     }
     $size
+}
+fn Struct-eq(self: .Struct, other: .Struct) -> bool { 
+    block {
+        $self $other = if { 1 1 = break }
+        $self.ident $other.ident /= if { 0 1 = break }
+        $self.fields $other.fields Fields-eq
+    }
+}
+fn Struct-apply-generics(self: .Struct, generics: .Types, module: .M:Module) -> .Struct, bool {
+    $self.generics-being-applied not &self.generics Generics-len 0 /= and if {
+        1 1 = #self.generics-being-applied
+        $self.fields $generics $module Fields-apply-generics if {
+            $self.ident flip $self.generics 0 1 = Struct-new @new
+            $module.structs $new Structs-push
+            $new 1 1 =
+        } else {
+            drop
+            $self 0 1 =
+        }
+        1 0 = #self.generics-being-applied
+    } else {
+        $self 0 1 =
+    }
+}
+fn Struct-format(formatter: .FMT:Formatter, self: .Struct) {
+    $formatter "struct " FMT:Formatter-write
+    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    $formatter " { " FMT:Formatter-write
+    $formatter $self.fields Fields-format
+    $formatter " }" FMT:Formatter-write
+}
+fn Struct-print(fd: i32, self: .Struct) {
+    $fd "struct " IO:write-all IO:check
+    $fd $self.ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
+    $fd " { " IO:write-all IO:check 
+    $fd $self.fields Fields-print
+    $fd " }" IO:write-all IO:check
 }
 
 fn TOP_ITEM_FN() -> i32 { 1 }
@@ -1467,30 +1813,30 @@ fn TopItems-get(self: .TopItems, index: i32) -> .TopItem {
 }
 
 struct Imports {
-    map: M:StringMap
+    map: MAP:StringMap
 }
 fn Imports-new() -> .Imports {
     local self: .Imports
     sizeof(Imports) A:alloc !.Imports #self
-    M:StringMap-new #self.map
+    MAP:StringMap-new #self.map
     $self
 }
 fn Imports-free(self: .Imports) {
     local i: i32
     loop {
-        $i &self.map M:StringMap-len = if { break }
-        &self.map $i M:StringMap-get-value !.S:String ~ S:String-free // deallocate string itself
-        &self.map $i M:StringMap-get-value !.i32 A:free // deallocate string struct
+        $i &self.map MAP:StringMap-len = if { break }
+        &self.map $i MAP:StringMap-get-value !.S:String ~ S:String-free // deallocate string itself
+        &self.map $i MAP:StringMap-get-value !.i32 A:free // deallocate string struct
         $i 1 + #i
     }
-    $self.map M:StringMap-free
+    $self.map MAP:StringMap-free
     $self !.i32 A:free
 }
 fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
     local alloced-path: .S:String
     sizeof(S:String) A:alloc !.S:String #alloced-path
     $path =>alloced-path
-    &self.map $ident $alloced-path !i32 M:StringMap-insert if {
+    &self.map $ident $alloced-path !i32 MAP:StringMap-insert if {
         1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
         !.S:String ~ S:String-free
     } else {
@@ -1498,17 +1844,17 @@ fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
     }
 }
 fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
-    &self.map $index M:StringMap-get-value !.S:String
+    &self.map $index MAP:StringMap-get-value !.S:String
 }
 fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S:String, bool {
     local v: i32
-    &self.map $ident-ptr $ident-len M:StringMap-get if {
+    &self.map $ident-ptr $ident-len MAP:StringMap-get if {
         #v $v !.S:String 0 0 =
     } else {
         drop 0 !.S:String 0 1 =
     }
 }
 fn Imports-len(self: .Imports) -> i32 {
-    &self.map M:StringMap-len
+    &self.map MAP:StringMap-len
 }
 

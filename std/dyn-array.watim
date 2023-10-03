@@ -1,0 +1,103 @@
+import "./alloc.watim" as A
+import "./core.watim" as CORE
+import "./io.watim" as IO
+
+struct DynArray<T> {
+    ptr: .T
+    len: i32
+    cap: i32
+    free: (T ->)
+}
+
+fn DynArray-new<T>(free: (T ->)) -> DynArray<T> {
+    local self: DynArray<T>
+    0 !.T #self.ptr
+    0 #self.len
+    0 #self.cap
+    $free #self.free
+    $self
+}
+fn DynArray-push<T>(self: .DynArray<T>, val: T) {
+    local new-buf: .T
+    local size: i32
+    $self.len 1 + $self.cap le if {
+        $self.ptr $self.len sizeof(T) * + $val store
+        $self.len 1 + #self.len
+    } else {
+        $self.cap 2 CORE:max 2 * #size
+        $size sizeof(T) * A:alloc !.T #new-buf
+        $self.ptr !.i32
+        $new-buf !.i32
+        $self.len sizeof(T) *
+        CORE:copy
+        $size #self.cap
+        $self.len 0 gt if {
+            $self.ptr !.i32 A:free
+        }
+        $new-buf #self.ptr
+        $self $val DynArray-push<T>
+    } 
+}
+fn DynArray-get<T>(self: .DynArray<T>, index: i32) -> .T {
+    $index $self.len ge if { 
+        2 "Index out of bounds\n" IO:write-all IO:check
+        0 0 / drop
+        1 CORE:exit
+    }
+    $self.ptr $index sizeof(T) * +
+}
+fn DynArray-pop<T>(self: .DynArray<T>) -> T {
+    $self.len 0 = if {
+        2 "Cannot pop from empty DynArray" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self $self.len 1 - DynArray-get<T> ~ 
+    $self.len 1 - #self.len
+}
+fn DynArray-free<T>(self: DynArray<T>) {
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        &self $i DynArray-get<T> ~ $self.free ->
+        $i 1 + #i
+    }
+    $self.ptr 0 !.T /= if { $self.ptr !.i32 A:free }
+}
+
+struct Foo {
+    items: DynArray<i32>
+}
+
+fn do-nothing() {
+    2 CORE:exit
+}
+
+fn free-i32(v: i32) {
+    2 "free-i32: " IO:write-all IO:check
+    2 $v IO:print-to-fd
+    2 "\n" IO:write-all IO:check
+}
+
+fn free-bool(v: bool) { }
+
+fn main() {
+    memory alloc-mem: i32 25165824 // 24 MiB
+    local foo: Foo
+    $alloc-mem 25165824 A:init
+
+    \free-i32 DynArray-new<i32> #foo.items
+    \free-bool DynArray-new<bool> @arr-bool
+    &foo.items 10 DynArray-push<i32>
+    &foo.items 12 DynArray-push<i32>
+    &arr-bool 0 1 = DynArray-push<bool>
+
+    $foo.items DynArray-free<i32>
+    $arr-bool DynArray-free<bool>
+}
+
+fn start "_start" () {
+    // grow memory to 512 * 2B^16 = 32 MiB
+    512 mem-grow 1 /= if { 1 CORE:exit } 
+    main
+}
+

@@ -204,6 +204,11 @@ fn Tokens-len(tokens: .Tokens) -> i32 {
 fn Tokens-free-container(self: Tokens) {
     $self.inner IV:I32Vec-free
 }
+fn Tokens-clone-container(self: .Tokens) -> Tokens {
+    local new: Tokens
+    &self.inner IV:I32Vec-clone #new.inner
+    $new
+}
 fn Tokens-print(fd: i32, self: .Tokens) {
     local i: i32
     loop {

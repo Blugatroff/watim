@@ -64,6 +64,7 @@ fn resolve-function(modules: .M:Modules, module: .M:Module, function: .AST:Funct
     $modules $module &function.generics $function AST:Function-rets resolve-types
     $modules $module &function.generics $function AST:Function-locals resolve-locals
     $modules $module &function.generics $function AST:Function-body resolve-words
+    $function AST:Function-gather-generics-types
 }
 fn resolve-words(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, words: .AST:Words) {
     local i: i32
@@ -75,22 +76,22 @@ fn resolve-words(modules: .M:Modules, module: .M:Module, generics: .AST:Generics
 }
 fn resolve-word(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word) {
     $word AST:Word-ty AST:WORD_CAST = if {
-        $modules $module $generics $word AST:Word-type resolve-type
+        $modules $module $generics &word.type resolve-type
     }
     $word AST:Word-ty AST:WORD_IF = if {
         $modules $module $generics $word AST:Word-iff resolve-iff
     }
     $word AST:Word-ty AST:WORD_LOOP = if {
-        $modules $module $generics &word.lop.body resolve-words
+        $modules $module $generics $word.lop.body resolve-words
     }
     $word AST:Word-ty AST:WORD_BLOCK = if {
-        $modules $module $generics &word.blok.body resolve-words
+        $modules $module $generics $word.blok.body resolve-words
     }
     $word AST:Word-ty AST:WORD_CALL = if {
         $modules $module $generics $word resolve-call
     }
     $word AST:Word-ty AST:WORD_SIZEOF = if {
-        $modules $module $generics $word AST:Word-type resolve-type
+        $modules $module $generics &word.type resolve-type
     }
 }
 fn resolve-call(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word) { block {
@@ -102,7 +103,7 @@ fn resolve-call(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
     0 @i
     loop {
         $word.generics AST:Types-len $i = if { break }
-        $modules $module $generics $word.generics $i AST:Types-get resolve-type
+        $modules $module $generics $word.generics $i AST:Types-get-ref resolve-type
         $i 1 + #i
     }
 } }
@@ -113,18 +114,18 @@ fn resolve-iff(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, 
     }
 }
 fn resolve-field(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, field: .AST:Field) {
-    $modules $module $generics $field AST:Field-type resolve-type
+    $modules $module $generics &field.type resolve-type
 }
 fn resolve-types(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, types: .AST:Types) {
     local i: i32
     loop {
         $i $types AST:Types-len = if { break }
-        $modules $module $generics $types $i AST:Types-get resolve-type
+        $modules $module $generics $types $i AST:Types-get-ref resolve-type
         $i 1 + #i
     }
 }
 fn resolve-memory(modules: .M:Modules, module: .M:Module, mem: .AST:Local) {
-    $modules $module 0 !.AST:Generics $mem.type resolve-type
+    $modules $module 0 !.AST:Generics &mem.type resolve-type
 }
 fn resolve-locals(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, locals: .AST:Locals) {
     local i: i32
@@ -135,7 +136,7 @@ fn resolve-locals(modules: .M:Modules, module: .M:Module, generics: .AST:Generic
     }
 }
 fn resolve-local(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, locl: .AST:Local) {
-    $modules $module $generics $locl AST:Local-type resolve-type
+    $modules $module $generics &locl.type resolve-type
 }
 fn resolve-parameters(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, parameters: .AST:Locals) {
     local i: i32
@@ -146,25 +147,25 @@ fn resolve-parameters(modules: .M:Modules, module: .M:Module, generics: .AST:Gen
     }
 }
 fn resolve-parameter(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, parameter: .AST:Local) {
-    $modules $module $generics $parameter AST:Local-type resolve-type
+    $modules $module $generics &parameter.type resolve-type
 }
-fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, type: .AST:Type) {
+fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, type: ..AST:Type) {
     local path: .S:String
     block {
-        $type AST:Type-ty AST:TYPE_STRUCT = if {
-            $type AST:Type-ident L:Token-lexeme @ident
+        $type ~ AST:Type-ty AST:TYPE_STRUCT = if {
+            $type ~ AST:Type-ident L:Token-lexeme @ident
 
             0 $generics !i32 /= if {
                 $generics $ident AST:Generics-contains if {
-                    #type.generic
-                    AST:TYPE_GENERIC #type.ty
+                    $type ~ .generic flip store
+                    AST:TYPE_GENERIC $type ~ .ty flip store
                     break
                 } else { drop }
             } else {
                 // 0 0 / drop
             }
 
-            $type AST:Type-module @module-token
+            $type ~ AST:Type-module @module-token
             
             $module-token !i32 0 /= if {
                 $module M:Module-imports @imports
@@ -179,21 +180,26 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
             }
 
             $modules $path S:String-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {
-                $type flip AST:Type-set-struc
+                $type ~ flip AST:Type-set-struc
             } else {
-                drop $type AST:Type-ident L:Token-location "struct not found" U:abort-with-location
+                drop $type ~ AST:Type-ident L:Token-location "struct not found" U:abort-with-location
             }
 
             0 @i
             loop {
-                $type.generics AST:Types-len $i = if { break }
-                $modules $module $generics $type.generics $i AST:Types-get resolve-type
+                $type ~ .generics ~ AST:Types-len $i = if { break }
+                $modules $module $generics $type ~ .generics ~ $i AST:Types-get-ref resolve-type
                 $i 1 + #i
             }
+            $type ~ $type ~ .generics ~ $module AST:Type-apply-generics drop =>type
             break
         }
-        $type AST:Type-ty AST:TYPE_PTR = if {
-            $modules $module $generics $type AST:Type-child resolve-type
+        $type ~ AST:Type-ty AST:TYPE_PTR = if {
+            $modules $module $generics $type ~ .child resolve-type
+        }
+        $type ~ AST:Type-ty AST:TYPE_FUNCTION = if {
+            $modules $module $generics $type ~ .function.args ~ resolve-types
+            $modules $module $generics $type ~ .function.rets ~ resolve-types
         }
     }
 }
