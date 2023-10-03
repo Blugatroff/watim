@@ -6,22 +6,23 @@ import "../std/fs.watim" as FS
 import "../std/alloc.watim" as A
 import "../std/format.watim" as FMT
 import "../std/core.watim" as CORE
+import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
 import "./parser.watim" as P
 
 struct Module {
-    items: .AST:TopItems
+    items: DynArray:DynArray<.AST:TopItem>
     imports: .AST:Imports
     file: S:String
     tokens: L:Tokens
     types: .AST:Types
     path: S:String
-    structs: .AST:Structs
+    structs: DynArray:DynArray<.AST:Struct>
     fields: .AST:Fields
-    types-types: .AST:TypesTypes
-    words-words: AST:WordsWords
+    types-types: DynArray:DynArray<.AST:Types>
+    words-words: DynArray:DynArray<.AST:Words>
 }
 
 fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
@@ -41,45 +42,39 @@ fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
     $items $path $str $tokens $types $fields Module-new
 }
 
-fn Module-new(items: .AST:TopItems, path: S:String, file: S:String, tokens: L:Tokens, types: .AST:Types, fields: .AST:Fields) -> Module {
+fn Module-new(items: DynArray:DynArray<.AST:TopItem>, path: S:String, file: S:String, tokens: L:Tokens, types: .AST:Types, fields: .AST:Fields) -> Module {
     local self: Module
     $items #self.items
     $file #self.file
     $tokens #self.tokens
     $types #self.types
     $path #self.path
-    AST:Structs-new #self.structs
+    \AST:Struct-free DynArray:new<.AST:Struct> #self.structs
     $fields #self.fields
     &self &self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
-    AST:TypesTypes-new #self.types-types
-    AST:WordsWords-new #self.words-words
+    \AST:Types-free-container DynArray:new<.AST:Types> #self.types-types
+    \AST:Words-free DynArray:new<.AST:Words> #self.words-words
     // TODO: check for duplicate structs and memories
     $self
 }
 
 fn Module-check-for-duplicate-functions(self: .Module) {
-    local i: i32
-    local len: i32
-    local item: .AST:TopItem
-    local j: i32
-    local item2: .AST:TopItem
-    local ident: .L:Token
-
-    $self.items AST:TopItems-len #len
+    $self.items.len @len
+    0 @i
     loop {
         $i $len = if { break }
         
-        $self.items $i AST:TopItems-get #item
+        &self.items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-            0 #j
+            0 @j
             loop {
                 $j $i = if { break }
-                $self.items $j AST:TopItems-get #item2
+                &self.items $j DynArray:get<.AST:TopItem> ~ @item2
                 
                 $item2 AST:TopItem-ty AST:TOP_ITEM_FN = if {
                     $item AST:TopItem-function AST:Function-ident L:Token-lexeme
-                    $item2 AST:TopItem-function AST:Function-ident #ident
+                    $item2 AST:TopItem-function AST:Function-ident @ident
                     $ident L:Token-lexeme
                     STR:Str-eq if {
                         2 $ident L:Token-location L:print-location
@@ -89,29 +84,22 @@ fn Module-check-for-duplicate-functions(self: .Module) {
                         1 CORE:exit
                     }
                 }
-
                 $j 1 + #j
             }
         }
-
         $i 1 + #i
     }
 }
 
 fn Module-extract-imports(self: .Module, module-path: .S:String) {
-    local i: i32
-    local item: .AST:TopItem
-    local imp: .AST:Import
-    local path: S:String
-    local ident: S:String
-
     AST:Imports-new #self.imports
+    0 @i
     loop {
-        $i $self.items AST:TopItems-len = if { break }
-        $self.items $i AST:TopItems-get #item
+        $i $self.items.len = if { break }
+        &self.items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
-            $item.imp #imp
-            $module-path S:String-unpack FS:path-dir S:String-new #path
+            $item.imp @imp
+            $module-path S:String-unpack FS:path-dir S:String-new @path
             &path $imp AST:Import-path-content S:String-append
             $self.imports
             $item.imp AST:Import-ident L:Token-lexeme ~ STR:Str-unpack S:String-new 
@@ -128,33 +116,30 @@ fn Module-imports(self: .Module) -> .AST:Imports {
 }
 
 fn Module-free(self: Module) {
-    $self.types-types AST:TypesTypes-free
-    $self.items AST:TopItems-free
-    $self.words-words AST:WordsWords-free
+    $self.types-types DynArray:free<.AST:Types>
+    $self.items DynArray:free<.AST:TopItem>
+    $self.words-words DynArray:free<.AST:Words>
     $self.file S:String-free
     $self.tokens L:Tokens-free
     $self.types AST:Types-free
     $self.imports AST:Imports-free
     $self.path S:String-free
-    $self.structs AST:Structs-free
+    $self.structs DynArray:free<.AST:Struct>
     $self.fields AST:Fields-free
 }
 
-fn Module-items(self: .Module) -> .AST:TopItems {
-    $self.items
+fn Module-items(self: .Module) -> .DynArray:DynArray<.AST:TopItem> {
+    &self.items
 }
 
 fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {
-    local items: .AST:TopItems
-    local item: .AST:TopItem
-    local struc: .AST:Struct
-    local i: i32
-    $self Module-items #items
+    $self Module-items @items
+    0 @i
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Struct 0 1 = break }
-        $items $i AST:TopItems-get #item
+        $i $items.len = if { 0 !.AST:Struct 0 1 = break }
+        $items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
-            $item AST:TopItem-struc #struc
+            $item AST:TopItem-struc @struc
             $struc AST:Struct-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $struc 0 0 = break
             }
@@ -164,23 +149,19 @@ fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Str
 }
 
 fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Extern, .AST:Function, bool {
-    local items: .AST:TopItems
-    local item: .AST:TopItem
-    local fun: .AST:Function
-    local ext: .AST:Extern
-    local i: i32
-    $self Module-items #items
+    $self Module-items @items
+    0 @i
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Extern 0 !.AST:Function 0 1 = break }
-        $items $i AST:TopItems-get #item
+        $i $items.len = if { 0 !.AST:Extern 0 !.AST:Function 0 1 = break }
+        $items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-            $item AST:TopItem-function #fun
+            $item AST:TopItem-function @fun
             $fun AST:Function-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 0 !.AST:Extern $fun 0 0 = break
             }
         }
         $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
-            $item AST:TopItem-ext #ext
+            $item AST:TopItem-ext @ext
             $ext AST:Extern-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $ext 0 !.AST:Function 0 0 = break
             }
@@ -190,16 +171,13 @@ fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:
 }
 
 fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local, bool {
-    local items: .AST:TopItems
-    local item: .AST:TopItem
-    local mem: .AST:Local
-    local i: i32
-    $self Module-items #items
+    $self Module-items @items
+    0 @i 
     loop {
-        $i $items AST:TopItems-len = if { 0 !.AST:Local 0 1 = break }
-        $items $i AST:TopItems-get #item
+        $i $items.len = if { 0 !.AST:Local 0 1 = break }
+        $items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $item.mem #mem
+            $item.mem @mem
             $mem.ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $mem 0 0 = break 
             }
@@ -293,26 +271,21 @@ fn Modules-find-index(self: .Modules, module: .Module) -> i32 {
 }
 
 fn Modules-mark-reachable(self: .Modules) {
-    local module: .Module
-    local items: .AST:TopItems
-    local i: i32
-    local j: i32
-    local item: .AST:TopItem
-    local function: .AST:Function
+    0 @i
     loop {
         $i $self Modules-len = if { break }
-        $self $i Modules-get-value #module
+        $self $i Modules-get-value @module
 
-        $module Module-items #items
+        $module Module-items @items
 
-        0 #j
+        0 @j
         loop {
-            $items AST:TopItems-len $j = if { break }
+            $items.len $j = if { break }
 
-            $items $j AST:TopItems-get #item
+            $items $j DynArray:get<.AST:TopItem> ~ @item
 
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-                $item AST:TopItem-function #function
+                $item AST:TopItem-function @function
                 $function.export 0 !.L:Token /= if {
                     $self $module $function mark-reachable-function
                 }

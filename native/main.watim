@@ -8,6 +8,7 @@ import "../std/map.watim" as MAP
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/util.watim" as U
+import "../std/dyn-array.watim" as DA
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -117,56 +118,44 @@ fn main() {
 }
 
 fn parse-ast() {
-    local input: S:String
-    local code: i32
-    local tokens: L:Tokens
-    local mem: S:String
-    local items: .AST:TopItems
-    local types: .AST:Types
-    local formatter: FMT:Formatter
-    local json: S:String
-
-    0 FS:read-all #code 
+    0 FS:read-all @code 
     $code 0 /= if {
         2 "Failed to read stdin, Error Code: " IO:write-all IO:check
         2 $code IO:print-to-fd
-        drop
-    } else { 
-        #input 
+        1 CORE:exit
     }
-    &input "stdin.watim" STR:Str-new L:lex #tokens
-    S:String-empty #mem
-    &mem &tokens P:parse @fields #types #items
+    @input
+    &input "stdin.watim" STR:Str-new L:lex @tokens
+    S:String-empty @mem
+    &mem &tokens P:parse @fields @types @items
     
-    FMT:Formatter-new #formatter
-    &formatter $items DUMP:TopItems-json
+    FMT:Formatter-new @formatter
+    &formatter &items DUMP:TopItems-json
     &formatter "\n" FMT:Formatter-write
 
-    $items AST:TopItems-free
+    $items DA:free<.AST:TopItem>
     $input S:String-free
     $tokens L:Tokens-free
     $mem S:String-free
     $types AST:Types-free
     $fields AST:Fields-free
 
-    $formatter FMT:Formatter-into-string #json
+    $formatter FMT:Formatter-into-string @json
     1 &json S:String-unpack IO:write-all IO:check
     $json S:String-free
 }
 
 fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
-    local module: M:Module
-    local imps: .AST:Imports
-    local i: i32
     logging-enabled if {
         2 "Loading module: " IO:write-all IO:check
         2 $path-ptr $path-len IO:write-all IO:check
         2 "\n" IO:write-all IO:check
     }
-    $path-ptr $path-len $mem M:Module-load #module
-    &module M:Module-imports #imps
+    $path-ptr $path-len $mem M:Module-load @module
+    &module M:Module-imports @imps
     $modules $path-ptr $path-len S:String-new $module M:Modules-insert
     
+    0 @i
     loop {
         $i $imps AST:Imports-len = if { break }
         $modules $imps $i AST:Imports-get-value S:String-unpack M:Modules-get if {

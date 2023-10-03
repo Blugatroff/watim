@@ -7,6 +7,7 @@ import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/map.watim" as MAP
 import "../std/format.watim" as FMT
+import "../std/dyn-array.watim" as DynArray
 
 import "./lexer.watim" as L
 import "./util.watim" as CU
@@ -191,33 +192,6 @@ fn Words-free(self: .Words) {
     }
     $self.cap 0 gt if { $self.ptr !.i32 A:free }
     $self !.i32 A:free
-}
-
-struct WordsWords {
-    inner: IV:I32Vec
-}
-fn WordsWords-new() -> WordsWords {
-    local self: WordsWords
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn WordsWords-free(self: WordsWords) {
-    0 @i
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Words Words-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-}
-fn WordsWords-push(self: .WordsWords, words: .Words) {
-    &self.inner $words !i32 IV:I32Vec-push
-}
-fn WordWords-len(self: .WordsWords) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn WordsWords-get(self: .WordsWords, index: i32) -> .Words {
-    &self.inner $index IV:I32Vec-get !.Words
 }
 
 fn TYPE_I32() -> i32 { 1 }
@@ -441,13 +415,13 @@ fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Typ
 } }
 
 // argument `generics` is optional/null
-fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block {
+fn Type-format(formatter: .FMT:Formatter, self: .Type) { block {
     $self Type-ty TYPE_I32 = if { $formatter "i32" FMT:Formatter-write break }
     $self Type-ty TYPE_I64 = if { $formatter "i64" FMT:Formatter-write break }
     $self Type-ty TYPE_BOOL = if { $formatter "bool" FMT:Formatter-write break }
     $self Type-ty TYPE_PTR = if { 
         $formatter "." FMT:Formatter-write
-        $formatter $generics $self Type-child Type-format
+        $formatter $self Type-child Type-format
         break
     }
     $self Type-ty TYPE_STRUCT = if {
@@ -466,7 +440,7 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
                 0 @i
                 loop {
                     $self.generics Types-len $i = if { break }
-                    $formatter $generics $self.generics $i Types-get Type-format
+                    $formatter $self.generics $i Types-get Type-format
                     $i 1 + #i
                     $self.generics Types-len $i /= if {
                         $formatter ", " FMT:Formatter-write
@@ -479,18 +453,14 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
     }
     $self Type-ty TYPE_ARRAY = if {
         $formatter "[" FMT:Formatter-write
-        $formatter $generics $self.child Type-format
+        $formatter $self.child Type-format
         $formatter ": " FMT:Formatter-write
         $self.length $formatter U:i32-format
         $formatter "]" FMT:Formatter-write
         break
     }
     $self Type-ty TYPE_GENERIC = if {
-        $generics 0 !.Types /= if {
-            $formatter 0 !.Types $generics $self.generic Types-get Type-format
-        } else {
-            $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-        }
+        $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
         break
     }
     $self Type-ty TYPE_FUNCTION = if {
@@ -501,7 +471,7 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
             $i 0 /= if {
                 $formatter ", " FMT:Formatter-write
             }
-            $formatter $generics $self.function.args $i Types-get Type-format
+            $formatter $self.function.args $i Types-get Type-format
             $i 1 + #i
         }
 
@@ -513,7 +483,7 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
             $i 0 /= if {
                 $formatter ", " FMT:Formatter-write
             }
-            $formatter $generics $self.function.rets $i Types-get Type-format
+            $formatter $self.function.rets $i Types-get Type-format
             $i 1 + #i
         }
         $formatter ")" FMT:Formatter-write
@@ -525,10 +495,9 @@ fn Type-format(formatter: .FMT:Formatter, generics: .Types, self: .Type) { block
     0 0 / drop
     1 CORE:exit
 } }
-// argument `generics` is optional/null
-fn Type-print(fd: i32, generics: .Types, self: .Type) {
+fn Type-print(fd: i32, self: .Type) {
     FMT:Formatter-new @formatter
-    &formatter $generics $self Type-format
+    &formatter $self Type-format
     $formatter FMT:Formatter-into-string @string
     $fd &string S:String-unpack IO:write-all IO:check
     $string S:String-free
@@ -633,7 +602,7 @@ fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
         $formatter "[" FMT:Formatter-write
         loop {
             $i $self Types-len = if { break }
-            $formatter $generics $self $i Types-get Type-format
+            $formatter $self $i Types-get Type-format
             $i 1 + $self Types-len lt if {
                 $formatter ", " FMT:Formatter-write
             }
@@ -660,7 +629,7 @@ fn Types-apply-generics(self: .Types, generics: .Types, module: .M:Module) -> .T
             $i 1 + #i
         }
         $use-new if {
-            $module.types-types $new TypesTypes-push
+            &module.types-types $new DynArray:push<.Types>
             $new
         } else { $new Types-free-container $self }
         $use-new
@@ -700,100 +669,6 @@ fn Types-eq(self: .Types, other: .Types) -> bool {
         }
         $i 1 + #i
     }
-}
-
-struct TypesTypes {
-    inner: IV:I32Vec
-    min-size: i32
-}
-fn TypesTypes-new() -> .TypesTypes {
-    local self: .TypesTypes
-    sizeof(TypesTypes) A:alloc !.TypesTypes #self
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn TypesTypes-free(self: .TypesTypes) {
-    0 @i
-    loop {
-        $self TypesTypes-len $i = if { break }
-        $self $i TypesTypes-get Types-free-container
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn TypesTypes-push(self: .TypesTypes, f: .Types) {
-    &self.inner $f !i32 IV:I32Vec-push
-}
-fn TypesTypes-len(self: .TypesTypes) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn TypesTypes-get(self: .TypesTypes, index: i32) -> .Types {
-    &self.inner $index IV:I32Vec-get !.Types
-}
-// argument `generics` is optional/null
-fn TypesTypes-format(formatter: .FMT:Formatter, generics: .Types, self: .TypesTypes) {
-    local i: i32
-    0 $self TypesTypes-len = if {
-        $formatter "[]" FMT:Formatter-write
-    } else {
-        $formatter "[" FMT:Formatter-write
-        loop {
-            $i $self TypesTypes-len = if { break }
-            $formatter $generics $self $i TypesTypes-get Types-format
-            $i 1 + $self TypesTypes-len lt if {
-                $formatter ", " FMT:Formatter-write
-            }
-            $i 1 + #i
-        }
-        $formatter "]" FMT:Formatter-write
-    }
-}
-// argument `generics` is optional/null
-fn TypesTypes-print(fd: i32, generics: .Types, self: .TypesTypes) {
-    local formatter: FMT:Formatter
-    local out: S:String
-    FMT:Formatter-new #formatter
-    &formatter $generics $self TypesTypes-format
-    $formatter FMT:Formatter-into-string #out
-    $fd &out S:String-unpack IO:write-all IO:check
-    $out S:String-free
-}
-fn TypesTypes-contains(self: .TypesTypes, types: .Types) -> i32, bool {
-    0 @i
-    loop {
-        $self TypesTypes-len $i = if { 0 0 1 = break }
-        $self $i TypesTypes-get $types Types-eq if {
-            $i 0 0 = break
-        }
-        $i 1 + #i
-    }
-}
-
-struct Structs {
-    inner: IV:I32Vec
-}
-fn Structs-new() -> .Structs {
-    local self: .Structs
-    sizeof(Structs) A:alloc !.Structs #self
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn Structs-free(self: .Structs) {
-    local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Struct Struct-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Structs-push(self: .Structs, f: .Struct) {
-    &self.inner $f !i32 IV:I32Vec-push
-}
-fn Structs-pop(self: .Structs) -> .Struct {
-    &self.inner IV:I32Vec-pop !.Struct
 }
 
 struct FunctionPtr {
@@ -1498,7 +1373,7 @@ fn Field-eq(self: .Field, other: .Field) -> bool { block {
 fn Field-format(formatter: .FMT:Formatter, self: .Field) {
     $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter ": " FMT:Formatter-write
-    $formatter 0 !.Types $self.type Type-format
+    $formatter $self.type Type-format
 }
 fn Field-print(fd: i32, self: .Field) {
     FMT:Formatter-new @formatter
@@ -1665,7 +1540,7 @@ fn Struct-apply-generics(self: .Struct, generics: .Types, module: .M:Module) -> 
         1 1 = #self.generics-being-applied
         $self.fields $generics $module Fields-apply-generics if {
             $self.ident flip $self.generics 0 1 = Struct-new @new
-            $module.structs $new Structs-push
+            &module.structs $new DynArray:push<.Struct>
             $new 1 1 =
         } else {
             drop
@@ -1781,35 +1656,6 @@ fn TopItem-free(self: .TopItem) {
         $self.struc Struct-free
     }
     $self !.i32 A:free
-}
-
-struct TopItems {
-    inner: IV:I32Vec
-}
-fn TopItems-new() -> .TopItems {
-    local self: .TopItems
-    sizeof(TopItems) A:alloc !.TopItems #self
-    IV:I32Vec-new #self.inner 
-    $self
-}
-fn TopItems-push(self: .TopItems, item: .TopItem) {
-    &self.inner $item !i32 IV:I32Vec-push
-}
-fn TopItems-free(self: .TopItems) {
-    local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.TopItem TopItem-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn TopItems-len(self: .TopItems) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn TopItems-get(self: .TopItems, index: i32) -> .TopItem {
-    &self.inner $index IV:I32Vec-get !.TopItem
 }
 
 struct Imports {

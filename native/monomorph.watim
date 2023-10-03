@@ -1,6 +1,7 @@
 import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
+import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -40,8 +41,8 @@ fn gather-instances-module(module: .M:Module) {
     $module M:Module-items @items
     0 @i
     loop {
-        $i $items AST:TopItems-len = if { break }
-        $items $i AST:TopItems-get @item
+        $i $items.len = if { break }
+        $items $i DynArray:get<.AST:TopItem> ~ @item
         $module $item gather-instances-item
         $i 1 + #i
     }
@@ -52,11 +53,11 @@ fn gather-instances-item(module: .M:Module, item: .AST:TopItem) {
         $item AST:TopItem-function @function
         &function.generics AST:Generics-len 0 = if { // only start gathering at non-generic functions
             AST:Types-new @generics
-            $module.types-types $generics AST:TypesTypes-push
+            &module.types-types $generics DynArray:push<.AST:Types>
 
             $generics GenericsMap-new-root @generics-map
             $module &generics-map $function gather-instances-function @new-words
-            &module.words-words $new-words AST:WordsWords-push
+            &module.words-words $new-words DynArray:push<.AST:Words>
             $generics $new-words AST:Instance-new @instance
             $function.instances $instance AST:Instances-push
         }
@@ -110,7 +111,7 @@ fn gather-instances-word(module: .M:Module, generics-map: .GenericsMap, word: .A
                     $word.function.instances $new-instance AST:Instances-push
 
                     $module &child-generics-map $word.function gather-instances-function @new-words
-                    &module.words-words $new-words AST:WordsWords-push
+                    &module.words-words $new-words DynArray:push<.AST:Words>
                     $word.function.instances $instance-index AST:Instances-get .body $new-words store
                     $instance-index
                 } else {
@@ -123,7 +124,6 @@ fn gather-instances-word(module: .M:Module, generics-map: .GenericsMap, word: .A
 
                     $instance-index
                 } @instance-index
-                // $module.types-types $new-generics AST:TypesTypes-push
                 $instance-index #new-word.instance-index
                 $new-word break
             }

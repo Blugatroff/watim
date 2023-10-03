@@ -6,6 +6,7 @@ import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/i32vec.watim" as IV
 import "../std/alloc.watim" as A
+import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -131,9 +132,9 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
                 $formatter "i32.wrap_i64\n" FMT:Formatter-write break
             }
             $formatter ";; CAST from " FMT:Formatter-write
-            $formatter $generics $self.src-type AST:Type-format
+            $formatter $self.src-type AST:Type-format
             $formatter " to " FMT:Formatter-write
-            $formatter $generics $self.type AST:Type-format
+            $formatter $self.type AST:Type-format
             $formatter "\n" FMT:Formatter-write
             break
         }
@@ -168,7 +169,7 @@ fn generate-word(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
         }
         $self.ty AST:WORD_ANNOTATION = if {
             $formatter ";; ::" FMT:Formatter-write
-            $formatter $generics $self.type AST:Type-format
+            $formatter $self.type AST:Type-format
             $formatter "\n" FMT:Formatter-write
             break
         }
@@ -794,17 +795,14 @@ fn generate-ext(formatter: .FMT:Formatter, module: i32, ext: .AST:Extern) {
 }
 
 fn generate-externs(formatter: .FMT:Formatter, modules: .M:Modules) {
-    local i: i32
-    local j: i32
-    local module: .M:Module
-    local item: .AST:TopItem
+    0 @i
     loop {
         $i $modules M:Modules-len = if { break }
-        $modules $i M:Modules-get-value #module
-        0 #j
+        $modules $i M:Modules-get-value @module
+        0 @j
         loop {
-            $j $module M:Module-items AST:TopItems-len = if { break }
-            $module M:Module-items $j AST:TopItems-get #item
+            $j $module M:Module-items.len ~ = if { break }
+            $module M:Module-items $j DynArray:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
                 $item AST:TopItem-ext @top-item
                 $top-item.reachable if {
@@ -829,17 +827,14 @@ fn generate-global-mem(formatter: .FMT:Formatter, module: i32, statics-len: i32,
 }
 
 fn generate-global-mems(formatter: .FMT:Formatter, statics-len: i32, modules: .M:Modules) {
-    local i: i32
-    local j: i32
-    local module: .M:Module
-    local item: .AST:TopItem
+    0 @i
     loop {
         $i $modules M:Modules-len = if { break }
-        $modules $i M:Modules-get-value #module
-        0 #j
+        $modules $i M:Modules-get-value @module
+        0 @j
         loop {
-            $j $module M:Module-items AST:TopItems-len = if { break }
-            $module M:Module-items $j AST:TopItems-get #item
+            $j $module M:Module-items.len ~ = if { break }
+            $module M:Module-items $j DynArray:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
                 $formatter $i $statics-len $item.mem generate-global-mem
             }
@@ -885,14 +880,14 @@ fn generate-locl(formatter: .FMT:Formatter, generics: .AST:Types, locl: .AST:Loc
     $formatter ")" FMT:Formatter-write
     $locl AST:Local-type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter " ;; " FMT:Formatter-write
-        $formatter $generics $locl AST:Local-type AST:Type-format
+        $formatter $locl AST:Local-type AST:Type-format
     }
     $locl AST:Local-type AST:Type-ty AST:TYPE_ARRAY = if {
         $formatter " ;; array" FMT:Formatter-write
     }
     $locl AST:Local-type AST:Type-ty AST:TYPE_GENERIC = if {
         $formatter " ;; " FMT:Formatter-write
-        $formatter $generics $locl AST:Local-type AST:Type-format
+        $formatter $locl AST:Local-type AST:Type-format
     }
     $formatter "\n" FMT:Formatter-write
 }
@@ -1355,8 +1350,8 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
         }
         0 @j
         loop {
-            $j $module M:Module-items AST:TopItems-len = if { break }
-            $module M:Module-items $j AST:TopItems-get @item
+            $j $module M:Module-items.len ~ = if { break }
+            $module M:Module-items $j DynArray:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item AST:TopItem-function @function
                 $function.reachable if {
@@ -1392,8 +1387,8 @@ fn generate-table(formatter: .FMT:Formatter, table-size: i32, modules: .M:Module
         $module M:Module-items @items
         0 @j
         loop {
-            $j $items AST:TopItems-len = if { break }
-            $items $j AST:TopItems-get @item
+            $j $items.len = if { break }
+            $items $j DynArray:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item.function.table-index 0 /= if {
                     $fs sizeof(ExternOrFunction) $item.function.table-index * + @ptr

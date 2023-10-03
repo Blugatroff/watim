@@ -6,6 +6,7 @@ import "../std/str.watim" as STR
 import "../std/core.watim" as CORE
 import "../std/format.watim" as FMT
 import "../std/i32vec.watim" as IV
+import "../std/dyn-array.watim" as DynArray
 
 import "./module.watim" as M
 import "./ast.watim" as AST
@@ -43,12 +44,11 @@ fn check(modules: .M:Modules) -> i32 {
     $checker.table-index
 }
 fn check-module(self: .Checker, module: .M:Module) {
-    local items: .AST:TopItems
-    local i: i32
-    $module M:Module-items #items
+    $module M:Module-items @items
+    0 @i
     loop {
-        $i $items AST:TopItems-len = if { break }
-        $self $module $items $i AST:TopItems-get check-item
+        $i $items.len = if { break }
+        $self $module $items $i DynArray:get<.AST:TopItem> ~ check-item
         $i 1 + #i
     }
 }
@@ -324,7 +324,7 @@ fn array-access-mismatch(word: .AST:Word, array-type: .AST:Type) {
     2 "Type mismatch in array access:" IO:write-all IO:check
     2 "\n\t expected: .[a: n]" IO:write-all IO:check
     2 "\n\t got:      " IO:write-all IO:check
-    2 0 !.AST:Types $array-type AST:Type-print
+    2 $array-type AST:Type-print
     2 "\n" IO:write-all IO:check
 }
 fn check-array-read(stack: .AST:Types, word: .AST:Word) -> bool {
@@ -376,9 +376,9 @@ fn check-annotation(stack: .AST:Types, word: .AST:Word) -> bool {
     $type $word.type AST:Type-eq not if {
         2 $word AST:Word-location L:print-location
         2 " Type mismatch with annotation:\n\t" IO:write-all IO:check
-        2 0 !.AST:Types $type AST:Type-print
+        2 $type AST:Type-print
         2 "\n\t" IO:write-all IO:check
-        2 0 !.AST:Types $word.type AST:Type-print
+        2 $word.type AST:Type-print
         2 "\n" IO:write-all IO:check
         1 CORE:exit
     }
@@ -467,7 +467,8 @@ fn check-get-locl(self: .Checker, module: .M:Module, stack: .AST:Types, locals: 
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             $self.modules $module M:Modules-find-index #word.module
             AST:WORD_GET_GLOBAL #word.ty
-            AST:Local-type $stack flip AST:Types-push
+            AST:Local-type #word.type
+            $stack $word.type AST:Types-push
         } else {
             drop
             $word AST:Word-location "local not found\n" U:abort-with-location

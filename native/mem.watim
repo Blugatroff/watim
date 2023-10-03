@@ -1,5 +1,6 @@
 import "../std/core.watim" as CORE
 import "../std/io.watim" as IO
+import "../std/dyn-array.watim" as DynArray
 
 import "./module.watim" as M
 import "./ast.watim" as AST
@@ -19,12 +20,11 @@ fn process(global-mem-start: i32, modules: .M:Modules) -> i32 {
 }
 
 fn process-module(global-mem-address: .i32, module: .M:Module) {
-    local items: .AST:TopItems
-    local i: i32
-    $module M:Module-items #items
+    $module M:Module-items @items
+    0 @i
     loop {
-        $i $items AST:TopItems-len = if { break }
-        $module M:Module-types $global-mem-address $items $i AST:TopItems-get process-item
+        $i $items.len = if { break }
+        $module M:Module-types $global-mem-address $items $i DynArray:get<.AST:TopItem> ~ process-item
         $i 1 + #i
     }
 }

@@ -2,6 +2,7 @@ import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/format.watim" as FMT
+import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -26,8 +27,8 @@ fn call-graph-module(fmt: .FMT:Formatter, module: .M:Module) {
     $module M:Module-items @items
     0 @i
     loop {
-        $i $items AST:TopItems-len = if { break }
-        $items $i AST:TopItems-get @item
+        $i $items.len = if { break }
+        $items $i DynArray:get<.AST:TopItem> ~ @item
         $fmt $item call-graph-item
         $i 1 + #i
     }
