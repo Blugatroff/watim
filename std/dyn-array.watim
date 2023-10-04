@@ -2,11 +2,11 @@ import "./alloc.watim" as A
 import "./core.watim" as CORE
 import "./io.watim" as IO
 
-struct DynArray<B> {
-    ptr: .B
+struct DynArray<T> {
+    ptr: .T
     len: i32
     cap: i32
-    free: (B ->)
+    free: (T ->)
 }
 
 fn new<T>(free: (T ->)) -> DynArray<T> {
@@ -46,6 +46,9 @@ fn get<T>(self: .DynArray<T>, index: i32) -> .T {
     }
     $self.ptr $index sizeof(T) * +
 }
+fn set<T>(self: .DynArray<T>, index: i32, value: T) -> T {
+    $self $index get<T> CORE:dup<.T> $value store ~
+}
 fn pop<T>(self: .DynArray<T>) -> T {
     $self.len 0 = if {
         2 "Cannot pop from empty DynArray" IO:write-all IO:check
@@ -55,12 +58,25 @@ fn pop<T>(self: .DynArray<T>) -> T {
     $self.len 1 - #self.len
 }
 fn free<T>(self: DynArray<T>) {
+    $self.free 0 !(T ->) /= if {
+        0 @i
+        loop {
+            $i $self.len = if { break }
+            &self $i get<T> ~ $self.free ->
+            $i 1 + #i
+        }
+    }
+    $self.ptr 0 !.T /= if { $self.ptr !.i32 A:free }
+}
+fn print<T>(fd: i32, print-element: (i32, .T ->), self: .DynArray<T>) {
+    $fd "[" IO:write-all IO:check
     0 @i
     loop {
         $i $self.len = if { break }
-        &self $i get<T> ~ $self.free ->
+        $fd $self $i get<T> $print-element ->
         $i 1 + #i
+        $i $self.len /= if { 2 ", " IO:write-all IO:check }
     }
-    $self.ptr 0 !.T /= if { $self.ptr !.i32 A:free }
+    $fd "]" IO:write-all IO:check
 }
 

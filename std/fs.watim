@@ -4,6 +4,7 @@ import "./alloc.watim" as A
 import "./string.watim" as S
 import "./str.watim" as STR
 import "./i32vec.watim" as IV
+import "./dyn-array.watim" as DynArray
 
 extern "wasi_unstable" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
 extern "wasi_unstable" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
@@ -99,21 +100,19 @@ struct Prestat {
 }
 
 memory PREOPENED: bool 4
-memory PREOPENED_FDS: IV:I32Vec 12
+memory PREOPENED_FDS: DynArray:DynArray<i32> 16 // TODO: this doesn't error when the generic <i32> is missing!
 memory PREOPENED_PATHS: S:StringVec 12
 
 fn init() {
-    local a: .IV:I32Vec
-    local b: .S:StringVec
-    $PREOPENED_FDS #a IV:I32Vec-new =>a
-    $PREOPENED_PATHS #b S:StringVec-new =>b
+    $PREOPENED_FDS @a 0 !(i32 ->) DynArray:new<i32> =>a
+    $PREOPENED_PATHS @b S:StringVec-new =>b
 }
 fn uninit() {
-    $PREOPENED_FDS ~ IV:I32Vec-free
+    $PREOPENED_FDS ~ DynArray:free<i32>
     $PREOPENED_PATHS ~ S:StringVec-free
 }
 
-fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
+fn get-preopened-fds() -> .DynArray:DynArray<i32>, .S:StringVec, i32 {
     local prestat: Prestat
     local fd: i32
     local code: i32
@@ -121,7 +120,7 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
     local len: i32
     $PREOPENED ~ not if {
         3 #fd
-        $PREOPENED_FDS IV:I32Vec-new store
+        $PREOPENED_FDS 0!(i32 ->) DynArray:new<i32> store
         S:StringVec-new =>PREOPENED_PATHS
         loop {
             $fd &prestat fd_prestat_get #code
@@ -139,7 +138,7 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
             $code 0 /= if {
                 break
             }
-            $PREOPENED_FDS $fd IV:I32Vec-push
+            $PREOPENED_FDS $fd DynArray:push<i32>
             $PREOPENED_PATHS $buf $len S:String-new S:StringVec-push
             $buf A:free
             $fd 1 + #fd
@@ -152,14 +151,11 @@ fn get-preopened-fds() -> .IV:I32Vec, .S:StringVec, i32 {
 // returns 0, 0 if not found
 // returns 0, e if error
 fn find-current-dir() -> i32, i32 {
-    local fds: .IV:I32Vec
-    local paths: .S:StringVec
-    local code: i32
-    local i: i32
-    get-preopened-fds #code #paths #fds
+    get-preopened-fds @code @paths @fds
     $code 0 = if {
+        0 @i
         loop {
-            $i $fds IV:I32Vec-len = if { 
+            $i $fds.len = if { 
                 // not found
                 2 "failed to find preopened current directory\n" IO:write-all IO:check
                 1 CORE:exit
@@ -167,7 +163,7 @@ fn find-current-dir() -> i32, i32 {
             }
             $paths $i S:StringVec-get S:String-unpack "." STR:str-is-prefix
             if {
-                $fds $i IV:I32Vec-get 
+                $fds $i DynArray:get<i32> ~
                 0 
                 break
             }
