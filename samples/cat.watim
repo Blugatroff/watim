@@ -4,24 +4,27 @@ import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/core.watim" as CORE
+import "../std/arena.watim" as Arena
+import "../std/dyn-array.watim" as DynArray
 
 memory MEM: i32 49152
 
 fn main "_start" () {
     $MEM 49152 A:init
+    30000 Arena:new @arena
 
-    ARGS:get-args @args
+    &arena ARGS:get-args @args
 
-    &args S:StringVec-len 1 le if {
+    $args.len 1 le if {
         2 "\ncat written in Watim\n" IO:write-all IO:check
         2 "\tUsage: ./run.sh ./samples/cat.watim <file>\n" IO:write-all IO:check
         1 CORE:exit
     }
-    &args 1 S:StringVec-get S:String-unpack FS:read-file IO:check @str
+    &args 1 DynArray:get<S:String> S:String-unpack FS:read-file IO:check @str
 
     1 &str S:String-unpack IO:write-all IO:check
 
     $str S:String-free
-    $args S:StringVec-free
+    $arena Arena:free
 }
 

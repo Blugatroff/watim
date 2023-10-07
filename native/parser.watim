@@ -11,21 +11,21 @@ import "./util.watim" as U
 import "./checker.watim" as CHECKER
 
 struct Parser {
-    tokens: .L:Tokens
+    tokens: .DynArray:DynArray<.L:Token>
     current: i32
     mem: .S:String
     types: .AST:Types
     fields: .AST:Fields
     file: STR:Str
 }
-fn Parser-new(tokens: .L:Tokens, mem: .S:String) -> Parser {
+fn Parser-new(tokens: .DynArray:DynArray<.L:Token>, mem: .S:String) -> Parser {
     local self: Parser
     $tokens #self.tokens
     0 #self.current
     $mem #self.mem
     AST:Types-new #self.types
-    $tokens L:Tokens-len 0 gt if {
-        $tokens 0 L:Tokens-get L:Token-file ~ #self.file
+    $tokens.len 0 gt if {
+        $tokens 0 DynArray:get<.L:Token> ~ L:Token-file ~ #self.file
     }
     AST:Fields-new #self.fields
     $self
@@ -34,7 +34,7 @@ fn Parser-free(self: Parser) -> .AST:Types, .AST:Fields {
     $self.types $self.fields
 }
 fn Parser-peek(self: .Parser) -> .L:Token {
-    $self.tokens $self.current L:Tokens-get
+    $self.tokens $self.current DynArray:get<.L:Token> ~
 }
 fn Parser-advance(self: .Parser) -> .L:Token {
     $self Parser-peek
@@ -47,7 +47,7 @@ fn Parser-retreat(self: .Parser) {
 fn Parser-parse-module(self: .Parser) -> DynArray:DynArray<.AST:TopItem> {
     \AST:TopItem-free DynArray:new<.AST:TopItem> @items
     loop {
-        $self.tokens L:Tokens-len $self.current = if {
+        $self.tokens.len $self.current = if {
             $items break
         }
         loop {
@@ -81,21 +81,21 @@ fn Parser-parse-module(self: .Parser) -> DynArray:DynArray<.AST:TopItem> {
 fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
     local token: .L:Token
     local ident: .L:Token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected struct" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_STRUCT /= if {
         $token L:Token-location "expected struct" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected identifier" U:abort
     }
     $self Parser-advance #ident
     $ident L:Token-ty L:TOKEN_IDENT /= if {
         $token L:Token-location "expected identifier" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected { or <" U:abort
     }
     $self Parser-advance #token
@@ -107,7 +107,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
     AST:Generics-new @generics
     $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
         loop {
-            $self.current $self.tokens L:Tokens-len = if { break }
+            $self.current $self.tokens.len = if { break }
             $self Parser-advance #token
             $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
             $token L:Token-ty L:TOKEN_IDENT /= if {
@@ -116,14 +116,14 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
 
             &generics $token AST:Generic-new AST:Generics-push
 
-            $self.current $self.tokens L:Tokens-len = if { break }
+            $self.current $self.tokens.len = if { break }
             $self Parser-advance #token
             $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
             $token L:Token-ty L:TOKEN_COMMA /= if {
                 $token L:Token-location "expected , or >" U:abort-with-location
             }
         }
-        $self.current $self.tokens L:Tokens-len = if {
+        $self.current $self.tokens.len = if {
             $self.file STR:Str-unpack "expected {" U:abort
         }
         $self Parser-advance #token
@@ -133,14 +133,14 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
     }
     AST:Fields-new @fields
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_RIGHT_CURLY = if { break }
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
         $token
-        $self.current $self.tokens L:Tokens-len = if {
+        $self.current $self.tokens.len = if {
             $self.file STR:Str-unpack "expected colon" U:abort
         }
         $self Parser-advance #token
@@ -157,14 +157,14 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
 fn Parser-parse-imp(self: .Parser) -> .AST:Import {
     local token: .L:Token
 
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected import" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_IMPORT /= if {
         $token L:Token-location "expected import" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected string" U:abort
     }
     $self Parser-advance #token
@@ -172,14 +172,14 @@ fn Parser-parse-imp(self: .Parser) -> .AST:Import {
         $token L:Token-location "exected string" U:abort-with-location
     }
     $token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected as" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_AS /= if {
         $token L:Token-location "exected as" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected identifier" U:abort
     }
     $self Parser-advance #token
@@ -196,14 +196,14 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
     local ident: .L:Token
     local params: AST:Locals
     local rets: .AST:Types
-    $self.tokens L:Tokens-len $self.current = if {
+    $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected extern" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_EXTERN /= if {
         $token L:Token-location "expected extern" U:abort-with-location
     }
-    $self.tokens L:Tokens-len $self.current = if {
+    $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected string" U:abort
     }
     $self Parser-advance #token
@@ -211,7 +211,7 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
         $token L:Token-location "expected string" U:abort-with-location
     }
     $token #module
-    $self.tokens L:Tokens-len $self.current = if {
+    $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected string" U:abort
     }
     $self Parser-advance #token
@@ -234,14 +234,14 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
 }
 fn Parser-parse-loc(self: .Parser) -> .AST:Local {
     local token: .L:Token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected local" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_LOCAL /= if {
         $token L:Token-location "expected local" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected identifier" U:abort
     }
     $self Parser-advance #token
@@ -250,7 +250,7 @@ fn Parser-parse-loc(self: .Parser) -> .AST:Local {
     }
     AST:LOCAL_LOCAL
     $token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected colon" U:abort
     }
     $self Parser-advance #token
@@ -266,21 +266,21 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     local token: .L:Token
     local ident: .L:Token
     local type: .AST:Type
-    $self.tokens L:Tokens-len $self.current = if {
+    $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected memory found EOF" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_MEMORY /= if {
         $token L:Token-location "expected memory" U:abort-with-location
     }
-    $self.tokens L:Tokens-len $self.current = if {
+    $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     $self Parser-advance #ident
     $ident L:Token-ty L:TOKEN_IDENT /= if {
         $ident L:Token-location "expected identifier" U:abort-with-location
     }
-    $self.tokens L:Tokens-len $self.current = if {
+    $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected colon found EOF" U:abort
     }
     $self Parser-advance #token
@@ -298,13 +298,13 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Local {
 fn Parser-parse-body(self: .Parser, locals: .AST:Locals) -> .AST:Words {
     local token: .L:Token
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_MEMORY /= if { break }
         $locals $self Parser-parse-mem AST:Locals-push
     }
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_LOCAL /= if { break }
         $locals $self Parser-parse-loc AST:Locals-push
@@ -314,7 +314,7 @@ fn Parser-parse-body(self: .Parser, locals: .AST:Locals) -> .AST:Words {
 fn Parser-parse-words(self: .Parser) -> .AST:Words {
     AST:Words-new @words
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek @token
 
         $token is-start-of-word not if { break }
@@ -331,7 +331,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
     local ret: .AST:Types
     local body: .AST:Words
     AST:Generics-new @generics
-    $self.current $self.tokens L:Tokens-len = if { 
+    $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected fn found EOF" U:abort
     }
     $self Parser-advance #token
@@ -339,14 +339,14 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
         $token L:Token-location "expected fn" U:abort-with-location
     }
     block {
-        $self.current $self.tokens L:Tokens-len = if { 
+        $self.current $self.tokens.len = if { 
             $self.file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         $self Parser-advance #ident
         $ident L:Token-ty L:TOKEN_IDENT /= if {
             $ident L:Token-location "expected identifier" U:abort-with-location
         }
-        $self.current $self.tokens L:Tokens-len = if { 
+        $self.current $self.tokens.len = if { 
             $self.file STR:Str-unpack "expected string, ( or < found EOF" U:abort
         }
         $self Parser-peek #token
@@ -358,7 +358,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
         }
         $token L:Token-ty L:TOKEN_STRING = if {
             $token #qualifier
-            $self.current $self.tokens L:Tokens-len = if { 
+            $self.current $self.tokens.len = if { 
                 $self.file STR:Str-unpack "expected ( found EOF" U:abort
             }
             $self Parser-advance #token
@@ -366,7 +366,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
         $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
             $self Parser-advance #token
             loop {
-                $self.current $self.tokens L:Tokens-len = if {
+                $self.current $self.tokens.len = if {
                     $self.file STR:Str-unpack "expected Generic found EOF" U:abort
                 }
                 $self Parser-advance #token
@@ -377,7 +377,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
                     $token L:Token-location "expected identifier" U:abort-with-location
                 }
                 &generics $token AST:Generic-new AST:Generics-push
-                $self.current $self.tokens L:Tokens-len = if {
+                $self.current $self.tokens.len = if {
                     $self.file STR:Str-unpack "expected > or , found EOF" U:abort
                 }
                 $self Parser-advance #token
@@ -390,14 +390,14 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
             }
         }
         $self Parser-parse-parameters #parameters
-        $self.current $self.tokens L:Tokens-len = if {
+        $self.current $self.tokens.len = if {
             $self.file STR:Str-unpack "expected ) found EOF\n" U:abort
         }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
             $token L:Token-location "expected )\n" U:abort-with-location
         }
-        $self.current $self.tokens L:Tokens-len lt if {
+        $self.current $self.tokens.len lt if {
             $self Parser-peek L:Token-ty L:TOKEN_ARROW = if {
                 $self Parser-advance drop
                 0 0 =
@@ -421,7 +421,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
 }
 fn Parser-parse-function(self: .Parser) -> .AST:Function {
     $self Parser-parse-signature @ret @locals @generics @qualifier @ident
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected { found EOF" U:abort
     }
     $self Parser-advance @token
@@ -429,7 +429,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
         $token L:Token-location "expected {" U:abort-with-location
     }
     $self &locals Parser-parse-body @body
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected } found EOF" U:abort
     }
     $self Parser-advance #token
@@ -450,7 +450,7 @@ fn Parser-parse-return-types(self: .Parser) -> .AST:Types {
     AST:Types-new #rets
     $rets $self Parser-parse-type AST:Types-push
     loop {
-        $self.current $self.tokens L:Tokens-len = if {
+        $self.current $self.tokens.len = if {
             $self.file STR:Str-unpack "expected , or { found EOF" U:abort
         }
         $self Parser-peek #token
@@ -466,7 +466,7 @@ fn Parser-parse-parameters(self: .Parser) -> AST:Locals {
     local params: AST:Locals
     local token: .L:Token
     AST:Locals-new #params
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected ( found EOF" U:abort 
     }
     $self Parser-advance #token
@@ -474,11 +474,11 @@ fn Parser-parse-parameters(self: .Parser) -> AST:Locals {
         $token L:Token-location "expected (" U:abort-with-location
     }
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
         &params $self Parser-parse-parameter AST:Locals-push
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_COMMA /= if {
             break
@@ -490,14 +490,14 @@ fn Parser-parse-parameters(self: .Parser) -> AST:Locals {
 fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
     local ident: .L:Token
     local token: .L:Token
-    $self.current $self.tokens L:Tokens-len = if { 
+    $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     $self Parser-advance #ident
     $ident L:Token-ty L:TOKEN_IDENT /= if {
         $ident L:Token-location "expected identifier" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len = if { 
+    $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected : found EOF" U:abort
     }
     $self Parser-advance #token
@@ -519,7 +519,7 @@ fn Parser-parse-type(self: .Parser) -> .AST:Type {
 }
 fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
     local token: .L:Token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected type found EOF" U:abort
     }
     $self Parser-advance #token
@@ -542,18 +542,18 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             AST:Types-new @rets
             
             loop {
-                $self.current $self.tokens L:Tokens-len = if { break }
+                $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_ARROW = if { break }
                 $args $self Parser-parse-type AST:Types-push
 
-                $self.current $self.tokens L:Tokens-len = if { break }
+                $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_ARROW = if { break }
                 $self Parser-advance #token
                 $token L:Token-ty L:TOKEN_COMMA /= if {
                     $token L:Token-location "expected ," U:abort-with-location
                 }
             }
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $self.file STR:Str-unpack "expected ->" U:abort
             }
             $self Parser-advance #token
@@ -561,18 +561,18 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
                 $token L:Token-location "expected ->" U:abort-with-location
             }
             loop {
-                $self.current $self.tokens L:Tokens-len = if { break }
+                $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
                 $rets $self Parser-parse-type AST:Types-push
 
-                $self.current $self.tokens L:Tokens-len = if { break }
+                $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
                 $self Parser-advance #token
                 $token L:Token-ty L:TOKEN_COMMA /= if {
                     $token L:Token-location "expected ," U:abort-with-location
                 }
             }
-            $self.current $self.tokens L:Tokens-len = if { 
+            $self.current $self.tokens.len = if { 
                 $self.file STR:Str-unpack "expected )" U:abort
             }
             $self Parser-advance #token
@@ -583,10 +583,10 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
         }
         $token L:Token-ty L:TOKEN_IDENT = if {
             loop {
-                $self.current $self.tokens L:Tokens-len lt if {
+                $self.current $self.tokens.len lt if {
                     $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
                         $self Parser-advance drop
-                        $self.current $self.tokens L:Tokens-len = if {
+                        $self.current $self.tokens.len = if {
                             $self.file STR:Str-unpack "expected identifier" U:abort
                         }
                         $token @module
@@ -603,7 +603,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
 
             AST:Types-new @generics
             
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $module $token $generics AST:Type-new-struc break
             }
             $self Parser-peek L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if {
@@ -612,7 +612,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             $self Parser-advance drop // skip the <
 
             loop {
-                $self.current $self.tokens L:Tokens-len = if { break }
+                $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { 
                     $self Parser-advance drop // drop the >
                     break
@@ -787,7 +787,7 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
         }
         $token L:Token-lexeme ~ STR:Str-unpack "sizeof" STR:str-eq if {
             AST:WORD_SIZEOF $token AST:Word-new #word
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $self.file STR:Str-unpack "Expected ( found EOF" U:abort
             }
             $self Parser-advance #token
@@ -797,7 +797,7 @@ fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
             $self Parser-parse-type #word.type
             $token L:Token-lexeme #word.ident
 
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $self.file STR:Str-unpack "Expected ) found EOF" U:abort
             }
             $self Parser-advance #token
@@ -817,7 +817,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
     local line: i32
     local column: i32
     local word: AST:Word
-    $self.current $self.tokens L:Tokens-len = if { 
+    $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "Expected word found EOF" U:abort
     }
     $self Parser-advance #token
@@ -910,7 +910,7 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
             AST:WORD_CALL_INDIRECT $token AST:Word-new break
         }
         $ty L:TOKEN_BACKSLASH = if {
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $self.file STR:Str-unpack "Expected ident found EOF" U:abort
             }
             AST:WORD_REF_FUNCTION $token AST:Word-new @word
@@ -934,10 +934,10 @@ fn Parser-parse-call(self: .Parser, token: .L:Token) -> AST:Word {
 }
 fn Parser-parse-call-inner(self: .Parser, token: .L:Token, word: .AST:Word) { block {
     $token L:Token-lexeme #word.ident
-    $self.current $self.tokens L:Tokens-len ge if { break }
+    $self.current $self.tokens.len ge if { break }
     $self Parser-peek L:Token-ty L:TOKEN_COLON = if {
         $self Parser-advance drop
-        $self.current $self.tokens L:Tokens-len = if { 
+        $self.current $self.tokens.len = if { 
             $self.file STR:Str-unpack "Expected ident found EOF" U:abort
         }
         $token L:Token-lexeme #word.qualifier
@@ -947,25 +947,25 @@ fn Parser-parse-call-inner(self: .Parser, token: .L:Token, word: .AST:Word) { bl
         }
         $token L:Token-lexeme #word.ident
     }
-    $self.current $self.tokens L:Tokens-len ge if { break }
+    $self.current $self.tokens.len ge if { break }
     $self Parser-peek L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if { break }
     $self Parser-advance drop
     AST:Types-new #word.generics
     loop {
-        $self.current $self.tokens L:Tokens-len ge if { break }
+        $self.current $self.tokens.len ge if { break }
         $self Parser-peek L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
 
         $self Parser-parse-type @type
 
         $word.generics $type AST:Types-push
 
-        $self.current $self.tokens L:Tokens-len ge if { 
+        $self.current $self.tokens.len ge if { 
             $self.file STR:Str-unpack "Expected > or , found EOF" U:abort
         }
         $self Parser-peek L:Token-ty L:TOKEN_COMMA /= if { break }
         $self Parser-advance drop
     }
-    $self.current $self.tokens L:Tokens-len ge if {
+    $self.current $self.tokens.len ge if {
         $self.file STR:Str-unpack "Expected > found EOF" U:abort
     }
     $self Parser-advance #token
@@ -975,7 +975,7 @@ fn Parser-parse-call-inner(self: .Parser, token: .L:Token, word: .AST:Word) { bl
 } }
 
 fn Parser-parse-array-access(self: .Parser, token: .L:Token) -> AST:Word {
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected #, $, & or = found EOF" U:abort
     }
     $token @start-token
@@ -996,7 +996,7 @@ fn Parser-parse-array-access(self: .Parser, token: .L:Token) -> AST:Word {
         $token.number #word.size
     }
 
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "Expected ] found EOF" U:abort
     }
     $self Parser-advance #token
@@ -1007,7 +1007,7 @@ fn Parser-parse-array-access(self: .Parser, token: .L:Token) -> AST:Word {
 }
 
 fn Parser-parse-array-init-zero(self: .Parser, token: .L:Token) -> AST:Word {
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "Expected number found EOF" U:abort
     }
     $self Parser-advance #token
@@ -1017,7 +1017,7 @@ fn Parser-parse-array-init-zero(self: .Parser, token: .L:Token) -> AST:Word {
     AST:WORD_ARRAY_INIT_ZERO $token AST:Word-new @word
     $token.number #word.size
 
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "Expected ] found EOF" U:abort
     }
     $self Parser-advance #token
@@ -1035,34 +1035,34 @@ fn Parser-parse-annotation(self: .Parser, token: .L:Token) -> AST:Word {
 fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -> AST:Word {
     local word: AST:Word
     local token: .L:Token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     $self Parser-advance #token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $file STR:Str-unpack $line $column "expected identifier" U:abort-with-location
     }
     AST:WORD_GET_LOCAL $token AST:Word-new #word
-    $token L:Token-lexeme #word.ident
-    L:Tokens-new #word.fields
+    0!(.L:Token ->) $token L:Token-lexeme #word.ident
+    DynArray:new<.L:Token> #word.fields
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_DOT /= if { break }
         $self Parser-advance #token
-        $self.current $self.tokens L:Tokens-len = if {
+        $self.current $self.tokens.len = if {
             $file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        &word.fields $token L:Tokens-push
+        &word.fields $token DynArray:push<.L:Token>
     }
     $word
 }
-fn Parser-parse-ident-and-fields-access(self: .Parser, token: .L:Token) -> L:Tokens, .STR:Str {
-    $self.current $self.tokens L:Tokens-len = if {
+fn Parser-parse-ident-and-fields-access(self: .Parser, token: .L:Token) -> DynArray:DynArray<.L:Token>, .STR:Str {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
     $self Parser-advance @ident
@@ -1071,21 +1071,21 @@ fn Parser-parse-ident-and-fields-access(self: .Parser, token: .L:Token) -> L:Tok
     }
     $self Parser-parse-fields-access $ident L:Token-lexeme
 }
-fn Parser-parse-fields-access(self: .Parser) -> L:Tokens {
-    L:Tokens-new @fields
+fn Parser-parse-fields-access(self: .Parser) -> DynArray:DynArray<.L:Token> {
+    0!(.L:Token ->) DynArray:new<.L:Token> @fields
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek @token
         $token L:Token-ty L:TOKEN_DOT /= if { break }
         $self Parser-advance #token
-        $self.current $self.tokens L:Tokens-len = if {
+        $self.current $self.tokens.len = if {
             $self.file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        &fields $token L:Tokens-push
+        &fields $token DynArray:push<.L:Token>
     }
     $fields
 }
@@ -1113,7 +1113,7 @@ fn Parser-parse-store(self: .Parser, token: .L:Token) -> AST:Word {
 }
 fn Parser-parse-init-locl(self: .Parser, token: .L:Token) -> AST:Word {
     local word: AST:Word
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "Expected identifier found EOF" U:abort
     }
     $self Parser-advance #token
@@ -1127,7 +1127,7 @@ fn Parser-parse-init-locl(self: .Parser, token: .L:Token) -> AST:Word {
 fn Parser-parse-set-locl(self: .Parser, token: .L:Token) -> AST:Word {
     local word: AST:Word
     AST:WORD_SET $token AST:Word-new #word
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "Expected identifier found EOF" U:abort
     }
     $self Parser-advance #token
@@ -1135,38 +1135,32 @@ fn Parser-parse-set-locl(self: .Parser, token: .L:Token) -> AST:Word {
         $token L:Token-location "expected identifier" U:abort-with-location
     }
     $token L:Token-lexeme #word.ident
-    L:Tokens-new #word.fields
+    0!(.L:Token ->) DynArray:new<.L:Token> #word.fields
     loop {
-        $self.current $self.tokens L:Tokens-len = if { break }
+        $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_DOT /= if { break }
         $self Parser-advance #token
-        $self.current $self.tokens L:Tokens-len = if { 
+        $self.current $self.tokens.len = if { 
             $self.file STR:Str-unpack "expected identifier found EOF" U:abort
         }
         $self Parser-advance #token
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        &word.fields $token L:Tokens-push
+        &word.fields $token DynArray:push<.L:Token>
     }
     $word
 }
 
 fn Parser-parse-block(self: .Parser) -> .AST:Words {
     local token: .L:Token
-    // $self Parser-advance #token
-    // 2 $token L:Token-ty L:token-ty-name IO:write-all IO:check
-    // 2 "\n" IO:write-all IO:check
-    // $self.current $self.tokens L:Tokens-len = if {
-        // $self.file STR:Str-unpack "expected { found EOF" U:abort
-    // }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
         $token L:Token-location "expected {" U:abort-with-location
     }
     $self Parser-parse-words
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected }" U:abort
     }
     $self Parser-advance #token
@@ -1178,7 +1172,7 @@ fn Parser-parse-block(self: .Parser) -> .AST:Words {
 fn Parser-parse-iff(self: .Parser) -> .AST:If {
     local token: .L:Token
     $self.current 1 - #self.current
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "exected if" U:abort
     }
     $self Parser-advance #token
@@ -1186,7 +1180,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
         $token L:Token-location "exected if" U:abort-with-location
     }
     $token
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "exected {" U:abort
     }
     $self Parser-advance #token
@@ -1194,18 +1188,18 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
         $token L:Token-location "expected {" U:abort-with-location
     }
     $self Parser-parse-words
-    $self.current $self.tokens L:Tokens-len = if {
+    $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "exected }" U:abort
     }
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
         $token L:Token-location "expected }" U:abort-with-location
     }
-    $self.current $self.tokens L:Tokens-len lt if {
+    $self.current $self.tokens.len lt if {
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_ELSE = if {
             $self Parser-advance drop
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $self.file STR:Str-unpack "expected {" U:abort
             }
             $self Parser-advance #token
@@ -1213,7 +1207,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
                 $token L:Token-location "expected {" U:abort-with-location
             }
             $self Parser-parse-words
-            $self.current $self.tokens L:Tokens-len = if {
+            $self.current $self.tokens.len = if {
                 $self.file STR:Str-unpack "expected }" U:abort
             }
             $self Parser-advance #token
@@ -1230,7 +1224,7 @@ fn Parser-parse-iff(self: .Parser) -> .AST:If {
 }
 fn Parser-parse-number(self: .Parser) -> i32 {
     local token: .L:Token
-    $self.current $self.tokens L:Tokens-len = if { 
+    $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected number found EOF" U:abort
     }
     $self Parser-advance #token
@@ -1264,7 +1258,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(mem: .S:String, tokens: .L:Tokens) -> DynArray:DynArray<.AST:TopItem>, .AST:Types, .AST:Fields {
+fn parse(mem: .S:String, tokens: .DynArray:DynArray<.L:Token>) -> DynArray:DynArray<.AST:TopItem>, .AST:Types, .AST:Fields {
     $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

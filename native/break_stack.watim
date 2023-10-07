@@ -21,32 +21,3 @@ fn BreakStack-types(self: .BreakStack) -> .AST:Types {
     $self.types
 }
 
-struct BreakStacks {
-    inner: IV:I32Vec
-}
-fn BreakStacks-new() -> .BreakStacks {
-    local self: .BreakStacks
-    sizeof(BreakStacks) A:alloc !.BreakStacks #self
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn BreakStacks-len(self: .BreakStacks) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn BreakStacks-get(self: .BreakStacks, index: i32) -> .BreakStack {
-    &self.inner $index IV:I32Vec-get !.BreakStack
-}
-fn BreakStacks-free(self: .BreakStacks) {
-    local i: i32
-    loop {
-        $i $self BreakStacks-len = if { break }
-        $self $i BreakStacks-get BreakStack-free
-        $i 1 + #i
-    }
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn BreakStacks-push(self: .BreakStacks, bs: .BreakStack) {
-    &self.inner $bs !i32 IV:I32Vec-push
-}
-

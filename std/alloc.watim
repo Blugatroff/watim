@@ -208,17 +208,8 @@ fn free(ptr: .i32) {
        }
     }
     inc-n-frees
-    $ptr $size clear
+    $ptr $size CORE:clear
     merge
-}
-
-fn clear(ptr: .i32, len: i32) {
-    local i: i32
-    loop {
-        $i $len = if { break }
-        $ptr $i + 0 store8
-        $i 1 + #i
-    }
 }
 
 fn merge() {

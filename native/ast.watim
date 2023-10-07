@@ -670,6 +670,18 @@ fn Types-eq(self: .Types, other: .Types) -> bool {
         $i 1 + #i
     }
 }
+fn Types-eq-by-size(self: .Types, other: .Types) -> bool {
+    0 @i
+    loop {
+        $i $self Types-len = 
+        $i $other Types-len = or if { 0 0 = break }
+        $self $i Types-get 0 !.Types Type-size 
+        $other $i Types-get 0 !.Types Type-size /= if {
+            0 1 = break
+        }
+        $i 1 + #i
+    }
+}
 
 struct FunctionPtr {
     args: .Types
@@ -787,7 +799,7 @@ struct Word {
     addr: i32
     size: i32
     module: i32
-    fields: L:Tokens
+    fields: DynArray:DynArray<.L:Token>
     lop: .Loop
     blok: .Block
     rets: .Types
@@ -846,9 +858,10 @@ fn Word-free(self: Word) {
     $self.ty WORD_GET_LOCAL = or
     $self.ty WORD_STORE = or
     $self.ty WORD_GET_GLOBAL = or
+    $self.ty WORD_STORE_GLOBAL = or
     $self.ty WORD_DEREF = or
     if {
-        $self.fields L:Tokens-free-container
+        $self.fields DynArray:free<.L:Token>
     }
     $self.rets 0 !.Types /= if { $self.rets Types-free-container }
     $self.args 0 !.Types /= if { $self.args Types-free-container }
@@ -937,22 +950,22 @@ fn Local-free(self: .Local) {
 }
 
 struct Locals {
-    inner: IV:I32Vec
+    inner: DynArray:DynArray<.Local>
     parent: .Locals
     id: i32
 }
 fn Locals-new() -> Locals {
     local self: Locals
-    IV:I32Vec-new #self.inner
+    \Local-free DynArray:new<.Local> #self.inner
     0 !.Locals #self.parent
     0 #self.id
     $self
 }
 fn Locals-len(self: .Locals) -> i32 {
-    &self.inner IV:I32Vec-len
+    $self.inner.len
 }
 fn Locals-get(self: .Locals, index: i32) -> .Local {
-    &self.inner $index IV:I32Vec-get !.Local
+    &self.inner $index DynArray:get<.Local> ~
 }
 fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: bool) -> .Local, bool {
     local i: i32
@@ -982,18 +995,13 @@ fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: b
     }
 }
 fn Locals-push(self: .Locals, locl: .Local) {
-    &self.inner $locl !i32 IV:I32Vec-push
+    &self.inner $locl DynArray:push<.Local>
 }
 fn Locals-pop(self: .Locals) -> .Local {
-    &self.inner IV:I32Vec-pop !.Local
+    &self.inner DynArray:pop<.Local>
 }
 fn Locals-free(self: Locals) {
-    local i: i32
-    loop {
-        0 &self Locals-len = if { break }
-        &self Locals-pop Local-free
-    }
-    $self.inner IV:I32Vec-free
+    $self.inner DynArray:free<.Local>
 }
 fn Locals-contains-mem-or-struc(self: .Locals) -> bool {
     local i: i32
@@ -1183,6 +1191,16 @@ fn Instances-contains-types(self: .Instances, types: .Types) -> i32, bool {
     loop {
         $self Instances-len $i = if { 0 0 1 = break }
         $self $i Instances-get .generics ~ $types Types-eq if {
+            $i 0 0 = break
+        }
+        $i 1 + #i
+    }
+}
+fn Instances-contains-types-by-size(self: .Instances, types: .Types) -> i32, bool {
+    0 @i
+    loop {
+        $self Instances-len $i = if { 0 0 1 = break }
+        $self $i Instances-get .generics ~ $types Types-eq-by-size if {
             $i 0 0 = break
         }
         $i 1 + #i

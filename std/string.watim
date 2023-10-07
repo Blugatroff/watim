@@ -2,6 +2,7 @@ import "./alloc.watim" as A
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./str.watim" as S
+import "./arena.watim" as Arena
 
 struct String {
     ptr: .i32
@@ -37,9 +38,13 @@ fn String-empty() -> String {
     0 #self.cap
     $self
 }
+fn String-new-heapA(arena: .Arena:Arena, ptr: .i32, len: i32) -> String {
+    $arena $len Arena:push-bytes @buf
+    $ptr $buf $len CORE:copy
+    $buf $len String-new-from-buf
+}
 fn String-new-heap(ptr: .i32, len: i32) -> String {
-    local buf: .i32
-    $len A:alloc #buf
+    $len A:alloc @buf
     $ptr $buf $len CORE:copy
     $buf $len String-new-from-buf
 }
@@ -48,6 +53,13 @@ fn String-new-inline(ptr: .i32, len: i32) -> String {
     $len 1 rotl 1 + !.i32 #self.ptr
     $ptr &self.len $len CORE:copy
     $self
+}
+fn String-newA(arena: .Arena:Arena, ptr: .i32, len: i32) -> String {
+    $len sizeof(String) 4 - le if {
+        $ptr $len String-new-inline
+    } else {
+        $arena $ptr $len String-new-heapA
+    }
 }
 fn String-new(ptr: .i32, len: i32) -> String {
     $len sizeof(String) 4 - le if {
@@ -92,6 +104,38 @@ fn String-push(self: .String, char: i32) {
         }
     }
 }
+fn String-pushA(arena: .Arena:Arena, self: .String, char: i32) {
+    $self String-is-inline if {
+        $self String-len @size
+        $size sizeof(String) 4 - lt if {
+            &self.len $self String-len + $char store8
+            $size 1 + 1 rotl 1 or !.i32 #self.ptr
+        } else {
+            $arena &self.len $size 1 + String-newA =>self
+            $self $size $char String-set
+        }
+    } else {
+        $self.len 1 + $self.cap gt if {
+            $self.cap 2 CORE:max 2 * @size
+            $arena $size Arena:push-bytes @new-buf
+            $self.ptr $new-buf $self.len CORE:copy
+            $size #self.cap
+            $new-buf #self.ptr
+            $self $char String-push
+        } else {
+            $self.ptr $self.len + $char store8
+            $self.len 1 + #self.len
+        }
+    }
+}
+fn String-appendA(arena: .Arena:Arena, self: .String, ptr: .i32, len: i32) {
+    0 @i
+    loop {
+        $i $len = if { break }
+        $arena $self $ptr $i + load8 String-pushA
+        $i 1 + #i
+    }
+}
 fn String-append(self: .String, ptr: .i32, len: i32) {
     local i: i32
     loop {
@@ -131,6 +175,9 @@ fn String-set(self: .String, index: i32, char: i32) {
         0 0 / drop
     }
     $self String-ptr $index + $char store8
+}
+fn String-compare-with-str(self: .String, other: .S:Str) -> bool {
+    $self String-unpack $other ~ S:Str-unpack S:str-eq
 }
 
 struct StringVec {

@@ -8,7 +8,8 @@ import "../std/map.watim" as MAP
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/util.watim" as U
-import "../std/dyn-array.watim" as DA
+import "../std/dyn-array.watim" as DynArray
+import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -31,9 +32,10 @@ fn print-usage-and-exit() {
     1 CORE:exit
 }
 
-fn find-flag(args: .S:StringVec, ptr: .i32, len: i32) -> bool {
-    $args $ptr $len S:StringVec-find if { 
-        $args flip S:StringVec-remove S:String-free
+fn find-flag(args: .DynArray:DynArray<S:String>, ptr: .i32, len: i32) -> bool {
+    $ptr $len STR:Str-new @str
+    $args \S:String-compare-with-str &str DynArray:find<S:String, .STR:Str> if { 
+        $args flip DynArray:remove<S:String> drop
         1 1 =
     } else { 
         drop 
@@ -43,18 +45,10 @@ fn find-flag(args: .S:StringVec, ptr: .i32, len: i32) -> bool {
 
 fn main() {
     memory alloc-mem: i32 25165824 // 24 MiB
-    local args: S:StringVec
-    local mem: S:String
-    local path: .S:String
-    local formatter: FMT:Formatter
-    local formatted: S:String
-    local modules: M:Modules
-    local stack-start: i32
-
     $alloc-mem 25165824 A:init
+    65536 Arena:new @arena
     FS:init
-    ARGS:get-args #args
-    S:String-empty #mem
+    &arena ARGS:get-args @args
 
     enable-logging
     COMPILE set-mode
@@ -64,39 +58,43 @@ fn main() {
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
     &args "--call-graph" find-flag if { CALL_GRAPH set-mode }
 
-    &args S:StringVec-len 1 le if { print-usage-and-exit }
-    &args 1 S:StringVec-get #path 
+    $args.len 1 le if { print-usage-and-exit }
+    &args 1 DynArray:remove<S:String> @path 
  
     mode COMPILE = if {
-        M:Modules-new #modules
-        &modules &mem $path S:String-unpack load-module-recursive
+        M:Modules-new @modules
+        S:String-empty @mem
+        &modules &mem &path S:String-unpack load-module-recursive
         &modules R:resolve
-        &mem S:String-len &modules MEM:process #stack-start
+        &mem S:String-len &modules MEM:process @stack-start
         &modules C:check @table-size
         &modules M:Modules-mark-reachable
         &modules MONO:gather-instances
 
-        FMT:Formatter-new #formatter
+        FMT:Formatter-new @formatter
         &formatter $table-size $stack-start &mem &modules GEN:generate
-        $formatter FMT:Formatter-into-string #formatted
+        $formatter FMT:Formatter-into-string @formatted
         1 &formatted S:String-unpack IO:write-all IO:check
         1 "\n" IO:write-all IO:check
         logging-enabled if { 2 A:report }
-        $formatted S:String-free
 
+        $formatted S:String-free
+        $mem S:String-free
         &modules M:Modules-free
     }
     mode CALL_GRAPH = if {
-        M:Modules-new #modules
-        &modules &mem $path S:String-unpack load-module-recursive
+        M:Modules-new @modules
+        S:String-empty @mem
+        &modules &mem &path S:String-unpack load-module-recursive
         &modules R:resolve
-        &mem S:String-len &modules MEM:process #stack-start
+        &mem S:String-len &modules MEM:process @stack-start
         &modules C:check @table-size
         &modules M:Modules-mark-reachable
-        &modules GRAPH:call-graph-modules #formatted
+        &modules GRAPH:call-graph-modules @formatted
         
         1 &formatted S:String-unpack IO:write-all IO:check
         
+        $mem S:String-free
         $formatted S:String-free
         &modules M:Modules-free
     }
@@ -105,8 +103,7 @@ fn main() {
         parse-ast
     }
 
-    $args S:StringVec-free
-    $mem S:String-free
+    $arena Arena:free
     FS:uninit
     A:is-empty not if {
         A:root A:print-alloc-list
@@ -125,17 +122,20 @@ fn parse-ast() {
         1 CORE:exit
     }
     @input
-    &input "stdin.watim" STR:Str-new L:lex @tokens
+
     S:String-empty @mem
-    &mem &tokens P:parse @fields @types @items
+
+    &mem 
+    &input "stdin.watim" STR:Str-new L:lex @tokens
+    &tokens P:parse @fields @types @items
     
     FMT:Formatter-new @formatter
     &formatter &items DUMP:TopItems-json
     &formatter "\n" FMT:Formatter-write
 
-    $items DA:free<.AST:TopItem>
+    $items DynArray:free<.AST:TopItem>
     $input S:String-free
-    $tokens L:Tokens-free
+    $tokens DynArray:free<.L:Token>
     $mem S:String-free
     $types AST:Types-free
     $fields AST:Fields-free

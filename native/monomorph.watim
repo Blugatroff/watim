@@ -74,7 +74,7 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
                     $new-generics $type AST:Types-push
                     $i 1 + #i
                 }
-                $word.function.instances $new-generics AST:Instances-contains-types not if {
+                $word.function.instances $new-generics AST:Instances-contains-types-by-size not if {
                     drop
                     $word.function.instances AST:Instances-len @instance-index
                     $new-generics #new-word.generics
@@ -127,7 +127,7 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
         $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
-        &word.fields L:Tokens-clone-container #new-word.fields
+        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_INIT_LOCAL = if {
@@ -144,16 +144,15 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
         $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
-        &word.fields L:Tokens-clone-container #new-word.fields
+        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_GET_GLOBAL = 
-    $word.ty AST:WORD_STORE_GLOBAL = or
-    if {
+    $word.ty AST:WORD_STORE_GLOBAL = or if {
         $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.ident #new-word.ident
         $word.module #new-word.module
-        &word.fields L:Tokens-clone-container #new-word.fields
+        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_IF = if {
@@ -176,7 +175,7 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
     $word.ty AST:WORD_DEREF = if {
         $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
-        &word.fields L:Tokens-clone-container #new-word.fields
+        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_CAST = if {

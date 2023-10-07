@@ -6,6 +6,8 @@ import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/format.watim" as FMT
+import "../std/dyn-array.watim" as DynArray
+
 import "../native/util.watim" as CU
 
 fn TOKEN_FN() -> i32 { 1 }
@@ -164,64 +166,19 @@ fn Token-format(formatter: .FMT:Formatter, self: .Token) {
     $formatter $self Token-ty token-ty-name FMT:Formatter-write
     $formatter "\n" FMT:Formatter-write
 }
-
-fn Token-print(fd: i32, self: .Token) {
-    $fd $self Token-location print-location
+fn Token-print(fd: i32, self: ..Token) {
+    $fd $self ~ Token-location print-location
     $fd " lexeme: \"" IO:write-all IO:check
-    $fd $self Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
+    $fd $self ~ Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
     $fd "\", type: " IO:write-all IO:check
-    $fd $self Token-ty token-ty-name IO:write-all IO:check
+    $fd $self ~ Token-ty token-ty-name IO:write-all IO:check
     $fd "\n" IO:write-all IO:check
-}
-
-struct Tokens {
-    inner: IV:I32Vec
-}
-
-fn Tokens-new() -> Tokens {
-    local self: Tokens
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn Tokens-free(tokens: Tokens) {
-    local i: i32
-    loop {
-        $i &tokens Tokens-len = if { break }
-        &tokens $i Tokens-get Token-free
-        $i 1 + #i
-    }
-    $tokens Tokens-free-container
-}
-fn Tokens-push(tokens: .Tokens, token: .Token) {
-    &tokens.inner $token !i32 IV:I32Vec-push
-}
-fn Tokens-get(tokens: .Tokens, index: i32) -> .Token {
-    &tokens.inner $index IV:I32Vec-get !.Token
-}
-fn Tokens-len(tokens: .Tokens) -> i32 {
-    &tokens.inner IV:I32Vec-len
-}
-fn Tokens-free-container(self: Tokens) {
-    $self.inner IV:I32Vec-free
-}
-fn Tokens-clone-container(self: .Tokens) -> Tokens {
-    local new: Tokens
-    &self.inner IV:I32Vec-clone #new.inner
-    $new
-}
-fn Tokens-print(fd: i32, self: .Tokens) {
-    local i: i32
-    loop {
-        $i $self Tokens-len = if { break }
-        $fd $self $i Tokens-get Token-print
-        $i 1 + #i
-    }
 }
 
 struct Lexer {
     input: STR:Str
     index: i32
-    tokens: Tokens
+    tokens: DynArray:DynArray<.Token>
     file: STR:Str
     line: i32
     column: i32
@@ -231,7 +188,7 @@ fn Lexer-new(input-ptr: .i32, input-len: i32, file: STR:Str) -> Lexer {
     local self: Lexer
     $input-ptr $input-len STR:Str-new #self.input
     0 #self.index
-    Tokens-new #self.tokens
+    \Token-free DynArray:new<.Token> #self.tokens
     $file #self.file
     1 #self.line
     1 #self.column
@@ -239,12 +196,11 @@ fn Lexer-new(input-ptr: .i32, input-len: i32, file: STR:Str) -> Lexer {
     $self
 }
 // consumes Lexer
-fn Lexer-run(lexer: Lexer) -> Tokens {
-    local token: .Token
+fn Lexer-run(lexer: Lexer) -> DynArray:DynArray<.Token> {
     loop {
-        &lexer Lexer-next #token
+        &lexer Lexer-next @token
         $token !i32 0 = if { break }
-        &lexer.tokens $token Tokens-push
+        &lexer.tokens $token DynArray:push<.Token>
     }
     $lexer.tokens
 }
@@ -679,7 +635,7 @@ fn is-ascii-digit(char: i32) -> bool {
 }
 
 // input and file is borrowed
-fn lex(input: .S:String, file: STR:Str) -> Tokens {
+fn lex(input: .S:String, file: STR:Str) -> DynArray:DynArray<.Token> {
     $input S:String-unpack $file Lexer-new Lexer-run
 }
 

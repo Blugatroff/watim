@@ -82,8 +82,8 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     $scope-id.inner #function.locals.id
 
     $function AST:Function-body @words
-    BS:BreakStacks-new @bs
-    $module $bs $self $stack &function.locals &scope-id.inner $words check-words not if {
+    \BS:BreakStack-free DynArray:new<.BS:BreakStack> @bs
+    $module &bs $self $stack &function.locals &scope-id.inner $words check-words not if {
         // if the function does not diverge, aka does return
         // then check whether the remaining stack matches the return type
         $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
@@ -104,12 +104,11 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     }
 
     $stack AST:Types-free-container
-    // $locals AST:Locals-free
-    $bs BS:BreakStacks-free
+    $bs DynArray:free<.BS:BreakStack>
 }
 fn check-words(
     module: .M:Module,
-    bs: .BS:BreakStacks, 
+    bs: .DynArray:DynArray<.BS:BreakStack>,
     self: .Checker,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -131,7 +130,7 @@ fn check-words(
 
 fn check-word(
     module: .M:Module,
-    bs: .BS:BreakStacks,
+    bs: .DynArray:DynArray<.BS:BreakStack>,
     self: .Checker,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -419,7 +418,7 @@ fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type {
     $src-type #word.src-type
     $src-type #type
     loop {
-        $i &word.fields L:Tokens-len = if { break }
+        $i $word.fields.len = if { break }
         $i 0 = 
         $type AST:Type-ty AST:TYPE_STRUCT = 
         and 
@@ -430,9 +429,9 @@ fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type {
         }
         // value on the stack is a pointer to a struct
         loop { // loop for every field access which can be reduced to one load with offset
-            $i &word.fields L:Tokens-len = if { break }
+            $i $word.fields.len = if { break }
 
-            &word.fields $i L:Tokens-get @field
+            &word.fields $i DynArray:get<.L:Token> ~ @field
             $type AST:Type-ty AST:TYPE_PTR = if {
                 $type AST:Type-child #type
             }
@@ -499,7 +498,7 @@ fn check-store(stack: .AST:Types, self: .Checker, module: .M:Module, locals: .AS
             AST:WORD_STORE_GLOBAL #word.ty
             $type AST:Type-child #word.type
             $stack $type AST:Type-child $word U:expect-stack-one
-            2 &word.fields L:Tokens-print
+            2 \L:Token-print &word.fields DynArray:print<.L:Token>
             // 2 "TODO at checker.watim:check-store" IO:write-all IO:check
             // 1 CORE:exit
         } else {
@@ -596,7 +595,7 @@ fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
 }
 fn check-iff(
     module: .M:Module,
-    bs: .BS:BreakStacks,
+    bs: .DynArray:DynArray<.BS:BreakStack>,
     self: .Checker,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -681,9 +680,8 @@ fn check-iff(
     $true-branch-diverges $false-branch-diverges or
 }
 
-fn check-brek(bs: .BS:BreakStacks, stack: .AST:Types, word: .AST:Word) -> bool {
-    local break_stack: .BS:BreakStack
-    $bs $word $stack AST:Types-clone-container BS:BreakStack-new BS:BreakStacks-push
+fn check-brek(bs: .DynArray:DynArray<.BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {
+    $bs $word $stack AST:Types-clone-container BS:BreakStack-new DynArray:push<.BS:BreakStack>
     loop {
         0 $stack AST:Types-len = if { break }
         $stack AST:Types-pop drop
@@ -699,62 +697,57 @@ fn check-lop(
     scope-id: .i32,
     word: .AST:Word,
 ) -> bool {
-    local bs: .BS:BreakStacks
-    local i: i32
-    BS:BreakStacks-new #bs
+    \BS:BreakStack-free DynArray:new<.BS:BreakStack> @bs
 
     $locals #word.lop.locals.parent
     $scope-id ~ 1 + =>scope-id
     $scope-id ~ #word.lop.locals.id
 
-    $module $bs $self $stack &word.lop.locals $scope-id $word.lop.body check-words drop
-    $bs "loop" check-brek-stacks
+    $module &bs $self $stack &word.lop.locals $scope-id $word.lop.body check-words drop
+    &bs "loop" check-brek-stacks
 
-    $bs BS:BreakStacks-len 0 = if {
+    $bs.len 0 = if {
         0 0 = 
         AST:Types-new #word.lop.rets
     } else {
+        0 @i
         loop {
-            $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-len $i = if { break }
-            $stack $bs 0 BS:BreakStacks-get BS:BreakStack-types $i AST:Types-get AST:Types-push
+            &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-len $i = if { break }
+            $stack &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container #word.lop.rets
+        &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-clone-container #word.lop.rets
         0 1 =
     }
-    $bs BS:BreakStacks-free
+    $bs DynArray:free<.BS:BreakStack>
 }
 
-fn check-brek-stacks(bs: .BS:BreakStacks, name-ptr: .i32, name-len: i32) { 
-    local first: .BS:BreakStack 
-    local i: i32
-    loop {
-    $bs BS:BreakStacks-len 0 = if { break }
+fn check-brek-stacks(bs: .DynArray:DynArray<.BS:BreakStack>, name-ptr: .i32, name-len: i32) { 
+    block {
+    $bs.len 0 = if { break }
 
-    // TODO: $bs 0 BS:BreakStacks-get @first
-    $bs 0 BS:BreakStacks-get #first
+    $bs 0 DynArray:get<.BS:BreakStack> ~ @first
     
     1 @i
     loop {
-        $i $bs BS:BreakStacks-len = if { 0 0 = break }
-        $bs $i BS:BreakStacks-get BS:BreakStack-types $first BS:BreakStack-types AST:Types-eq not if {
+        $i $bs.len = if { 0 0 = break }
+        $bs $i DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $first BS:BreakStack-types AST:Types-eq not if {
             0 1 = break
         }
         $i 1 + #i
     } not if {
         $bs $name-ptr $name-len report-brek-stack-mismatch
     }
-    break
 } }
 
-fn report-brek-stack-mismatch(bs: .BS:BreakStacks, name-ptr: .i32, name-len: i32) {
+fn report-brek-stack-mismatch(bs: .DynArray:DynArray<.BS:BreakStack>, name-ptr: .i32, name-len: i32) {
     2 "type mismatch in " IO:write-all IO:check
     2 $name-ptr $name-len IO:write-all IO:check
     2 ":\n" IO:write-all IO:check
     0 @i
     loop {
-        $i $bs BS:BreakStacks-len = if { break }
-        $bs $i BS:BreakStacks-get @stack
+        $i $bs.len = if { break }
+        $bs $i DynArray:get<.BS:BreakStack> ~ @stack
         2 "\t" IO:write-all IO:check
         2 $stack.word AST:Word-location L:print-location
         2 ": " IO:write-all IO:check
@@ -773,14 +766,14 @@ fn check-blok(
     scope-id: .i32,
     word: .AST:Word
 ) -> bool {
-    BS:BreakStacks-new @bs
+    \BS:BreakStack-free DynArray:new<.BS:BreakStack> @bs
 
     $locals #word.blok.locals.parent
     $scope-id ~ 1 + =>scope-id
     $scope-id ~ #word.blok.locals.id
     
     $stack AST:Types-len @orig-stack-len
-    $module $bs $self $stack &word.blok.locals $scope-id $word.blok.body check-words @diverges
+    $module &bs $self $stack &word.blok.locals $scope-id $word.blok.body check-words @diverges
 
     AST:Types-new @remaining-types
     $orig-stack-len @i
@@ -793,21 +786,21 @@ fn check-blok(
         $stack AST:Types-len $orig-stack-len le if { break }
         $stack AST:Types-pop drop
     }
-    $bs $word $remaining-types BS:BreakStack-new BS:BreakStacks-push
-    $bs "block" check-brek-stacks
+    &bs $word $remaining-types BS:BreakStack-new DynArray:push<.BS:BreakStack>
+    &bs "block" check-brek-stacks
 
-    $bs BS:BreakStacks-len 0 = if {
+    $bs.len 0 = if {
         AST:Types-new #word.blok.rets
     } else {
         0 @i
         loop {
-            $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-len $i = if { break }
-            $stack $bs 0 BS:BreakStacks-get BS:BreakStack-types $i AST:Types-get AST:Types-push
+            &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-len $i = if { break }
+            $stack &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        $bs 0 BS:BreakStacks-get BS:BreakStack-types AST:Types-clone-container #word.blok.rets
+        &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-clone-container #word.blok.rets
     }
-    $bs BS:BreakStacks-free
+    $bs DynArray:free<.BS:BreakStack>
     $diverges
 }
 

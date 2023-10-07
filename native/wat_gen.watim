@@ -330,7 +330,7 @@ fn determine-loads(generics: .AST:Types, word: .AST:Word) -> DynArray:DynArray<i
     0!(i32 ->) DynArray:new<i32> @loads
     0 @i
     loop {
-        $i &word.fields L:Tokens-len = if { break }
+        $i $word.fields.len = if { break }
         $i 0 = 
         $type AST:Type-ty AST:TYPE_STRUCT =
         and
@@ -339,8 +339,8 @@ fn determine-loads(generics: .AST:Types, word: .AST:Word) -> DynArray:DynArray<i
         if {
             0 @offset
             loop { // loop for every field access which can be reduced to one load with offset
-                $i &word.fields L:Tokens-len = if { break }
-                &word.fields $i L:Tokens-get @field
+                $i $word.fields.len = if { break }
+                &word.fields $i DynArray:get<.L:Token> ~ @field
 
                 $type AST:Type-ty AST:TYPE_PTR = if {
                     $type AST:Type-child #type

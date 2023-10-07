@@ -1,6 +1,8 @@
 import "./alloc.watim" as A
 import "./core.watim" as CORE
 import "./io.watim" as IO
+import "./arena.watim" as Arena
+import "./format.watim" as FMT
 
 struct DynArray<T> {
     ptr: .T
@@ -16,6 +18,31 @@ fn new<T>(free: (T ->)) -> DynArray<T> {
     0 #self.cap
     $free #self.free
     $self
+}
+fn init<T>(free: (T ->), ptr: .T, elems: i32) -> DynArray<T> {
+    local self: DynArray<T>
+    $elems #self.cap
+    $elems sizeof(T) * A:alloc !.T #self.ptr
+    $elems #self.len
+    $free #self.free
+    $ptr !.i32 $self.ptr !.i32 $elems sizeof(T) * CORE:copy
+    $self
+}
+fn pushA<T>(arena: .Arena:Arena, self: .DynArray<T>, val: T) {
+    $self.len 1 + $self.cap le if {
+        $self.ptr $self.len sizeof(T) * + $val store
+        $self.len 1 + #self.len
+    } else {
+        $self.cap 2 CORE:max 2 * @size
+        $arena $size Arena:push-many<T> @new-buf
+        $self.ptr !.i32
+        $new-buf !.i32
+        $self.len sizeof(T) *
+        CORE:copy
+        $size #self.cap
+        $new-buf #self.ptr
+        $arena $self $val pushA<T>
+    }
 }
 fn push<T>(self: .DynArray<T>, val: T) {
     local new-buf: .T
@@ -68,6 +95,20 @@ fn free<T>(self: DynArray<T>) {
     }
     $self.ptr 0 !.T /= if { $self.ptr !.i32 A:free }
 }
+fn clone-container<T>(self: .DynArray<T>) -> DynArray<T> {
+    0 !(T ->) $self.ptr $self.len init<T>
+}
+fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->), self: .DynArray<T>) {
+    $formatter "[" FMT:Formatter-write
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $formatter $self $i get<T> $format-element ->
+        $i 1 + #i
+        $i $self.len /= if { $formatter ", " FMT:Formatter-write }
+    }
+    $formatter "]" FMT:Formatter-write
+}
 fn print<T>(fd: i32, print-element: (i32, .T ->), self: .DynArray<T>) {
     $fd "[" IO:write-all IO:check
     0 @i
@@ -78,5 +119,33 @@ fn print<T>(fd: i32, print-element: (i32, .T ->), self: .DynArray<T>) {
         $i $self.len /= if { 2 ", " IO:write-all IO:check }
     }
     $fd "]" IO:write-all IO:check
+}
+fn find<T, A>(self: .DynArray<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
+    local i: i32
+    loop {
+        $i $self.len = if { 0 0 1 = break }
+        $self $i get<T> $value $compare -> if {
+            $i 1 1 = break
+        }
+        $i 1 + #i
+    }
+}
+fn remove<T>(self: .DynArray<T>, index: i32) -> T {
+    $self $index get<T> ~ @value
+    $self.ptr $index 1 + sizeof(T) * + !.i32
+    $self.ptr $index sizeof(T) * + !.i32
+    $self.len $index - 1 - sizeof(T) *
+    CORE:copy
+    $value
+}
+fn find-remove<T, A>(self: .DynArray<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {
+    local uninit: T
+    $self $compare $value find<T, A> if {
+        @i
+        $self $i remove<T>
+        $i 1 1 =
+    } else { 
+        $uninit flip 0 1 =
+    }
 }
 

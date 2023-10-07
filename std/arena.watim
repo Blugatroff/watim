@@ -1,0 +1,44 @@
+import "./io.watim" as IO
+import "./alloc.watim" as A
+import "./core.watim" as CORE
+
+struct Arena {
+    ptr: .i32
+    cap: i32
+    pos: i32
+}
+
+fn new(cap: i32) -> Arena {
+    local self: Arena
+    $cap A:alloc #self.ptr
+    $cap #self.cap
+    $self
+}
+fn free(self: Arena) {
+    $self.ptr A:free
+}
+fn clear(self: .Arena) {
+    $self.ptr $self.cap CORE:clear
+    0 #self.pos
+}
+fn push-bytes(self: .Arena, size: i32) -> .i32 {
+    $self.pos $size + $self.cap ge if {
+        2 "Arena out of memory\n\tcapacity:  " IO:write-all IO:check
+        2 $self.cap IO:print-to-fd
+        2 "\n\tpos:       " IO:write-all IO:check
+        2 $self.pos IO:print-to-fd
+        2 "\n\trequested: " IO:write-all IO:check
+        2 $size IO:print-to-fd
+        2 "\n" IO:write-all IO:check
+        0 0 / drop
+    }
+    $self.ptr $self.pos +
+    $self.pos $size + #self.pos
+}
+fn push<T>(self: .Arena) -> .T {
+    $self sizeof(T) push-bytes !.T
+}
+fn push-many<T>(self: .Arena, n: i32) -> .T {
+    $self sizeof(T) $n * push-bytes !.T
+}
+
