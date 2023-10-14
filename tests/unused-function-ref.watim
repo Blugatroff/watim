@@ -1,0 +1,14 @@
+fn foo(a: i32) { }
+
+fn unused() {
+    \foo drop
+}
+
+fn bar() { }
+
+fn used() {
+    \bar ->
+}
+
+fn main "_start" () { }
+

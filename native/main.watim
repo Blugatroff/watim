@@ -67,12 +67,12 @@ fn main() {
         &modules &mem &path S:String-unpack load-module-recursive
         &modules R:resolve
         &mem S:String-len &modules MEM:process @stack-start
-        &modules C:check @table-size
+        &modules C:check
         &modules M:Modules-mark-reachable
         &modules MONO:gather-instances
 
         FMT:Formatter-new @formatter
-        &formatter $table-size $stack-start &mem &modules GEN:generate
+        &formatter $stack-start &mem &modules GEN:generate
         $formatter FMT:Formatter-into-string @formatted
         1 &formatted S:String-unpack IO:write-all IO:check
         1 "\n" IO:write-all IO:check
@@ -88,7 +88,7 @@ fn main() {
         &modules &mem &path S:String-unpack load-module-recursive
         &modules R:resolve
         &mem S:String-len &modules MEM:process @stack-start
-        &modules C:check @table-size
+        &modules C:check
         &modules M:Modules-mark-reachable
         &modules GRAPH:call-graph-modules @formatted
         

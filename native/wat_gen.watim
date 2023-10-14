@@ -1375,8 +1375,9 @@ struct ExternOrFunction {
     module: i32
 }
 
-fn generate-table(formatter: .FMT:Formatter, table-size: i32, modules: .M:Modules) {
-    $table-size sizeof(ExternOrFunction) * A:alloc !.ExternOrFunction @fs
+fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
+    local tmp: ExternOrFunction
+    0!(ExternOrFunction ->) DynArray:new<ExternOrFunction> @fs
     0 @i
     loop {
         $i $modules M:Modules-len = if { break }
@@ -1390,30 +1391,32 @@ fn generate-table(formatter: .FMT:Formatter, table-size: i32, modules: .M:Module
                 $item.function.table-index 0 /=
                 $item.function.reachable and
                 if {
-                    $fs sizeof(ExternOrFunction) $item.function.table-index * + @ptr
-                    0 !.AST:Extern #ptr.ext
-                    $item.function #ptr.function
-                    $i #ptr.module
+                    0 !.AST:Extern #tmp.ext
+                    $item.function #tmp.function
+                    $i #tmp.module
+                    &fs $tmp DynArray:push<ExternOrFunction>
+                    $fs.len #item.function.table-index
                 }
             }
             $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
                 $item.ext.table-index 0 /= if {
-                    $fs sizeof(ExternOrFunction) $item.ext.table-index * + @ptr
-                    0 !.AST:Function #ptr.function
-                    $item.ext #ptr.ext
-                    $i #ptr.module
+                    0 !.AST:Function #tmp.function
+                    $item.ext #tmp.ext
+                    $i #tmp.module
+                    &fs $tmp DynArray:push<ExternOrFunction>
+                    $fs.len #item.ext.table-index
                 }
             }
             $j 1 + #j
         }
         $i 1 + #i
     }
-
+    $formatter FMT:Formatter-write-indent
     $formatter "(table funcref (elem $intrinsic:flip " FMT:Formatter-write
-    1 @i 
+    0 @i 
     loop {
-        $i $table-size = if { break }
-        $fs sizeof(ExternOrFunction) $i * + @f
+        $i $fs.len = if { break }
+        &fs $i DynArray:get<ExternOrFunction> @f
         $f.ext 0 !.AST:Extern /= if {
             $formatter $f.ext.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
         }
@@ -1427,10 +1430,10 @@ fn generate-table(formatter: .FMT:Formatter, table-size: i32, modules: .M:Module
         $i 1 + #i
     }
     $formatter "))\n" FMT:Formatter-write
-    $fs !.i32 A:free
+    $fs DynArray:free<ExternOrFunction>
 }
 
-fn generate(formatter: .FMT:Formatter, table-size: i32, stack-start: i32, mem: .S:String, modules: .M:Modules) {
+fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules: .M:Modules) {
     $formatter "(module\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
 
@@ -1453,7 +1456,7 @@ fn generate(formatter: .FMT:Formatter, table-size: i32, stack-start: i32, mem: .
     $formatter FMT:Formatter-write-indent
     $formatter "(func $intrinsic:rotate-right (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $c local.get $a local.get $b)\n" FMT:Formatter-write
 
-    $formatter $table-size $modules generate-table
+    $formatter $modules generate-table
 
     $formatter $mem S:String-len $modules generate-global-mems
 

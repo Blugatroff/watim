@@ -18,16 +18,14 @@ import "./main.watim" as MAIN
 
 struct Checker {
     modules: .M:Modules
-    table-index: i32
 }
 fn Checker-new(modules: .M:Modules) -> Checker {
     local self: Checker
     $modules #self.modules
-    1 #self.table-index
     $self
 }
 
-fn check(modules: .M:Modules) -> i32 {
+fn check(modules: .M:Modules) {
     $modules Checker-new @checker
     0 @i
     loop {
@@ -41,7 +39,6 @@ fn check(modules: .M:Modules) -> i32 {
         &checker $module check-module
         $i 1 + #i
     }
-    $checker.table-index
 }
 fn check-module(self: .Checker, module: .M:Module) {
     $module M:Module-items @items
@@ -498,9 +495,6 @@ fn check-store(stack: .AST:Types, self: .Checker, module: .M:Module, locals: .AS
             AST:WORD_STORE_GLOBAL #word.ty
             $type AST:Type-child #word.type
             $stack $type AST:Type-child $word U:expect-stack-one
-            2 \L:Token-print &word.fields DynArray:print<.L:Token>
-            // 2 "TODO at checker.watim:check-store" IO:write-all IO:check
-            // 1 CORE:exit
         } else {
             drop
             $word AST:Word-location "local not found\n" U:abort-with-location
@@ -821,17 +815,13 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
         $word.function AST:Function-rets
         &word.function.generics
         $mark-indirect if {
-            $word.function.table-index 0 = if {
-                $self.table-index $self.table-index 1 + #self.table-index #word.function.table-index
-            }
+            1 #word.function.table-index
         }
     } else {
         $word.ext AST:Extern-parameters
         $word.ext AST:Extern-rets
         $mark-indirect if { 
-            $word.ext.table-index 0 = if {
-                $self.table-index $self.table-index 1 + #self.table-index #word.ext.table-index 
-            }
+            1 #word.ext.table-index
         }
         0 !.AST:Generics
     } @generics @ret @param-locals
