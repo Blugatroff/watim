@@ -49,16 +49,11 @@ fn resolve-extern(modules: .M:Modules, module: .M:Module, ext: .AST:Extern, phas
     $modules $module 0 !.AST:Generics $ext AST:Extern-rets $phase resolve-types
 }
 fn resolve-struc(modules: .M:Modules, module: .M:Module, struc: .AST:Struct, phase: i32) {
-    local fields: .AST:Fields
-    local field: .AST:Field
-    local type: .AST:Type
-    local i: i32
-    $struc AST:Struct-fields #fields
+    $struc AST:Struct-fields @fields
+    0 @i
     loop {
-        $i $fields AST:Fields-len = if { break }
-        $fields $i AST:Fields-get #field
-        $field AST:Field-type #type
-
+        $i $fields.len = if { break }
+        $fields $i DynArray:get<.AST:Field> ~ @field
         $modules $module &struc.generics $field $phase resolve-field
         $i 1 + #i
     }

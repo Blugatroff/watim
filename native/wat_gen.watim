@@ -1387,7 +1387,9 @@ fn generate-table(formatter: .FMT:Formatter, table-size: i32, modules: .M:Module
             $j $items.len = if { break }
             $items $j DynArray:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-                $item.function.table-index 0 /= if {
+                $item.function.table-index 0 /=
+                $item.function.reachable and
+                if {
                     $fs sizeof(ExternOrFunction) $item.function.table-index * + @ptr
                     0 !.AST:Extern #ptr.ext
                     $item.function #ptr.function

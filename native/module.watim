@@ -20,7 +20,7 @@ struct Module {
     types: .AST:Types
     path: S:String
     structs: DynArray:DynArray<.AST:Struct>
-    fields: .AST:Fields
+    fields: DynArray:DynArray<.AST:Field>
     types-types: DynArray:DynArray<.AST:Types>
     words-words: DynArray:DynArray<.AST:Words>
 }
@@ -48,7 +48,7 @@ fn Module-new(
     file: S:String, 
     tokens: DynArray:DynArray<.L:Token>, 
     types: .AST:Types, 
-    fields: .AST:Fields
+    fields: DynArray:DynArray<.AST:Field>
 ) -> Module {
     local self: Module
     $items #self.items
@@ -132,7 +132,7 @@ fn Module-free(self: Module) {
     $self.imports AST:Imports-free
     $self.path S:String-free
     $self.structs DynArray:free<.AST:Struct>
-    $self.fields AST:Fields-free
+    $self.fields DynArray:free<.AST:Field>
 }
 
 fn Module-items(self: .Module) -> .DynArray:DynArray<.AST:TopItem> {

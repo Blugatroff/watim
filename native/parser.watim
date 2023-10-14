@@ -15,7 +15,7 @@ struct Parser {
     current: i32
     mem: .S:String
     types: .AST:Types
-    fields: .AST:Fields
+    fields: DynArray:DynArray<.AST:Field>
     file: STR:Str
 }
 fn Parser-new(tokens: .DynArray:DynArray<.L:Token>, mem: .S:String) -> Parser {
@@ -27,10 +27,10 @@ fn Parser-new(tokens: .DynArray:DynArray<.L:Token>, mem: .S:String) -> Parser {
     $tokens.len 0 gt if {
         $tokens 0 DynArray:get<.L:Token> ~ L:Token-file ~ #self.file
     }
-    AST:Fields-new #self.fields
+    \AST:Field-free DynArray:new<.AST:Field> #self.fields
     $self
 } 
-fn Parser-free(self: Parser) -> .AST:Types, .AST:Fields { 
+fn Parser-free(self: Parser) -> .AST:Types, DynArray:DynArray<.AST:Field> { 
     $self.types $self.fields
 }
 fn Parser-peek(self: .Parser) -> .L:Token {
@@ -131,7 +131,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
             $token L:Token-location "expected {" U:abort-with-location
         }
     }
-    AST:Fields-new @fields
+    0!(.AST:Field ->) DynArray:new<.AST:Field> @fields
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-advance #token
@@ -149,8 +149,8 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
         }
         $self Parser-parse-type
         AST:Field-new @field
-        $self.fields $field AST:Fields-push
-        $fields $field AST:Fields-push
+        &self.fields $field DynArray:push<.AST:Field>
+        &fields $field DynArray:push<.AST:Field>
     }
     $ident $fields $generics 1 1 = AST:Struct-new
 }
@@ -1258,7 +1258,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(mem: .S:String, tokens: .DynArray:DynArray<.L:Token>) -> DynArray:DynArray<.AST:TopItem>, .AST:Types, .AST:Fields {
+fn parse(mem: .S:String, tokens: .DynArray:DynArray<.L:Token>) -> DynArray:DynArray<.AST:TopItem>, .AST:Types, DynArray:DynArray<.AST:Field> {
     $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

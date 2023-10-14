@@ -1379,7 +1379,7 @@ fn Field-type(self: .Field) -> .Type {
 fn Field-apply-generics(self: .Field, generics: .Types, module: .M:Module) -> .Field, bool {
     $self.type $generics $module Type-apply-generics if {
         $self.ident flip Field-new @new
-        $module.fields $new Fields-push
+        &module.fields $new DynArray:push<.Field>
         $new 1 1 =
     } else { drop $self 0 1 = }
 }
@@ -1388,10 +1388,16 @@ fn Field-eq(self: .Field, other: .Field) -> bool { block {
     $self.ident $other.ident /= if { 0 1 = break }
     $self.type $other.type Type-eq
 } }
+fn Field-format-ref(formatter: .FMT:Formatter, self: ..Field) {
+    $formatter $self ~ Field-format
+}
 fn Field-format(formatter: .FMT:Formatter, self: .Field) {
     $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter ": " FMT:Formatter-write
     $formatter $self.type Type-format
+}
+fn Field-print-ref(fd: i32, self: ..Field) {
+    $fd $self ~ Field-print
 }
 fn Field-print(fd: i32, self: .Field) {
     FMT:Formatter-new @formatter
@@ -1401,92 +1407,43 @@ fn Field-print(fd: i32, self: .Field) {
     $string S:String-free
 }
 
-struct Fields {
-    inner: IV:I32Vec
-}
-fn Fields-new() -> .Fields {
-    local self: .Fields
-    sizeof(Fields) A:alloc !.Fields #self
-    IV:I32Vec-new #self.inner
-    $self
-}
-fn Fields-push(self: .Fields, item: .Field) {
-    &self.inner $item !i32 IV:I32Vec-push
-}
-fn Fields-free(self: .Fields) {
-    local i: i32
-    loop {
-        $i &self.inner IV:I32Vec-len = if { break }
-        &self.inner $i IV:I32Vec-get !.Field Field-free
-        $i 1 + #i
-    }
-    $self Fields-free-container
-}
-fn Fields-free-container(self: .Fields) {
-    $self.inner IV:I32Vec-free
-    $self !.i32 A:free
-}
-fn Fields-len(self: .Fields) -> i32 {
-    &self.inner IV:I32Vec-len
-}
-fn Fields-get(self: .Fields, index: i32) -> .Field {
-    &self.inner $index IV:I32Vec-get !.Field
-}
-fn Fields-eq(self: .Fields, other: .Fields) -> bool { block {
+fn Fields-eq(self: .DynArray:DynArray<.Field>, other: .DynArray:DynArray<.Field>) -> bool { block {
     $self $other = if { 1 1 = break }
-    $self Fields-len $other Fields-len /= if { 0 1 = break }
+    $self.len $other.len /= if { 0 1 = break }
     0 @i
     loop {
-        $i $self Fields-len = if { 1 1 = break }
-        $self $i Fields-get 
-        $other $i Fields-get Field-eq not if { 0 1 = break }
+        $i $self.len = if { 1 1 = break }
+        $self $i DynArray:get<.Field> ~
+        $other $i DynArray:get<.Field> ~ Field-eq not if { 0 1 = break }
         $i 1 + #i
     }
 } }
-fn Fields-apply-generics(self: .Fields, generics: .Types, module: .M:Module) -> .Fields, bool {
-    Fields-new @new
+fn Fields-apply-generics(self: .DynArray:DynArray<.Field>, generics: .Types, module: .M:Module) -> DynArray:DynArray<.Field>, bool {
+    0!(.Field ->) DynArray:new<.Field> @new
     0 1 = @use-new
     0 @i
     loop {
-        $i $self Fields-len = if { break }
-        $self $i Fields-get @field
+        $i $self.len = if { break }
+        $self $i DynArray:get<.Field> ~ @field
         $field $generics $module Field-apply-generics if {
             1 1 = #use-new
-            $new flip Fields-push
+            &new flip DynArray:push<.Field>
         } else {
-            drop $new $field Fields-push
+            drop &new $field DynArray:push<.Field>
         }
         $i 1 + #i
     }
-    $use-new if { $new 1 1 = } else { $new Fields-free-container $self 1 0 = }
-}
-fn Fields-format(formatter: .FMT:Formatter, self: .Fields) {
-    0 @i
-    loop {
-        $i $self Fields-len = if { break }
-        $formatter $self $i Fields-get Field-format
-        $i 1 + #i
-        $i $self Fields-len /= if {
-            $formatter ", " FMT:Formatter-write
-        }
-    }
-}
-fn Fields-print(fd: i32, self: .Fields) {
-    FMT:Formatter-new @formatter
-    &formatter $self Fields-format
-    $formatter FMT:Formatter-into-string @string
-    $fd &string S:String-unpack IO:write-all IO:check
-    $string S:String-free
+    $use-new if { $new 1 1 = } else { $new DynArray:free<.Field> $self ~ 1 0 = }
 }
 
 struct Struct {
     ident: .L:Token
-    fields: .Fields
+    fields: DynArray:DynArray<.Field>
     generics: Generics
     owns-generics: bool
     generics-being-applied: bool
 }
-fn Struct-new(ident: .L:Token, fields: .Fields, generics: Generics, owns-generics: bool) -> .Struct {
+fn Struct-new(ident: .L:Token, fields: DynArray:DynArray<.Field>, generics: Generics, owns-generics: bool) -> .Struct {
     local self: .Struct
     sizeof(Struct) A:alloc !.Struct #self
     $ident #self.ident
@@ -1497,50 +1454,49 @@ fn Struct-new(ident: .L:Token, fields: .Fields, generics: Generics, owns-generic
     $self
 }
 fn Struct-free(self: .Struct) {
-    $self.fields Fields-free-container
+    $self.fields DynArray:free<.Field>
     $self.owns-generics if { $self.generics Generics-free }
     $self !.i32 A:free
 }
 fn Struct-ident(self: .Struct) -> .L:Token {
     $self.ident
 }
-fn Struct-fields(self: .Struct) -> .Fields {
-    $self.fields
+fn Struct-fields(self: .Struct) -> .DynArray:DynArray<.Field> {
+    &self.fields
 }
 fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, bool {
     $self Struct-fields @fields
     0 @i
     loop {
-        $i $fields Fields-len = if { 0 !.Field 0 1 = break }
-        $fields $i Fields-get Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
-            $fields $i Fields-get
+        $i $fields.len = if { 0 !.Field 0 1 = break }
+        $fields $i DynArray:get<.Field> ~ Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $fields $i DynArray:get<.Field> ~
             0 0 = break
         }
         $i 1 + #i
     }
 }
 fn Struct-find-field-with-offset(self: .Struct, ident-ptr: .i32, ident-len: i32, generics: .Types) -> .Field, i32, bool {
-    local i: i32
-    local fields: .Fields
-    local offset: i32
-    $self Struct-fields #fields
+    $self Struct-fields @fields
+    0 @offset
+    0 @i
     loop {
-        $i $fields Fields-len = if { 0 !.Field 0 0 1 = break }
-        $fields $i Fields-get Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
-            $fields $i Fields-get
+        $i $fields.len = if { 0 !.Field 0 0 1 = break }
+        $fields $i DynArray:get<.Field> ~ Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $fields $i DynArray:get<.Field> ~
             $offset 0 0 = break
         }
-        $offset $fields $i Fields-get Field-type $generics Type-size + #offset
+        $offset $fields $i DynArray:get<.Field> ~ Field-type $generics Type-size + #offset
         $i 1 + #i
     }
 }
 fn Struct-size(self: .Struct, generics: .Types) -> i32 {
-    local size: i32
-    local i: i32
+    0 @size
+    0 @i
     loop {
-        $i $self Struct-fields Fields-len = if { break }
+        $i $self Struct-fields .len ~ = if { break }
         $size 
-        $self Struct-fields $i Fields-get Field-type $generics Type-size
+        $self Struct-fields $i DynArray:get<.Field> ~ Field-type $generics Type-size
         + #size
         $i 1 + #i
     }
@@ -1550,13 +1506,13 @@ fn Struct-eq(self: .Struct, other: .Struct) -> bool {
     block {
         $self $other = if { 1 1 = break }
         $self.ident $other.ident /= if { 0 1 = break }
-        $self.fields $other.fields Fields-eq
+        &self.fields &other.fields Fields-eq
     }
 }
 fn Struct-apply-generics(self: .Struct, generics: .Types, module: .M:Module) -> .Struct, bool {
     $self.generics-being-applied not &self.generics Generics-len 0 /= and if {
         1 1 = #self.generics-being-applied
-        $self.fields $generics $module Fields-apply-generics if {
+        &self.fields $generics $module Fields-apply-generics if {
             $self.ident flip $self.generics 0 1 = Struct-new @new
             &module.structs $new DynArray:push<.Struct>
             $new 1 1 =
@@ -1568,20 +1524,6 @@ fn Struct-apply-generics(self: .Struct, generics: .Types, module: .M:Module) -> 
     } else {
         $self 0 1 =
     }
-}
-fn Struct-format(formatter: .FMT:Formatter, self: .Struct) {
-    $formatter "struct " FMT:Formatter-write
-    $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
-    $formatter " { " FMT:Formatter-write
-    $formatter $self.fields Fields-format
-    $formatter " }" FMT:Formatter-write
-}
-fn Struct-print(fd: i32, self: .Struct) {
-    $fd "struct " IO:write-all IO:check
-    $fd $self.ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
-    $fd " { " IO:write-all IO:check 
-    $fd $self.fields Fields-print
-    $fd " }" IO:write-all IO:check
 }
 
 fn TOP_ITEM_FN() -> i32 { 1 }
