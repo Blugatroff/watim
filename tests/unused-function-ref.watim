@@ -1,14 +1,16 @@
+extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
+
 fn foo(a: i32) { }
 
 fn unused() {
     \foo drop
 }
 
-fn bar() { }
+fn bar() -> i32 { 7 }
 
-fn used() {
+fn used() -> i32 {
     \bar ->
 }
 
-fn main "_start" () { }
+fn main "_start" () { used proc_exit }
 

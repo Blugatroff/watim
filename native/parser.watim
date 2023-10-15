@@ -14,7 +14,7 @@ struct Parser {
     tokens: .DynArray:DynArray<.L:Token>
     current: i32
     mem: .S:String
-    types: .AST:Types
+    types: DynArray:DynArray<.AST:Type>
     fields: DynArray:DynArray<.AST:Field>
     file: STR:Str
 }
@@ -23,14 +23,14 @@ fn Parser-new(tokens: .DynArray:DynArray<.L:Token>, mem: .S:String) -> Parser {
     $tokens #self.tokens
     0 #self.current
     $mem #self.mem
-    AST:Types-new #self.types
+    \AST:Type-free DynArray:new<.AST:Type> #self.types
     $tokens.len 0 gt if {
         $tokens 0 DynArray:get<.L:Token> ~ L:Token-file ~ #self.file
     }
     \AST:Field-free DynArray:new<.AST:Field> #self.fields
     $self
 } 
-fn Parser-free(self: Parser) -> .AST:Types, DynArray:DynArray<.AST:Field> { 
+fn Parser-free(self: Parser) -> DynArray:DynArray<.AST:Type>, DynArray:DynArray<.AST:Field> { 
     $self.types $self.fields
 }
 fn Parser-peek(self: .Parser) -> .L:Token {
@@ -289,7 +289,7 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     }
     $self Parser-parse-type #type
 
-    $self.types
+    &self.types
     $ident
     $type
     $self Parser-parse-number
@@ -512,9 +512,8 @@ fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
     AST:Local-new
 }
 fn Parser-parse-type(self: .Parser) -> .AST:Type {
-    local type: .AST:Type
-    $self Parser-parse-type-inner #type
-    $self.types $type AST:Types-push
+    $self Parser-parse-type-inner @type
+    &self.types $type DynArray:push<.AST:Type>
     $type
 }
 fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
@@ -1258,7 +1257,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(mem: .S:String, tokens: .DynArray:DynArray<.L:Token>) -> DynArray:DynArray<.AST:TopItem>, .AST:Types, DynArray:DynArray<.AST:Field> {
+fn parse(mem: .S:String, tokens: .DynArray:DynArray<.L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<.AST:Field> {
     $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

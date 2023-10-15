@@ -17,7 +17,7 @@ struct Module {
     imports: .AST:Imports
     file: S:String
     tokens: DynArray:DynArray<.L:Token>
-    types: .AST:Types
+    types: DynArray:DynArray<.AST:Type>
     path: S:String
     structs: DynArray:DynArray<.AST:Struct>
     fields: DynArray:DynArray<.AST:Field>
@@ -47,7 +47,7 @@ fn Module-new(
     path: S:String, 
     file: S:String, 
     tokens: DynArray:DynArray<.L:Token>, 
-    types: .AST:Types, 
+    types: DynArray:DynArray<.AST:Type>, 
     fields: DynArray:DynArray<.AST:Field>
 ) -> Module {
     local self: Module
@@ -128,7 +128,7 @@ fn Module-free(self: Module) {
     $self.words-words DynArray:free<.AST:Words>
     $self.file S:String-free
     $self.tokens DynArray:free<.L:Token>
-    $self.types AST:Types-free
+    $self.types DynArray:free<.AST:Type>
     $self.imports AST:Imports-free
     $self.path S:String-free
     $self.structs DynArray:free<.AST:Struct>
@@ -193,8 +193,8 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local
     }
 }
 
-fn Module-types(self: .Module) -> .AST:Types {
-    $self.types
+fn Module-types(self: .Module) -> .DynArray:DynArray<.AST:Type> {
+    &self.types
 }
 
 fn Module-path(self: .Module) -> .S:String {

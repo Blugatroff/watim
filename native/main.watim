@@ -137,7 +137,7 @@ fn parse-ast() {
     $input S:String-free
     $tokens DynArray:free<.L:Token>
     $mem S:String-free
-    $types AST:Types-free
+    $types DynArray:free<.AST:Type>
     $fields DynArray:free<.AST:Field>
 
     $formatter FMT:Formatter-into-string @json

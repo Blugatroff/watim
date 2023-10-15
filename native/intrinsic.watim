@@ -1,11 +1,12 @@
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/format.watim" as FMT
+import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
 import "./util.watim" as U
 
-fn check-intrinsic(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) -> bool {
+fn check-intrinsic(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types, word: .AST:Word) -> bool {
     loop {
         $word AST:Word-intrinsic AST:INTRINSIC_EQ = 
         $word AST:Word-intrinsic AST:INTRINSIC_NOT_EQ = or
@@ -147,7 +148,7 @@ fn check-intrinsic-and-or-or(stack: .AST:Types, word: .AST:Word) {
     $stack $stack AST:Types-len 1 - AST:Types-get #word.type
     $stack AST:Types-pop drop
 }
-fn check-compare-intrinsics(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) {
+fn check-compare-intrinsics(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types, word: .AST:Word) {
     local left: .AST:Type
     local right: .AST:Type
     $stack AST:Types-len 2 lt if {
@@ -159,7 +160,7 @@ fn check-compare-intrinsics(temp-types: .AST:Types, stack: .AST:Types, word: .AS
     $right AST:Type-ty AST:TYPE_I32 /= or if {
         $stack $word "expected a => [a, a] got: " report-error
     }
-    $stack $temp-types AST:Type-new-boolean U:push-temp-type AST:Types-push
+    $stack $temp-types AST:Type-new-boolean U:push-temp-type2 AST:Types-push
 }
 fn check-intrinsic-load(stack: .AST:Types, word: .AST:Word) {
     local type: .AST:Type
@@ -228,7 +229,7 @@ fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
     }
     $stack $left AST:Types-push
 }
-fn check-intrinsic-eq(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word) {
+fn check-intrinsic-eq(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 2 lt if {
         $stack $word "expected [a, a] got: " report-error
     }
@@ -240,7 +241,7 @@ fn check-intrinsic-eq(temp-types: .AST:Types, stack: .AST:Types, word: .AST:Word
         $stack AST:Types-pop drop
         $stack AST:Types-pop drop
     }
-    $stack $temp-types AST:Type-new-boolean U:push-temp-type AST:Types-push
+    $stack $temp-types AST:Type-new-boolean U:push-temp-type2 AST:Types-push
 }
 fn check-intrinsic-drop(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 0 = if { 

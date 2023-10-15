@@ -73,6 +73,9 @@ fn get<T>(self: .DynArray<T>, index: i32) -> .T {
     }
     $self.ptr $index sizeof(T) * +
 }
+fn last<T>(self: .DynArray<T>) -> .T {
+    $self $self.len 1 - get<T>
+}
 fn set<T>(self: .DynArray<T>, index: i32, value: T) -> T {
     $self $index get<T> CORE:dup<.T> $value store ~
 }

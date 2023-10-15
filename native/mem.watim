@@ -24,18 +24,18 @@ fn process-module(global-mem-address: .i32, module: .M:Module) {
     0 @i
     loop {
         $i $items.len = if { break }
-        $module M:Module-types $global-mem-address $items $i DynArray:get<.AST:TopItem> ~ process-item
+        $global-mem-address $items $i DynArray:get<.AST:TopItem> ~ process-item
         $i 1 + #i
     }
 }
 
-fn process-item(temp-types: .AST:Types, global-mem-address: .i32, item: .AST:TopItem) {
+fn process-item(global-mem-address: .i32, item: .AST:TopItem) {
     $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-        $temp-types $global-mem-address $item.mem process-mem
+        $global-mem-address $item.mem process-mem
     }
 }
 
-fn process-mem(temp-types: .AST:Types, global-mem-address: .i32, mem: .AST:Local) {
+fn process-mem(global-mem-address: .i32, mem: .AST:Local) {
     local address: i32
     $global-mem-address ~ #address
     $address 4 CORE:align-to #address

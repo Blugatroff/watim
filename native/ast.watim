@@ -287,8 +287,7 @@ fn Type-new(ty: i32) -> .Type {
     $self
 }
 fn Type-clone(self: .Type) -> .Type {
-    local new: .Type
-    sizeof(Type) A:alloc !.Type #new
+    sizeof(Type) A:alloc !.Type @new
     $self !.i32 $new !.i32 20 CORE:copy
     $self.ty TYPE_STRUCT = if {
         $self.generics Types-clone #new.generics
@@ -367,28 +366,28 @@ fn Type-child(self: .Type) -> .Type {
 fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Type, bool { block {
     $self.ty TYPE_PTR = if {
         $self Type-child $generics $module Type-apply-generics if {
-            Type-new-ptr $module.types flip CU:push-temp-type 1 1 = break
+            Type-new-ptr &module.types flip CU:push-temp-type2 1 1 = break
         } else {
             drop $self 0 1 = break
         }
     }
     $self.ty TYPE_ARRAY = if {
         $self Type-child $generics $module Type-apply-generics if {
-            $self.length Type-new-array $module.types flip CU:push-temp-type 1 1 = break 
+            $self.length Type-new-array &module.types flip CU:push-temp-type2 1 1 = break 
         } else {
             drop $self 0 1 = break
         }
     }
     $self.ty TYPE_STRUCT = if {
         $self.generics $generics $module Types-apply-generics if { 
-            $self.module $self.ident $self.generics Type-new-struc $module.types flip CU:push-temp-type @new
+            $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
             #new.generics
             $self.struc $new.generics $module Struct-apply-generics if { #new.struc } else { drop }
             $new 1 1 = break
         } else {
             drop
             $self.struc $self.generics $module Struct-apply-generics if {
-                $self.module $self.ident $self.generics Type-new-struc $module.types flip CU:push-temp-type @new
+                $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
                 #new.struc
                 $new 1 1 = break
             } else {
@@ -404,7 +403,7 @@ fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Typ
             flip
             $new-args if { } else { drop $self.function.args }
             flip 
-            Type-new-function $module.types flip CU:push-temp-type
+            Type-new-function &module.types flip CU:push-temp-type2
             1 1 = break
         } else { drop drop $self 0 1 = break }
     }
@@ -414,6 +413,9 @@ fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Typ
     $self 0 1 = break
 } }
 
+fn Type-format-ref(formatter: .FMT:Formatter, self: ..Type) {
+    $formatter $self ~ Type-format
+}
 // argument `generics` is optional/null
 fn Type-format(formatter: .FMT:Formatter, self: .Type) { block {
     $self Type-ty TYPE_I32 = if { $formatter "i32" FMT:Formatter-write break }
@@ -931,8 +933,8 @@ fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i3
     $scope-id #self.scope-id
     $self
 }
-fn Local-new-mem(types: .Types, ident: .L:Token, type: .Type, size: i32) -> .Local {
-    LOCAL_MEMORY $ident $type Type-new-ptr $types flip CU:push-temp-type 0 0 Local-new @self
+fn Local-new-mem(types: .DynArray:DynArray<.Type>, ident: .L:Token, type: .Type, size: i32) -> .Local {
+    LOCAL_MEMORY $ident $type Type-new-ptr $types flip CU:push-temp-type2 0 0 Local-new @self
     $size #self.size
     $self
 }
