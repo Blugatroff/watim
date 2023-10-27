@@ -18,8 +18,12 @@ fn align-to(n: i32, to: i32) -> i32 {
     $n $to $n $to % - $n $to % 0 gt !i32 * +
 }
 
-fn copy(a: .i32, b: .i32, len: i32) {
-    $b $a $len mem-copy
+fn copy<T>(a: .T, b: .T, len: i32) {
+    $b !.i32 $a !.i32 $len sizeof(T) * mem-copy
+}
+
+fn copy-bytes(a: .i32, b: .i32, len: i32) {
+    $b !.i32 $a !.i32 $len mem-copy
 }
 
 fn exit(code: i32) {
@@ -31,13 +35,13 @@ fn escape(char: i32, dest: .i32) -> i32 {
     local hex-digits-len: i32
     "0123456789abcdef" #hex-digits-len #hex-digits-ptr
     loop {
-        $char "\t" drop load8 = if { "\\t" $dest flip copy 2 break }
-        $char "\r" drop load8 = if { "\\r" $dest flip copy 2 break }
-        $char "\n" drop load8 = if { "\\n" $dest flip copy 2 break }
-        $char "\\" drop load8 = if { "\\\\" $dest flip copy 2 break }
-        $char "\"" drop load8 = if { "\\\"" $dest flip copy 2 break}
+        $char "\t" drop load8 = if { "\\t" $dest flip copy-bytes 2 break }
+        $char "\r" drop load8 = if { "\\r" $dest flip copy-bytes 2 break }
+        $char "\n" drop load8 = if { "\\n" $dest flip copy-bytes 2 break }
+        $char "\\" drop load8 = if { "\\\\" $dest flip copy-bytes 2 break }
+        $char "\"" drop load8 = if { "\\\"" $dest flip copy-bytes 2 break}
         $char 32 ge $char 126 le and if { $dest $char store8 1 break }
-        "\\x" $dest flip copy
+        "\\x" $dest flip copy-bytes
         $dest 2 + #dest
         $dest $hex-digits-ptr $char 4 rotr 255 and + load8 store8
         $dest 1 + #dest

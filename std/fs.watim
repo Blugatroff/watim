@@ -74,7 +74,7 @@ fn read-all(file: i32) -> S:String, i32 {
                 // 48 Error code = Not enough space
                 S:String-empty 48 break
             }
-            $old-buf $buf $buf-size CORE:copy
+            $old-buf $buf $buf-size CORE:copy-bytes
             $buf-size 2 * #buf-size
             $old-buf A:free
         }

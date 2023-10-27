@@ -165,10 +165,10 @@ fn Words-push(self: .Words, word: Word) {
     } else {
         $self.cap 2 CORE:max 2 * #size
         $size sizeof(Word) * A:alloc !.Word #new-buf
-        $self.ptr !.i32
-        $new-buf !.i32
-        $self.len sizeof(Word) *
-        CORE:copy
+        $self.ptr
+        $new-buf
+        $self.len
+        CORE:copy<Word>
         $size #self.cap
         $self.len 0 gt if {
             $self.ptr !.i32 A:free
@@ -288,7 +288,7 @@ fn Type-new(ty: i32) -> .Type {
 }
 fn Type-clone(self: .Type) -> .Type {
     sizeof(Type) A:alloc !.Type @new
-    $self !.i32 $new !.i32 20 CORE:copy
+    $self $new 1 CORE:copy<Type>
     $self.ty TYPE_STRUCT = if {
         $self.generics Types-clone #new.generics
     }
@@ -1064,10 +1064,10 @@ fn Generics-push(self: .Generics, word: Generic) {
     } else {
         $self.cap 2 CORE:max 2 * #size
         $size sizeof(Generic) * A:alloc !.Generic #new-buf
-        $self.ptr !.i32
-        $new-buf !.i32
-        $self.len sizeof(Generic) *
-        CORE:copy
+        $self.ptr
+        $new-buf
+        $self.len
+        CORE:copy<Generic>
         $size #self.cap
         $self.len 0 gt if {
             $self.ptr !.i32 A:free
@@ -1172,10 +1172,10 @@ fn Instances-push(self: .Instances, instance: Instance) {
     } else {
         $self.cap 2 CORE:max 2 * #size
         $size sizeof(Instance) * A:alloc !.Instance #new-buf
-        $self.ptr !.i32
-        $new-buf !.i32
-        $self.len sizeof(Instance) *
-        CORE:copy
+        $self.ptr
+        $new-buf
+        $self.len
+        CORE:copy<Instance>
         $size #self.cap
         $self.len 0 gt if {
             $self.ptr !.i32 A:free

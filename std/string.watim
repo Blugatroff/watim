@@ -40,18 +40,18 @@ fn String-empty() -> String {
 }
 fn String-new-heapA(arena: .Arena:Arena, ptr: .i32, len: i32) -> String {
     $arena $len Arena:push-bytes @buf
-    $ptr $buf $len CORE:copy
+    $ptr $buf $len CORE:copy-bytes
     $buf $len String-new-from-buf
 }
 fn String-new-heap(ptr: .i32, len: i32) -> String {
     $len A:alloc @buf
-    $ptr $buf $len CORE:copy
+    $ptr $buf $len CORE:copy-bytes
     $buf $len String-new-from-buf
 }
 fn String-new-inline(ptr: .i32, len: i32) -> String {
     local self: String
     $len 1 rotl 1 + !.i32 #self.ptr
-    $ptr &self.len $len CORE:copy
+    $ptr &self.len $len CORE:copy-bytes
     $self
 }
 fn String-newA(arena: .Arena:Arena, ptr: .i32, len: i32) -> String {
@@ -91,7 +91,7 @@ fn String-push(self: .String, char: i32) {
         $self.len 1 + $self.cap gt if {
             $self.cap 2 CORE:max 2 * #size
             $size A:alloc #new-buf
-            $self.ptr $new-buf $self.len CORE:copy
+            $self.ptr $new-buf $self.len CORE:copy-bytes
             $size #self.cap
             $self.ptr !i32 0 /= if {
                 $self.ptr A:free
@@ -118,7 +118,7 @@ fn String-pushA(arena: .Arena:Arena, self: .String, char: i32) {
         $self.len 1 + $self.cap gt if {
             $self.cap 2 CORE:max 2 * @size
             $arena $size Arena:push-bytes @new-buf
-            $self.ptr $new-buf $self.len CORE:copy
+            $self.ptr $new-buf $self.len CORE:copy-bytes
             $size #self.cap
             $new-buf #self.ptr
             $self $char String-push
@@ -229,7 +229,7 @@ fn StringVec-push(self: .StringVec, str: String) {
         $self.ptr !.i32
         $new-buf !.i32
         $self.len sizeof(String) * 
-        CORE:copy
+        CORE:copy-bytes
         $size #self.cap
         $self.len 0 gt if {
             $self.ptr !.i32 A:free
@@ -270,7 +270,7 @@ fn StringVec-remove(self: .StringVec, index: i32) -> String {
     $self.ptr $index 1 + sizeof(String) * + !.i32
     $self.ptr $index sizeof(String) * + !.i32
     $self.len $index - 1 - sizeof(String) *
-    CORE:copy
+    CORE:copy-bytes
     $string
 }
 fn StringVec-find-remove(self: .StringVec, ptr: .i32, len: i32) -> i32, bool {

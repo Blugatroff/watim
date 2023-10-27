@@ -25,7 +25,7 @@ fn init<T>(free: (T ->), ptr: .T, elems: i32) -> DynArray<T> {
     $elems sizeof(T) * A:alloc !.T #self.ptr
     $elems #self.len
     $free #self.free
-    $ptr !.i32 $self.ptr !.i32 $elems sizeof(T) * CORE:copy
+    $ptr $self.ptr $elems CORE:copy<T>
     $self
 }
 fn pushA<T>(arena: .Arena:Arena, self: .DynArray<T>, val: T) {
@@ -35,10 +35,10 @@ fn pushA<T>(arena: .Arena:Arena, self: .DynArray<T>, val: T) {
     } else {
         $self.cap 2 CORE:max 2 * @size
         $arena $size Arena:push-many<T> @new-buf
-        $self.ptr !.i32
-        $new-buf !.i32
-        $self.len sizeof(T) *
-        CORE:copy
+        $self.ptr
+        $new-buf
+        $self.len
+        CORE:copy<T>
         $size #self.cap
         $new-buf #self.ptr
         $arena $self $val pushA<T>
@@ -53,10 +53,10 @@ fn push<T>(self: .DynArray<T>, val: T) {
     } else {
         $self.cap 2 CORE:max 2 * #size
         $size sizeof(T) * A:alloc !.T #new-buf
-        $self.ptr !.i32
-        $new-buf !.i32
-        $self.len sizeof(T) *
-        CORE:copy
+        $self.ptr
+        $new-buf
+        $self.len
+        CORE:copy<T>
         $size #self.cap
         $self.len 0 gt if {
             $self.ptr !.i32 A:free
@@ -135,10 +135,10 @@ fn find<T, A>(self: .DynArray<T>, compare: (.T, A -> bool), value: A) -> i32, bo
 }
 fn remove<T>(self: .DynArray<T>, index: i32) -> T {
     $self $index get<T> ~ @value
-    $self.ptr $index 1 + sizeof(T) * + !.i32
-    $self.ptr $index sizeof(T) * + !.i32
-    $self.len $index - 1 - sizeof(T) *
-    CORE:copy
+    $self.ptr $index 1 + sizeof(T) * +
+    $self.ptr $index sizeof(T) * +
+    $self.len $index - 1 -
+    CORE:copy<T>
     $value
 }
 fn find-remove<T, A>(self: .DynArray<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {

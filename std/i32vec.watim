@@ -49,10 +49,10 @@ fn I32Vec-push(vec: .I32Vec, val: i32) {
     } else {
         $vec.cap 2 CORE:max 2 * #size
         $size 4 * A:alloc #new-buf
-        $vec.ptr !.i32
-        $new-buf !.i32
-        $vec.len 4 *
-        CORE:copy
+        $vec.ptr
+        $new-buf
+        $vec.len
+        CORE:copy<i32>
         $size #vec.cap
         $vec.len 0 gt if {
             $vec.ptr !.i32 A:free
