@@ -39,8 +39,7 @@ fn String-empty() -> String {
     $self
 }
 fn String-new-heapA(arena: .Arena:Arena, ptr: .i32, len: i32) -> String {
-    $arena $len Arena:push-bytes @buf
-    $ptr $buf $len CORE:copy-bytes
+    $arena $ptr $len Arena:push-bytes @buf
     $buf $len String-new-from-buf
 }
 fn String-new-heap(ptr: .i32, len: i32) -> String {
@@ -117,8 +116,7 @@ fn String-pushA(arena: .Arena:Arena, self: .String, char: i32) {
     } else {
         $self.len 1 + $self.cap gt if {
             $self.cap 2 CORE:max 2 * @size
-            $arena $size Arena:push-bytes @new-buf
-            $self.ptr $new-buf $self.len CORE:copy-bytes
+            $arena $self.ptr $size Arena:push-bytes @new-buf
             $size #self.cap
             $new-buf #self.ptr
             $self $char String-push

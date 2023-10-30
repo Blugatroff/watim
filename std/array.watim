@@ -1,0 +1,129 @@
+import "./core.watim" as CORE
+import "./io.watim" as IO
+import "./str.watim" as STR
+import "./arena.watim" as A
+import "./fmt.watim" as FMT
+
+struct Array<T> {
+    ptr: .T
+    len: i32
+    cap: i32
+}
+
+fn new<T>() -> Array<T> {
+    local self: Array<T>
+    0 !.T #self.ptr
+    0 #self.len
+    0 #self.cap
+    $self
+}
+fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
+    local self: Array<T>
+    $elems #self.cap
+    $arena $ptr $elems A:push-many<T> #self.ptr
+    $elems #self.len
+    $self
+}
+fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
+    local new-buf: .T
+    local size: i32
+    $self.len 1 + $self.cap le if {
+        $self.ptr $self.len sizeof(T) * + $val store
+        $self.len 1 + #self.len
+    } else {
+        $self.cap 2 CORE:max 2 * #size
+        $arena $self.ptr $size A:push-many<T> #new-buf
+        $size #self.cap
+        $new-buf #self.ptr
+        $arena $self $val push<T>
+    } 
+}
+fn get<T>(self: .Array<T>, index: i32) -> .T {
+    $index $self.len ge if { 
+        2 "Index out of bounds\n" IO:write-all IO:check
+        0 0 / drop
+        1 CORE:exit
+    }
+    $self.ptr $index sizeof(T) * +
+}
+fn last<T>(self: .Array<T>) -> .T {
+    $self $self.len 1 - get<T>
+}
+fn set<T>(self: .Array<T>, index: i32, value: T) -> T {
+    $self $index get<T> CORE:dup<.T> $value store ~
+}
+fn pop<T>(self: .Array<T>) -> T {
+    $self.len 0 = if {
+        2 "Cannot pop from empty DynArray" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self $self.len 1 - get<T> ~ 
+    $self.len 1 - #self.len
+}
+fn clone<T>(arena: .A:Arena, self: .Array<T>) -> Array<T> {
+    $arena $self.ptr $self.len init<T>
+}
+fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) {
+    $formatter "[" FMT:Formatter-write
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $formatter $self $i get<T> $format-element ->
+        $i 1 + #i
+        $i $self.len /= if { $formatter ", " FMT:Formatter-write }
+    }
+    $formatter "]" FMT:Formatter-write
+}
+fn print<T>(fd: i32, print-element: (i32, .T ->), self: .Array<T>) {
+    $fd "[" IO:write-all IO:check
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $fd $self $i get<T> $print-element ->
+        $i 1 + #i
+        $i $self.len /= if { 2 ", " IO:write-all IO:check }
+    }
+    $fd "]" IO:write-all IO:check
+}
+fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
+    local i: i32
+    loop {
+        $i $self.len = if { 0 0 1 = break }
+        $self $i get<T> $value $compare -> if {
+            $i 1 1 = break
+        }
+        $i 1 + #i
+    }
+}
+fn remove<T>(self: .Array<T>, index: i32) -> T {
+    $self $index get<T> ~ @value
+    $self.ptr $index 1 + sizeof(T) * +
+    $self.ptr $index sizeof(T) * +
+    $self.len $index - 1 -
+    CORE:copy<T>
+    $value
+}
+fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {
+    local uninit: T
+    $self $compare $value find<T, A> if {
+        @i
+        $self $i remove<T>
+        $i 1 1 =
+    } else { 
+        $uninit flip 0 1 =
+    }
+}
+fn join-with(arena: .A:Arena, self: .Array<STR:Str>, del-ptr: .i32, del-len: i32) -> STR:Str {
+    $arena 0 A:alloc-bytes @out-ptr
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $arena $self $i get<STR:Str> ~ STR:Str-unpack A:push-bytes drop
+        $i 1 + $self.len /= if {
+            $arena $del-ptr $del-len A:push-bytes drop
+        }
+        $i 1 + #i
+    }
+    $out-ptr $arena 0 A:alloc-bytes $out-ptr - STR:Str-new
+}
+

@@ -116,4 +116,7 @@ fn Str-drop-end(self: Str, n: i32) -> Str {
     $self.len $n -
     Str-new
 }
+fn Str-empty() -> Str {
+    0 !.i32 0 Str-new
+}
 

@@ -1,0 +1,53 @@
+import "../std/core.watim" as CORE
+import "../std/str.watim" as STR
+import "../std/io.watim" as IO
+import "../std/arena.watim" as A
+import "../std/fs.watim" as FS
+
+fn start "_start" () {
+    2 mem-grow 1 /= if { 1 CORE:exit } 
+
+    main
+}
+
+fn exit-with-message(code: i32, ptr: .i32, len: i32) {
+    $code 0 /= if {
+        2 $ptr $len IO:write-all IO:check
+        2 "\n\tcode: " IO:write-all IO:check
+        2 $code IO:print-to-fd
+        2 "\n" IO:write-all IO:check
+        $code CORE:exit
+    }
+}
+
+fn main() {
+    memory mem: i32 65536 // 65 kiB
+    memory temp: i32 65536 // 65 kiB
+        
+    $temp 65536 A:init-temp
+
+    $mem 65536 A:new @arena
+    &arena FS:init "Failed to init fs" exit-with-message @fs
+    &arena A:save @save
+    
+    &fs FS:find-current-dir "Failed to find cwd" exit-with-message @current-dir
+    
+    1 $current-dir IO:print-to-fd
+    1 "\n" IO:write-all IO:check
+
+    1 &arena &fs "./flake.nix" FS:read-file "Failed to read file" exit-with-message STR:Str-unpack IO:write-all IO:check
+
+    2 &arena A:usage IO:print-to-fd 2 IO:newline
+    &arena $save A:restore
+    // print-usage-and-exit
+}
+
+fn print-usage-and-exit() {
+    2 "The native Watim compiler\n\n" IO:write-all IO:check
+    2 "Usage: wasmtime --dir=. ./watim.wasm <watim-source-file>\n" IO:write-all IO:check
+    2 "Options:\n" IO:write-all IO:check
+    2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
+    2 "  --parse-ast    Parse stdin into a watim AST in print it as JSON\n" IO:write-all IO:check
+    1 CORE:exit
+}
+

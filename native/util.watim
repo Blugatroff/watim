@@ -1,7 +1,7 @@
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/string.watim" as S
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 
 import "./lexer.watim" as L
@@ -65,15 +65,13 @@ fn expect-stack(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
     }
 }
 fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Word) {
-    local formatter: FMT:Formatter
-    local msg: S:String
-    FMT:Formatter-new #formatter
+    S:String-empty @msg
+    &msg FMT:Formatter-into-string @formatter
     &formatter "\n\texpected: " FMT:Formatter-write
     &formatter 0 !.AST:Types $expected AST:Types-format
     &formatter "\n\tgot:      " FMT:Formatter-write
     &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-into-string #msg
     $word AST:Word-location &msg S:String-unpack abort-with-location
     $msg S:String-free
 }

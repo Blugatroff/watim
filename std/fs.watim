@@ -1,10 +1,8 @@
-import "./core.watim" as CORE
-import "./io.watim" as IO
-import "./alloc.watim" as A
-import "./string.watim" as S
-import "./str.watim" as STR
-import "./i32vec.watim" as IV
-import "./dyn-array.watim" as DynArray
+import "../std/core.watim" as CORE
+import "../std/io.watim" as IO
+import "../std/str.watim" as STR
+import "../std/arena.watim" as Arena
+import "../std/array.watim" as Array
 
 extern "wasi_unstable" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
 extern "wasi_unstable" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
@@ -26,208 +24,80 @@ fn create-rights(read: bool, write: bool) -> i64 {
     or
 }
 
-fn open-file(path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> i32, i32 {
-    memory res_fd: i32 4
-    local code: i32
-    local parent-fd: i32
-    find-current-dir #code #parent-fd
-    $code 0 /= if {
-        0 $code
-    } else {
-        $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 $res_fd path_open #code
-        $res_fd ~ $code
-    }
+struct PreopenedFd {
+    path: STR:Str
+    fd: i32
+}
+fn PreopenedFd-new(fd: i32, path: STR:Str) -> PreopenedFd {
+    local self: PreopenedFd
+    $fd #self.fd
+    $path #self.path
+    $self
+}
+struct FileSystem {
+    preopened-fds: Array:Array<PreopenedFd>
+}
+fn FileSystem-new(preopened-fds: Array:Array<PreopenedFd>) -> FileSystem {
+    local fs: FileSystem
+    $preopened-fds #fs.preopened-fds
+    $fs
 }
 
-fn read-file(path: .i32, path-len: i32) -> S:String, i32 {
-    local code: i32
-    local fd: i32
-    $path $path-len
-    0 0 = 0 1 = create-rights
-    0 1 = 0 1 = create-rights
-    open-file #code #fd
-    $code 0 /= if {
-        S:String-empty $code
-    } else {
-        $fd read-all
-    }
-}
-
-fn read-all(file: i32) -> S:String, i32 {
-    local buf: .i32
-    local old-buf: .i32
-    local buf-size: i32
-    local read: i32
-    local code: i32
-    local r: i32
-    0 #read
-    0 #r
-    64 #buf-size
-    $buf-size A:alloc #buf
-
+fn init(arena: .Arena:Arena) -> FileSystem, i32 {
+    local prestat: Prestat
+    0 @code
+    3 @fd
+    $arena Arena:save @restore
+    Array:new<PreopenedFd> @fds
+    $arena Arena:temp @temp @temp-save
     loop {
-        $buf-size $read = if {
-            $buf #old-buf
-            $buf-size 2 * A:alloc #buf
-            $buf !i32 0 = if {
-                $old-buf A:free
-                // 48 Error code = Not enough space
-                S:String-empty 48 break
-            }
-            $old-buf $buf $buf-size CORE:copy-bytes
-            $buf-size 2 * #buf-size
-            $old-buf A:free
+        $fd &prestat fd_prestat_get #code
+        // 8 = Bad file descriptor
+        $code 8 = if { 
+            0 #code
+            break 
         }
-        $file 
-        $buf $read + 
-        $buf-size $read -
-        IO:read #code #r
         $code 0 /= if {
-            $buf A:free
-            S:String-empty $code break
+            break
         }
-        $r 0 = if {
-            $buf $read S:String-new-from-buf 0 break
-        } else {
-            $read $r + #read
+        $prestat.path_len @len
+
+        $arena $len Arena:alloc-bytes @buf
+        $fd $buf $len fd_prestat_dir_name #code
+        $code 0 /= if {
+            break
         }
+        $buf $len STR:Str-new @path
+        $temp &fds $fd $path PreopenedFd-new Array:push<PreopenedFd>
+        $fd 1 + #fd
+    }
+    $arena $fds.ptr $fds.len Array:init<PreopenedFd> FileSystem-new $code
+    $code 0 /= if {
+        $arena $restore Arena:restore
+    }
+    $temp $temp-save Arena:restore
+}
+// returns 0, 0 if not found
+// returns 0, e if error
+fn find-current-dir(fs: .FileSystem) -> i32, i32 {
+    0 @i
+    loop {
+        $i $fs.preopened-fds.len = if { 
+            // not found
+            2 "failed to find preopened current directory\n" IO:write-all IO:check
+            1 CORE:exit
+            0 0 break
+        }
+        &fs.preopened-fds $i Array:get<PreopenedFd> @preopened-fd
+        $preopened-fd.path STR:Str-unpack "." STR:str-is-prefix
+        if { $preopened-fd.fd 0 break }
+        $i 1 + #i
     }
 }
 
 struct Prestat {
     kind: i32
     path_len: i32
-}
-
-memory PREOPENED: bool 4
-memory PREOPENED_FDS: DynArray:DynArray<i32> 16 // TODO: this doesn't error when the generic <i32> is missing!
-memory PREOPENED_PATHS: S:StringVec 12
-
-fn init() {
-    $PREOPENED_FDS @a 0 !(i32 ->) DynArray:new<i32> =>a
-    $PREOPENED_PATHS @b S:StringVec-new =>b
-}
-fn uninit() {
-    $PREOPENED_FDS ~ DynArray:free<i32>
-    $PREOPENED_PATHS ~ S:StringVec-free
-}
-
-fn get-preopened-fds() -> .DynArray:DynArray<i32>, .S:StringVec, i32 {
-    local prestat: Prestat
-    local fd: i32
-    local code: i32
-    local buf: .i32
-    local len: i32
-    $PREOPENED ~ not if {
-        3 #fd
-        $PREOPENED_FDS 0!(i32 ->) DynArray:new<i32> store
-        S:StringVec-new =>PREOPENED_PATHS
-        loop {
-            $fd &prestat fd_prestat_get #code
-            // 8 = Bad file descriptor
-            $code 8 = if { 
-                0 #code
-                break 
-            }
-            $code 0 /= if {
-                break
-            }
-            $prestat.path_len #len
-            $len A:alloc #buf
-            $fd $buf $len fd_prestat_dir_name #code
-            $code 0 /= if {
-                break
-            }
-            $PREOPENED_FDS $fd DynArray:push<i32>
-            $PREOPENED_PATHS $buf $len S:String-new S:StringVec-push
-            $buf A:free
-            $fd 1 + #fd
-        }
-        1 1 = =>PREOPENED
-    }
-    $PREOPENED_FDS $PREOPENED_PATHS $code
-}
-
-// returns 0, 0 if not found
-// returns 0, e if error
-fn find-current-dir() -> i32, i32 {
-    get-preopened-fds @code @paths @fds
-    $code 0 = if {
-        0 @i
-        loop {
-            $i $fds.len = if { 
-                // not found
-                2 "failed to find preopened current directory\n" IO:write-all IO:check
-                1 CORE:exit
-                0 0 break
-            }
-            $paths $i S:StringVec-get S:String-unpack "." STR:str-is-prefix
-            if {
-                $fds $i DynArray:get<i32> ~
-                0 
-                break
-            }
-            $i 1 + #i 
-        }
-    } else {
-        0 $code
-    }
-}
-
-fn normalize(path-ptr: .i32, path-len: i32) -> S:String {
-    local out: S:String
-    local new: S:String
-    local splits: S:StringVec
-    local outsplits: S:StringVec
-    local i: i32
-    S:String-empty #out
-    S:StringVec-new #outsplits
-    $path-ptr $path-len "./" STR:str-is-prefix not if {
-        &out "./" S:String-append
-    }
-    &out $path-ptr $path-len S:String-append
-    
-    &out S:String-unpack "//" "/" S:str-replace #new
-    $out S:String-free
-    $new #out
-
-
-    &out S:String-unpack "/./" "/" S:str-replace #new
-    $out S:String-free
-    $new #out
-
-    &out S:String-unpack "./." "." S:str-replace #new
-    $out S:String-free
-    $new #out
-
-    &out S:String-unpack "/" drop load8 S:str-split #splits
-    $out S:String-free
-
-    loop {
-        $i &splits S:StringVec-len = if { break }
-        loop {
-            $i 1 + &splits S:StringVec-len /= if {
-                &splits $i 1 + S:StringVec-get S:String-unpack ".." STR:str-eq 
-                &splits $i S:StringVec-get S:String-unpack "." STR:str-eq not and
-                &splits $i S:StringVec-get S:String-unpack ".." STR:str-eq not and
-                if {
-                    $i 1 + #i break
-                }
-            }
-            &outsplits &splits $i S:StringVec-get S:String-unpack S:String-new S:StringVec-push
-            break
-        }
-        $i 1 + #i
-    }
-    $splits S:StringVec-free
-    &outsplits "/" S:StringVec-join-with #out
-    $outsplits S:StringVec-free
-    $path-ptr $path-len &out S:String-unpack STR:str-eq if {
-        $out
-    } else {
-        &out S:String-unpack normalize
-        $out S:String-free
-    }
 }
 
 fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
@@ -237,5 +107,142 @@ fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
     } else {
         drop $path-ptr $path-len
     }
+}
+
+
+fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> .i32, i32 {
+    $arena 0 Arena:alloc-bytes @new-ptr
+    0 @new-len
+    $ptr $len $target-ptr $target-len STR:str-find-str if {
+        @index
+        $arena $ptr $index Arena:push-bytes drop
+        $arena $replacement-ptr $replacement-len Arena:push-bytes drop
+        $new-len $index + $replacement-len + #new-len
+        
+        $arena
+        $ptr $index + $target-len + @next-ptr $next-ptr
+        $len $index - $target-len -
+        $target-ptr
+        $target-len
+        $replacement-ptr
+        $replacement-len
+        str-replace @new-next-len @new-next-ptr
+
+        $arena $new-next-ptr $new-next-len Arena:push-bytes drop
+        $new-len $new-next-len + #new-len
+
+        $new-ptr $new-len
+    } else {
+        drop $ptr $len
+    }
+}
+fn str-split(arena: .Arena:Arena, str-ptr: .i32, str-len: i32, del: i32) -> Array:Array<STR:Str> {
+    Array:new<STR:Str> @splits
+    loop {
+        $str-len 0 = if { break }
+        $str-ptr $str-len $del STR:str-find if {
+            @index
+            $arena &splits $str-ptr $index STR:Str-new Array:push<STR:Str>
+            $str-ptr $index + 1 + #str-ptr
+            $str-len $index - 1 - #str-len
+        } else {
+            drop
+            $arena &splits $str-ptr $str-len STR:Str-new Array:push<STR:Str>
+            break
+        }
+    }
+    $splits
+}
+
+fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
+    $arena Arena:temp @temp @temp-save
+    $temp 0 Arena:alloc-bytes @out-ptr
+    0 @out-len
+
+    $path-ptr $path-len "./" STR:str-is-prefix not if {
+        $temp "./" Arena:push-bytes drop
+        $out-len 2 + #out-len
+    }
+    $temp $path-ptr $path-len Arena:push-bytes drop
+    $out-len $path-len + #out-len
+    
+    $temp $out-ptr $out-len "//" "/" str-replace #out-len #out-ptr
+    $temp $out-ptr $out-len "/./" "/" str-replace #out-len #out-ptr
+    $temp $out-ptr $out-len "./." "." str-replace #out-len #out-ptr
+
+    $temp $out-ptr $out-len "/" drop load8 str-split @splits
+    Array:new<STR:Str> @outsplits
+    0 @i
+    loop {
+        $i $splits.len = if { break }
+        block {
+            $i 1 + $splits.len /= if {
+                &splits $i 1 + Array:get<STR:Str> ~ STR:Str-unpack ".." STR:str-eq 
+                &splits $i Array:get<STR:Str> ~ STR:Str-unpack "." STR:str-eq not and
+                &splits $i Array:get<STR:Str> ~ STR:Str-unpack ".." STR:str-eq not and
+                if {
+                    $i 1 + #i break
+                }
+            }
+            $temp &outsplits &splits $i Array:get<STR:Str> ~ Array:push<STR:Str>
+        }
+        $i 1 + #i
+    }
+    $temp &outsplits "/" Array:join-with @out
+    $path-ptr $path-len $out STR:Str-unpack STR:str-eq if {
+        $arena $out STR:Str-unpack Arena:push-bytes $out.len
+    } else {
+        $arena $out STR:Str-unpack normalize
+    }
+    $temp $temp-save Arena:restore
+}
+
+fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> i32, i32 {
+    local fd: CORE:I32
+    $fs find-current-dir @code @parent-fd
+    $code 0 /= if {
+        0 $code
+    } else {
+        $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 &fd.inner path_open #code
+        $fd.inner $code
+    }
+}
+
+fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) -> STR:Str, i32 {
+    $fs
+    $path $path-len
+    0 0 = 0 1 = create-rights
+    0 1 = 0 1 = create-rights
+    open-file @code @fd
+    $code 0 /= if {
+        STR:Str-empty $code
+    } else {
+        $arena $fd read-all
+    }
+}
+
+fn read-all(arena: .Arena:Arena, file: i32) -> STR:Str, i32 {
+    $arena Arena:save @save
+    $arena 0 Arena:alloc-bytes @ptr
+    64 @buf-size
+
+    $arena Arena:temp @temp @temp-save
+    $temp $buf-size Arena:alloc-bytes @buf
+
+    0 @read
+    loop {
+        $file $buf $buf-size IO:read @code @r
+        $code 0 /= if {
+            $arena $save Arena:restore
+            $ptr $read STR:Str-new $code break
+        }
+        $r 0 = if {
+            $ptr $read STR:Str-new 0 break
+        } else {
+            $arena $buf $r Arena:push-bytes drop
+            $read $r + #read
+        }
+    }
+    $temp $temp-save Arena:restore
 }
 

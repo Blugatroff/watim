@@ -5,7 +5,7 @@ import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 
 import "../native/util.watim" as CU
@@ -634,8 +634,7 @@ fn is-ascii-digit(char: i32) -> bool {
     $char 48 ge $char 57 le and
 }
 
-// input and file is borrowed
-fn lex(input: .S:String, file: STR:Str) -> DynArray:DynArray<.Token> {
-    $input S:String-unpack $file Lexer-new Lexer-run
+fn lex(input: STR:Str, file: STR:Str) -> DynArray:DynArray<.Token> {
+    $input STR:Str-unpack $file Lexer-new Lexer-run
 }
 

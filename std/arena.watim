@@ -1,6 +1,5 @@
-import "./io.watim" as IO
-import "./alloc.watim" as A
 import "./core.watim" as CORE
+import "./io.watim" as IO
 
 struct Arena {
     ptr: .i32
@@ -8,20 +7,17 @@ struct Arena {
     pos: i32
 }
 
-fn new(cap: i32) -> Arena {
+fn new(ptr: .i32, cap: i32) -> Arena {
     local self: Arena
-    $cap A:alloc #self.ptr
+    $ptr #self.ptr
     $cap #self.cap
     $self
-}
-fn free(self: Arena) {
-    $self.ptr A:free
 }
 fn clear(self: .Arena) {
     $self.ptr $self.cap CORE:clear
     0 #self.pos
 }
-fn push-bytes(self: .Arena, size: i32) -> .i32 {
+fn alloc-bytes(self: .Arena, size: i32) -> .i32 {
     $self.pos $size + $self.cap ge if {
         2 "Arena out of memory\n\tcapacity:  " IO:write-all IO:check
         2 $self.cap IO:print-to-fd
@@ -35,10 +31,61 @@ fn push-bytes(self: .Arena, size: i32) -> .i32 {
     $self.ptr $self.pos +
     $self.pos $size + #self.pos
 }
-fn push<T>(self: .Arena) -> .T {
-    $self sizeof(T) push-bytes !.T
+fn alloc<T>(self: .Arena) -> .T {
+    $self sizeof(T) alloc-bytes !.T
 }
-fn push-many<T>(self: .Arena, n: i32) -> .T {
-    $self sizeof(T) $n * push-bytes !.T
+fn alloc-many<T>(self: .Arena, n: i32) -> .T {
+    $self sizeof(T) $n * alloc-bytes !.T
+}
+fn push-bytes(self: .Arena, ptr: .i32, len: i32) -> .i32 {
+    $self $len alloc-bytes @dst
+    $ptr $dst $len CORE:copy-bytes
+    $dst
+}
+fn push<T>(self: .Arena, value: T) -> .T {
+    $self alloc<T> @ptr
+    $value =>ptr
+    $ptr
+}
+fn push-many<T>(self: .Arena, ptr: .T, n: i32) -> .T {
+    $self $ptr !.i32 sizeof(T) $n * push-bytes !.T
+}
+
+struct ArenaRestorePoint {
+    pos: i32
+}
+fn save(self: .Arena) -> ArenaRestorePoint {
+    local point: ArenaRestorePoint
+    $self.pos #point.pos
+    $point
+}
+fn restore(self: .Arena, point: ArenaRestorePoint) {
+    $point.pos #self.pos
+}
+fn usage(self: .Arena) -> i32 {
+    $self.pos
+}
+fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
+    $self.pos $point.pos -
+}
+
+memory TEMP1: Arena 12
+memory TEMP2: Arena 12
+
+fn init-temp(ptr: .i32, cap: i32) {
+    $TEMP1 @temp
+    $ptr #temp.ptr
+    $cap 2 / #temp.cap
+    0 #temp.pos
+
+    $TEMP2 @temp
+    $ptr $cap 2 / + #temp.ptr
+    $cap 2 / #temp.cap
+    0 #temp.pos
+}
+fn temp(persistent: .Arena) -> ArenaRestorePoint, .Arena {
+    $persistent $TEMP1 = if { $TEMP2 } else { $TEMP1 } @arena
+    $arena save
+    $arena
 }
 

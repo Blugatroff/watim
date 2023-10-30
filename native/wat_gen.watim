@@ -1,4 +1,4 @@
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U

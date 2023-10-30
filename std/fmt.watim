@@ -1,0 +1,63 @@
+import "./core.watim" as CORE
+import "./io.watim" as IO
+import "./string.watim" as S
+
+struct Formatter {
+    indent-level: i32
+    write: (i32, .i32, i32 ->)
+    custom: i32
+}
+
+fn Formatter-new(write: (i32, .i32, i32 ->), custom: i32) -> Formatter {
+    local self: Formatter
+    $write #self.write
+    0 #self.indent-level
+    $custom #self.custom
+    $self
+}
+fn Formatter-write(self: .Formatter, ptr: .i32, len: i32) {
+    $self.custom $ptr $len $self.write ->
+}
+fn Formatter-write-indent(self: .Formatter) {
+    local i: i32
+    loop {
+        $i $self.indent-level = if { break }
+        $self "  " Formatter-write
+        $i 1 + #i
+    }
+}
+fn Formatter-indent(self: .Formatter) {
+    $self.indent-level 1 + #self.indent-level
+}
+fn Formatter-dedent(self: .Formatter) {
+    $self.indent-level 0 = if {
+        "Formatter: tried to dedent below 0" IO:abort
+    }
+    $self.indent-level 1 - #self.indent-level
+}
+
+fn write-to-fd(fd: i32, ptr: .i32, len: i32) {
+    $fd $ptr $len IO:write-all IO:check
+}
+
+fn Formatter-to-fd(fd: i32) -> Formatter {
+    \write-to-fd $fd Formatter-new
+}
+
+fn Formatter-stdout() -> Formatter {
+    1 Formatter-to-fd
+}
+
+fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
+    $fd Formatter-to-fd @formatter
+    &formatter $item $fmt ->
+}
+
+fn append-string(string: i32, ptr: .i32, len: i32) {
+    $string !.S:String $ptr $len S:String-append
+}
+
+fn Formatter-into-string(target: .S:String) -> Formatter {
+    \append-string $target !i32 Formatter-new
+}
+

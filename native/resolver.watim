@@ -148,7 +148,7 @@ fn resolve-parameter(modules: .M:Modules, module: .M:Module, generics: .AST:Gene
     $modules $module $generics &parameter.type $phase resolve-type
 }
 fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, type: ..AST:Type, phase: i32) {
-    local path: .S:String
+    local path: STR:Str
     block {
         $type ~ AST:Type-ty AST:TYPE_STRUCT = if {
             $phase 0 = if {
@@ -165,16 +165,16 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
                 $module-token !i32 0 /= if {
                     $module M:Module-imports @imports
                     $imports $module-token L:Token-lexeme ~ STR:Str-unpack AST:Imports-get if {
-                        #path
+                        ~ #path
                     } else {
                         drop
                         $module-token L:Token-location "module not found" U:abort-with-location
                     }
                 } else {
-                    $module M:Module-path #path
+                    $module M:Module-path S:String-unpack STR:Str-new #path
                 }
 
-                $modules $path S:String-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {
+                $modules $path STR:Str-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {
                     $type ~ flip AST:Type-set-struc
                 } else {
                     drop $type ~ AST:Type-ident L:Token-location "struct not found" U:abort-with-location

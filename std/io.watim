@@ -47,6 +47,10 @@ fn write-byte(file: i32, b: i32) -> i32 {
     $file $buf 1 write-all
 }
 
+fn newline(fd: i32) {
+    $fd 10 write-byte check
+}
+
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     memory iov: Iov 8
     local read: CORE:I32
@@ -122,6 +126,16 @@ fn check(code: i32) {
         2 "\n" write-all drop
         0 0 / drop
         1 CORE:exit
+    }
+}
+
+fn exit-with-message(code: i32, ptr: .i32, len: i32) {
+    $code 0 /= if {
+        2 $ptr $len write-all check
+        2 "\n\tcode: " write-all check
+        2 $code print-to-fd
+        2 "\n" write-all check
+        $code CORE:exit
     }
 }
 

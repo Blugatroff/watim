@@ -6,7 +6,7 @@ import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/map.watim" as MAP
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 
 import "./lexer.watim" as L
@@ -498,11 +498,7 @@ fn Type-format(formatter: .FMT:Formatter, self: .Type) { block {
     1 CORE:exit
 } }
 fn Type-print(fd: i32, self: .Type) {
-    FMT:Formatter-new @formatter
-    &formatter $self Type-format
-    $formatter FMT:Formatter-into-string @string
-    $fd &string S:String-unpack IO:write-all IO:check
-    $string S:String-free
+    $fd \Type-format $self FMT:print-it<Type>
 }
 fn Type-is-generic(self: .Type) -> bool { block {
     $self Type-ty TYPE_I32 = if { 0 1 = break }
@@ -648,13 +644,8 @@ fn Types-is-generic(self: .Types) -> bool {
 
 // argument `generics` is optional/null
 fn Types-print(fd: i32, generics: .Types, self: .Types) {
-    local formatter: FMT:Formatter
-    local out: S:String
-    FMT:Formatter-new #formatter
+    $fd FMT:Formatter-to-fd @formatter
     &formatter $generics $self Types-format
-    $formatter FMT:Formatter-into-string #out
-    $fd &out S:String-unpack IO:write-all IO:check
-    $out S:String-free
 }
 fn Types-last(self: .Types) -> .Type {
     $self $self Types-len 1 - Types-get
@@ -1102,7 +1093,7 @@ fn Generics-contains(self: .Generics, ident: .STR:Str) -> i32, bool {
         $i 1 + #i
     }
 }
-fn Generics-format(self: .Generics, formatter: .FMT:Formatter) {
+fn Generics-format(formatter: .FMT:Formatter, self: .Generics) {
     local i: i32
     0 $self Generics-len = if {
         $formatter "[]" FMT:Formatter-write
@@ -1120,13 +1111,7 @@ fn Generics-format(self: .Generics, formatter: .FMT:Formatter) {
     }
 }
 fn Generics-print(fd: i32, self: .Generics) {
-    local formatter: FMT:Formatter
-    local out: S:String
-    FMT:Formatter-new #formatter
-    $self &formatter Generics-format
-    $formatter FMT:Formatter-into-string #out
-    $fd &out S:String-unpack IO:write-all IO:check
-    $out S:String-free
+    $fd \Generics-format $self FMT:print-it<Generics>
 }
 
 struct Instance {
@@ -1402,11 +1387,7 @@ fn Field-print-ref(fd: i32, self: ..Field) {
     $fd $self ~ Field-print
 }
 fn Field-print(fd: i32, self: .Field) {
-    FMT:Formatter-new @formatter
-    &formatter $self Field-format
-    $formatter FMT:Formatter-into-string @string
-    $fd &string S:String-unpack IO:write-all IO:check
-    $string S:String-free
+    $fd \Field-format $self FMT:print-it<Field>
 }
 
 fn Fields-eq(self: .DynArray:DynArray<.Field>, other: .DynArray:DynArray<.Field>) -> bool { block {
@@ -1633,17 +1614,16 @@ fn Imports-free(self: .Imports) {
     local i: i32
     loop {
         $i &self.map MAP:StringMap-len = if { break }
-        &self.map $i MAP:StringMap-get-value !.S:String ~ S:String-free // deallocate string itself
-        &self.map $i MAP:StringMap-get-value !.i32 A:free // deallocate string struct
+        &self.map $i MAP:StringMap-get-value !.i32 A:free // deallocate str struct
         $i 1 + #i
     }
     $self.map MAP:StringMap-free
     $self !.i32 A:free
 }
-fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
-    local alloced-path: .S:String
-    sizeof(S:String) A:alloc !.S:String #alloced-path
-    $path =>alloced-path
+fn Imports-insert(self: .Imports, ident: S:String, path-ptr: .i32, path-len: i32) {
+    local alloced-path: .STR:Str
+    sizeof(STR:Str) A:alloc !.STR:Str #alloced-path
+    $path-ptr $path-len STR:Str-new =>alloced-path
     &self.map $ident $alloced-path !i32 MAP:StringMap-insert if {
         1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
         !.S:String ~ S:String-free
@@ -1651,15 +1631,15 @@ fn Imports-insert(self: .Imports, ident: S:String, path: S:String) {
         drop
     }
 }
-fn Imports-get-value(self: .Imports, index: i32) -> .S:String {
-    &self.map $index MAP:StringMap-get-value !.S:String
+fn Imports-get-value(self: .Imports, index: i32) -> .STR:Str {
+    &self.map $index MAP:StringMap-get-value !.STR:Str
 }
-fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .S:String, bool {
+fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .STR:Str, bool {
     local v: i32
     &self.map $ident-ptr $ident-len MAP:StringMap-get if {
-        #v $v !.S:String 0 0 =
+        #v $v !.STR:Str 0 0 =
     } else {
-        drop 0 !.S:String 0 1 =
+        drop 0 !.STR:Str 0 1 =
     }
 }
 fn Imports-len(self: .Imports) -> i32 {

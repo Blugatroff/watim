@@ -7,6 +7,7 @@ import "../std/alloc.watim" as A
 import "../std/format.watim" as FMT
 import "../std/core.watim" as CORE
 import "../std/dyn-array.watim" as DynArray
+import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -15,7 +16,7 @@ import "./parser.watim" as P
 struct Module {
     items: DynArray:DynArray<.AST:TopItem>
     imports: .AST:Imports
-    file: S:String
+    file: STR:Str
     tokens: DynArray:DynArray<.L:Token>
     types: DynArray:DynArray<.AST:Type>
     path: S:String
@@ -25,9 +26,9 @@ struct Module {
     words-words: DynArray:DynArray<.AST:Words>
 }
 
-fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
+fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
     $path-ptr $path-len S:String-new-heap @path
-    &path S:String-unpack FS:read-file @code @str
+    $arena $fs &path S:String-unpack FS:read-file @code @str
     $code 0 /= if {
         2 "Failed to read file: \"" IO:write-all IO:check
         2 $path-ptr $path-len IO:write-all IO:check
@@ -36,16 +37,17 @@ fn Module-load(path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
         2 "\n" IO:write-all IO:check
         1 CORE:exit
     }
-    &str &path S:String-unpack STR:Str-new L:lex @tokens
+    $str &path S:String-unpack STR:Str-new L:lex @tokens
     $mem &tokens P:parse @fields @types @items
     
-    $items $path $str $tokens $types $fields Module-new
+    $arena $items $path $str $tokens $types $fields Module-new
 }
 
 fn Module-new(
+    arena: .Arena:Arena,
     items: DynArray:DynArray<.AST:TopItem>, 
     path: S:String, 
-    file: S:String, 
+    file: STR:Str, 
     tokens: DynArray:DynArray<.L:Token>, 
     types: DynArray:DynArray<.AST:Type>, 
     fields: DynArray:DynArray<.AST:Field>
@@ -58,7 +60,7 @@ fn Module-new(
     $path #self.path
     \AST:Struct-free DynArray:new<.AST:Struct> #self.structs
     $fields #self.fields
-    &self &self.path Module-extract-imports
+    $arena &self &self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
     \AST:Types-free-container DynArray:new<.AST:Types> #self.types-types
     \AST:Words-free DynArray:new<.AST:Words> #self.words-words
@@ -98,7 +100,7 @@ fn Module-check-for-duplicate-functions(self: .Module) {
     }
 }
 
-fn Module-extract-imports(self: .Module, module-path: .S:String) {
+fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: .S:String) {
     AST:Imports-new #self.imports
     0 @i
     loop {
@@ -110,7 +112,7 @@ fn Module-extract-imports(self: .Module, module-path: .S:String) {
             &path $imp AST:Import-path-content S:String-append
             $self.imports
             $item.imp AST:Import-ident L:Token-lexeme ~ STR:Str-unpack S:String-new 
-            &path S:String-unpack FS:normalize 
+            $arena &path S:String-unpack FS:normalize 
             AST:Imports-insert
             $path S:String-free
         }
@@ -126,7 +128,6 @@ fn Module-free(self: Module) {
     $self.types-types DynArray:free<.AST:Types>
     $self.items DynArray:free<.AST:TopItem>
     $self.words-words DynArray:free<.AST:Words>
-    $self.file S:String-free
     $self.tokens DynArray:free<.L:Token>
     $self.types DynArray:free<.AST:Type>
     $self.imports AST:Imports-free

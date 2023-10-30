@@ -2,7 +2,7 @@ import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./alloc.watim" as A
 import "./string.watim" as S
-import "./format.watim" as FMT
+import "./fmt.watim" as FMT
 
 fn parse(pt: .i32, len: i32) -> i32 {
     local n: i32

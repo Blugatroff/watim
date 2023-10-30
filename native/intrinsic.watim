@@ -1,6 +1,6 @@
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
@@ -33,7 +33,7 @@ fn check-intrinsic(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types,
         $word AST:Word-intrinsic AST:INTRINSIC_ADD = 
         $word AST:Word-intrinsic AST:INTRINSIC_SUB = or 
         if {
-            $stack $word check-intrinsic-add-or-sub break
+            $temp-types $stack $word check-intrinsic-add-or-sub break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_GREATER_EQ = 
         $word AST:Word-intrinsic AST:INTRINSIC_GREATER = or
@@ -74,17 +74,15 @@ fn check-intrinsic(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types,
     0 1 =
 }
 fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32) {
-    local formatter: FMT:Formatter
-    local formatted: S:String
-    FMT:Formatter-new #formatter
+    S:String-empty @msg
+    &msg FMT:Formatter-into-string @formatter
     $word AST:Word-location
     &formatter $msg-ptr $msg-len FMT:Formatter-write
     &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter " " FMT:Formatter-write
-    $formatter FMT:Formatter-into-string #formatted
-    &formatted S:String-unpack 
+    &msg S:String-unpack 
     U:abort-with-location
-    $formatted S:String-free
+    $msg S:String-free
 }
 fn check-intrinsic-rotl(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 2 lt if {
@@ -214,7 +212,7 @@ fn check-intrinsic-not(stack: .AST:Types, word: .AST:Word) {
     }
     $type #word.type
 }
-fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
+fn check-intrinsic-add-or-sub(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types, word: .AST:Word) {
     local right: .AST:Type
     local left: .AST:Type
     $stack AST:Types-len 2 lt if {
@@ -222,12 +220,19 @@ fn check-intrinsic-add-or-sub(stack: .AST:Types, word: .AST:Word) {
     }
     $stack AST:Types-pop #right
     $stack AST:Types-pop #left
-    $right AST:Type-ty AST:TYPE_I32 /= 
-    $left AST:Type-ty AST:TYPE_I32 /= $left AST:Type-ty AST:TYPE_PTR /= and 
-    or if {
-        $stack $word "expected [(i32, ptr), i32] got: " report-error
+
+    block {
+        $left AST:Type-ty AST:TYPE_I32 = $right AST:Type-ty AST:TYPE_I32 = and if {
+            $stack $left AST:Types-push break
+        }
+        $left AST:Type-ty AST:TYPE_PTR = $right AST:Type-ty AST:TYPE_I32 = and if {
+            $stack $left AST:Types-push break
+        }
+        $left AST:Type-ty AST:TYPE_PTR = $right AST:Type-ty AST:TYPE_PTR = and if {
+            $stack $temp-types AST:Type-new-int32 U:push-temp-type2 AST:Types-push break
+        }
+        $stack $word "expected [i32, i32] or [.T, i32] or [.T, .T] got: " report-error
     }
-    $stack $left AST:Types-push
 }
 fn check-intrinsic-eq(temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 2 lt if {

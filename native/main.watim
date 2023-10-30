@@ -1,7 +1,7 @@
 import "../std/alloc.watim" as A
 import "../std/args.watim" as ARGS
 import "../std/core.watim" as CORE
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/fs.watim" as FS
 import "../std/io.watim" as IO
 import "../std/map.watim" as MAP
@@ -9,6 +9,7 @@ import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/util.watim" as U
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
@@ -32,10 +33,10 @@ fn print-usage-and-exit() {
     1 CORE:exit
 }
 
-fn find-flag(args: .DynArray:DynArray<S:String>, ptr: .i32, len: i32) -> bool {
+fn find-flag(args: .Array:Array<STR:Str>, ptr: .i32, len: i32) -> bool {
     $ptr $len STR:Str-new @str
-    $args \S:String-compare-with-str &str DynArray:find<S:String, .STR:Str> if { 
-        $args flip DynArray:remove<S:String> drop
+    $args \STR:Str-eq &str Array:find<STR:Str, .STR:Str> if { 
+        $args flip Array:remove<STR:Str> drop
         1 1 =
     } else { 
         drop 
@@ -44,10 +45,16 @@ fn find-flag(args: .DynArray:DynArray<S:String>, ptr: .i32, len: i32) -> bool {
 }
 
 fn main() {
-    memory alloc-mem: i32 25165824 // 24 MiB
-    $alloc-mem 25165824 A:init
-    65536 Arena:new @arena
-    FS:init
+    memory temp: i32 65536 // 64 kiB
+    memory mem: i32 12582912 // 12 * MiB
+    memory alloc-mem: i32 20971520 // 16 MiB
+
+    $temp 65536 Arena:init-temp
+    $mem 12582912 Arena:new @arena
+
+    $alloc-mem 20971520 A:init
+
+    &arena FS:init "Failed to init fs" IO:exit-with-message @fs
     &arena ARGS:get-args @args
 
     enable-logging
@@ -59,33 +66,30 @@ fn main() {
     &args "--call-graph" find-flag if { CALL_GRAPH set-mode }
 
     $args.len 1 le if { print-usage-and-exit }
-    &args 1 DynArray:remove<S:String> @path 
+    &args 1 Array:remove<STR:Str> @path 
  
     mode COMPILE = if {
         M:Modules-new @modules
         S:String-empty @mem
-        &modules &mem &path S:String-unpack load-module-recursive
+        &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
         &modules R:resolve
         &mem S:String-len &modules MEM:process @stack-start
         &modules C:check
         &modules M:Modules-mark-reachable
         &modules MONO:gather-instances
 
-        FMT:Formatter-new @formatter
+        FMT:Formatter-stdout @formatter
         &formatter $stack-start &mem &modules GEN:generate
-        $formatter FMT:Formatter-into-string @formatted
-        1 &formatted S:String-unpack IO:write-all IO:check
         1 "\n" IO:write-all IO:check
         logging-enabled if { 2 A:report }
 
-        $formatted S:String-free
         $mem S:String-free
         &modules M:Modules-free
     }
     mode CALL_GRAPH = if {
         M:Modules-new @modules
         S:String-empty @mem
-        &modules &mem &path S:String-unpack load-module-recursive
+        &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
         &modules R:resolve
         &mem S:String-len &modules MEM:process @stack-start
         &modules C:check
@@ -100,11 +104,11 @@ fn main() {
     }
 
     mode PARSE_AST = if {
-        parse-ast
+        &arena parse-ast
     }
 
-    $arena Arena:free
-    FS:uninit
+    &arena Arena:clear
+
     A:is-empty not if {
         A:root A:print-alloc-list
         2 A:report
@@ -114,8 +118,9 @@ fn main() {
     logging-enabled if { 2 A:report }
 }
 
-fn parse-ast() {
-    0 FS:read-all @code 
+fn parse-ast(arena: .Arena:Arena) {
+    $arena Arena:save @save
+    $arena 0 FS:read-all @code 
     $code 0 /= if {
         2 "Failed to read stdin, Error Code: " IO:write-all IO:check
         2 $code IO:print-to-fd
@@ -126,44 +131,41 @@ fn parse-ast() {
     S:String-empty @mem
 
     &mem 
-    &input "stdin.watim" STR:Str-new L:lex @tokens
+    $input "stdin.watim" STR:Str-new L:lex @tokens
     &tokens P:parse @fields @types @items
     
-    FMT:Formatter-new @formatter
+    FMT:Formatter-stdout @formatter
     &formatter &items DUMP:TopItems-json
     &formatter "\n" FMT:Formatter-write
 
     $items DynArray:free<.AST:TopItem>
-    $input S:String-free
     $tokens DynArray:free<.L:Token>
     $mem S:String-free
     $types DynArray:free<.AST:Type>
     $fields DynArray:free<.AST:Field>
-
-    $formatter FMT:Formatter-into-string @json
-    1 &json S:String-unpack IO:write-all IO:check
-    $json S:String-free
+    $arena $save Arena:restore
 }
 
-fn load-module-recursive(modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
+fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
     logging-enabled if {
         2 "Loading module: " IO:write-all IO:check
         2 $path-ptr $path-len IO:write-all IO:check
         2 "\n" IO:write-all IO:check
     }
-    $path-ptr $path-len $mem M:Module-load @module
+    $arena $fs $path-ptr $path-len $mem M:Module-load @module
     &module M:Module-imports @imps
     $modules $path-ptr $path-len S:String-new $module M:Modules-insert
     
     0 @i
     loop {
         $i $imps AST:Imports-len = if { break }
-        $modules $imps $i AST:Imports-get-value S:String-unpack M:Modules-get if {
+        $modules $imps $i AST:Imports-get-value ~ STR:Str-unpack M:Modules-get if {
             drop
         } else {
             drop
+            $arena $fs
             $modules $mem 
-            $imps $i AST:Imports-get-value S:String-unpack 
+            $imps $i AST:Imports-get-value ~ STR:Str-unpack 
             load-module-recursive
         }
         $i 1 + #i
@@ -184,8 +186,8 @@ fn set-mode(mode: i32) { $MODE $mode store }
 fn mode() -> i32 { $MODE ~ }
 
 fn start "_start" () {
-    // grow memory to 512 * 2B^16 = 32 MiB
-    512 mem-grow 1 /= if { 1 CORE:exit } 
+    // grow memory to (512 + 256) * 2B^16 = 48 MiB
+    512 256 + mem-grow 1 /= if { 1 CORE:exit } 
     main
 }
 

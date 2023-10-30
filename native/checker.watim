@@ -4,7 +4,7 @@ import "../std/map.watim" as MAP
 import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/core.watim" as CORE
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/i32vec.watim" as IV
 import "../std/dyn-array.watim" as DynArray
 
@@ -56,15 +56,13 @@ fn check-item(self: .Checker, module: .M:Module, item: .AST:TopItem) {
 }
 
 fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
-    local formatter: FMT:Formatter
-    local msg: S:String
-    FMT:Formatter-new #formatter
+    S:String-empty @msg
+    &msg FMT:Formatter-into-string @formatter
     &formatter "return type mismatch:\nexpected: " FMT:Formatter-write
     &formatter 0 !.AST:Types $function AST:Function-rets AST:Types-format
     &formatter "\ngot:      " FMT:Formatter-write
     &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter "\n" FMT:Formatter-write
-    $formatter FMT:Formatter-into-string #msg
     $function AST:Function-ident L:Token-location
     &msg S:String-unpack
     U:abort-with-location
@@ -880,14 +878,12 @@ fn check-call(self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:W
 }
 
 fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .STR:Str, word: .AST:Word) -> .M:Module {
-    local path: .S:String
-    local b: bool
     $qualifier !i32 0 = if {
         $module
     } else {
-        $module M:Module-imports $qualifier ~ STR:Str-unpack AST:Imports-get #b #path 
+        $module M:Module-imports $qualifier ~ STR:Str-unpack AST:Imports-get @b @path 
         $b if {
-            $modules $path S:String-unpack M:Modules-get if {
+            $modules $path ~ STR:Str-unpack M:Modules-get if {
 
             } else {
                 $word AST:Word-location 

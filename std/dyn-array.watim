@@ -34,11 +34,7 @@ fn pushA<T>(arena: .Arena:Arena, self: .DynArray<T>, val: T) {
         $self.len 1 + #self.len
     } else {
         $self.cap 2 CORE:max 2 * @size
-        $arena $size Arena:push-many<T> @new-buf
-        $self.ptr
-        $new-buf
-        $self.len
-        CORE:copy<T>
+        $arena $self.ptr $size Arena:push-many<T> @new-buf
         $size #self.cap
         $new-buf #self.ptr
         $arena $self $val pushA<T>

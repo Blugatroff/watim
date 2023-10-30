@@ -1,37 +1,36 @@
-import "./string.watim" as S
+import "./str.watim" as STR
 import "./io.watim" as IO
-import "./alloc.watim" as A
 import "./arena.watim" as Arena
-import "./dyn-array.watim" as DynArray
+import "./array.watim" as Array
 import "./core.watim" as CORE
 
 extern "wasi_unstable" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
 extern "wasi_unstable" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
 
-fn get-args(arena: .Arena:Arena) -> DynArray:DynArray<S:String> {
+fn get-args(arena: .Arena:Arena) -> Array:Array<STR:Str> {
     local arg_number_ptr: CORE:I32
     local arg_sizes_ptr: CORE:I32
     &arg_number_ptr.inner &arg_sizes_ptr.inner args_sizes_get IO:check
     $arg_number_ptr.inner @arg_number
     $arg_sizes_ptr.inner @arg_sizes
-    $arg_sizes A:alloc @arg_buf
-    $arg_number sizeof(i32) * A:alloc @ptr_buf
+    $arena Arena:temp @temp @temp-save
+    $arena $arg_sizes Arena:alloc-bytes @arg_buf
+    $temp $arg_number Arena:alloc-many<.i32> @ptr_buf
 
-    $ptr_buf !..i32 $arg_buf args_get IO:check
+    $ptr_buf $arg_buf args_get IO:check
 
-    0 !(S:String ->) DynArray:new<S:String> @strings
+    Array:new<STR:Str> @strings
 
     0 @i
     loop {
         $i $arg_number ge if { break }
         $ptr_buf $i 4 * + ~ !.i32 @ptr
         $arena &strings 
-        $arena $ptr $ptr cstr-len S:String-newA
-        DynArray:pushA<S:String>
+        $ptr $ptr cstr-len STR:Str-new
+        Array:push<STR:Str>
         $i 1 + #i
     }
-    $ptr_buf A:free
-    $arg_buf A:free
+    $temp $temp-save Arena:restore
     $strings
 }
 
