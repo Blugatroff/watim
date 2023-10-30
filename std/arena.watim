@@ -50,6 +50,9 @@ fn push<T>(self: .Arena, value: T) -> .T {
 fn push-many<T>(self: .Arena, ptr: .T, n: i32) -> .T {
     $self $ptr !.i32 sizeof(T) $n * push-bytes !.T
 }
+fn push-byte(self: .Arena, byte: i32) {
+    $self 1 alloc-bytes $byte store8
+}
 
 struct ArenaRestorePoint {
     pos: i32

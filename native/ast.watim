@@ -802,7 +802,7 @@ struct Word {
     iff: .If
     type: .Type
     src-type: .Type
-    string: S:String
+    string: STR:Str
     function: .Function
     ext: .Extern
     checked: bool
@@ -860,9 +860,6 @@ fn Word-free(self: Word) {
     $self.args 0 !.Types /= if { $self.args Types-free-container }
     $self.generics 0 !.Types /= if {
         $self.generics Types-free-container
-    }
-    $self.ty WORD_STRING = if {
-        $self.string S:String-free
     }
 }
 fn Word-mark-checked(self: .Word) {

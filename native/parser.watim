@@ -4,6 +4,7 @@ import "../std/core.watim" as CORE
 import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 
 import "./lexer.watim" as L
 import "./ast.watim" as AST
@@ -11,21 +12,21 @@ import "./util.watim" as U
 import "./checker.watim" as CHECKER
 
 struct Parser {
-    tokens: .DynArray:DynArray<.L:Token>
+    tokens: .Array:Array<L:Token>
     current: i32
     mem: .S:String
     types: DynArray:DynArray<.AST:Type>
     fields: DynArray:DynArray<.AST:Field>
     file: STR:Str
 }
-fn Parser-new(tokens: .DynArray:DynArray<.L:Token>, mem: .S:String) -> Parser {
+fn Parser-new(tokens: .Array:Array<L:Token>, mem: .S:String) -> Parser {
     local self: Parser
     $tokens #self.tokens
     0 #self.current
     $mem #self.mem
     \AST:Type-free DynArray:new<.AST:Type> #self.types
     $tokens.len 0 gt if {
-        $tokens 0 DynArray:get<.L:Token> ~ L:Token-file ~ #self.file
+        $tokens 0 Array:get<L:Token> L:Token-file ~ #self.file
     }
     \AST:Field-free DynArray:new<.AST:Field> #self.fields
     $self
@@ -34,7 +35,7 @@ fn Parser-free(self: Parser) -> DynArray:DynArray<.AST:Type>, DynArray:DynArray<
     $self.types $self.fields
 }
 fn Parser-peek(self: .Parser) -> .L:Token {
-    $self.tokens $self.current DynArray:get<.L:Token> ~
+    $self.tokens $self.current Array:get<L:Token>
 }
 fn Parser-advance(self: .Parser) -> .L:Token {
     $self Parser-peek
@@ -842,16 +843,16 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
         $ty L:TOKEN_STRING = if {
             AST:WORD_STRING $token AST:Word-new #word
 
-            &token.string S:String-len #word.size
-            &token.string S:String-clone #word.string
+            $token.string.len #word.size
+            $token.string #word.string
             $self.mem S:String-unpack 
-            &token.string S:String-unpack
+            $token.string STR:Str-unpack
             STR:str-find-str if {
                 #word.addr
             } else {
                 drop
                 $self.mem S:String-len #word.addr
-                $self.mem &token.string S:String-unpack S:String-append
+                $self.mem $token.string STR:Str-unpack S:String-append
             }
             $word break
         }
@@ -1257,7 +1258,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(mem: .S:String, tokens: .DynArray:DynArray<.L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<.AST:Field> {
+fn parse(mem: .S:String, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<.AST:Field> {
     $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

@@ -174,7 +174,7 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
 
             $formatter FMT:Formatter-write-indent
             $formatter "\"string\": \"" FMT:Formatter-write
-            $formatter &word.string S:String-unpack write-escaped
+            $formatter $word.string STR:Str-unpack write-escaped
             $word.number $formatter U:i32-format
             $formatter "\"\n" FMT:Formatter-write
             break

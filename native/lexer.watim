@@ -1,14 +1,10 @@
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
-import "../std/i32vec.watim" as IV
-import "../std/alloc.watim" as A
+import "../std/arena.watim" as A
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/fmt.watim" as FMT
-import "../std/dyn-array.watim" as DynArray
-
-import "../native/util.watim" as CU
+import "../std/array.watim" as Array
 
 fn TOKEN_FN() -> i32 { 1 }
 fn TOKEN_IDENT() -> i32 { 2 }
@@ -117,15 +113,14 @@ fn print-location(fd: i32, file-ptr: .i32, file-len: i32, line: i32, column: i32
 struct Token {
     ty: i32
     lexeme: STR:Str
-    string: S:String
+    string: STR:Str
     file: STR:Str
     line: i32
     column: i32
     number: i32
 }
-fn Token-new(ty: i32, lexeme: STR:Str, file: STR:Str, line: i32, column: i32) -> .Token {
-    local self: .Token
-    sizeof(Token) A:alloc !.Token #self
+fn Token-new(ty: i32, lexeme: STR:Str, file: STR:Str, line: i32, column: i32) -> Token {
+    local self: Token
     $ty #self.ty
     $lexeme #self.lexeme
     $file #self.file
@@ -150,10 +145,6 @@ fn Token-column(token: .Token) -> i32 {
     $token.column
 }
 fn Token-free(token: .Token) {
-    $token.ty TOKEN_STRING = if {
-        $token.string S:String-free
-    }
-    $token !.i32 A:free
 }
 fn Token-location(self: .Token) -> .i32, i32, i32, i32 {
     $self.file STR:Str-unpack $self.line $self.column
@@ -178,39 +169,43 @@ fn Token-print(fd: i32, self: ..Token) {
 struct Lexer {
     input: STR:Str
     index: i32
-    tokens: DynArray:DynArray<.Token>
+    tokens: Array:Array<Token>
     file: STR:Str
     line: i32
     column: i32
     start: i32
+    arena: .A:Arena
 }
-fn Lexer-new(input-ptr: .i32, input-len: i32, file: STR:Str) -> Lexer {
+fn Lexer-new(arena: .A:Arena, input-ptr: .i32, input-len: i32, file: STR:Str) -> Lexer {
     local self: Lexer
     $input-ptr $input-len STR:Str-new #self.input
     0 #self.index
-    \Token-free DynArray:new<.Token> #self.tokens
+    Array:new<Token> #self.tokens
     $file #self.file
     1 #self.line
     1 #self.column
     0 #self.start
+    $arena #self.arena
     $self
 }
 // consumes Lexer
-fn Lexer-run(lexer: Lexer) -> DynArray:DynArray<.Token> {
+fn Lexer-run(lexer: Lexer) -> Array:Array<Token> {
     loop {
-        &lexer Lexer-next @token
-        $token !i32 0 = if { break }
-        &lexer.tokens $token DynArray:push<.Token>
+        &lexer Lexer-next if {
+          @token
+          $lexer.arena &lexer.tokens $token Array:push<Token>
+        } else { drop break }
     }
     $lexer.tokens
 }
 
-fn Lexer-next(lexer: .Lexer) -> .Token {
+fn Lexer-next(lexer: .Lexer) -> Token, bool {
     local char: i32
     local lexeme: STR:Str
+    local uninit: Token
     loop {
         &lexer.input STR:Str-len $lexer.index = if { 
-            0 !.Token break 
+            $uninit 0 1 = break 
         }
 
         &lexer.input $lexer.index STR:Str-get #char
@@ -254,19 +249,19 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             $lexer Lexer-next break
         }
         $char "\"" drop load8 = if {
-            $lexer Lexer-lex-string break
+            $lexer Lexer-lex-string 1 1 = break
         }
         $char "<" drop load8 = if {
             TOKEN_LEFT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "(" drop load8 = if {
             TOKEN_LEFT_PAREN $lexeme $lexer.file $lexer.line $lexer.column Token-new
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char ":" drop load8 = if {
             &lexer.input STR:Str-len $lexer.index 1 + gt if {
@@ -275,7 +270,7 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
                     TOKEN_COLON_COLON $lexeme $lexer.file $lexer.line $lexer.column Token-new
-                    break
+                    1 1 = break
                 }
             }
         }
@@ -283,31 +278,31 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
             TOKEN_COLON $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "." drop load8 = if {
             TOKEN_DOT $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char ")" drop load8 = if {
             TOKEN_RIGHT_PAREN $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "{" drop load8 = if {
             TOKEN_LEFT_CURLY $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "}" drop load8 = if {
             TOKEN_RIGHT_CURLY $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "[" drop load8 = if {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 
@@ -316,73 +311,73 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
                     TOKEN_BRACKET_EQUAL $lexeme $lexer.file $lexer.line $lexer.column Token-new 
-                    break
+                    1 1 = break
                 }
             }
             TOKEN_LEFT_BRACKET $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         } 
         $char "]" drop load8 = if {
             TOKEN_RIGHT_BRACKET $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "!" drop load8 = if {
             TOKEN_BANG $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "," drop load8 = if {
             TOKEN_COMMA $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "$" drop load8 = if {
             TOKEN_DOLLAR $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "#" drop load8 = if {
             TOKEN_HASH $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "@" drop load8 = if {
             TOKEN_AT $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "&" drop load8 = if {
             TOKEN_AMPERSAND $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "~" drop load8 = if {
             TOKEN_TILDE $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char ">" drop load8 = if {
             &lexer.input $lexer.index 1 STR:Str-slice #lexeme
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new break
+            TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new 1 1 = break
         } 
         $char "\\" drop load8 = if {
             TOKEN_BACKSLASH $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            break
+            1 1 = break
         }
         $char "=" drop load8 = if {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 
@@ -391,7 +386,7 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
                     TOKEN_DOUBLE_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
-                    break
+                    1 1 = break
                 }
             }
         } 
@@ -402,15 +397,15 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
                     TOKEN_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
-                    break
+                    1 1 = break
                 }
             }
         }
         $char is-ascii-digit if {
-            $lexer Lexer-lex-number break
+            $lexer Lexer-lex-number 1 1 = break
         }
         $char allowed-in-ident if {
-            $lexer Lexer-lex-ident break
+            $lexer Lexer-lex-ident 1 1 = break
         } 
         2 &lexer.file ~ STR:Str-unpack IO:write-all IO:check
         2 ":" IO:write-all IO:check
@@ -422,10 +417,10 @@ fn Lexer-next(lexer: .Lexer) -> .Token {
         2 "\"\n" IO:write-all IO:check
         1 CORE:exit
 
-        0 !.Token break
+        $uninit 1 0 = break
     }
 }
-fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
+fn Lexer-lex-ident(lexer: .Lexer) -> Token {
     local ident: STR:Str
     local char: i32
     local line: i32
@@ -501,17 +496,12 @@ fn Lexer-lex-ident(lexer: .Lexer) -> .Token {
         TOKEN_IDENT $ident $lexer.file $line $column Token-new break
     }
 }
-fn Lexer-lex-string(lexer: .Lexer) -> .Token {
-    local char: i32
-    local string: S:String
-    local token: .Token
-    local line: i32
-    local column: i32
-    S:String-empty #string
+fn Lexer-lex-string(lexer: .Lexer) -> Token {
+    $lexer.arena 0 A:alloc-bytes @buf
     $lexer.index #lexer.start
 
-    $lexer.line #line
-    $lexer.column #column
+    $lexer.line @line
+    $lexer.column @column
     $lexer.index 1 + #lexer.index
     $lexer.column 1 + #lexer.column
 
@@ -521,7 +511,7 @@ fn Lexer-lex-string(lexer: .Lexer) -> .Token {
             1 CORE:exit
             break
         }
-        &lexer.input $lexer.index STR:Str-get #char
+        &lexer.input $lexer.index STR:Str-get @char
         $lexer.index 1 + #lexer.index
         $lexer.column 1 + #lexer.column
         $char "\"" drop load8 = if {
@@ -538,36 +528,41 @@ fn Lexer-lex-string(lexer: .Lexer) -> .Token {
                 $char "\"" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    &string "\"" drop load8 S:String-push break
+                    
+                    $lexer.arena "\"" A:push-bytes drop break
                 }
                 $char "n" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    &string "\n" drop load8 S:String-push break
+                    $lexer.arena "\n" A:push-bytes drop break
                 }
                 $char "t" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    &string "\t" drop load8 S:String-push break
+                    $lexer.arena "\t" A:push-bytes drop break
                 }
                 $char "r" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    &string "\r" drop load8 S:String-push break
+                    $lexer.arena "\r" A:push-bytes drop break
                 }
                 $char "\\" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    &string "\\" drop load8 S:String-push break
+                    $lexer.arena "\\" A:push-bytes drop break
                 }
-                &string "\\" drop load8 S:String-push
-                &string $char S:String-push
+                $lexer.arena "\\" A:push-bytes drop
+                $lexer.arena $char A:push-byte
                 break
             }
         } else {
-            &string $char S:String-push
+            $lexer.arena $char A:push-byte
         }
     }
+
+    $lexer.arena 0 A:alloc-bytes @buf-end
+    $buf $buf-end $buf - STR:Str-new @string
+
     TOKEN_STRING
     &lexer.input
     $lexer.start
@@ -576,16 +571,14 @@ fn Lexer-lex-string(lexer: .Lexer) -> .Token {
     $lexer.file
     $line
     $column
-    Token-new
-    #token
+    Token-new @token
     $string #token.string
     $token
 }
-fn Lexer-lex-number(lexer: .Lexer) -> .Token {
+fn Lexer-lex-number(lexer: .Lexer) -> Token {
     local char: i32
     local num: i32
     local lexeme: STR:Str
-    local token: .Token
     local line: i32
     local column: i32
     $lexer.index #lexer.start
@@ -610,17 +603,14 @@ fn Lexer-lex-number(lexer: .Lexer) -> .Token {
     $lexer.file
     $line
     $column
-    Token-new #token
+    Token-new @token
     $num #token.number
     $token
 }
 fn allowed-in-ident(char: i32) -> bool {
-    local disallowed: .i32
-    local disallowed-len: i32
-    local res: bool
-    local i: i32
-    0 0 = #res
-    "#${}()<> \t\n:,.!&~" #disallowed-len #disallowed
+    0 0 = @res
+    "#${}()<> \t\n:,.!&~" @disallowed-len @disallowed
+    0 @i
     loop {
         $i $disallowed-len = if { break }
         $disallowed $i + load8 $char = if { 
@@ -634,7 +624,7 @@ fn is-ascii-digit(char: i32) -> bool {
     $char 48 ge $char 57 le and
 }
 
-fn lex(input: STR:Str, file: STR:Str) -> DynArray:DynArray<.Token> {
-    $input STR:Str-unpack $file Lexer-new Lexer-run
+fn lex(arena: .A:Arena, input: STR:Str, file: STR:Str) -> Array:Array<Token> {
+    $arena $input STR:Str-unpack $file Lexer-new Lexer-run
 }
 

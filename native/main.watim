@@ -131,7 +131,7 @@ fn parse-ast(arena: .Arena:Arena) {
     S:String-empty @mem
 
     &mem 
-    $input "stdin.watim" STR:Str-new L:lex @tokens
+    $arena $input "stdin.watim" STR:Str-new L:lex @tokens
     &tokens P:parse @fields @types @items
     
     FMT:Formatter-stdout @formatter
@@ -139,7 +139,6 @@ fn parse-ast(arena: .Arena:Arena) {
     &formatter "\n" FMT:Formatter-write
 
     $items DynArray:free<.AST:TopItem>
-    $tokens DynArray:free<.L:Token>
     $mem S:String-free
     $types DynArray:free<.AST:Type>
     $fields DynArray:free<.AST:Field>

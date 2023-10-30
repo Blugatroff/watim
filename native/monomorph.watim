@@ -115,7 +115,7 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
     $word.ty AST:WORD_STRING = if {
         $word.addr #new-word.addr
         $word.size #new-word.size
-        &word.string S:String-clone #new-word.string
+        $word.string #new-word.string
         $new-word break
     }
     $word.ty AST:WORD_SET = 
