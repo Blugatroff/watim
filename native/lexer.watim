@@ -144,8 +144,6 @@ fn Token-line(token: .Token) -> i32 {
 fn Token-column(token: .Token) -> i32 {
     $token.column
 }
-fn Token-free(token: .Token) {
-}
 fn Token-location(self: .Token) -> .i32, i32, i32, i32 {
     $self.file STR:Str-unpack $self.line $self.column
 }
@@ -156,14 +154,6 @@ fn Token-format(formatter: .FMT:Formatter, self: .Token) {
     $formatter "\", type: " FMT:Formatter-write
     $formatter $self Token-ty token-ty-name FMT:Formatter-write
     $formatter "\n" FMT:Formatter-write
-}
-fn Token-print(fd: i32, self: ..Token) {
-    $fd $self ~ Token-location print-location
-    $fd " lexeme: \"" IO:write-all IO:check
-    $fd $self ~ Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
-    $fd "\", type: " IO:write-all IO:check
-    $fd $self ~ Token-ty token-ty-name IO:write-all IO:check
-    $fd "\n" IO:write-all IO:check
 }
 
 struct Lexer {

@@ -1342,7 +1342,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
         $modules $i M:Modules-get-value @module
         MAIN:logging-enabled if {
             2 "Codegen for module: " IO:write-all IO:check
-            2 $module M:Module-path S:String-unpack IO:write-all IO:check
+            2 &module.path S:String-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
         }
         0 @j
@@ -1358,7 +1358,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
                         2 "Unused function: " IO:write-all IO:check
                         2 $function.ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
                         2 ", in module: " IO:write-all IO:check
-                        2 $module M:Module-path S:String-unpack IO:write-all IO:check
+                        2 &module.path S:String-unpack IO:write-all IO:check
                         2 "\n" IO:write-all IO:check
                     }
                 }

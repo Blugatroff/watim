@@ -29,14 +29,6 @@ fn I32Vec-get-ref(vec: .I32Vec, index: i32) -> .i32 {
     }
     $vec.ptr $index 4 * +
 }
-fn I32Vec-set(self: .I32Vec, index: i32, value: i32) -> i32 {
-    $index $self I32Vec-len ge if {
-        2 "Index out of bounds\n" IO:write-all IO:check
-        1 CORE:exit
-    }
-    $self $index I32Vec-get 
-    $self.ptr $index 4 * + $value store
-}
 fn I32Vec-free(self: I32Vec) {
     $self.cap 0 gt if { $self.ptr A:free }
 }

@@ -9,7 +9,6 @@ import "../std/array.watim" as Array
 import "./lexer.watim" as L
 import "./ast.watim" as AST
 import "./util.watim" as U
-import "./checker.watim" as CHECKER
 
 struct Parser {
     tokens: .Array:Array<L:Token>

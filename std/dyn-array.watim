@@ -28,18 +28,6 @@ fn init<T>(free: (T ->), ptr: .T, elems: i32) -> DynArray<T> {
     $ptr $self.ptr $elems CORE:copy<T>
     $self
 }
-fn pushA<T>(arena: .Arena:Arena, self: .DynArray<T>, val: T) {
-    $self.len 1 + $self.cap le if {
-        $self.ptr $self.len sizeof(T) * + $val store
-        $self.len 1 + #self.len
-    } else {
-        $self.cap 2 CORE:max 2 * @size
-        $arena $self.ptr $size Arena:push-many<T> @new-buf
-        $size #self.cap
-        $new-buf #self.ptr
-        $arena $self $val pushA<T>
-    }
-}
 fn push<T>(self: .DynArray<T>, val: T) {
     local new-buf: .T
     local size: i32
@@ -69,19 +57,8 @@ fn get<T>(self: .DynArray<T>, index: i32) -> .T {
     }
     $self.ptr $index sizeof(T) * +
 }
-fn last<T>(self: .DynArray<T>) -> .T {
-    $self $self.len 1 - get<T>
-}
 fn set<T>(self: .DynArray<T>, index: i32, value: T) -> T {
     $self $index get<T> CORE:dup<.T> $value store ~
-}
-fn pop<T>(self: .DynArray<T>) -> T {
-    $self.len 0 = if {
-        2 "Cannot pop from empty DynArray" IO:write-all IO:check
-        1 CORE:exit
-    }
-    $self $self.len 1 - get<T> ~ 
-    $self.len 1 - #self.len
 }
 fn free<T>(self: DynArray<T>) {
     $self.free 0 !(T ->) /= if {
@@ -108,43 +85,3 @@ fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->),
     }
     $formatter "]" FMT:Formatter-write
 }
-fn print<T>(fd: i32, print-element: (i32, .T ->), self: .DynArray<T>) {
-    $fd "[" IO:write-all IO:check
-    0 @i
-    loop {
-        $i $self.len = if { break }
-        $fd $self $i get<T> $print-element ->
-        $i 1 + #i
-        $i $self.len /= if { 2 ", " IO:write-all IO:check }
-    }
-    $fd "]" IO:write-all IO:check
-}
-fn find<T, A>(self: .DynArray<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
-    local i: i32
-    loop {
-        $i $self.len = if { 0 0 1 = break }
-        $self $i get<T> $value $compare -> if {
-            $i 1 1 = break
-        }
-        $i 1 + #i
-    }
-}
-fn remove<T>(self: .DynArray<T>, index: i32) -> T {
-    $self $index get<T> ~ @value
-    $self.ptr $index 1 + sizeof(T) * +
-    $self.ptr $index sizeof(T) * +
-    $self.len $index - 1 -
-    CORE:copy<T>
-    $value
-}
-fn find-remove<T, A>(self: .DynArray<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {
-    local uninit: T
-    $self $compare $value find<T, A> if {
-        @i
-        $self $i remove<T>
-        $i 1 1 =
-    } else { 
-        $uninit flip 0 1 =
-    }
-}
-

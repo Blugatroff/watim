@@ -76,10 +76,6 @@ fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Wor
     $msg S:String-free
 }
 
-fn push-temp-type(temp-types: .AST:Types, type: .AST:Type) -> .AST:Type {
-    $temp-types $type AST:Types-push
-    $type
-}
 fn push-temp-type2(temp-types: .DynArray:DynArray<.AST:Type>, type: .AST:Type) -> .AST:Type {
     $temp-types $type DynArray:push<.AST:Type> $type
 }

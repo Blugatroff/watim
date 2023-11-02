@@ -194,14 +194,6 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local
     }
 }
 
-fn Module-types(self: .Module) -> .DynArray:DynArray<.AST:Type> {
-    &self.types
-}
-
-fn Module-path(self: .Module) -> .S:String {
-    &self.path
-}
-
 struct Modules {
     inner: MAP:StringMap
 }

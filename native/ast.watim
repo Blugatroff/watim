@@ -413,9 +413,6 @@ fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Typ
     $self 0 1 = break
 } }
 
-fn Type-format-ref(formatter: .FMT:Formatter, self: ..Type) {
-    $formatter $self ~ Type-format
-}
 // argument `generics` is optional/null
 fn Type-format(formatter: .FMT:Formatter, self: .Type) { block {
     $self Type-ty TYPE_I32 = if { $formatter "i32" FMT:Formatter-write break }
@@ -987,9 +984,6 @@ fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: b
 fn Locals-push(self: .Locals, locl: .Local) {
     &self.inner $locl DynArray:push<.Local>
 }
-fn Locals-pop(self: .Locals) -> .Local {
-    &self.inner DynArray:pop<.Local>
-}
 fn Locals-free(self: Locals) {
     $self.inner DynArray:free<.Local>
 }
@@ -1169,16 +1163,6 @@ fn Instances-push(self: .Instances, instance: Instance) {
 fn Instances-free(self: .Instances) {
     $self.cap 0 gt if { $self.ptr !.i32 A:free }
     $self !.i32 A:free
-}
-fn Instances-contains-types(self: .Instances, types: .Types) -> i32, bool {
-    0 @i
-    loop {
-        $self Instances-len $i = if { 0 0 1 = break }
-        $self $i Instances-get .generics ~ $types Types-eq if {
-            $i 0 0 = break
-        }
-        $i 1 + #i
-    }
 }
 fn Instances-contains-types-by-size(self: .Instances, types: .Types) -> i32, bool {
     0 @i
@@ -1372,16 +1356,10 @@ fn Field-eq(self: .Field, other: .Field) -> bool { block {
     $self.ident $other.ident /= if { 0 1 = break }
     $self.type $other.type Type-eq
 } }
-fn Field-format-ref(formatter: .FMT:Formatter, self: ..Field) {
-    $formatter $self ~ Field-format
-}
 fn Field-format(formatter: .FMT:Formatter, self: .Field) {
     $formatter $self.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter ": " FMT:Formatter-write
     $formatter $self.type Type-format
-}
-fn Field-print-ref(fd: i32, self: ..Field) {
-    $fd $self ~ Field-print
 }
 fn Field-print(fd: i32, self: .Field) {
     $fd \Field-format $self FMT:print-it<Field>

@@ -33,7 +33,7 @@ fn check(modules: .M:Modules) {
         $modules $i M:Modules-get-value @module
         MAIN:logging-enabled if {
             2 "Typechecking module: " IO:write-all IO:check
-            2 $module M:Module-path S:String-unpack IO:write-all IO:check
+            2 &module.path S:String-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
         }
         &checker $module check-module
