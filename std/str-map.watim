@@ -1,0 +1,52 @@
+import "./str.watim" as STR
+import "./io.watim" as IO
+import "./util.watim" as U
+import "./array.watim" as Array
+import "./arena.watim" as Arena
+
+struct StrMap<T> {
+    keys: Array:Array<STR:Str>
+    values: Array:Array<T>
+}
+fn new<T>() -> StrMap<T> {
+    local self: StrMap<T>
+    Array:new<STR:Str> #self.keys
+    Array:new<T> #self.values
+    $self
+}
+fn insert<T>(arena: .Arena:Arena, self: .StrMap<T>, key: STR:Str, value: T) {
+    0 @i
+    loop {
+        $i $self.keys.len = if { 
+            $arena &self.keys $key Array:push<STR:Str>
+            $arena &self.values $value Array:push<T>
+            break 
+        }
+        $self $i get-key<T> STR:Str-unpack $key STR:Str-unpack STR:str-eq if {
+            &self.values $i $value Array:set<T>
+            break
+        }
+        $i 1 + #i
+    }
+}
+fn get<T>(self: .StrMap<T>, key-ptr: .i32, key-len: i32) -> .T, bool {
+    0 @i
+    loop {
+        $i $self len<T> = if {
+            0 !.T 0 1 = break
+        }
+        $self $i get-key<T> STR:Str-unpack $key-ptr $key-len STR:str-eq if {
+            $self $i get-value<T> 1 1 = break
+        }
+        $i 1 + #i
+    }
+}
+fn len<T>(self: .StrMap<T>) -> i32 {
+    $self.keys.len
+}
+fn get-key<T>(self: .StrMap<T>, index: i32) -> STR:Str {
+    &self.keys $index Array:get<STR:Str> ~
+}
+fn get-value<T>(self: .StrMap<T>, index: i32) -> .T {
+    &self.values $index Array:get<T>
+}

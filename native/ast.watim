@@ -5,9 +5,10 @@ import "../std/i32vec.watim" as IV
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
-import "../std/map.watim" as MAP
+import "../std/str-map.watim" as StrMap
 import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
+import "../std/arena.watim" as Arena
 
 import "./lexer.watim" as L
 import "./util.watim" as CU
@@ -1577,47 +1578,33 @@ fn TopItem-free(self: .TopItem) {
 }
 
 struct Imports {
-    map: MAP:StringMap
+    map: StrMap:StrMap<STR:Str>
 }
 fn Imports-new() -> .Imports {
     local self: .Imports
     sizeof(Imports) A:alloc !.Imports #self
-    MAP:StringMap-new #self.map
+    StrMap:new<STR:Str> #self.map
     $self
 }
 fn Imports-free(self: .Imports) {
-    local i: i32
+    0 @i
     loop {
-        $i &self.map MAP:StringMap-len = if { break }
-        &self.map $i MAP:StringMap-get-value !.i32 A:free // deallocate str struct
+        $i &self.map StrMap:len<STR:Str> = if { break }
         $i 1 + #i
     }
-    $self.map MAP:StringMap-free
     $self !.i32 A:free
 }
-fn Imports-insert(self: .Imports, ident: S:String, path-ptr: .i32, path-len: i32) {
-    local alloced-path: .STR:Str
-    sizeof(STR:Str) A:alloc !.STR:Str #alloced-path
-    $path-ptr $path-len STR:Str-new =>alloced-path
-    &self.map $ident $alloced-path !i32 MAP:StringMap-insert if {
-        1 "WARNING: Multiple Imports with same ident\n" IO:write-all IO:check
-        !.S:String ~ S:String-free
-    } else {
-        drop
-    }
+fn Imports-insert(arena: .Arena:Arena, self: .Imports, ident: STR:Str, path-ptr: .i32, path-len: i32) {
+    $path-ptr $path-len STR:Str-new @path
+    $arena &self.map $ident $path StrMap:insert<STR:Str>
 }
 fn Imports-get-value(self: .Imports, index: i32) -> .STR:Str {
-    &self.map $index MAP:StringMap-get-value !.STR:Str
+    &self.map $index StrMap:get-value<STR:Str>
 }
 fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .STR:Str, bool {
-    local v: i32
-    &self.map $ident-ptr $ident-len MAP:StringMap-get if {
-        #v $v !.STR:Str 0 0 =
-    } else {
-        drop 0 !.STR:Str 0 1 =
-    }
+    &self.map $ident-ptr $ident-len StrMap:get<STR:Str>
 }
 fn Imports-len(self: .Imports) -> i32 {
-    &self.map MAP:StringMap-len
+    &self.map StrMap:len<STR:Str>
 }
 

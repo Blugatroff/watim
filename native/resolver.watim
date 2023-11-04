@@ -168,7 +168,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
                         ~ #path
                     } else {
                         drop
-                        $module-token L:Token-location "module not found" U:abort-with-location
+                        $module-token L:Token-location "module not found\n" U:abort-with-location
                     }
                 } else {
                     &module.path S:String-unpack STR:Str-new #path
@@ -177,9 +177,13 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
                 $modules $path STR:Str-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {
                     $type ~ flip AST:Type-set-struc
                 } else {
-                    drop $type ~ AST:Type-ident L:Token-location "struct not found" U:abort-with-location
+                    drop $type ~ AST:Type-ident L:Token-location "struct not found\n" U:abort-with-location
                 }
-            } 
+            }
+
+            $type ~ .generics ~ AST:Types-len $type ~ AST:Type-struc .generics AST:Generics-len /= if {
+                $type ~ .ident ~ L:Token-location "mismatched number of generics\n" U:abort-with-location
+            }
 
             0 @i
             loop {

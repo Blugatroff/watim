@@ -1,7 +1,7 @@
 import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/io.watim" as IO
-import "../std/map.watim" as MAP
+import "../std/str-map.watim" as StrMap
 import "../std/fs.watim" as FS
 import "../std/alloc.watim" as A
 import "../std/format.watim" as FMT
@@ -111,8 +111,9 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: .S:St
             $item.imp @imp
             $module-path S:String-unpack FS:path-dir S:String-new @path
             &path $imp AST:Import-path-content S:String-append
-            $self.imports
-            $item.imp AST:Import-ident L:Token-lexeme ~ STR:Str-unpack S:String-new 
+
+            $arena $self.imports
+            $item.imp AST:Import-ident L:Token-lexeme ~
             $arena &path S:String-unpack FS:normalize 
             AST:Imports-insert
             $path S:String-free
@@ -195,55 +196,38 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local
 }
 
 struct Modules {
-    inner: MAP:StringMap
+    inner: StrMap:StrMap<Module>
 }
 
 fn Modules-new() -> Modules {
     local self: Modules
-    MAP:StringMap-new #self.inner
+    StrMap:new<Module> #self.inner
     $self
 }
 
 fn Modules-free(self: .Modules) {
-    local i: i32
+    0 @i
     loop {
-        $i &self.inner MAP:StringMap-len = if { break }
-        &self.inner $i MAP:StringMap-get-value !.Module ~ Module-free
-        &self.inner $i MAP:StringMap-get-value !.i32 A:free
+        $i &self.inner StrMap:len<Module> = if { break }
+        &self.inner $i StrMap:get-value<Module> ~ Module-free
         $i 1 + #i
     }
-    $self.inner MAP:StringMap-free
 }
 
-fn Modules-insert(self: .Modules, path: S:String, module: Module) {
-    local alloced-module: .Module
-    sizeof(Module) A:alloc !.Module #alloced-module
-    $module =>alloced-module
-    &self.inner $path $alloced-module !i32 MAP:StringMap-insert if {
-        !.Module #alloced-module
-        2 "WARNING: overwrote module: " IO:write-all IO:check 1 &path S:String-unpack IO:write-all IO:check
-        2 "\n" IO:write-all IO:check
-        $alloced-module ~ Module-free
-        $alloced-module !.i32 A:free
-    } else {
-        drop
-    }
+fn Modules-insert(arena: .Arena:Arena, self: .Modules, path: STR:Str, module: Module) {
+    $arena &self.inner $path $module StrMap:insert<Module>
 }
 
 fn Modules-get(self: .Modules, path-ptr: .i32, path-len: i32) -> .Module, bool {
-    &self.inner $path-ptr $path-len MAP:StringMap-get if {
-        !.Module 0 0 =
-    } else {
-        !.Module 0 1 =
-    }
+    &self.inner $path-ptr $path-len StrMap:get<Module>
 }
 
 fn Modules-get-value(self: .Modules, index: i32) -> .Module {
-    &self.inner $index MAP:StringMap-get-value !.Module
+    &self.inner $index StrMap:get-value<Module>
 }
 
 fn Modules-len(self: .Modules) -> i32 {
-    &self.inner MAP:StringMap-len
+    &self.inner StrMap:len<Module>
 }
 
 fn Modules-find-struc(self: .Modules, path-ptr: .i32, path-len: i32, ident-ptr: .i32, ident-len: i32) -> .AST:Struct, bool {

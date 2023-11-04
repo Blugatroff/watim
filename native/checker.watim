@@ -1,6 +1,5 @@
 import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
-import "../std/map.watim" as MAP
 import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/core.watim" as CORE
@@ -884,7 +883,6 @@ fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .STR:Str, w
         $module M:Module-imports $qualifier ~ STR:Str-unpack AST:Imports-get @b @path 
         $b if {
             $modules $path ~ STR:Str-unpack M:Modules-get if {
-
             } else {
                 $word AST:Word-location 
                 "failed to find module\n"

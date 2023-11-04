@@ -4,7 +4,6 @@ import "../std/core.watim" as CORE
 import "../std/fmt.watim" as FMT
 import "../std/fs.watim" as FS
 import "../std/io.watim" as IO
-import "../std/map.watim" as MAP
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/util.watim" as U
@@ -153,7 +152,7 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
     }
     $arena $fs $path-ptr $path-len $mem M:Module-load @module
     &module M:Module-imports @imps
-    $modules $path-ptr $path-len S:String-new $module M:Modules-insert
+    $arena $modules $path-ptr $path-len STR:Str-new $module M:Modules-insert
     
     0 @i
     loop {
