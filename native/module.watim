@@ -16,7 +16,7 @@ import "./parser.watim" as P
 
 struct Module {
     items: DynArray:DynArray<.AST:TopItem>
-    imports: .AST:Imports
+    imports: AST:Imports
     file: STR:Str
     tokens: Array:Array<L:Token>
     types: DynArray:DynArray<.AST:Type>
@@ -112,7 +112,7 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: .S:St
             $module-path S:String-unpack FS:path-dir S:String-new @path
             &path $imp AST:Import-path-content S:String-append
 
-            $arena $self.imports
+            $arena &self.imports
             $item.imp AST:Import-ident L:Token-lexeme ~
             $arena &path S:String-unpack FS:normalize 
             AST:Imports-insert
@@ -123,7 +123,7 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: .S:St
 }
 
 fn Module-imports(self: .Module) -> .AST:Imports {
-    $self.imports
+    &self.imports
 }
 
 fn Module-free(self: Module) {
@@ -131,7 +131,6 @@ fn Module-free(self: Module) {
     $self.items DynArray:free<.AST:TopItem>
     $self.words-words DynArray:free<.AST:Words>
     $self.types DynArray:free<.AST:Type>
-    $self.imports AST:Imports-free
     $self.path S:String-free
     $self.structs DynArray:free<.AST:Struct>
     $self.fields DynArray:free<.AST:Field>

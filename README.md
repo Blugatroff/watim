@@ -24,6 +24,7 @@ Watim = WAT Improved
 - [X] Generics using monomorphization.
 - [ ] Type inference
 - [X] function pointers
+- [ ] struct literals
 - [ ] closures?
 - [ ] Some sort of Typeclass/Trait system perhaps?
 

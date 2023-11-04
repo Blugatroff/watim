@@ -157,13 +157,13 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
     0 @i
     loop {
         $i $imps AST:Imports-len = if { break }
-        $modules $imps $i AST:Imports-get-value ~ STR:Str-unpack M:Modules-get if {
+        $modules $imps $i AST:Imports-get-value .path ~ STR:Str-unpack M:Modules-get if {
             drop
         } else {
             drop
             $arena $fs
             $modules $mem 
-            $imps $i AST:Imports-get-value ~ STR:Str-unpack 
+            $imps $i AST:Imports-get-value .path ~ STR:Str-unpack 
             load-module-recursive
         }
         $i 1 + #i

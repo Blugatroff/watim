@@ -1577,34 +1577,36 @@ fn TopItem-free(self: .TopItem) {
     $self !.i32 A:free
 }
 
-struct Imports {
-    map: StrMap:StrMap<STR:Str>
+struct ModuleImport {
+    path: STR:Str
+    // used: bool TODO: report unused module imports
 }
-fn Imports-new() -> .Imports {
-    local self: .Imports
-    sizeof(Imports) A:alloc !.Imports #self
-    StrMap:new<STR:Str> #self.map
+fn ModuleImport-new(path: STR:Str) -> ModuleImport {
+    local self: ModuleImport
+    $path #self.path
+    // 0 1 = #self.used
     $self
 }
-fn Imports-free(self: .Imports) {
-    0 @i
-    loop {
-        $i &self.map StrMap:len<STR:Str> = if { break }
-        $i 1 + #i
-    }
-    $self !.i32 A:free
+
+struct Imports {
+    map: StrMap:StrMap<ModuleImport>
+}
+fn Imports-new() -> Imports {
+    local self: Imports
+    StrMap:new<ModuleImport> #self.map
+    $self
 }
 fn Imports-insert(arena: .Arena:Arena, self: .Imports, ident: STR:Str, path-ptr: .i32, path-len: i32) {
     $path-ptr $path-len STR:Str-new @path
-    $arena &self.map $ident $path StrMap:insert<STR:Str>
+    $arena &self.map $ident $path ModuleImport-new StrMap:insert<ModuleImport>
 }
-fn Imports-get-value(self: .Imports, index: i32) -> .STR:Str {
-    &self.map $index StrMap:get-value<STR:Str>
+fn Imports-get-value(self: .Imports, index: i32) -> .ModuleImport {
+    &self.map $index StrMap:get-value<ModuleImport>
 }
-fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .STR:Str, bool {
-    &self.map $ident-ptr $ident-len StrMap:get<STR:Str>
+fn Imports-get(self: .Imports, ident-ptr: .i32, ident-len: i32) -> .ModuleImport, bool {
+    &self.map $ident-ptr $ident-len StrMap:get<ModuleImport>
 }
 fn Imports-len(self: .Imports) -> i32 {
-    &self.map StrMap:len<STR:Str>
+    &self.map StrMap:len<ModuleImport>
 }
 

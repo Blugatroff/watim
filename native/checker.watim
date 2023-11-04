@@ -880,7 +880,7 @@ fn resolve-module(modules: .M:Modules, module: .M:Module, qualifier: .STR:Str, w
     $qualifier !i32 0 = if {
         $module
     } else {
-        $module M:Module-imports $qualifier ~ STR:Str-unpack AST:Imports-get @b @path 
+        $module M:Module-imports $qualifier ~ STR:Str-unpack AST:Imports-get @b .path @path 
         $b if {
             $modules $path ~ STR:Str-unpack M:Modules-get if {
             } else {

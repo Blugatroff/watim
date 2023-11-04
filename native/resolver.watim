@@ -165,7 +165,7 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
                 $module-token !i32 0 /= if {
                     $module M:Module-imports @imports
                     $imports $module-token L:Token-lexeme ~ STR:Str-unpack AST:Imports-get if {
-                        ~ #path
+                        .path ~ #path
                     } else {
                         drop
                         $module-token L:Token-location "module not found\n" U:abort-with-location
