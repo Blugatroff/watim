@@ -2,38 +2,39 @@ import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/dyn-array.watim" as DynArray
+import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
 import "./module.watim" as M
 
-fn gather-instances(modules: .M:Modules) {
+fn gather-instances(arena: .Arena:Arena, modules: .M:Modules) {
     0 @i
     loop {
         $i $modules M:Modules-len = if { break }
-        $modules $i M:Modules-get-value gather-instances-module
+        $arena $modules $i M:Modules-get-value gather-instances-module
         $i 1 + #i
     }
 }
 
-fn gather-instances-module(module: .M:Module) {
+fn gather-instances-module(arena: .Arena:Arena, module: .M:Module) {
     $module M:Module-items @items
     0 @i
     loop {
         $i $items.len = if { break }
         $items $i DynArray:get<.AST:TopItem> ~ @item
-        $module $item gather-instances-item
+        $arena $module $item gather-instances-item
         $i 1 + #i
     }
 }
 
-fn gather-instances-item(module: .M:Module, item: .AST:TopItem) {
+fn gather-instances-item(arena: .Arena:Arena, module: .M:Module, item: .AST:TopItem) {
     $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
         $item AST:TopItem-function @function
         &function.generics AST:Generics-len 0 = if { // only start gathering at non-generic functions
             AST:Types-new @generics
             &module.types-types $generics DynArray:push<.AST:Types>
-            $module $generics $function gather-instances-function @new-words
+            $arena $module $generics $function gather-instances-function @new-words
             &module.words-words $new-words DynArray:push<.AST:Words>
             $generics $new-words AST:Instance-new @instance
             $function.instances $instance AST:Instances-push
@@ -41,24 +42,24 @@ fn gather-instances-item(module: .M:Module, item: .AST:TopItem) {
     }
 }
 
-fn gather-instances-function(module: .M:Module, generics: .AST:Types, function: .AST:Function) -> .AST:Words {
-    $module $generics $function.body gather-instances-words
+fn gather-instances-function(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, function: .AST:Function) -> .AST:Words {
+    $arena $module $generics $function.body gather-instances-words
 }
 
-fn gather-instances-words(module: .M:Module, generics: .AST:Types, words: .AST:Words) -> .AST:Words {
+fn gather-instances-words(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, words: .AST:Words) -> .AST:Words {
     AST:Words-new @new-words
     0 @i
     loop {
         $i $words AST:Words-len = if { break }
         $words $i AST:Words-get @word
-        $module $generics $word gather-instances-word
+        $arena $module $generics $word gather-instances-word
         $new-words flip AST:Words-push
         $i 1 + #i
     }
     $new-words
 }
 
-fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Word) -> AST:Word { block {
+fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, word: .AST:Word) -> AST:Word { block {
     $word.ty $word.token AST:Word-new @new-word
     $word.ty AST:WORD_CALL = if {
         $word.ident #new-word.ident
@@ -70,7 +71,7 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
                 loop {
                     $i $word.generics AST:Types-len = if { break }
                     $word.generics $i AST:Types-get @type
-                    $type $generics $module AST:Type-apply-generics drop #type
+                    $arena $type $generics $module AST:Type-apply-generics drop #type
                     $new-generics $type AST:Types-push
                     $i 1 + #i
                 }
@@ -79,13 +80,13 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
                     $word.function.instances AST:Instances-len @instance-index
                     $new-generics #new-word.generics
 
-                    $word.rets $new-generics $module AST:Types-apply-generics drop #new-word.rets
-                    $word.args $new-generics $module AST:Types-apply-generics drop #new-word.args
+                    $arena $word.rets $new-generics $module AST:Types-apply-generics drop #new-word.rets
+                    $arena $word.args $new-generics $module AST:Types-apply-generics drop #new-word.args
 
                     $new-generics 0 !.AST:Words AST:Instance-new @new-instance
                     $word.function.instances $new-instance AST:Instances-push
 
-                    $module $new-generics $word.function gather-instances-function @new-words
+                    $arena $module $new-generics $word.function gather-instances-function @new-words
                     &module.words-words $new-words DynArray:push<.AST:Words>
                     $word.function.instances $instance-index AST:Instances-get .body $new-words store
                     $instance-index
@@ -94,8 +95,8 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
                     $new-generics AST:Types-free-container
 
                     $word.function.instances $instance-index AST:Instances-get .generics ~ @generics
-                    $word.rets $generics $module AST:Types-apply-generics drop #new-word.rets
-                    $word.args $generics $module AST:Types-apply-generics drop #new-word.args
+                    $arena $word.rets $generics $module AST:Types-apply-generics drop #new-word.rets
+                    $arena $word.args $generics $module AST:Types-apply-generics drop #new-word.args
 
                     $instance-index
                 } @instance-index
@@ -122,17 +123,17 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
     $word.ty AST:WORD_GET_LOCAL = or
     $word.ty AST:WORD_GET_REF = or
     if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.ident #new-word.ident
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
-        $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
+        $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
         &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_INIT_LOCAL = if {
         $word.ident #new-word.ident
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.ident #new-word.ident
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
@@ -140,8 +141,8 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
     }
     $word.ty AST:WORD_STORE = if {
         $word.ident #new-word.ident
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
-        $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
         &word.fields DynArray:clone-container<.L:Token> #new-word.fields
@@ -149,44 +150,44 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
     }
     $word.ty AST:WORD_GET_GLOBAL = 
     $word.ty AST:WORD_STORE_GLOBAL = or if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.ident #new-word.ident
         $word.module #new-word.module
         &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_IF = if {
-        $module $generics $word.iff gather-instances-iff #new-word.iff
+        $arena $module $generics $word.iff gather-instances-iff #new-word.iff
         $new-word break
     }
     $word.ty AST:WORD_LOOP = if {
-        $module $generics $word.lop gather-instances-lop #new-word.lop
+        $arena $module $generics $word.lop gather-instances-lop #new-word.lop
         $new-word break
     }
     $word.ty AST:WORD_BLOCK = if {
-        $module $generics $word.blok gather-instances-blok #new-word.blok
+        $arena $module $generics $word.blok gather-instances-blok #new-word.blok
         $new-word break
     }
     $word.ty AST:WORD_INTRINSIC = if {
-        $module $generics $word &new-word gather-instances-intrinsic
+        $arena $module $generics $word &new-word gather-instances-intrinsic
         $new-word break
     }
     $word.ty AST:WORD_BREAK = if { $new-word break }
     $word.ty AST:WORD_DEREF = if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
-        $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
         &word.fields DynArray:clone-container<.L:Token> #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_CAST = if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
-        $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
         $new-word break
     }
     $word.ty AST:WORD_LOAD = 
     $word.ty AST:WORD_SIZEOF = or 
     if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $new-word break
     }
     $word.ty AST:WORD_REF_FUNCTION = if {
@@ -194,17 +195,17 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
         $new-word break
     }
     $word.ty AST:WORD_CALL_INDIRECT = if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $new-word break
     }
     $word.ty AST:WORD_ARRAY_WRITE = 
     $word.ty AST:WORD_ARRAY_READ = or
     $word.ty AST:WORD_ARRAY_REF = or if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $new-word break
     }
     $word.ty AST:WORD_ARRAY_INIT = if {
-        $word.type $generics $module AST:Type-apply-generics drop #new-word.type
+        $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.size #new-word.size
         $new-word break
     }
@@ -213,47 +214,47 @@ fn gather-instances-word(module: .M:Module, generics: .AST:Types, word: .AST:Wor
     2 "\n" IO:write-all IO:check
     0 0 / !AST:Word
 } }
-fn gather-instances-iff(module: .M:Module, generics: .AST:Types, iff: .AST:If) -> .AST:If {
-    $iff.token $module $generics $iff.body gather-instances-words AST:If-new @new-if
+fn gather-instances-iff(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, iff: .AST:If) -> .AST:If {
+    $iff.token $arena $module $generics $iff.body gather-instances-words AST:If-new @new-if
     $iff.has-el #new-if.has-el
-    $module $generics &iff.locals gather-instances-locals #new-if.locals
+    $arena $module $generics &iff.locals gather-instances-locals #new-if.locals
     $iff.has-el if {
-        $module $generics $iff.el gather-instances-words #new-if.el
+        $arena $module $generics $iff.el gather-instances-words #new-if.el
     }
-    $iff.params 0 !.AST:Types = if { 0 !.AST:Types #new-if.params } else { $iff.params $generics $module AST:Types-apply-generics drop #new-if.params }
-    $iff.rets 0 !.AST:Types = if { 0 !.AST:Types #new-if.rets } else { $iff.rets $generics $module AST:Types-apply-generics drop #new-if.rets }
+    $iff.params 0 !.AST:Types = if { 0 !.AST:Types #new-if.params } else { $arena $iff.params $generics $module AST:Types-apply-generics drop #new-if.params }
+    $iff.rets 0 !.AST:Types = if { 0 !.AST:Types #new-if.rets } else { $arena $iff.rets $generics $module AST:Types-apply-generics drop #new-if.rets }
     $new-if
 }
-fn gather-instances-lop(module: .M:Module, generics: .AST:Types, lop: .AST:Loop) -> .AST:Loop {
-    $lop.token $module $generics $lop.body gather-instances-words AST:Loop-new @new-lop
-    $module $generics &lop.locals gather-instances-locals #new-lop.locals
-    $lop.rets 0 !.AST:Types = if { 0 !.AST:Types #new-lop.rets } else { $lop.rets $generics $module AST:Types-apply-generics drop #new-lop.rets }
+fn gather-instances-lop(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, lop: .AST:Loop) -> .AST:Loop {
+    $lop.token $arena $module $generics $lop.body gather-instances-words AST:Loop-new @new-lop
+    $arena $module $generics &lop.locals gather-instances-locals #new-lop.locals
+    $lop.rets 0 !.AST:Types = if { 0 !.AST:Types #new-lop.rets } else { $arena $lop.rets $generics $module AST:Types-apply-generics drop #new-lop.rets }
     $new-lop
 }
-fn gather-instances-blok(module: .M:Module, generics: .AST:Types, blok: .AST:Block) -> .AST:Block {
-    $blok.token $module $generics $blok.body gather-instances-words AST:Block-new @new-blok
-    $module $generics &blok.locals gather-instances-locals #new-blok.locals
-    $blok.rets 0 !.AST:Types = if { 0 !.AST:Types #new-blok.rets } else { $blok.rets $generics $module AST:Types-apply-generics drop #new-blok.rets }
+fn gather-instances-blok(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, blok: .AST:Block) -> .AST:Block {
+    $blok.token $arena $module $generics $blok.body gather-instances-words AST:Block-new @new-blok
+    $arena $module $generics &blok.locals gather-instances-locals #new-blok.locals
+    $blok.rets 0 !.AST:Types = if { 0 !.AST:Types #new-blok.rets } else { $arena $blok.rets $generics $module AST:Types-apply-generics drop #new-blok.rets }
     $new-blok
 }
-fn gather-instances-locals(module: .M:Module, generics: .AST:Types, locals: .AST:Locals) -> AST:Locals {
+fn gather-instances-locals(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, locals: .AST:Locals) -> AST:Locals {
     AST:Locals-new @new-locals
     0 @i
     loop {
         $i $locals AST:Locals-len = if { break }
         $locals $i AST:Locals-get @locl
-        &new-locals $module $generics $locl gather-instances-locl AST:Locals-push
+        &new-locals $arena $module $generics $locl gather-instances-locl AST:Locals-push
         $i 1 + #i
     }
     $new-locals
 }
 
-fn gather-instances-locl(module: .M:Module, generics: .AST:Types, locl: .AST:Local) -> .AST:Local {
-    $locl.type $generics $module AST:Type-apply-generics drop @new-type
+fn gather-instances-locl(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, locl: .AST:Local) -> .AST:Local {
+    $arena $locl.type $generics $module AST:Type-apply-generics drop @new-type
     $locl.ty $locl.ident $new-type $locl.scope-id $locl.shadow-id AST:Local-new
 }
 
-fn gather-instances-intrinsic(module: .M:Module, generics: .AST:Types, word: .AST:Word, new-word: .AST:Word) { block {
+fn gather-instances-intrinsic(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, word: .AST:Word, new-word: .AST:Word) { block {
     $word.intrinsic #new-word.intrinsic
     $word.intrinsic AST:INTRINSIC_FLIP = if { break }
     $word.intrinsic AST:INTRINSIC_EQ = if { break }
@@ -272,12 +273,12 @@ fn gather-instances-intrinsic(module: .M:Module, generics: .AST:Types, word: .AS
     $word.intrinsic AST:INTRINSIC_MUL = if { break }
     $word.intrinsic AST:INTRINSIC_MEM_COPY = if { break }
     $word.intrinsic AST:INTRINSIC_ROTR = if { break }
-    $word.intrinsic AST:INTRINSIC_ROTL = if { $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
-    $word.intrinsic AST:INTRINSIC_OR = if { $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_ROTL = if { $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_OR = if { $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
     $word.intrinsic AST:INTRINSIC_NOT_EQ = if { break }
-    $word.intrinsic AST:INTRINSIC_NOT = if { $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_NOT = if { $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
     $word.intrinsic AST:INTRINSIC_MEM_GROW = if { break }
-    $word.intrinsic AST:INTRINSIC_STORE = if { $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
+    $word.intrinsic AST:INTRINSIC_STORE = if { $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
     2 "gather-instances-intrinsic: unhandled intrinsic-type: " IO:write-all IO:check
     2 $word.intrinsic AST:intrinsic-name IO:write-all IO:check
     2 "\n" IO:write-all IO:check

@@ -71,11 +71,11 @@ fn main() {
         M:Modules-new @modules
         S:String-empty @mem
         &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
-        &modules R:resolve
+        &arena &modules R:resolve
         &mem S:String-len &modules MEM:process @stack-start
-        &modules C:check
+        &arena &modules C:check
         &modules M:Modules-mark-reachable
-        &modules MONO:gather-instances
+        &arena &modules MONO:gather-instances
 
         FMT:Formatter-stdout @formatter
         &formatter $stack-start &mem &modules GEN:generate
@@ -89,9 +89,9 @@ fn main() {
         M:Modules-new @modules
         S:String-empty @mem
         &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
-        &modules R:resolve
+        &arena &modules R:resolve
         &mem S:String-len &modules MEM:process @stack-start
-        &modules C:check
+        &arena &modules C:check
         &modules M:Modules-mark-reachable
         &modules GRAPH:call-graph-modules @formatted
         
@@ -107,14 +107,6 @@ fn main() {
     }
 
     &arena Arena:clear
-
-    A:is-empty not if {
-        A:root A:print-alloc-list
-        2 A:report
-        2 "MEMORY LEAK DETECTED\n" IO:write-all IO:check
-        1 CORE:exit
-    }
-    logging-enabled if { 2 A:report }
 }
 
 fn parse-ast(arena: .Arena:Arena) {
@@ -128,7 +120,7 @@ fn parse-ast(arena: .Arena:Arena) {
     @input
 
     S:String-empty @mem
-
+    $arena 
     &mem 
     $arena $input "stdin.watim" STR:Str-new L:lex @tokens
     &tokens P:parse @fields @types @items

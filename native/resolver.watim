@@ -3,6 +3,7 @@ import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/alloc.watim" as A
 import "../std/dyn-array.watim" as DynArray
+import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
 import "./module.watim" as M
@@ -10,89 +11,89 @@ import "./lexer.watim" as L
 import "./parser.watim" as P
 import "./util.watim" as U
 
-fn resolve(modules: .M:Modules) {
+fn resolve(arena: .Arena:Arena, modules: .M:Modules) {
     0 @phase
     loop {
         0 @i
         loop {
             $i $modules M:Modules-len = if { break }
-            $modules $modules $i M:Modules-get-value $phase resolve-module
+            $arena $modules $modules $i M:Modules-get-value $phase resolve-module
             $i 1 + #i
         }
         1 $phase = if { break }
         1 #phase
     } 
 }
-fn resolve-module(modules: .M:Modules, module: .M:Module, phase: i32) {
+fn resolve-module(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, phase: i32) {
     $module M:Module-items @items
     0 @i
     loop {
         $i $items.len = if { break }
         $items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
-            $modules $module $item AST:TopItem-struc $phase resolve-struc
+            $arena $modules $module $item AST:TopItem-struc $phase resolve-struc
         }
         $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
-            $modules $module $item AST:TopItem-function $phase resolve-function
+            $arena $modules $module $item AST:TopItem-function $phase resolve-function
         }
         $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
-            $modules $module $item AST:TopItem-ext $phase resolve-extern
+            $arena $modules $module $item AST:TopItem-ext $phase resolve-extern
         }
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $modules $module $item.mem $phase resolve-memory
+            $arena $modules $module $item.mem $phase resolve-memory
         }
         $i 1 + #i
     }
 }
-fn resolve-extern(modules: .M:Modules, module: .M:Module, ext: .AST:Extern, phase: i32) {
-    $modules $module 0 !.AST:Generics $ext AST:Extern-parameters $phase resolve-parameters
-    $modules $module 0 !.AST:Generics $ext AST:Extern-rets $phase resolve-types
+fn resolve-extern(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, ext: .AST:Extern, phase: i32) {
+    $arena $modules $module 0 !.AST:Generics $ext AST:Extern-parameters $phase resolve-parameters
+    $arena $modules $module 0 !.AST:Generics $ext AST:Extern-rets $phase resolve-types
 }
-fn resolve-struc(modules: .M:Modules, module: .M:Module, struc: .AST:Struct, phase: i32) {
+fn resolve-struc(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, struc: .AST:Struct, phase: i32) {
     $struc AST:Struct-fields @fields
     0 @i
     loop {
         $i $fields.len = if { break }
         $fields $i DynArray:get<.AST:Field> ~ @field
-        $modules $module &struc.generics $field $phase resolve-field
+        $arena $modules $module &struc.generics $field $phase resolve-field
         $i 1 + #i
     }
 }
-fn resolve-function(modules: .M:Modules, module: .M:Module, function: .AST:Function, phase: i32) {
-    $modules $module &function.generics $function AST:Function-rets $phase resolve-types
-    $modules $module &function.generics $function AST:Function-locals $phase resolve-locals
-    $modules $module &function.generics $function AST:Function-body $phase resolve-words
+fn resolve-function(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, function: .AST:Function, phase: i32) {
+    $arena $modules $module &function.generics $function AST:Function-rets $phase resolve-types
+    $arena $modules $module &function.generics $function AST:Function-locals $phase resolve-locals
+    $arena $modules $module &function.generics $function AST:Function-body $phase resolve-words
     $function AST:Function-gather-generics-types
 }
-fn resolve-words(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, words: .AST:Words, phase: i32) {
+fn resolve-words(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, words: .AST:Words, phase: i32) {
     local i: i32
     loop {
         $i $words AST:Words-len = if { break }
-        $modules $module $generics $words $i AST:Words-get $phase resolve-word
+        $arena $modules $module $generics $words $i AST:Words-get $phase resolve-word
         $i 1 + #i
     }
 }
-fn resolve-word(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word, phase: i32) {
+fn resolve-word(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word, phase: i32) {
     $word AST:Word-ty AST:WORD_CAST = if {
-        $modules $module $generics &word.type $phase resolve-type
+        $arena $modules $module $generics &word.type $phase resolve-type
     }
     $word AST:Word-ty AST:WORD_IF = if {
-        $modules $module $generics $word AST:Word-iff $phase resolve-iff
+        $arena $modules $module $generics $word AST:Word-iff $phase resolve-iff
     }
     $word AST:Word-ty AST:WORD_LOOP = if {
-        $modules $module $generics $word.lop.body $phase resolve-words
+        $arena $modules $module $generics $word.lop.body $phase resolve-words
     }
     $word AST:Word-ty AST:WORD_BLOCK = if {
-        $modules $module $generics $word.blok.body $phase resolve-words
+        $arena $modules $module $generics $word.blok.body $phase resolve-words
     }
     $word AST:Word-ty AST:WORD_CALL = if {
-        $modules $module $generics $word $phase resolve-call
+        $arena $modules $module $generics $word $phase resolve-call
     }
     $word AST:Word-ty AST:WORD_SIZEOF = if {
-        $modules $module $generics &word.type $phase resolve-type
+        $arena $modules $module $generics &word.type $phase resolve-type
     }
 }
-fn resolve-call(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word, phase: i32) { block {
+fn resolve-call(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, word: .AST:Word, phase: i32) { block {
     // FIXME: this causes a segfault: 
     // $word.generics 0 !.AST:Types = if {
     $word.generics !i32 0 = if {
@@ -101,53 +102,53 @@ fn resolve-call(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
     0 @i
     loop {
         $word.generics AST:Types-len $i = if { break }
-        $modules $module $generics $word.generics $i AST:Types-get-ref $phase resolve-type
+        $arena $modules $module $generics $word.generics $i AST:Types-get-ref $phase resolve-type
         $i 1 + #i
     }
 } }
-fn resolve-iff(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, iff: .AST:If, phase: i32) {
-    $modules $module $generics $iff AST:If-body $phase resolve-words
+fn resolve-iff(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, iff: .AST:If, phase: i32) {
+    $arena $modules $module $generics $iff AST:If-body $phase resolve-words
     $iff.has-el if { 
-        $modules $module $generics $iff AST:If-el $phase resolve-words
+        $arena $modules $module $generics $iff AST:If-el $phase resolve-words
     }
 }
-fn resolve-field(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, field: .AST:Field, phase: i32) {
-    $modules $module $generics &field.type $phase resolve-type
+fn resolve-field(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, field: .AST:Field, phase: i32) {
+    $arena $modules $module $generics &field.type $phase resolve-type
 }
-fn resolve-types(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, types: .AST:Types, phase: i32) {
+fn resolve-types(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, types: .AST:Types, phase: i32) {
     local i: i32
     loop {
         $i $types AST:Types-len = if { break }
-        $modules $module $generics $types $i AST:Types-get-ref $phase resolve-type
+        $arena $modules $module $generics $types $i AST:Types-get-ref $phase resolve-type
         $i 1 + #i
     }
 }
-fn resolve-memory(modules: .M:Modules, module: .M:Module, mem: .AST:Local, phase: i32) {
-    $modules $module 0 !.AST:Generics &mem.type $phase resolve-type
+fn resolve-memory(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, mem: .AST:Local, phase: i32) {
+    $arena $modules $module 0 !.AST:Generics &mem.type $phase resolve-type
 }
-fn resolve-locals(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, locals: .AST:Locals, phase: i32) {
+fn resolve-locals(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, locals: .AST:Locals, phase: i32) {
     local i: i32
     loop {
         $i $locals AST:Locals-len = if { break }
-        $modules $module $generics $locals $i AST:Locals-get $phase resolve-local
+        $arena $modules $module $generics $locals $i AST:Locals-get $phase resolve-local
         $i 1 + #i
     }
 }
-fn resolve-local(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, locl: .AST:Local, phase: i32) {
-    $modules $module $generics &locl.type $phase resolve-type
+fn resolve-local(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, locl: .AST:Local, phase: i32) {
+    $arena $modules $module $generics &locl.type $phase resolve-type
 }
-fn resolve-parameters(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, parameters: .AST:Locals, phase: i32) {
+fn resolve-parameters(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, parameters: .AST:Locals, phase: i32) {
     local i: i32
     loop {
         $parameters AST:Locals-len $i = if { break }
-        $modules $module $generics $parameters $i AST:Locals-get $phase resolve-parameter
+        $arena $modules $module $generics $parameters $i AST:Locals-get $phase resolve-parameter
         $i 1 + #i
     }
 }
-fn resolve-parameter(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, parameter: .AST:Local, phase: i32) {
-    $modules $module $generics &parameter.type $phase resolve-type
+fn resolve-parameter(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, parameter: .AST:Local, phase: i32) {
+    $arena $modules $module $generics &parameter.type $phase resolve-type
 }
-fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics, type: ..AST:Type, phase: i32) {
+fn resolve-type(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, type: ..AST:Type, phase: i32) {
     local path: STR:Str
     block {
         $type ~ AST:Type-ty AST:TYPE_STRUCT = if {
@@ -188,20 +189,20 @@ fn resolve-type(modules: .M:Modules, module: .M:Module, generics: .AST:Generics,
             0 @i
             loop {
                 $type ~ .generics ~ AST:Types-len $i = if { break }
-                $modules $module $generics $type ~ .generics ~ $i AST:Types-get-ref $phase resolve-type
+                $arena $modules $module $generics $type ~ .generics ~ $i AST:Types-get-ref $phase resolve-type
                 $i 1 + #i
             }
             $phase 1 = if {
-                $type ~ $type ~ .generics ~ $module AST:Type-apply-generics drop =>type
+                $arena $type ~ $type ~ .generics ~ $module AST:Type-apply-generics drop =>type
             }
             break
         }
         $type ~ AST:Type-ty AST:TYPE_PTR = if {
-            $modules $module $generics $type ~ .child $phase resolve-type
+            $arena $modules $module $generics $type ~ .child $phase resolve-type
         }
         $type ~ AST:Type-ty AST:TYPE_FUNCTION = if {
-            $modules $module $generics $type ~ .function.args ~ $phase resolve-types
-            $modules $module $generics $type ~ .function.rets ~ $phase resolve-types
+            $arena $modules $module $generics $type ~ .function.args ~ $phase resolve-types
+            $arena $modules $module $generics $type ~ .function.rets ~ $phase resolve-types
         }
     }
 }

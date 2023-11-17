@@ -5,6 +5,7 @@ import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
+import "../std/arena.watim" as Arena
 
 import "./lexer.watim" as L
 import "./ast.watim" as AST
@@ -17,9 +18,11 @@ struct Parser {
     types: DynArray:DynArray<.AST:Type>
     fields: DynArray:DynArray<.AST:Field>
     file: STR:Str
+    arena: .Arena:Arena
 }
-fn Parser-new(tokens: .Array:Array<L:Token>, mem: .S:String) -> Parser {
+fn Parser-new(arena: .Arena:Arena, tokens: .Array:Array<L:Token>, mem: .S:String) -> Parser {
     local self: Parser
+    $arena #self.arena
     $tokens #self.tokens
     0 #self.current
     $mem #self.mem
@@ -289,6 +292,7 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     }
     $self Parser-parse-type #type
 
+    $self.arena 
     &self.types
     $ident
     $type
@@ -525,16 +529,16 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
 
     loop { // TODO: make this a block
         $token L:Token-ty L:TOKEN_DOT = if {
-            $self Parser-parse-type AST:Type-new-ptr break
+            $self.arena $self Parser-parse-type AST:Type-new-ptr break
         }
         $token L:Token-ty L:TOKEN_I32 = if {
-            AST:Type-new-int32 break
+            $self.arena AST:Type-new-int32 break
         }
         $token L:Token-ty L:TOKEN_I64 = if {
-            AST:Type-new-int64 break
+            $self.arena AST:Type-new-int64 break
         }
         $token L:Token-ty L:TOKEN_BOOL = if {
-            AST:Type-new-boolean break
+            $self.arena AST:Type-new-boolean break
         }
         $token L:Token-ty L:TOKEN_LEFT_PAREN = if {
             AST:Types-new @args
@@ -578,7 +582,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
                 $token L:Token-location "expected )" U:abort-with-location
             }
-            $args $rets AST:Type-new-function break
+            $self.arena $args $rets AST:Type-new-function break
         }
         $token L:Token-ty L:TOKEN_IDENT = if {
             loop {
@@ -603,10 +607,10 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             AST:Types-new @generics
             
             $self.current $self.tokens.len = if {
-                $module $token $generics AST:Type-new-struc break
+                $self.arena $module $token $generics AST:Type-new-struc break
             }
             $self Parser-peek L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if {
-                $module $token $generics AST:Type-new-struc break
+                $self.arena $module $token $generics AST:Type-new-struc break
             }
             $self Parser-advance drop // skip the <
 
@@ -630,7 +634,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
                     $self Parser-peek L:Token-location "expected , or >" U:abort-with-location
                 }
             }
-            $module $token $generics AST:Type-new-struc break
+            $self.arena  $module $token $generics AST:Type-new-struc break
         }
         $token L:Token-ty L:TOKEN_LEFT_BRACKET = if {
             $self Parser-parse-type @type
@@ -647,7 +651,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             $token L:Token-ty L:TOKEN_RIGHT_BRACKET /= if {
                 $token L:Token-location "expected ]\n" U:abort-with-location
             }
-            $type $length AST:Type-new-array break
+            $self.arena $type $length AST:Type-new-array break
         }
         $token L:Token-location "expected type\n" U:abort-with-location
     }
@@ -1257,8 +1261,8 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(mem: .S:String, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<.AST:Field> {
-    $tokens $mem Parser-new @parser
+fn parse(arena: .Arena:Arena, mem: .S:String, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<.AST:Field> {
+    $arena $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free
 }

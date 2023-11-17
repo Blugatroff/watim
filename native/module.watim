@@ -39,7 +39,7 @@ fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path-ptr: .i32, path-len
         1 CORE:exit
     }
     $arena $str &path S:String-unpack STR:Str-new L:lex @tokens
-    $mem &tokens P:parse @fields @types @items
+    $arena $mem &tokens P:parse @fields @types @items
     
     $arena $items $path $str $tokens $types $fields Module-new
 }

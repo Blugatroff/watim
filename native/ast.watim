@@ -279,9 +279,8 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
     }
 }
 
-fn Type-new(ty: i32) -> .Type {
-    local self: .Type
-    sizeof(Type) A:alloc !.Type #self
+fn Type-new(arena: .Arena:Arena, ty: i32) -> .Type {
+    $arena Arena:alloc<Type> @self
     $ty #self.ty
     0 !.Type #self.child
     0 !.Types #self.generics
@@ -295,40 +294,38 @@ fn Type-clone(self: .Type) -> .Type {
     }
     $new
 }
-fn Type-new-int32() -> .Type {
-    TYPE_I32 Type-new
+fn Type-new-int32(arena: .Arena:Arena) -> .Type {
+    $arena TYPE_I32 Type-new
 }
-fn Type-new-int64() -> .Type {
-    TYPE_I64 Type-new
+fn Type-new-int64(arena: .Arena:Arena) -> .Type {
+    $arena TYPE_I64 Type-new
 }
-fn Type-new-boolean() -> .Type {
-    TYPE_BOOL Type-new
+fn Type-new-boolean(arena: .Arena:Arena) -> .Type {
+    $arena TYPE_BOOL Type-new
 }
-fn Type-new-ptr(child: .Type) -> .Type {
-    local self: .Type
-    TYPE_PTR Type-new #self
+fn Type-new-ptr(arena: .Arena:Arena, child: .Type) -> .Type {
+    $arena TYPE_PTR Type-new @self
     $child !.Type #self.child
     0 !.Types #self.generics
     $self
 }
-fn Type-new-struc(module: .L:Token, ident: .L:Token, generics: .Types) -> .Type {
-    local self: .Type
-    TYPE_STRUCT Type-new #self
+fn Type-new-struc(arena: .Arena:Arena, module: .L:Token, ident: .L:Token, generics: .Types) -> .Type {
+    $arena TYPE_STRUCT Type-new @self
     $module #self.module
     $ident #self.ident
     $generics #self.generics
     0 !.Struct #self.struc
     $self
 }
-fn Type-new-array(type: .Type, length: i32) -> .Type {
-    TYPE_ARRAY Type-new @self
+fn Type-new-array(arena: .Arena:Arena, type: .Type, length: i32) -> .Type {
+    $arena TYPE_ARRAY Type-new @self
     $type #self.child
     $length #self.length
     0 !.Types #self.generics
     $self
 }
-fn Type-new-function(args: .Types, rets: .Types) -> .Type {
-    TYPE_FUNCTION Type-new @self
+fn Type-new-function(arena: .Arena:Arena, args: .Types, rets: .Types) -> .Type {
+    $arena TYPE_FUNCTION Type-new @self
     $args #self.function.args
     $rets #self.function.rets
     $self
@@ -355,7 +352,7 @@ fn Type-free(self: .Type) {
         $self.function.args Types-free-container
         $self.function.rets Types-free-container
     }
-    $self !.i32 A:free
+    // $self !.i32 A:free
 }
 fn Type-ty(self: .Type) -> i32 {
     $self.ty
@@ -364,31 +361,31 @@ fn Type-child(self: .Type) -> .Type {
     $self.child !.Type
 }
 
-fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Type, bool { block {
+fn Type-apply-generics(arena: .Arena:Arena, self: .Type, generics: .Types, module: .M:Module) -> .Type, bool { block {
     $self.ty TYPE_PTR = if {
-        $self Type-child $generics $module Type-apply-generics if {
-            Type-new-ptr &module.types flip CU:push-temp-type2 1 1 = break
+        $arena $self Type-child $generics $module Type-apply-generics if {
+            $arena flip Type-new-ptr &module.types flip CU:push-temp-type2 1 1 = break
         } else {
             drop $self 0 1 = break
         }
     }
     $self.ty TYPE_ARRAY = if {
-        $self Type-child $generics $module Type-apply-generics if {
-            $self.length Type-new-array &module.types flip CU:push-temp-type2 1 1 = break 
+        $arena $self Type-child $generics $module Type-apply-generics if {
+            $arena flip $self.length Type-new-array &module.types flip CU:push-temp-type2 1 1 = break 
         } else {
             drop $self 0 1 = break
         }
     }
     $self.ty TYPE_STRUCT = if {
-        $self.generics $generics $module Types-apply-generics if { 
-            $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
+        $arena $self.generics $generics $module Types-apply-generics if { 
+            $arena $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
             #new.generics
-            $self.struc $new.generics $module Struct-apply-generics if { #new.struc } else { drop }
+            $arena $self.struc $new.generics $module Struct-apply-generics if { #new.struc } else { drop }
             $new 1 1 = break
         } else {
             drop
-            $self.struc $self.generics $module Struct-apply-generics if {
-                $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
+            $arena $self.struc $self.generics $module Struct-apply-generics if {
+                $arena $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
                 #new.struc
                 $new 1 1 = break
             } else {
@@ -397,16 +394,17 @@ fn Type-apply-generics(self: .Type, generics: .Types, module: .M:Module) -> .Typ
         } 
     }
     $self.ty TYPE_FUNCTION = if {
-        $self.function.args $generics $module Types-apply-generics @new-args
-        $self.function.rets $generics $module Types-apply-generics @new-rets 
+        $arena
+        $arena $self.function.args $generics $module Types-apply-generics @new-args
+        $arena $self.function.rets $generics $module Types-apply-generics @new-rets 
         $new-args $new-rets or if {
             $new-rets if { } else { drop $self.function.rets }
             flip
             $new-args if { } else { drop $self.function.args }
-            flip 
+            flip
             Type-new-function &module.types flip CU:push-temp-type2
             1 1 = break
-        } else { drop drop $self 0 1 = break }
+        } else { drop drop drop $self 0 1 = break }
     }
     $self.ty TYPE_GENERIC = if {
         $generics $self.generic Types-get 1 1 = break
@@ -607,7 +605,7 @@ fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
         $formatter "]" FMT:Formatter-write
     }
 }
-fn Types-apply-generics(self: .Types, generics: .Types, module: .M:Module) -> .Types, bool {
+fn Types-apply-generics(arena: .Arena:Arena, self: .Types, generics: .Types, module: .M:Module) -> .Types, bool {
     $self Types-len 0 = if { $self 0 1 = } else {
         Types-new @new
         0 1 = @use-new
@@ -615,7 +613,7 @@ fn Types-apply-generics(self: .Types, generics: .Types, module: .M:Module) -> .T
         loop {
             $i $self Types-len = if { break }
             $self $i Types-get @type
-            $type $generics $module Type-apply-generics if {
+            $arena $type $generics $module Type-apply-generics if {
                 1 1 = #use-new
                 $new flip Types-push
             } else {
@@ -919,8 +917,8 @@ fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i3
     $scope-id #self.scope-id
     $self
 }
-fn Local-new-mem(types: .DynArray:DynArray<.Type>, ident: .L:Token, type: .Type, size: i32) -> .Local {
-    LOCAL_MEMORY $ident $type Type-new-ptr $types flip CU:push-temp-type2 0 0 Local-new @self
+fn Local-new-mem(arena: .Arena:Arena, types: .DynArray:DynArray<.Type>, ident: .L:Token, type: .Type, size: i32) -> .Local {
+    LOCAL_MEMORY $ident $arena $type Type-new-ptr $types flip CU:push-temp-type2 0 0 Local-new @self
     $size #self.size
     $self
 }
@@ -1345,8 +1343,8 @@ fn Field-ident(self: .Field) -> .L:Token {
 fn Field-type(self: .Field) -> .Type {
     $self.type
 }
-fn Field-apply-generics(self: .Field, generics: .Types, module: .M:Module) -> .Field, bool {
-    $self.type $generics $module Type-apply-generics if {
+fn Field-apply-generics(arena: .Arena:Arena, self: .Field, generics: .Types, module: .M:Module) -> .Field, bool {
+    $arena $self.type $generics $module Type-apply-generics if {
         $self.ident flip Field-new @new
         &module.fields $new DynArray:push<.Field>
         $new 1 1 =
@@ -1377,14 +1375,14 @@ fn Fields-eq(self: .DynArray:DynArray<.Field>, other: .DynArray:DynArray<.Field>
         $i 1 + #i
     }
 } }
-fn Fields-apply-generics(self: .DynArray:DynArray<.Field>, generics: .Types, module: .M:Module) -> DynArray:DynArray<.Field>, bool {
+fn Fields-apply-generics(arena: .Arena:Arena, self: .DynArray:DynArray<.Field>, generics: .Types, module: .M:Module) -> DynArray:DynArray<.Field>, bool {
     0!(.Field ->) DynArray:new<.Field> @new
     0 1 = @use-new
     0 @i
     loop {
         $i $self.len = if { break }
         $self $i DynArray:get<.Field> ~ @field
-        $field $generics $module Field-apply-generics if {
+        $arena $field $generics $module Field-apply-generics if {
             1 1 = #use-new
             &new flip DynArray:push<.Field>
         } else {
@@ -1468,10 +1466,10 @@ fn Struct-eq(self: .Struct, other: .Struct) -> bool {
         &self.fields &other.fields Fields-eq
     }
 }
-fn Struct-apply-generics(self: .Struct, generics: .Types, module: .M:Module) -> .Struct, bool {
+fn Struct-apply-generics(arena: .Arena:Arena, self: .Struct, generics: .Types, module: .M:Module) -> .Struct, bool {
     $self.generics-being-applied not &self.generics Generics-len 0 /= and if {
         1 1 = #self.generics-being-applied
-        &self.fields $generics $module Fields-apply-generics if {
+        $arena &self.fields $generics $module Fields-apply-generics if {
             $self.ident flip $self.generics 0 1 = Struct-new @new
             &module.structs $new DynArray:push<.Struct>
             $new 1 1 =
