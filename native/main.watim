@@ -132,7 +132,7 @@ fn parse-ast(arena: .Arena:Arena) {
     $items DynArray:free<.AST:TopItem>
     $mem S:String-free
     $types DynArray:free<.AST:Type>
-    $fields DynArray:free<.AST:Field>
+    $fields DynArray:free<AST:Field>
     $arena $save Arena:restore
 }
 

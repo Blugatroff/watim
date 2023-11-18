@@ -54,7 +54,7 @@ fn resolve-struc(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, st
     0 @i
     loop {
         $i $fields.len = if { break }
-        $fields $i DynArray:get<.AST:Field> ~ @field
+        $fields $i DynArray:get<AST:Field> @field
         $arena $modules $module &struc.generics $field $phase resolve-field
         $i 1 + #i
     }
