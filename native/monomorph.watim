@@ -156,15 +156,15 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
         $new-word break
     }
     $word.ty AST:WORD_IF = if {
-        $arena $module $generics $word.iff gather-instances-iff #new-word.iff
+        $arena $module $generics &word.iff gather-instances-iff #new-word.iff
         $new-word break
     }
     $word.ty AST:WORD_LOOP = if {
-        $arena $module $generics $word.lop gather-instances-lop #new-word.lop
+        $arena $module $generics &word.lop gather-instances-lop #new-word.lop
         $new-word break
     }
     $word.ty AST:WORD_BLOCK = if {
-        $arena $module $generics $word.blok gather-instances-blok #new-word.blok
+        $arena $module $generics &word.blok gather-instances-blok #new-word.blok
         $new-word break
     }
     $word.ty AST:WORD_INTRINSIC = if {
@@ -213,7 +213,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
     2 "\n" IO:write-all IO:check
     0 0 / !AST:Word
 } }
-fn gather-instances-iff(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, iff: .AST:If) -> .AST:If {
+fn gather-instances-iff(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, iff: .AST:If) -> AST:If {
     $iff.token $arena $module $generics $iff.body gather-instances-words AST:If-new @new-if
     $iff.has-el #new-if.has-el
     $arena $module $generics &iff.locals gather-instances-locals #new-if.locals
@@ -224,13 +224,13 @@ fn gather-instances-iff(arena: .Arena:Arena, module: .M:Module, generics: .AST:T
     $iff.rets 0 !.AST:Types = if { 0 !.AST:Types #new-if.rets } else { $arena $iff.rets $generics $module AST:Types-apply-generics drop #new-if.rets }
     $new-if
 }
-fn gather-instances-lop(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, lop: .AST:Loop) -> .AST:Loop {
+fn gather-instances-lop(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, lop: .AST:Loop) -> AST:Loop {
     $lop.token $arena $module $generics $lop.body gather-instances-words AST:Loop-new @new-lop
     $arena $module $generics &lop.locals gather-instances-locals #new-lop.locals
     $lop.rets 0 !.AST:Types = if { 0 !.AST:Types #new-lop.rets } else { $arena $lop.rets $generics $module AST:Types-apply-generics drop #new-lop.rets }
     $new-lop
 }
-fn gather-instances-blok(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, blok: .AST:Block) -> .AST:Block {
+fn gather-instances-blok(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, blok: .AST:Block) -> AST:Block {
     $blok.token $arena $module $generics $blok.body gather-instances-words AST:Block-new @new-blok
     $arena $module $generics &blok.locals gather-instances-locals #new-blok.locals
     $blok.rets 0 !.AST:Types = if { 0 !.AST:Types #new-blok.rets } else { $arena $blok.rets $generics $module AST:Types-apply-generics drop #new-blok.rets }
@@ -242,7 +242,7 @@ fn gather-instances-locals(arena: .Arena:Arena, module: .M:Module, generics: .AS
     loop {
         $i $locals AST:Locals-len = if { break }
         $locals $i AST:Locals-get @locl
-        &new-locals $arena $module $generics $locl gather-instances-locl AST:Locals-push
+        $arena &new-locals $arena $module $generics $locl gather-instances-locl AST:Locals-push
         $i 1 + #i
     }
     $new-locals

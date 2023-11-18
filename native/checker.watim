@@ -185,7 +185,7 @@ fn check-word(
             $stack $self $module $locals $word check-store break
         }
         $word AST:Word-ty AST:WORD_INIT_LOCAL = if {
-            $stack $locals $word check-init-locl break
+            $self.arena $stack $locals $word check-init-locl break
         }
         $word AST:Word-ty AST:WORD_ANNOTATION = if {
             $stack $word check-annotation break
@@ -545,7 +545,7 @@ fn check-get-ref(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, te
     $arena $stack $temp-types $arena $type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
     0 1 =
 }
-fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
+fn check-init-locl(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     local type: .AST:Type
     local shadow-id: i32
     $stack AST:Types-len 0 = if {
@@ -562,7 +562,7 @@ fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> b
     $locals.id #word.scope-id
     $shadow-id #word.shadow-id
 
-    $locals 
+    $arena $locals 
     AST:LOCAL_LOCAL $word.token $word.type $locals.id $shadow-id AST:Local-new 
     AST:Locals-push
 

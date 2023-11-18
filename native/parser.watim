@@ -305,13 +305,13 @@ fn Parser-parse-body(self: .Parser, locals: .AST:Locals) -> .AST:Words {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_MEMORY /= if { break }
-        $locals $self Parser-parse-mem AST:Locals-push
+        $self.arena $locals $self Parser-parse-mem AST:Locals-push
     }
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_LOCAL /= if { break }
-        $locals $self Parser-parse-loc AST:Locals-push
+        $self.arena $locals $self Parser-parse-loc AST:Locals-push
     }
     $self Parser-parse-words
 }
@@ -480,7 +480,7 @@ fn Parser-parse-parameters(self: .Parser) -> AST:Locals {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
-        &params $self Parser-parse-parameter AST:Locals-push
+        $self.arena &params $self Parser-parse-parameter AST:Locals-push
         $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
         $token L:Token-ty L:TOKEN_COMMA /= if {
@@ -1171,7 +1171,7 @@ fn Parser-parse-block(self: .Parser) -> .AST:Words {
     }
 }
 
-fn Parser-parse-iff(self: .Parser) -> .AST:If {
+fn Parser-parse-iff(self: .Parser) -> AST:If {
     local token: .L:Token
     $self.current 1 - #self.current
     $self.current $self.tokens.len = if {

@@ -64,7 +64,6 @@ fn Module-new(
     $arena &self &self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
     0!(.AST:Types ->) DynArray:new<.AST:Types> #self.types-types
-    \AST:Words-free DynArray:new<.AST:Words> #self.words-words
     // TODO: check for duplicate structs and memories
     $self
 }

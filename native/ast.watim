@@ -187,14 +187,6 @@ fn Words-pop(self: .Words) -> Word {
     $self $self.len 1 - Words-get ~
     $self.len 1 - #self.len
 }
-fn Words-free(self: .Words) {
-    loop {
-        $self.len 0 = if { break }
-        $self Words-pop Word-free
-    }
-    $self.cap 0 gt if { $self.ptr !.i32 A:free }
-    $self !.i32 A:free
-}
 
 fn TYPE_I32() -> i32 { 1 }
 fn TYPE_I64() -> i32 { 2 }
@@ -650,9 +642,8 @@ struct If {
     rets: .Types
     locals: Locals
 }
-fn If-new(token: .L:Token, body: .Words) -> .If {
-    local self: .If
-    sizeof(If) A:alloc !.If #self
+fn If-new(token: .L:Token, body: .Words) -> If {
+    local self: If
     $token #self.token
     $body #self.body
     0 1 = #self.has-el
@@ -661,9 +652,8 @@ fn If-new(token: .L:Token, body: .Words) -> .If {
     Locals-new #self.locals
     $self
 }
-fn If-new-with-el(token: .L:Token, body: .Words, el: .Words) -> .If {
-    local self: .If
-    sizeof(If) A:alloc !.If #self
+fn If-new-with-el(token: .L:Token, body: .Words, el: .Words) -> If {
+    local self: If
     $token #self.token
     $body #self.body
     0 0 = #self.has-el
@@ -672,14 +662,6 @@ fn If-new-with-el(token: .L:Token, body: .Words, el: .Words) -> .If {
     0 !.Types #self.rets
     Locals-new #self.locals
     $self
-}
-fn If-free(self: .If) {
-    $self.body Words-free
-    $self.has-el if {
-        $self.el Words-free
-    }
-    $self.locals Locals-free
-    $self !.i32 A:free
 }
 fn If-body(self: .If) -> .Words {
     $self.body
@@ -700,18 +682,12 @@ struct Loop {
     rets: .Types
     locals: Locals
 }
-fn Loop-new(token: .L:Token, body: .Words) -> .Loop {
-    local self: .Loop
-    sizeof(Loop) A:alloc !.Loop #self
+fn Loop-new(token: .L:Token, body: .Words) -> Loop {
+    local self: Loop
     $token #self.token
     $body #self.body
     Locals-new #self.locals
     $self
-}
-fn Loop-free(self: .Loop) {
-    $self.body Words-free
-    $self.locals Locals-free
-    $self !.i32 A:free
 }
 
 struct Block {
@@ -720,18 +696,12 @@ struct Block {
     rets: .Types
     locals: Locals
 }
-fn Block-new(token: .L:Token, body: .Words) -> .Block {
-    local self: .Block
-    sizeof(Block) A:alloc !.Block #self
+fn Block-new(token: .L:Token, body: .Words) -> Block {
+    local self: Block
     $token #self.token
     $body #self.body
     Locals-new #self.locals
     $self
-}
-fn Block-free(self: .Block) {
-    $self.body Words-free
-    $self.locals Locals-free
-    $self !.i32 A:free
 }
 
 struct Word {
@@ -745,13 +715,13 @@ struct Word {
     size: i32
     module: i32
     fields: Array:Array<.L:Token>
-    lop: .Loop
-    blok: .Block
+    lop: Loop
+    blok: Block
     rets: .Types
     args: .Types
     generics: .Types
     instance-index: i32
-    iff: .If
+    iff: If
     type: .Type
     src-type: .Type
     string: STR:Str
@@ -788,17 +758,6 @@ fn Word-new-annotation(token: .L:Token, type: .Type) -> Word {
     $type #word.type
     $word
 }
-fn Word-free(self: Word) {
-    $self.ty WORD_IF = if {
-        $self.iff If-free
-    }
-    $self.ty WORD_LOOP = if {
-        $self.lop Loop-free
-    }
-    $self.ty WORD_BLOCK = if {
-        $self.blok Block-free
-    }
-}
 fn Word-mark-checked(self: .Word) {
     1 1 = #self.checked
 }
@@ -812,7 +771,7 @@ fn Word-type(self: .Word) -> .Type {
     $self.type
 }
 fn Word-iff(self: .Word) -> .If {
-    $self.iff
+    &self.iff
 }
 fn Word-ident(self: .Word) -> .STR:Str {
     $self.ident
@@ -877,13 +836,13 @@ fn Local-free(self: .Local) {
 }
 
 struct Locals {
-    inner: DynArray:DynArray<.Local>
+    inner: Array:Array<.Local>
     parent: .Locals
     id: i32
 }
 fn Locals-new() -> Locals {
     local self: Locals
-    \Local-free DynArray:new<.Local> #self.inner
+    Array:new<.Local> #self.inner
     0 !.Locals #self.parent
     0 #self.id
     $self
@@ -892,7 +851,7 @@ fn Locals-len(self: .Locals) -> i32 {
     $self.inner.len
 }
 fn Locals-get(self: .Locals, index: i32) -> .Local {
-    &self.inner $index DynArray:get<.Local> ~
+    &self.inner $index Array:get<.Local> ~
 }
 fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: bool) -> .Local, bool {
     local i: i32
@@ -921,11 +880,8 @@ fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: b
         }
     }
 }
-fn Locals-push(self: .Locals, locl: .Local) {
-    &self.inner $locl DynArray:push<.Local>
-}
-fn Locals-free(self: Locals) {
-    $self.inner DynArray:free<.Local>
+fn Locals-push(arena: .Arena:Arena, self: .Locals, locl: .Local) {
+    $arena &self.inner $locl Array:push<.Local>
 }
 fn Locals-contains-mem-or-struc(self: .Locals) -> bool {
     local i: i32
@@ -1152,8 +1108,6 @@ fn Function-new(
     $self
 }
 fn Function-free(self: .Function) {
-    $self.body Words-free
-    $self.locals Locals-free
     $self.generics Generics-free
     $self.instances Instances-free
     $self !.i32 A:free
@@ -1234,7 +1188,6 @@ fn Extern-ident(self: .Extern) -> .L:Token {
     $self.ident
 }
 fn Extern-free(self: .Extern) {
-    $self.params Locals-free
     $self !.i32 A:free
 }
 
