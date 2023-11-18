@@ -127,7 +127,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
         $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
-        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
+        $word.fields #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_INIT_LOCAL = if {
@@ -144,7 +144,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
         $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
         $word.shadow-id #new-word.shadow-id
         $word.scope-id #new-word.scope-id
-        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
+        $word.fields #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_GET_GLOBAL = 
@@ -152,7 +152,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
         $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $word.ident #new-word.ident
         $word.module #new-word.module
-        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
+        $word.fields #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_IF = if {
@@ -175,7 +175,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
     $word.ty AST:WORD_DEREF = if {
         $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type
         $arena $word.src-type $generics $module AST:Type-apply-generics drop #new-word.src-type
-        &word.fields DynArray:clone-container<.L:Token> #new-word.fields
+        $word.fields #new-word.fields
         $new-word break
     }
     $word.ty AST:WORD_CAST = if {

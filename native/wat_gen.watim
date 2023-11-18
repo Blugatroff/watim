@@ -7,6 +7,7 @@ import "../std/str.watim" as STR
 import "../std/i32vec.watim" as IV
 import "../std/alloc.watim" as A
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
@@ -341,7 +342,7 @@ fn determine-loads(generics: .AST:Types, word: .AST:Word) -> DynArray:DynArray<i
             0 @offset
             loop { // loop for every field access which can be reduced to one load with offset
                 $i $word.fields.len = if { break }
-                &word.fields $i DynArray:get<.L:Token> ~ @field
+                &word.fields $i Array:get<.L:Token> ~ @field
 
                 $type AST:Type-ty AST:TYPE_PTR = if {
                     $type AST:Type-child #type

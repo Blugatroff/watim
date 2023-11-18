@@ -744,7 +744,7 @@ struct Word {
     addr: i32
     size: i32
     module: i32
-    fields: DynArray:DynArray<.L:Token>
+    fields: Array:Array<.L:Token>
     lop: .Loop
     blok: .Block
     rets: .Types
@@ -797,16 +797,6 @@ fn Word-free(self: Word) {
     }
     $self.ty WORD_BLOCK = if {
         $self.blok Block-free
-    }
-    $self.ty WORD_SET = 
-    $self.ty WORD_GET_REF = or
-    $self.ty WORD_GET_LOCAL = or
-    $self.ty WORD_STORE = or
-    $self.ty WORD_GET_GLOBAL = or
-    $self.ty WORD_STORE_GLOBAL = or
-    $self.ty WORD_DEREF = or
-    if {
-        $self.fields DynArray:free<.L:Token>
     }
 }
 fn Word-mark-checked(self: .Word) {

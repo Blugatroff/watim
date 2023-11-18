@@ -1045,8 +1045,8 @@ fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -
         $file STR:Str-unpack $line $column "expected identifier" U:abort-with-location
     }
     AST:WORD_GET_LOCAL $token AST:Word-new #word
-    0!(.L:Token ->) $token L:Token-lexeme #word.ident
-    DynArray:new<.L:Token> #word.fields
+    $token L:Token-lexeme #word.ident
+    Array:new<.L:Token> #word.fields
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
@@ -1059,11 +1059,11 @@ fn Parser-parse-get-locl(self: .Parser, file: STR:Str, line: i32, column: i32) -
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        &word.fields $token DynArray:push<.L:Token>
+        $self.arena &word.fields $token Array:push<.L:Token>
     }
     $word
 }
-fn Parser-parse-ident-and-fields-access(self: .Parser, token: .L:Token) -> DynArray:DynArray<.L:Token>, .STR:Str {
+fn Parser-parse-ident-and-fields-access(self: .Parser, token: .L:Token) -> Array:Array<.L:Token>, .STR:Str {
     $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
@@ -1073,8 +1073,8 @@ fn Parser-parse-ident-and-fields-access(self: .Parser, token: .L:Token) -> DynAr
     }
     $self Parser-parse-fields-access $ident L:Token-lexeme
 }
-fn Parser-parse-fields-access(self: .Parser) -> DynArray:DynArray<.L:Token> {
-    0!(.L:Token ->) DynArray:new<.L:Token> @fields
+fn Parser-parse-fields-access(self: .Parser) -> Array:Array<.L:Token> {
+    Array:new<.L:Token> @fields
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek @token
@@ -1087,7 +1087,7 @@ fn Parser-parse-fields-access(self: .Parser) -> DynArray:DynArray<.L:Token> {
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        &fields $token DynArray:push<.L:Token>
+        $self.arena &fields $token Array:push<.L:Token>
     }
     $fields
 }
@@ -1137,7 +1137,7 @@ fn Parser-parse-set-locl(self: .Parser, token: .L:Token) -> AST:Word {
         $token L:Token-location "expected identifier" U:abort-with-location
     }
     $token L:Token-lexeme #word.ident
-    0!(.L:Token ->) DynArray:new<.L:Token> #word.fields
+    Array:new<.L:Token> #word.fields
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek #token
@@ -1150,7 +1150,7 @@ fn Parser-parse-set-locl(self: .Parser, token: .L:Token) -> AST:Word {
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
-        &word.fields $token DynArray:push<.L:Token>
+        $self.arena &word.fields $token Array:push<.L:Token>
     }
     $word
 }
