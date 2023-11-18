@@ -2,7 +2,7 @@ import "./alloc.watim" as A
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./arena.watim" as Arena
-import "./format.watim" as FMT
+import "./fmt.watim" as FMT
 
 struct DynArray<T> {
     ptr: .T

@@ -4,7 +4,7 @@ import "../std/io.watim" as IO
 import "../std/str-map.watim" as StrMap
 import "../std/fs.watim" as FS
 import "../std/alloc.watim" as A
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/core.watim" as CORE
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array

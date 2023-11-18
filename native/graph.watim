@@ -1,7 +1,7 @@
 import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
-import "../std/format.watim" as FMT
+import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 
 import "./ast.watim" as AST
@@ -9,10 +9,11 @@ import "./lexer.watim" as L
 import "./module.watim" as M
 
 fn call-graph-modules(modules: .M:Modules) -> S:String {
-    FMT:Formatter-new @fmt
-    0 @i
+    S:String-empty @str
+    &str FMT:Formatter-into-string @fmt
     &fmt "digraph {\n" FMT:Formatter-write
     &fmt FMT:Formatter-indent
+    0 @i
     loop {
         $i $modules M:Modules-len = if { break }
         &fmt $modules $i M:Modules-get-value call-graph-module
@@ -20,7 +21,7 @@ fn call-graph-modules(modules: .M:Modules) -> S:String {
     }
     &fmt FMT:Formatter-dedent
     &fmt "}\n" FMT:Formatter-write
-    $fmt FMT:Formatter-into-string
+    $str
 }
 
 fn call-graph-module(fmt: .FMT:Formatter, module: .M:Module) {
