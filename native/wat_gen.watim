@@ -13,7 +13,7 @@ import "./ast.watim" as AST
 import "./lexer.watim" as L
 import "./module.watim" as M
 import "./checker.watim" as CHECKER
-import "./main.watim" as MAIN
+import "./logging.watim" as LOGGING
 import "./util.watim" as NU
 
 fn generate-type(formatter: .FMT:Formatter, generics: .AST:Types, self: .AST:Type) {
@@ -1342,7 +1342,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
     loop {
         $i $modules M:Modules-len = if { break }
         $modules $i M:Modules-get-value @module
-        MAIN:logging-enabled if {
+        LOGGING:enabled if {
             2 "Codegen for module: " IO:write-all IO:check
             2 &module.path S:String-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
@@ -1356,7 +1356,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
                 $function.reachable if {
                     $formatter $i $item AST:TopItem-function generate-function
                 } else {
-                    MAIN:logging-enabled if {
+                    LOGGING:enabled if {
                         2 "Unused function: " IO:write-all IO:check
                         2 $function.ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
                         2 ", in module: " IO:write-all IO:check

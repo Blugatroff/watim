@@ -22,6 +22,7 @@ import "./resolver.watim" as R
 import "./dump.watim" as DUMP
 import "./graph.watim" as GRAPH
 import "./monomorph.watim" as MONO
+import "./logging.watim" as LOGGING
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -56,11 +57,11 @@ fn main() {
     &arena FS:init "Failed to init fs" IO:exit-with-message @fs
     &arena ARGS:get-args @args
 
-    enable-logging
+    LOGGING:enable
     COMPILE set-mode
 
-    &args "--quiet" find-flag if { disable-logging }
-    &args "-q" find-flag if { disable-logging }
+    &args "--quiet" find-flag if { LOGGING:disable }
+    &args "-q" find-flag if { LOGGING:disable }
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
     &args "--call-graph" find-flag if { CALL_GRAPH set-mode }
 
@@ -80,7 +81,7 @@ fn main() {
         FMT:Formatter-stdout @formatter
         &formatter $stack-start &mem &modules GEN:generate
         1 "\n" IO:write-all IO:check
-        logging-enabled if { 2 A:report }
+        LOGGING:enabled if { 2 A:report }
 
         $mem S:String-free
         &modules M:Modules-free
@@ -137,7 +138,7 @@ fn parse-ast(arena: .Arena:Arena) {
 }
 
 fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
-    logging-enabled if {
+    LOGGING:enabled if {
         2 "Loading module: " IO:write-all IO:check
         2 $path-ptr $path-len IO:write-all IO:check
         2 "\n" IO:write-all IO:check
@@ -161,11 +162,6 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
         $i 1 + #i
     }
 }
-
-memory LOGGING: bool 4
-fn enable-logging() { $LOGGING 0 0 = store }
-fn disable-logging() { $LOGGING 0 1 = store }
-fn logging-enabled() -> bool { $LOGGING ~ }
 
 fn COMPILE() -> i32 { 1 }
 fn PARSE_AST() -> i32 { 2 }

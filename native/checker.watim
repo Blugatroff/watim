@@ -14,7 +14,7 @@ import "./lexer.watim" as L
 import "./util.watim" as U
 import "./break_stack.watim" as BS
 import "./intrinsic.watim" as INTR
-import "./main.watim" as MAIN
+import "./logging.watim" as LOGGING
 
 struct Checker {
     modules: .M:Modules
@@ -33,7 +33,7 @@ fn check(arena: .Arena:Arena, modules: .M:Modules) {
     loop {
         $i $modules M:Modules-len = if { break }
         $modules $i M:Modules-get-value @module
-        MAIN:logging-enabled if {
+        LOGGING:enabled if {
             2 "Typechecking module: " IO:write-all IO:check
             2 &module.path S:String-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
