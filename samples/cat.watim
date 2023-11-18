@@ -1,17 +1,19 @@
 import "../std/alloc.watim" as A
 import "../std/args.watim" as ARGS
-import "../std/string.watim" as S
+import "../std/str.watim" as STR
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/core.watim" as CORE
 import "../std/arena.watim" as Arena
-import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 
 memory MEM: i32 49152
+memory TEMP: i32 8192
 
 fn main "_start" () {
-    $MEM 49152 A:init
-    30000 Arena:new @arena
+    $MEM 49152 Arena:new @arena
+
+    $TEMP 8192 Arena:init-temp
 
     &arena ARGS:get-args @args
 
@@ -20,11 +22,13 @@ fn main "_start" () {
         2 "\tUsage: ./run.sh ./samples/cat.watim <file>\n" IO:write-all IO:check
         1 CORE:exit
     }
-    &args 1 DynArray:get<S:String> S:String-unpack FS:read-file IO:check @str
 
-    1 &str S:String-unpack IO:write-all IO:check
+    &arena FS:init IO:check @fs
 
-    $str S:String-free
-    $arena Arena:free
+    &arena &fs &args 1 Array:get<STR:Str> ~ STR:Str-unpack FS:read-file IO:check @str
+
+    1 $str STR:Str-unpack IO:write-all IO:check
+
+    &arena Arena:clear
 }
 

@@ -2,7 +2,6 @@ import "./alloc.watim" as A
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./str.watim" as S
-import "./arena.watim" as Arena
 
 struct String {
     ptr: .i32
@@ -122,61 +121,3 @@ fn String-set(self: .String, index: i32, char: i32) {
     $self String-ptr $index + $char store8
 }
 
-struct StringVec {
-    ptr: .String
-    len: i32
-    cap: i32
-}
-fn StringVec-new() -> StringVec {
-    local self: StringVec
-    0 !.String #self.ptr
-    0 #self.len
-    0 #self.cap
-    $self
-}
-fn StringVec-len(self: .StringVec) -> i32 {
-    $self.len
-}
-fn StringVec-get(self: .StringVec, index: i32) -> .String {
-    $index $self StringVec-len ge if { 
-        1 "Index out of bounds\n" IO:write-all IO:check
-        1 CORE:exit
-    }
-    $self.ptr $index sizeof(String) * +
-}
-fn StringVec-free(self: StringVec) {
-    local i: i32
-    local s: .String
-    loop {
-        $i $self.len = if { break }
-        &self $i StringVec-get ~ String-free
-        $i 1 + #i
-    }
-    &self StringVec-len 0 gt if { 
-        $self.ptr !.i32 A:free 
-    }
-}
-fn StringVec-push(self: .StringVec, str: String) {
-    local new-buf: .String
-    local size: i32
-    local ptr: .String
-    $self.len 1 + $self.cap le if {
-        $self.ptr $self.len sizeof(String) * + #ptr
-        $str =>ptr
-        // increment len
-        $self.len 1 + #self.len
-    } else {
-        $self.cap 2 CORE:max 2 * #size
-        $size sizeof(String) * A:alloc !.String #new-buf
-        $self.ptr !.i32
-        $new-buf !.i32
-        $self.len sizeof(String) * 
-        CORE:copy-bytes
-        $size #self.cap
-        $self.len 0 gt if {
-            $self.ptr !.i32 A:free
-        }
-        $new-buf #self.ptr
-        $self $str StringVec-push
-    }
-}

@@ -4,7 +4,6 @@ import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/core.watim" as CORE
 import "../std/fmt.watim" as FMT
-import "../std/i32vec.watim" as IV
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
@@ -412,7 +411,6 @@ fn check-locl-fields-access(locals: .AST:Locals, word: .AST:Word) -> .AST:Type, 
     }
 }
 fn check-fields-access(src-type: .AST:Type, word: .AST:Word) -> .AST:Type {
-    local loads: IV:I32Vec
     local type: .AST:Type
     local struc: .AST:Struct
     local i: i32

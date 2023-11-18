@@ -4,7 +4,6 @@ import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/string.watim" as S
 import "../std/str.watim" as STR
-import "../std/i32vec.watim" as IV
 import "../std/alloc.watim" as A
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
