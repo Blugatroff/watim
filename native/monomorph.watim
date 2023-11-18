@@ -32,7 +32,7 @@ fn gather-instances-item(arena: .Arena:Arena, module: .M:Module, item: .AST:TopI
     $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
         $item AST:TopItem-function @function
         &function.generics AST:Generics-len 0 = if { // only start gathering at non-generic functions
-            AST:Types-new @generics
+            $arena AST:Types-new @generics
             &module.types-types $generics DynArray:push<.AST:Types>
             $arena $module $generics $function gather-instances-function @new-words
             &module.words-words $new-words DynArray:push<.AST:Words>
@@ -66,13 +66,13 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
         $word.module #new-word.module
         $word.function 0 !.AST:Function /= $word.generics 0 !.AST:Types /= and if {
             $word.generics AST:Types-len 0 /= if {
-                AST:Types-new @new-generics
+                $arena AST:Types-new @new-generics
                 0 @i
                 loop {
                     $i $word.generics AST:Types-len = if { break }
                     $word.generics $i AST:Types-get @type
                     $arena $type $generics $module AST:Type-apply-generics drop #type
-                    $new-generics $type AST:Types-push
+                    $arena $new-generics $type AST:Types-push
                     $i 1 + #i
                 }
                 $word.function.instances $new-generics AST:Instances-contains-types-by-size not if {
@@ -92,7 +92,6 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
                     $instance-index
                 } else {
                     @instance-index
-                    $new-generics AST:Types-free-container
 
                     $word.function.instances $instance-index AST:Instances-get .generics ~ @generics
                     $arena $word.rets $generics $module AST:Types-apply-generics drop #new-word.rets
@@ -104,8 +103,8 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
                 $new-word break
             }
         }
-        $word.rets AST:Types-clone-container #new-word.rets
-        $word.args AST:Types-clone-container #new-word.args
+        $arena $word.rets AST:Types-clone-container #new-word.rets
+        $arena $word.args AST:Types-clone-container #new-word.args
         0 #new-word.instance-index
         $new-word break
     }

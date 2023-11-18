@@ -74,7 +74,7 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     local scope-id: CORE:I32
     0 #scope-id.inner
 
-    AST:Types-new @stack
+    $self.arena AST:Types-new @stack
 
     $scope-id.inner #function.locals.id
 
@@ -100,7 +100,6 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
         0 0 = #function.diverges
     }
 
-    $stack AST:Types-free-container
     $bs DynArray:free<.BS:BreakStack>
 }
 fn check-words(
@@ -136,12 +135,12 @@ fn check-word(
 ) -> bool {
     loop {
         $word AST:Word-ty AST:WORD_NUMBER = if {
-            $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
+            $self.arena $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_STRING = if {
-            $stack &module.types $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Type-new-ptr U:push-temp-type2 AST:Types-push
-            $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
+            $self.arena $stack &module.types $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Type-new-ptr U:push-temp-type2 AST:Types-push
+            $self.arena $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_CALL = if {
@@ -151,7 +150,7 @@ fn check-word(
             $module $self $stack $locals $scope-id $word check-lop break
         }
         $word AST:Word-ty AST:WORD_BREAK = if {
-            $bs $stack $word check-brek break
+            $self.arena $bs $stack $word check-brek break
         }
         $word AST:Word-ty AST:WORD_INTRINSIC = if {
             $self.arena &module.types $stack $word INTR:check-intrinsic break
@@ -160,7 +159,7 @@ fn check-word(
             $module $bs $self $stack $locals $scope-id $word check-iff break
         }
         $word AST:Word-ty AST:WORD_CAST = if {
-            $stack $word check-cast break
+            $self.arena $stack $word check-cast break
         }
         $word AST:Word-ty AST:WORD_DEREF = if {
             $self.arena &module.types $stack $word check-deref break
@@ -175,10 +174,10 @@ fn check-word(
             $self $module $stack $locals $word check-get-locl break
         }
         $word AST:Word-ty AST:WORD_LOAD = if {
-            $stack $word check-load break
+            $self.arena $stack $word check-load break
         }
         $word AST:Word-ty AST:WORD_SIZEOF = if {
-            $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
+            $self.arena $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_STORE = if {
@@ -194,7 +193,7 @@ fn check-word(
             $stack $word check-array-write break
         }
         $word AST:Word-ty AST:WORD_ARRAY_READ = if {
-            $stack $word check-array-read break
+            $self.arena $stack $word check-array-read break
         }
         $word AST:Word-ty AST:WORD_ARRAY_REF = if {
             $self.arena $stack $word &module.types check-array-ref break
@@ -224,6 +223,7 @@ fn check-word(
 fn check-ref-function(temp-types: .DynArray:DynArray<.AST:Type>, self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
     $self $module $stack $word 1 1 = check-function-usage drop @rets @params
     
+    $self.arena
     $stack 
 
     $temp-types
@@ -245,8 +245,8 @@ fn check-call-indirect(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, 
     $stack $fn-type.function.args $word U:expect-stack
 
     $arena 
-    $fn-type.function.args AST:Types-clone-container
-    $fn-type.function.rets AST:Types-clone-container
+    $arena $fn-type.function.args AST:Types-clone-container
+    $arena $fn-type.function.rets AST:Types-clone-container
     AST:Type-new-function $temp-types flip U:push-temp-type2
     #word.type
 
@@ -256,7 +256,7 @@ fn check-call-indirect(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, 
     loop {
         $i $rets AST:Types-len = if { break }
         $rets $i AST:Types-get @type
-        $stack $type AST:Types-push
+        $arena $stack $type AST:Types-push
         $i 1 + #i
     }
     0 1 =
@@ -286,7 +286,7 @@ fn check-array-init(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, tem
     $temp-types $arena $elem-type $word.number AST:Type-new-array U:push-temp-type2
     @array-type
 
-    $stack $array-type AST:Types-push
+    $arena $stack $array-type AST:Types-push
     $array-type #word.type
     0 1 =
 }
@@ -325,7 +325,7 @@ fn array-access-mismatch(word: .AST:Word, array-type: .AST:Type) {
     2 $array-type AST:Type-print
     2 "\n" IO:write-all IO:check
 }
-fn check-array-read(stack: .AST:Types, word: .AST:Word) -> bool {
+fn check-array-read(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 2 lt if {
         $word AST:Word-location "expected at least 2 arguments for array read\n" U:abort-with-location
     }
@@ -341,7 +341,7 @@ fn check-array-read(stack: .AST:Types, word: .AST:Word) -> bool {
         $word $array-type array-access-mismatch 1 CORE:exit
     }
     $array-type AST:Type-child AST:Type-child #word.type
-    $stack $array-type AST:Type-child AST:Type-child AST:Types-push
+    $arena $stack $array-type AST:Type-child AST:Type-child AST:Types-push
     0 1 =
 }
 fn check-array-ref(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .DynArray:DynArray<.AST:Type>) -> bool {
@@ -359,6 +359,7 @@ fn check-array-ref(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp
     $array-type AST:Type-child AST:Type-ty AST:TYPE_ARRAY /= if {
         $word $array-type array-access-mismatch 1 CORE:exit
     }
+    $arena
     $array-type AST:Type-child AST:Type-child #word.type
     $stack 
     $temp-types
@@ -382,7 +383,7 @@ fn check-annotation(stack: .AST:Types, word: .AST:Word) -> bool {
     }
     0 1 =
 }
-fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
+fn check-load(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> bool {
     local type: .AST:Type
     $stack AST:Types-len 0 = if {
         $word AST:Word-location "expected pointer got []\n" U:abort-with-location
@@ -392,7 +393,7 @@ fn check-load(stack: .AST:Types, word: .AST:Word) -> bool {
         $word AST:Word-location "expected pointer" U:abort-with-location
     }
     $type AST:Type-child #type
-    $stack $type AST:Types-push
+    $arena $stack $type AST:Types-push
     $type #word.type
     0 1 =
 }
@@ -459,14 +460,14 @@ fn check-get-locl(self: .Checker, module: .M:Module, stack: .AST:Types, locals: 
         }
 
         $type #word.type
-        $stack $type AST:Types-push
+        $self.arena $stack $type AST:Types-push
     } else {
         drop drop
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             $self.modules $module M:Modules-find-index #word.module
             AST:WORD_GET_GLOBAL #word.ty
             AST:Local-type #word.type
-            $stack $word.type AST:Types-push
+            $self.arena $stack $word.type AST:Types-push
         } else {
             drop
             $word AST:Word-location "local not found\n" U:abort-with-location
@@ -512,9 +513,9 @@ fn check-deref(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:Type>, s
     $word.src-type $word check-fields-access #word.type
 
     $word.src-type AST:Type-ty AST:TYPE_PTR = if {
-        $stack $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
+        $arena $stack $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
     } else {
-        $stack $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
+        $arena $stack $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
         // $stack $word.type AST:Types-push
     }
     0 1 =
@@ -540,7 +541,7 @@ fn check-get-ref(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, te
     }
 
     $type #word.type
-    $stack $temp-types $arena $type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
+    $arena $stack $temp-types $arena $type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
     0 1 =
 }
 fn check-init-locl(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
@@ -578,7 +579,7 @@ fn check-set(stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
     $stack $type $word U:expect-stack-one
     0 1 =
 }
-fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
+fn check-cast(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 0 = if { 
         $word AST:Word-location "expected [a] got []\n" U:abort-with-location
     }
@@ -586,7 +587,7 @@ fn check-cast(stack: .AST:Types, word: .AST:Word) -> bool {
     $stack $stack AST:Types-len 1 - AST:Types-get #word.src-type
     $stack AST:Types-pop drop
 
-    $stack $word AST:Word-type AST:Types-push
+    $arena $stack $word AST:Word-type AST:Types-push
     0 1 =
 }
 fn check-iff(
@@ -605,10 +606,9 @@ fn check-iff(
 
     $self.arena AST:Type-new-boolean @boolean
     $stack $boolean $word U:expect-stack-one
-    $boolean AST:Type-free
 
-    $stack AST:Types-clone-container @iff-stack
-    $stack AST:Types-clone-container @el-stack
+    $self.arena $stack AST:Types-clone-container @iff-stack
+    $self.arena $stack AST:Types-clone-container @el-stack
 
     $iff-stack AST:Types-reset-min
     $el-stack AST:Types-reset-min
@@ -652,8 +652,8 @@ fn check-iff(
     }
 
     $iff-stack AST:Types-min $iff.has-el if { $el-stack AST:Types-min CORE:min } else { } @min
-    $stack $min $stack AST:Types-len AST:Types-clone-slice #params
-    $iff-stack $min $iff-stack AST:Types-len AST:Types-clone-slice #rets
+    $self.arena $stack $min $stack AST:Types-len AST:Types-clone-slice #params
+    $self.arena $iff-stack $min $iff-stack AST:Types-len AST:Types-clone-slice #rets
 
     // clear stack
     loop {
@@ -663,21 +663,17 @@ fn check-iff(
     // and replace with the iff-stack
     loop {
         $iff-stack AST:Types-len $stack AST:Types-len = if { break }
-        $stack $iff-stack $stack AST:Types-len AST:Types-get AST:Types-push
+        $self.arena $stack $iff-stack $stack AST:Types-len AST:Types-get AST:Types-push
     }
 
     $iff $params AST:If-set-params 
     $rets #iff.rets
-    $iff-stack AST:Types-free-container
-    $el-stack !i32 0 /= if {
-        $el-stack AST:Types-free-container
-    }
 
     $true-branch-diverges $false-branch-diverges or
 }
 
-fn check-brek(bs: .DynArray:DynArray<.BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {
-    $bs $word $stack AST:Types-clone-container BS:BreakStack-new DynArray:push<.BS:BreakStack>
+fn check-brek(arena: .Arena:Arena, bs: .DynArray:DynArray<.BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {
+    $bs $word $arena $stack AST:Types-clone-container BS:BreakStack-new DynArray:push<.BS:BreakStack>
     loop {
         0 $stack AST:Types-len = if { break }
         $stack AST:Types-pop drop
@@ -704,15 +700,15 @@ fn check-lop(
 
     $bs.len 0 = if {
         0 0 = 
-        AST:Types-new #word.lop.rets
+        $self.arena AST:Types-new #word.lop.rets
     } else {
         0 @i
         loop {
             &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-len $i = if { break }
-            $stack &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $i AST:Types-get AST:Types-push
+            $self.arena $stack &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-clone-container #word.lop.rets
+        $self.arena &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-clone-container #word.lop.rets
         0 1 =
     }
     $bs DynArray:free<.BS:BreakStack>
@@ -771,11 +767,11 @@ fn check-blok(
     $stack AST:Types-len @orig-stack-len
     $module &bs $self $stack &word.blok.locals $scope-id $word.blok.body check-words @diverges
 
-    AST:Types-new @remaining-types
+    $self.arena AST:Types-new @remaining-types
     $orig-stack-len @i
     loop {
         $i $stack AST:Types-len ge if { break }
-        $remaining-types $stack $i AST:Types-get AST:Types-push
+        $self.arena $remaining-types $stack $i AST:Types-get AST:Types-push
         $i 1 + #i
     }
     loop {
@@ -786,15 +782,15 @@ fn check-blok(
     &bs "block" check-brek-stacks
 
     $bs.len 0 = if {
-        AST:Types-new #word.blok.rets
+        $self.arena AST:Types-new #word.blok.rets
     } else {
         0 @i
         loop {
             &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-len $i = if { break }
-            $stack &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $i AST:Types-get AST:Types-push
+            $self.arena $stack &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-clone-container #word.blok.rets
+        $self.arena &bs 0 DynArray:get<.BS:BreakStack> ~ BS:BreakStack-types AST:Types-clone-container #word.blok.rets
     }
     $bs DynArray:free<.BS:BreakStack>
     $diverges
@@ -843,14 +839,14 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
     $generics 0 !.AST:Generics /=   // the function has generics
     and @generics-involved
 
-    AST:Types-new @params
+    $self.arena AST:Types-new @params
     0 @i
     loop {
         $i $param-locals AST:Locals-len = if { break }
         $param-locals $i AST:Locals-get @locl
         $locl AST:Local-ty AST:LOCAL_ARGUMENT = if {
             $locl AST:Local-type @type
-            $params $self.arena $type $word.generics $module AST:Type-apply-generics drop AST:Types-push
+            $self.arena $params $self.arena $type $word.generics $module AST:Type-apply-generics drop AST:Types-push
         }
         $i 1 + #i
     }
@@ -860,7 +856,7 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
 
 fn check-call(self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
     $self $module $stack $word 0 1 = check-function-usage #module @ret @params
-    $ret AST:Types-clone-container #word.rets
+    $self.arena $ret AST:Types-clone-container #word.rets
     $self.modules $module M:Modules-find-index #word.module
  
     $stack 
@@ -875,7 +871,7 @@ fn check-call(self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:W
         $self.arena $type $word.generics $module AST:Type-apply-generics if {
             #type
         } else { drop }
-        $stack $type AST:Types-push
+        $self.arena $stack $type AST:Types-push
         $i 1 + #i
     }
     0 1 = 

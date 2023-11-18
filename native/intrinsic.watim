@@ -29,7 +29,7 @@ fn check-intrinsic(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:Type
             $stack $word check-intrinsic-store break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_LOAD8 = if {
-            $stack $word check-intrinsic-load break
+            $arena $stack $word check-intrinsic-load break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_ADD = 
         $word AST:Word-intrinsic AST:INTRINSIC_SUB = or 
@@ -49,7 +49,7 @@ fn check-intrinsic(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:Type
             $stack $word check-intrinsic-and-or-or break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_FLIP = if {
-            $stack $word check-intrinsic-flip break
+            $arena $stack $word check-intrinsic-flip break
         }
         $word AST:Word-intrinsic AST:INTRINSIC_MOD = if {
             $stack $word check-intrinsic-mod break
@@ -120,12 +120,15 @@ fn check-intrinsic-mod(stack: .AST:Types, word: .AST:Word) {
     }
     $stack AST:Types-pop drop
 }
-fn check-intrinsic-flip(stack: .AST:Types, word: .AST:Word) {
+fn check-intrinsic-flip(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 2 lt if {
         $stack $word "expected 2 values on stack got: " report-error
     }
+    $arena
     $stack AST:Types-pop
     $stack AST:Types-pop
+    flip
+    $arena
     flip
     $stack flip AST:Types-push
     $stack flip AST:Types-push
@@ -159,9 +162,9 @@ fn check-compare-intrinsics(arena: .Arena:Arena, temp-types: .DynArray:DynArray<
     $right AST:Type-ty AST:TYPE_I32 /= or if {
         $stack $word "expected a => [a, a] got: " report-error
     }
-    $stack $temp-types $arena AST:Type-new-boolean U:push-temp-type2 AST:Types-push
+    $arena $stack $temp-types $arena AST:Type-new-boolean U:push-temp-type2 AST:Types-push
 }
-fn check-intrinsic-load(stack: .AST:Types, word: .AST:Word) {
+fn check-intrinsic-load(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) {
     local type: .AST:Type
     $stack AST:Types-len 0 = if {
         $stack $word "expected pointer got: " report-error
@@ -171,7 +174,7 @@ fn check-intrinsic-load(stack: .AST:Types, word: .AST:Word) {
         $stack $word "expected pointer got: " report-error
     }
     $stack AST:Types-pop drop
-    $stack $type AST:Type-child AST:Types-push
+    $arena $stack $type AST:Type-child AST:Types-push
 }
 fn check-intrinsic-store(stack: .AST:Types, word: .AST:Word) {
     local right: .AST:Type
@@ -224,13 +227,13 @@ fn check-intrinsic-add-or-sub(arena: .Arena:Arena, temp-types: .DynArray:DynArra
 
     block {
         $left AST:Type-ty AST:TYPE_I32 = $right AST:Type-ty AST:TYPE_I32 = and if {
-            $stack $left AST:Types-push break
+            $arena $stack $left AST:Types-push break
         }
         $left AST:Type-ty AST:TYPE_PTR = $right AST:Type-ty AST:TYPE_I32 = and if {
-            $stack $left AST:Types-push break
+            $arena $stack $left AST:Types-push break
         }
         $left AST:Type-ty AST:TYPE_PTR = $right AST:Type-ty AST:TYPE_PTR = and if {
-            $stack $temp-types $arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push break
+            $arena $stack $temp-types $arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push break
         }
         $stack $word "expected [i32, i32] or [.T, i32] or [.T, .T] got: " report-error
     }
@@ -247,7 +250,7 @@ fn check-intrinsic-eq(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:T
         $stack AST:Types-pop drop
         $stack AST:Types-pop drop
     }
-    $stack $temp-types $arena AST:Type-new-boolean U:push-temp-type2 AST:Types-push
+    $arena $stack $temp-types $arena AST:Type-new-boolean U:push-temp-type2 AST:Types-push
 }
 fn check-intrinsic-drop(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 0 = if { 

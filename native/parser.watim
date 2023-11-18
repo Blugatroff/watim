@@ -26,7 +26,7 @@ fn Parser-new(arena: .Arena:Arena, tokens: .Array:Array<L:Token>, mem: .S:String
     $tokens #self.tokens
     0 #self.current
     $mem #self.mem
-    \AST:Type-free DynArray:new<.AST:Type> #self.types
+    0!(.AST:Type ->) DynArray:new<.AST:Type> #self.types
     $tokens.len 0 gt if {
         $tokens 0 Array:get<L:Token> L:Token-file ~ #self.file
     }
@@ -413,7 +413,7 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
         } if {
             $self Parser-parse-return-types #ret
         } else {
-            AST:Types-new #ret
+            $self.arena AST:Types-new #ret
         }
         
         $ident
@@ -440,6 +440,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
     $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
         $token L:Token-location "expected }" U:abort-with-location
     }
+    $self.arena
     $ident
     $qualifier
     $generics
@@ -449,20 +450,18 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
     AST:Function-new
 }
 fn Parser-parse-return-types(self: .Parser) -> .AST:Types {
-    local token: .L:Token
-    local rets: .AST:Types
-    AST:Types-new #rets
-    $rets $self Parser-parse-type AST:Types-push
+    $self.arena AST:Types-new @rets
+    $self.arena $rets $self Parser-parse-type AST:Types-push
     loop {
         $self.current $self.tokens.len = if {
             $self.file STR:Str-unpack "expected , or { found EOF" U:abort
         }
-        $self Parser-peek #token
+        $self Parser-peek @token
         $token L:Token-ty L:TOKEN_COMMA /= if {
             break
         }
         $self Parser-advance drop
-        $rets $self Parser-parse-type AST:Types-push
+        $self.arena $rets $self Parser-parse-type AST:Types-push
     }
     $rets
 }
@@ -541,13 +540,13 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             $self.arena AST:Type-new-boolean break
         }
         $token L:Token-ty L:TOKEN_LEFT_PAREN = if {
-            AST:Types-new @args
-            AST:Types-new @rets
+            $self.arena AST:Types-new @args
+            $self.arena AST:Types-new @rets
             
             loop {
                 $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_ARROW = if { break }
-                $args $self Parser-parse-type AST:Types-push
+                $self.arena $args $self Parser-parse-type AST:Types-push
 
                 $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_ARROW = if { break }
@@ -566,7 +565,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             loop {
                 $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
-                $rets $self Parser-parse-type AST:Types-push
+                $self.arena $rets $self Parser-parse-type AST:Types-push
 
                 $self.current $self.tokens.len = if { break }
                 $self Parser-peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
@@ -604,7 +603,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
                 break
             } @token @module
 
-            AST:Types-new @generics
+            $self.arena AST:Types-new @generics
             
             $self.current $self.tokens.len = if {
                 $self.arena $module $token $generics AST:Type-new-struc break
@@ -622,7 +621,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
                 }
 
                 $self Parser-parse-type @type
-                $generics $type AST:Types-push
+                $self.arena $generics $type AST:Types-push
 
                 $self Parser-peek L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if {
                     $self Parser-advance drop // drop the >
@@ -953,14 +952,14 @@ fn Parser-parse-call-inner(self: .Parser, token: .L:Token, word: .AST:Word) { bl
     $self.current $self.tokens.len ge if { break }
     $self Parser-peek L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if { break }
     $self Parser-advance drop
-    AST:Types-new #word.generics
+    $self.arena AST:Types-new #word.generics
     loop {
         $self.current $self.tokens.len ge if { break }
         $self Parser-peek L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
 
         $self Parser-parse-type @type
 
-        $word.generics $type AST:Types-push
+        $self.arena $word.generics $type AST:Types-push
 
         $self.current $self.tokens.len ge if { 
             $self.file STR:Str-unpack "Expected > or , found EOF" U:abort

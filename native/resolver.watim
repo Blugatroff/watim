@@ -63,7 +63,7 @@ fn resolve-function(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module,
     $arena $modules $module &function.generics $function AST:Function-rets $phase resolve-types
     $arena $modules $module &function.generics $function AST:Function-locals $phase resolve-locals
     $arena $modules $module &function.generics $function AST:Function-body $phase resolve-words
-    $function AST:Function-gather-generics-types
+    $arena $function AST:Function-gather-generics-types
 }
 fn resolve-words(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, words: .AST:Words, phase: i32) {
     local i: i32

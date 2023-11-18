@@ -3,6 +3,7 @@ import "../std/core.watim" as CORE
 import "../std/string.watim" as S
 import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
+import "../std/arena.watim" as Arena
 
 import "./lexer.watim" as L
 import "./ast.watim" as AST
@@ -20,11 +21,11 @@ fn abort(file-ptr: .i32, file-len: i32, msg-ptr: .i32, msg-len: i32) {
 }
 
 fn report-stack-one-error(stack: .AST:Types, expected: .AST:Type, word: .AST:Word) {
-    local types: .AST:Types
-    AST:Types-new #types
-    $types $expected AST:Types-push
+    0 !.Arena:Arena Arena:temp @arena @save
+    $arena AST:Types-new @types
+    $arena $types $expected AST:Types-push
     $stack $types $word report-stack-mismatch
-    $types AST:Types-free
+    $arena $save Arena:restore
 }
 fn expect-stack-one(stack: .AST:Types, expected: .AST:Type, word: .AST:Word) {
     $stack AST:Types-len 0 = if {

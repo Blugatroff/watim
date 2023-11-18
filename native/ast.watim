@@ -9,6 +9,7 @@ import "../std/str-map.watim" as StrMap
 import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 import "../std/arena.watim" as Arena
+import "../std/array.watim" as Array
 
 import "./lexer.watim" as L
 import "./util.watim" as CU
@@ -286,11 +287,11 @@ fn Type-new(arena: .Arena:Arena, ty: i32) -> .Type {
     0 !.Types #self.generics
     $self
 }
-fn Type-clone(self: .Type) -> .Type {
-    sizeof(Type) A:alloc !.Type @new
+fn Type-clone(arena: .Arena:Arena, self: .Type) -> .Type {
+    $arena Arena:alloc<Type> @new
     $self $new 1 CORE:copy<Type>
     $self.ty TYPE_STRUCT = if {
-        $self.generics Types-clone #new.generics
+        $arena $self.generics Types-clone #new.generics
     }
     $new
 }
@@ -342,23 +343,11 @@ fn Type-ident(self: .Type) -> .L:Token {
 fn Type-struc(self: .Type) -> .Struct {
     $self.struc
 }
-fn Type-free(self: .Type) {
-    $self.ty TYPE_STRUCT = 
-    $self.ty TYPE_GENERIC = or
-    if {
-        $self.generics Types-free-container
-    }
-    $self.ty TYPE_FUNCTION = if {
-        $self.function.args Types-free-container
-        $self.function.rets Types-free-container
-    }
-    // $self !.i32 A:free
-}
 fn Type-ty(self: .Type) -> i32 {
     $self.ty
 }
 fn Type-child(self: .Type) -> .Type {
-    $self.child !.Type
+    $self.child
 }
 
 fn Type-apply-generics(arena: .Arena:Arena, self: .Type, generics: .Types, module: .M:Module) -> .Type, bool { block {
@@ -514,28 +503,13 @@ fn Type-is-generic(self: .Type) -> bool { block {
 } }
 
 struct Types {
-    inner: IV:I32Vec
+    inner: Array:Array<.Type>
     min-size: i32
-    ref-count: i32
 }
-fn Types-new() -> .Types {
-    sizeof(Types) A:alloc !.Types @self
-    IV:I32Vec-new #self.inner
-    1 #self.ref-count
+fn Types-new(arena: .Arena:Arena) -> .Types {
+    $arena Arena:alloc<Types> @self
+    Array:new<.Type> #self.inner
     $self
-}
-fn Types-free(self: .Types) {
-    0 @i
-    $self.ref-count 1 = if {
-        loop {
-            $i &self.inner IV:I32Vec-len = if { break }
-            &self.inner $i IV:I32Vec-get !.Type Type-free
-            $i 1 + #i
-        }
-    } else {
-        $self.ref-count 1 - #self.ref-count
-    }
-    $self Types-free-container
 }
 fn Types-reset-min(self: .Types) {
     $self Types-len #self.min-size
@@ -543,49 +517,39 @@ fn Types-reset-min(self: .Types) {
 fn Types-min(self: .Types) -> i32 {
     $self.min-size
 }
-fn Types-clone-container(self: .Types) -> .Types {
-    sizeof(Types) A:alloc !.Types @new
-    &self.inner IV:I32Vec-clone #new.inner
+fn Types-clone-container(arena: .Arena:Arena, self: .Types) -> .Types {
+    $arena Arena:alloc<Types> @new
+    $arena &self.inner Array:clone<.Type> #new.inner
     $self Types-min #new.min-size
-    1 #new.ref-count
     $new
 }
-fn Types-free-container(self: .Types) {
-    $self.ref-count 1 = if {
-        $self.inner IV:I32Vec-free
-        $self !.i32 A:free
-    } else {
-        $self.ref-count 1 - #self.ref-count
-    }
-}
-fn Types-push(self: .Types, f: .Type) {
-    &self.inner $f !i32 IV:I32Vec-push
+fn Types-push(arena: .Arena:Arena, self: .Types, f: .Type) {
+    $arena &self.inner $f Array:push<.Type>
 }
 fn Types-pop(self: .Types) -> .Type {
-    &self.inner IV:I32Vec-pop !.Type
+    &self.inner Array:pop<.Type>
     $self Types-min $self Types-len CORE:min #self.min-size
 }
-fn Types-clone(self: .Types) -> .Types {
-    $self 0 0 Types-clone-slice
+fn Types-clone(arena: .Arena:Arena, self: .Types) -> .Types {
+    $arena $self 0 0 Types-clone-slice
 }
-fn Types-clone-slice(self: .Types, start: i32, end: i32) -> .Types {
-    local new: .Types
-    Types-new #new
+fn Types-clone-slice(arena: .Arena:Arena, self: .Types, start: i32, end: i32) -> .Types {
+    $arena Types-new @new
     loop {
         $start $end = if { break }
-        $new $self $start Types-get Type-clone Types-push
+        $arena $new $arena $self $start Types-get Type-clone Types-push
         $start 1 + #start
     }
     $new
 }
 fn Types-len(self: .Types) -> i32 {
-    &self.inner IV:I32Vec-len
+    $self.inner.len
 }
 fn Types-get(self: .Types, index: i32) -> .Type {
-    &self.inner $index IV:I32Vec-get !.Type
+    &self.inner $index Array:get<.Type> ~
 }
 fn Types-get-ref(self: .Types, index: i32) -> ..Type {
-    &self.inner $index IV:I32Vec-get-ref !..Type
+    &self.inner $index Array:get<.Type>
 }
 // argument `generics` is optional/null
 fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
@@ -607,13 +571,13 @@ fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
 }
 fn Types-apply-generics(arena: .Arena:Arena, self: .Types, generics: .Types, module: .M:Module) -> .Types, bool {
     $self Types-len 0 = if { $self 0 1 = } else {
-        Types-new @new
+        $arena Types-new @new
         0 1 = @use-new
         0 @i
         loop {
             $i $self Types-len = if { break }
             $self $i Types-get @type
-            $arena $type $generics $module Type-apply-generics if {
+            $arena $arena $type $generics $module Type-apply-generics if {
                 1 1 = #use-new
                 $new flip Types-push
             } else {
@@ -625,7 +589,7 @@ fn Types-apply-generics(arena: .Arena:Arena, self: .Types, generics: .Types, mod
         $use-new if {
             &module.types-types $new DynArray:push<.Types>
             $new
-        } else { $new Types-free-container $self }
+        } else { $self }
         $use-new
     }
 }
@@ -714,12 +678,6 @@ fn If-free(self: .If) {
     $self.has-el if {
         $self.el Words-free
     }
-    $self.params !i32 0 /= if {
-        $self.params Types-free
-    }
-    $self.rets !i32 0 /= if {
-        $self.rets Types-free
-    }
     $self.locals Locals-free
     $self !.i32 A:free
 }
@@ -753,7 +711,6 @@ fn Loop-new(token: .L:Token, body: .Words) -> .Loop {
 fn Loop-free(self: .Loop) {
     $self.body Words-free
     $self.locals Locals-free
-    $self.rets 0 !.Types /= if { $self.rets Types-free-container }
     $self !.i32 A:free
 }
 
@@ -774,7 +731,6 @@ fn Block-new(token: .L:Token, body: .Words) -> .Block {
 fn Block-free(self: .Block) {
     $self.body Words-free
     $self.locals Locals-free
-    $self.rets 0 !.Types /= if { $self.rets Types-free-container }
     $self !.i32 A:free
 }
 
@@ -851,11 +807,6 @@ fn Word-free(self: Word) {
     $self.ty WORD_DEREF = or
     if {
         $self.fields DynArray:free<.L:Token>
-    }
-    $self.rets 0 !.Types /= if { $self.rets Types-free-container }
-    $self.args 0 !.Types /= if { $self.args Types-free-container }
-    $self.generics 0 !.Types /= if {
-        $self.generics Types-free-container
     }
 }
 fn Word-mark-checked(self: .Word) {
@@ -1188,6 +1139,7 @@ struct Function {
     table-index: i32
 }
 fn Function-new(
+    arena: .Arena:Arena,
     ident: .L:Token, 
     export: .L:Token, 
     generics: Generics,
@@ -1206,25 +1158,23 @@ fn Function-new(
     0 1 = #self.diverges
     0 #self.table-index
     Instances-new #self.instances
-    Types-new #self.generics-types 
+    $arena Types-new #self.generics-types 
     $self
 }
 fn Function-free(self: .Function) {
-    $self.ret Types-free-container
     $self.body Words-free
     $self.locals Locals-free
     $self.generics Generics-free
     $self.instances Instances-free
-    $self.generics-types Types-free-container
     $self !.i32 A:free
 }
-fn Function-gather-generics-types(self: .Function) { // should be called after resolving
+fn Function-gather-generics-types(arena: .Arena:Arena, self: .Function) { // should be called after resolving
     0 @i
     loop {
         $i &self.locals Locals-len = if { break }
         &self.locals $i Locals-get @locl
         $locl.type.ty TYPE_GENERIC = if {
-            $self.generics-types $locl.type Types-push
+            $arena $self.generics-types $locl.type Types-push
         }
         $i 1 + #i
     }
@@ -1295,7 +1245,6 @@ fn Extern-ident(self: .Extern) -> .L:Token {
 }
 fn Extern-free(self: .Extern) {
     $self.params Locals-free
-    $self.rets Types-free-container
     $self !.i32 A:free
 }
 
