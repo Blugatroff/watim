@@ -1,20 +1,14 @@
-import "../std/alloc.watim" as A
-import "../std/i32vec.watim" as IV
 import "./ast.watim" as AST
 
 struct BreakStack {
     word: .AST:Word
     types: .AST:Types
 }
-fn BreakStack-new(word: .AST:Word, types: .AST:Types) -> .BreakStack {
-    local self: .BreakStack
-    sizeof(BreakStack) A:alloc !.BreakStack #self
+fn BreakStack-new(word: .AST:Word, types: .AST:Types) -> BreakStack {
+    local self: BreakStack
     $word #self.word
     $types #self.types
     $self
-}
-fn BreakStack-free(self: .BreakStack) {
-    $self !.i32 A:free
 }
 fn BreakStack-types(self: .BreakStack) -> .AST:Types {
     $self.types
