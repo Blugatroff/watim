@@ -24,7 +24,7 @@ struct Module {
     structs: DynArray:DynArray<.AST:Struct>
     fields: DynArray:DynArray<AST:Field>
     types-types: DynArray:DynArray<.AST:Types>
-    words-words: DynArray:DynArray<.AST:Words>
+    words-words: Array:Array<.AST:Words>
 }
 
 fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
@@ -64,6 +64,7 @@ fn Module-new(
     $arena &self &self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
     0!(.AST:Types ->) DynArray:new<.AST:Types> #self.types-types
+    Array:new<.AST:Words> #self.words-words
     // TODO: check for duplicate structs and memories
     $self
 }
@@ -128,7 +129,6 @@ fn Module-imports(self: .Module) -> .AST:Imports {
 fn Module-free(self: Module) {
     $self.types-types DynArray:free<.AST:Types>
     $self.items DynArray:free<.AST:TopItem>
-    $self.words-words DynArray:free<.AST:Words>
     $self.types DynArray:free<.AST:Type>
     $self.path S:String-free
     $self.structs DynArray:free<.AST:Struct>

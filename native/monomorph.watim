@@ -2,6 +2,7 @@ import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
@@ -35,7 +36,7 @@ fn gather-instances-item(arena: .Arena:Arena, module: .M:Module, item: .AST:TopI
             $arena AST:Types-new @generics
             &module.types-types $generics DynArray:push<.AST:Types>
             $arena $module $generics $function gather-instances-function @new-words
-            &module.words-words $new-words DynArray:push<.AST:Words>
+            $arena &module.words-words $new-words Array:push<.AST:Words>
             $generics $new-words AST:Instance-new @instance
             $function.instances $instance AST:Instances-push
         }
@@ -87,7 +88,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
                     $word.function.instances $new-instance AST:Instances-push
 
                     $arena $module $new-generics $word.function gather-instances-function @new-words
-                    &module.words-words $new-words DynArray:push<.AST:Words>
+                    $arena &module.words-words $new-words Array:push<.AST:Words>
                     $word.function.instances $instance-index AST:Instances-get .body $new-words store
                     $instance-index
                 } else {
