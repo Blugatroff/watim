@@ -16,6 +16,7 @@
                 pkgs.wasmtime
                 pkgs.wabt
                 python
+                pkgs.gnuplot
             ];
         in {
             devShells.default = pkgs.mkShell {

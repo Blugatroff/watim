@@ -1,5 +1,6 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
+import "./arena.watim" as Arena
 
 fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
     local i: i32
@@ -118,5 +119,8 @@ fn Str-drop-end(self: Str, n: i32) -> Str {
 }
 fn Str-empty() -> Str {
     0 !.i32 0 Str-new
+}
+fn Str-copy-into(arena: .Arena:Arena, self: Str) -> Str {
+    $arena $self.ptr $self.len Arena:push-bytes $self.len Str-new
 }
 

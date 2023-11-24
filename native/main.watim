@@ -46,29 +46,36 @@ fn find-flag(args: .Array:Array<STR:Str>, ptr: .i32, len: i32) -> bool {
 }
 
 fn main() {
-    memory temp: i32 65536 // 64 kiB
+    memory temp-mem: i32 65536 // 64 kiB
     memory mem: i32 41943040 // 40 * MiB
     memory alloc-mem: i32 8388608 // 8 MiB
 
-    ArenaGraph:begin
-    $temp 65536 Arena:init-temp
-    $mem 41943040 "Main" Arena:new @arena
+    $temp-mem 65536 Arena:init-temp
 
-    $alloc-mem 8388608 A:init
-
-    &arena FS:init "Failed to init fs" IO:exit-with-message @fs
-    &arena ARGS:get-args @args
+    0!.Arena:Arena Arena:temp @temp @save
+    $temp ARGS:get-args @args
+    $temp $save Arena:restore
 
     LOGGING:enable
     COMPILE set-mode
 
-    &args "--quiet" find-flag if { LOGGING:disable }
-    &args "-q" find-flag if { LOGGING:disable }
+    &args "-q" find-flag 
+    &args "--quiet" find-flag or if { LOGGING:disable }
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
     &args "--call-graph" find-flag if { CALL_GRAPH set-mode }
+    &args "--arena-graphs" find-flag if { ArenaGraph:enable LOGGING:disable }
 
     $args.len 1 le if { print-usage-and-exit }
-    &args 1 Array:remove<STR:Str> @path 
+
+    ArenaGraph:begin
+
+    $mem 41943040 "Main" Arena:new @arena
+    &args 1 Array:remove<STR:Str> &arena flip STR:Str-copy-into @path
+
+    $temp-mem 65536 Arena:init-temp
+    $alloc-mem 8388608 A:init
+
+    &arena FS:init "Failed to init fs" IO:exit-with-message @fs
  
     mode COMPILE = if {
         M:Modules-new @modules
