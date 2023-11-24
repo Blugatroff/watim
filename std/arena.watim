@@ -1,21 +1,40 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
 
+memory ON_NEW: (.Arena ->) 4
+memory ON_ALLOC: (.Arena, i32 ->) 4
+memory ON_RESTORE: (.Arena ->) 4
+memory ON_CLEAR: (.Arena ->) 4
+
+fn set-callbacks(on-new: (.Arena ->), on-alloc: (.Arena, i32 ->), on-restore: (.Arena ->), on-clear: (.Arena ->)) {
+    $ON_NEW $on-new store
+    $ON_ALLOC $on-alloc store
+    $ON_RESTORE $on-restore store
+    $ON_CLEAR $on-clear store
+}
+
 struct Arena {
     ptr: .i32
     cap: i32
     pos: i32
+    name-ptr: .i32
+    name-len: i32
+    index: i32
 }
 
-fn new(ptr: .i32, cap: i32) -> Arena {
+fn new(ptr: .i32, cap: i32, name-ptr: .i32, name-len: i32) -> Arena {
     local self: Arena
     $ptr #self.ptr
     $cap #self.cap
+    $name-ptr #self.name-ptr
+    $name-len #self.name-len
+    $ON_NEW ~ 0 !(.Arena ->) /= if { &self $ON_NEW ~ -> }
     $self
 }
 fn clear(self: .Arena) {
     $self.ptr $self.cap CORE:clear
     0 #self.pos
+    $ON_CLEAR ~ 0 !(.Arena ->) /= if { $self $ON_CLEAR ~ -> }
 }
 fn alloc-bytes(self: .Arena, size: i32) -> .i32 {
     $self.pos $size + $self.cap ge if {
@@ -30,6 +49,7 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 {
     }
     $self.ptr $self.pos +
     $self.pos $size + #self.pos
+    $ON_ALLOC ~ 0 !(.Arena ->) /= if { $self $size $ON_ALLOC ~ -> }
 }
 fn alloc<T>(self: .Arena) -> .T {
     $self sizeof(T) alloc-bytes !.T
@@ -62,8 +82,10 @@ fn save(self: .Arena) -> ArenaRestorePoint {
     $self.pos #point.pos
     $point
 }
+
 fn restore(self: .Arena, point: ArenaRestorePoint) {
     $point.pos #self.pos
+    $ON_RESTORE ~ 0 !(.Arena ->) /= if { $self $ON_RESTORE ~ -> }
 }
 fn usage(self: .Arena) -> i32 {
     $self.pos
@@ -72,19 +94,23 @@ fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
     $self.pos $point.pos -
 }
 
-memory TEMP1: Arena 12
-memory TEMP2: Arena 12
+memory TEMP1: Arena 24
+memory TEMP2: Arena 24
 
 fn init-temp(ptr: .i32, cap: i32) {
     $TEMP1 @temp
-    $ptr #temp.ptr
-    $cap 2 / #temp.cap
-    0 #temp.pos
+    $ptr
+    $cap 2 /
+    "Temp1"
+    new
+    =>temp
 
     $TEMP2 @temp
-    $ptr $cap 2 / + #temp.ptr
-    $cap 2 / #temp.cap
-    0 #temp.pos
+    $ptr $cap 2 / +
+    $cap 2 /
+    "Temp2"
+    new
+    =>temp
 }
 fn temp(persistent: .Arena) -> ArenaRestorePoint, .Arena {
     $persistent $TEMP1 = if { $TEMP2 } else { $TEMP1 } @arena

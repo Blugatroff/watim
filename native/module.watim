@@ -24,7 +24,7 @@ struct Module {
     structs: DynArray:DynArray<.AST:Struct>
     fields: DynArray:DynArray<AST:Field>
     types-types: DynArray:DynArray<.AST:Types>
-    words-words: Array:Array<.AST:Words>
+    words-words: Array:Array<Array:Array<AST:Word>>
 }
 
 fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
@@ -64,7 +64,7 @@ fn Module-new(
     $arena &self &self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
     0!(.AST:Types ->) DynArray:new<.AST:Types> #self.types-types
-    Array:new<.AST:Words> #self.words-words
+    Array:new<Array:Array<AST:Word>> #self.words-words
     // TODO: check for duplicate structs and memories
     $self
 }
@@ -287,13 +287,13 @@ fn mark-reachable-function(modules: .Modules, module: .Module, function: .AST:Fu
     }
 }
 
-fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
+fn mark-reachable-words(modules: .Modules, module: .Module, words: .Array:Array<AST:Word>) {
     local word: .AST:Word
     local i: i32
 
     loop {
-        $words AST:Words-len $i = if { break }
-        $words $i AST:Words-get #word
+        $words.len $i = if { break }
+        $words $i Array:get<AST:Word> #word
 
         $word AST:Word-ty AST:WORD_REF_FUNCTION = 
         $word AST:Word-ty AST:WORD_CALL = or if {
@@ -310,11 +310,11 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
         }
 
         $word AST:Word-ty AST:WORD_LOOP = if {
-            $modules $module $word.lop.body mark-reachable-words
+            $modules $module &word.lop.body mark-reachable-words
         }
 
         $word AST:Word-ty AST:WORD_BLOCK = if {
-            $modules $module $word.blok.body mark-reachable-words
+            $modules $module &word.blok.body mark-reachable-words
         }
 
         $i 1 + #i
@@ -322,9 +322,9 @@ fn mark-reachable-words(modules: .Modules, module: .Module, words: .AST:Words) {
 }
 
 fn mark-reachable-iff(modules: .Modules, module: .Module, iff: .AST:If) {
-    $modules $module $iff.body mark-reachable-words
+    $modules $module &iff.body mark-reachable-words
     $iff.has-el if {
-        $modules $module $iff.el mark-reachable-words
+        $modules $module &iff.el mark-reachable-words
     }
 }
 

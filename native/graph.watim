@@ -3,6 +3,7 @@ import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -44,8 +45,8 @@ fn call-graph-item(fmt: .FMT:Formatter, item: .AST:TopItem) {
 fn call-graph-function(fmt: .FMT:Formatter, function: .AST:Function) {
     0 @i
     loop {
-        $i $function.body AST:Words-len = if { break }
-        $function.body $i AST:Words-get @word
+        $i $function.body.len = if { break }
+        &function.body $i Array:get<AST:Word> @word
         $word.ty AST:WORD_CALL = if {
             $fmt FMT:Formatter-write-indent
 

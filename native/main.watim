@@ -10,6 +10,7 @@ import "../std/util.watim" as U
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
+import "../std/arena-graph.watim" as ArenaGraph
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -46,13 +47,14 @@ fn find-flag(args: .Array:Array<STR:Str>, ptr: .i32, len: i32) -> bool {
 
 fn main() {
     memory temp: i32 65536 // 64 kiB
-    memory mem: i32 12582912 // 12 * MiB
-    memory alloc-mem: i32 20971520 // 16 MiB
+    memory mem: i32 41943040 // 40 * MiB
+    memory alloc-mem: i32 8388608 // 8 MiB
 
+    ArenaGraph:begin
     $temp 65536 Arena:init-temp
-    $mem 12582912 Arena:new @arena
+    $mem 41943040 "Main" Arena:new @arena
 
-    $alloc-mem 20971520 A:init
+    $alloc-mem 8388608 A:init
 
     &arena FS:init "Failed to init fs" IO:exit-with-message @fs
     &arena ARGS:get-args @args
@@ -71,14 +73,21 @@ fn main() {
     mode COMPILE = if {
         M:Modules-new @modules
         S:String-empty @mem
+        &arena "load-modules" ArenaGraph:mark
         &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
+        &arena "R:resolve" ArenaGraph:mark
         &arena &modules R:resolve
+        &arena "MEM:process" ArenaGraph:mark
         &mem S:String-len &modules MEM:process @stack-start
+        &arena "C:check" ArenaGraph:mark
         &arena &modules C:check
+        &arena "Modules-mark-reachable" ArenaGraph:mark
         &modules M:Modules-mark-reachable
+        &arena "gather-instances" ArenaGraph:mark
         &arena &modules MONO:gather-instances
 
         FMT:Formatter-stdout @formatter
+        &arena "GEN:generate" ArenaGraph:mark
         &formatter $stack-start &mem &modules GEN:generate
         1 "\n" IO:write-all IO:check
         LOGGING:enabled if { 2 A:report }
@@ -108,6 +117,7 @@ fn main() {
     }
 
     &arena Arena:clear
+    ArenaGraph:end
 }
 
 fn parse-ast(arena: .Arena:Arena) {
@@ -172,8 +182,8 @@ fn set-mode(mode: i32) { $MODE $mode store }
 fn mode() -> i32 { $MODE ~ }
 
 fn start "_start" () {
-    // grow memory to (512 + 256) * 2B^16 = 48 MiB
-    512 256 + mem-grow 1 /= if { 1 CORE:exit } 
+    // grow memory to (512 + 256 + 128) * 2B^16 = 56 MiB
+    512 256 128 + + mem-grow 1 /= if { 1 CORE:exit } 
     main
 }
 

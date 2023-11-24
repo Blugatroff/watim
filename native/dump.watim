@@ -5,6 +5,7 @@ import "../std/str.watim" as STR
 import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -109,10 +110,10 @@ fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
     $formatter FMT:Formatter-indent
     
     loop {
-        $i $fun.body AST:Words-len = if { break }
+        $i $fun.body.len = if { break }
         
-        $formatter $fun.body $i AST:Words-get Word-json
-        $i 1 + $fun.body AST:Words-len /= if {
+        $formatter &fun.body $i Array:get<AST:Word> Word-json
+        $i 1 + $fun.body.len /= if {
             $formatter "," FMT:Formatter-write
         }
         $formatter "\n" FMT:Formatter-write

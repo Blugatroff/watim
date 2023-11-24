@@ -1,0 +1,97 @@
+import "./arena.watim" as Arena
+import "./io.watim" as IO
+
+memory ENABLED: bool 4
+memory SAMPLE: i32 4
+memory ACTIVE: i32 4
+memory ARENAS: i32 20
+memory N_MARKS: i32 4
+memory MARKS: i32 160 // space for 10 marks
+
+fn enable() {
+    $ENABLED 1 1 = store
+    \on-new \on-alloc \on-restore \on-clear Arena:set-callbacks
+}
+
+fn on-new(arena: .Arena:Arena) {
+    $ACTIVE ~ #arena.index
+    $ACTIVE $ACTIVE ~ 1 + store
+    $ARENAS $arena.index sizeof(i32) * + 0 store
+}
+
+fn on-clear(arena: .Arena:Arena) {
+    print-arena-levels
+    2 "# cleared " IO:write-all IO:check
+    2 $arena.name-ptr $arena.name-len IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    $ARENAS $arena.index sizeof(i32) * + 0 store
+}
+
+fn on-alloc(arena: .Arena:Arena, size: i32) {
+    print-arena-levels
+    2 "# alloced " IO:write-all IO:check
+    2 $size IO:print-to-fd
+    2 " bytes in " IO:write-all IO:check
+    2 $arena.name-ptr $arena.name-len IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    $ARENAS $arena.index sizeof(i32) * + $arena.pos store
+}
+
+fn on-restore(arena: .Arena:Arena) {
+    print-arena-levels
+    2 "# restored " IO:write-all IO:check
+    2 $arena.name-ptr $arena.name-len IO:write-all IO:check
+    2 "\n" IO:write-all IO:check
+    $ARENAS $arena.index sizeof(i32) * + $arena.pos store
+}
+
+fn print-arena-levels() {
+    2 " " IO:write-all IO:check
+    2 $SAMPLE ~ IO:print-to-fd
+    $SAMPLE $SAMPLE ~ 1 + store
+    0 @i
+    loop {
+        2 "\t" IO:write-all IO:check
+        $ACTIVE ~ $i = if { break }
+        2 $ARENAS $i sizeof(i32) * + ~ IO:print-to-fd
+        $i 1 + #i
+    }
+}
+
+fn begin() {
+    $ENABLED ~ if {
+        2 "$data << EOD\n" IO:write-all IO:check
+    }
+}
+
+fn end() {
+    $ENABLED ~ if {
+        2 "EOD\n" IO:write-all IO:check
+        0 @i
+        loop {
+            $i $N_MARKS ~ = if { break }
+            $MARKS $i sizeof(i32) 4 * * + @ptr
+            2 "set label " IO:write-all IO:check
+            2 $i 1 + IO:print-to-fd
+            2 " \"" IO:write-all IO:check
+            2 $ptr sizeof(i32) 2 * + ~ !.i32 $ptr sizeof(i32) 3 * + ~ IO:write-all IO:check
+            2 "\" at " IO:write-all IO:check
+            2 $ptr ~ IO:print-to-fd
+            2 "," IO:write-all IO:check
+            2 $ptr sizeof(i32) 1 * + ~ IO:print-to-fd
+            2 " point pointtype 0\n" IO:write-all IO:check
+            $i 1 + #i
+        }
+        2 "plot \"$data\" using 1:2 title 'Temp1' with lines, \"$data\" using 1:3 title 'Temp2', \"$data\" using 1:4 title 'Main' with lines\n" IO:write-all IO:check
+    }
+}
+
+fn mark(arena: .Arena:Arena, str-ptr: .i32, str-len: i32) {
+    $MARKS $N_MARKS ~ sizeof(i32) 4 * * + @ptr
+    $ptr sizeof(i32) 0 * + $SAMPLE ~ store
+    $ptr sizeof(i32) 1 * + $arena.pos store
+    $ptr sizeof(i32) 2 * + $str-ptr !i32 store
+    $ptr sizeof(i32) 3 * + $str-len store
+    $N_MARKS $N_MARKS ~ 1 + store
+}
+

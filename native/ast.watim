@@ -133,60 +133,6 @@ fn word-ty-name(ty: i32) -> .i32, i32 {
     }
 }
 
-struct Words {
-    ptr: .Word
-    len: i32
-    cap: i32
-}
-fn Words-new() -> .Words {
-    sizeof(Words) A:alloc !.Words @self
-    0 !.Word #self.ptr
-    0 #self.len
-    0 #self.cap
-    $self
-}
-fn Words-len(self: .Words) -> i32 {
-    $self.len
-}
-fn Words-get(self: .Words, index: i32) -> .Word {
-    $index $self.len ge if {
-        2 "Words: Index out of bounds\n" IO:write-all IO:check
-        1 CORE:exit
-    }
-    $self.ptr $index sizeof(Word) * +
-}
-fn Words-push(self: .Words, word: Word) {
-    local new-buf: .Word
-    local size: i32
-    local dst-ptr: .Word
-    $self.len 1 + $self.cap le if {
-        $self.ptr $self.len sizeof(Word) * + #dst-ptr
-        $word =>dst-ptr
-        $self.len 1 + #self.len
-    } else {
-        $self.cap 2 CORE:max 2 * #size
-        $size sizeof(Word) * A:alloc !.Word #new-buf
-        $self.ptr
-        $new-buf
-        $self.len
-        CORE:copy<Word>
-        $size #self.cap
-        $self.len 0 gt if {
-            $self.ptr !.i32 A:free
-        }
-        $new-buf #self.ptr
-        $self $word Words-push
-    }
-}
-fn Words-pop(self: .Words) -> Word {
-    $self.len 0 = if {
-        2 "Cannot pop from empty Words" IO:write-all IO:check
-        1 CORE:exit
-    }
-    $self $self.len 1 - Words-get ~
-    $self.len 1 - #self.len
-}
-
 fn TYPE_I32() -> i32 { 1 }
 fn TYPE_I64() -> i32 { 2 }
 fn TYPE_BOOL() -> i32 { 3 }
@@ -634,14 +580,14 @@ struct FunctionPtr {
 
 struct If {
     token: .L:Token
-    body: .Words
+    body: Array:Array<Word>
     has-el: bool
-    el: .Words
+    el: Array:Array<Word>
     params: .Types
     rets: .Types
     locals: Locals
 }
-fn If-new(token: .L:Token, body: .Words) -> If {
+fn If-new(token: .L:Token, body: Array:Array<Word>) -> If {
     local self: If
     $token #self.token
     $body #self.body
@@ -651,7 +597,7 @@ fn If-new(token: .L:Token, body: .Words) -> If {
     Locals-new #self.locals
     $self
 }
-fn If-new-with-el(token: .L:Token, body: .Words, el: .Words) -> If {
+fn If-new-with-el(token: .L:Token, body: Array:Array<Word>, el: Array:Array<Word>) -> If {
     local self: If
     $token #self.token
     $body #self.body
@@ -662,11 +608,11 @@ fn If-new-with-el(token: .L:Token, body: .Words, el: .Words) -> If {
     Locals-new #self.locals
     $self
 }
-fn If-body(self: .If) -> .Words {
-    $self.body
+fn If-body(self: .If) -> .Array:Array<Word> {
+    &self.body
 }
-fn If-el(self: .If) -> .Words {
-    $self.el
+fn If-el(self: .If) -> .Array:Array<Word> {
+    &self.el
 }
 fn If-params(self: .If) -> .Types {
     $self.params
@@ -677,11 +623,11 @@ fn If-set-params(self: .If, params: .Types) {
 
 struct Loop {
     token: .L:Token
-    body: .Words
+    body: Array:Array<Word>
     rets: .Types
     locals: Locals
 }
-fn Loop-new(token: .L:Token, body: .Words) -> Loop {
+fn Loop-new(token: .L:Token, body: Array:Array<Word>) -> Loop {
     local self: Loop
     $token #self.token
     $body #self.body
@@ -691,11 +637,11 @@ fn Loop-new(token: .L:Token, body: .Words) -> Loop {
 
 struct Block {
     token: .L:Token
-    body: .Words
+    body: Array:Array<Word>
     rets: .Types
     locals: Locals
 }
-fn Block-new(token: .L:Token, body: .Words) -> Block {
+fn Block-new(token: .L:Token, body: Array:Array<Word>) -> Block {
     local self: Block
     $token #self.token
     $body #self.body
@@ -1002,9 +948,9 @@ fn Generics-print(fd: i32, self: .Generics) {
 
 struct Instance {
     generics: .Types
-    body: .Words
+    body: Array:Array<Word>
 }
-fn Instance-new(generics: .Types, body: .Words) -> Instance {
+fn Instance-new(generics: .Types, body: Array:Array<Word>) -> Instance {
     local self: Instance
     $generics #self.generics
     $body #self.body
@@ -1075,7 +1021,7 @@ struct Function {
     export: .L:Token
     ret: .Types
     locals: Locals
-    body: .Words
+    body: Array:Array<Word>
     diverges: bool
     reachable: bool
     generics: Generics
@@ -1090,7 +1036,7 @@ fn Function-new(
     generics: Generics,
     ret: .Types,
     locals: Locals,
-    body: .Words
+    body: Array:Array<Word>
 ) -> .Function {
     local self: .Function
     sizeof(Function) A:alloc !.Function #self
@@ -1128,8 +1074,8 @@ fn Function-rets(self: .Function) -> .Types {
 fn Function-locals(self: .Function) -> .Locals {
     &self.locals
 }
-fn Function-body(self: .Function) -> .Words {
-    $self.body
+fn Function-body(self: .Function) -> .Array:Array<Word> {
+    &self.body
 }
 fn Function-ident(self: .Function) -> .L:Token {
     $self.ident

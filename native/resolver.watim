@@ -3,6 +3,7 @@ import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/alloc.watim" as A
 import "../std/dyn-array.watim" as DynArray
+import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 
 import "./ast.watim" as AST
@@ -65,11 +66,11 @@ fn resolve-function(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module,
     $arena $modules $module &function.generics $function AST:Function-body $phase resolve-words
     $arena $function AST:Function-gather-generics-types
 }
-fn resolve-words(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, words: .AST:Words, phase: i32) {
+fn resolve-words(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, generics: .AST:Generics, words: .Array:Array<AST:Word>, phase: i32) {
     local i: i32
     loop {
-        $i $words AST:Words-len = if { break }
-        $arena $modules $module $generics $words $i AST:Words-get $phase resolve-word
+        $i $words.len = if { break }
+        $arena $modules $module $generics $words $i Array:get<AST:Word> $phase resolve-word
         $i 1 + #i
     }
 }
@@ -81,10 +82,10 @@ fn resolve-word(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, gen
         $arena $modules $module $generics $word AST:Word-iff $phase resolve-iff
     }
     $word AST:Word-ty AST:WORD_LOOP = if {
-        $arena $modules $module $generics $word.lop.body $phase resolve-words
+        $arena $modules $module $generics &word.lop.body $phase resolve-words
     }
     $word AST:Word-ty AST:WORD_BLOCK = if {
-        $arena $modules $module $generics $word.blok.body $phase resolve-words
+        $arena $modules $module $generics &word.blok.body $phase resolve-words
     }
     $word AST:Word-ty AST:WORD_CALL = if {
         $arena $modules $module $generics $word $phase resolve-call

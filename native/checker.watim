@@ -109,14 +109,14 @@ fn check-words(
     stack: .AST:Types,
     locals: .AST:Locals,
     scope-id: .i32,
-    words: .AST:Words,
+    words: .Array:Array<AST:Word>,
 ) -> bool {
     local i: i32
     local diverges: bool
     loop {
-        $i $words AST:Words-len = if { break }
+        $i $words.len = if { break }
         $diverges
-        $module $bs $self $stack $locals $scope-id $words $i AST:Words-get check-word
+        $module $bs $self $stack $locals $scope-id $words $i Array:get<AST:Word> check-word
         or
         #diverges
         $i 1 + #i
@@ -214,6 +214,8 @@ fn check-word(
         $word AST:Word-ty AST:WORD_REF_FUNCTION = if {
             &module.types $self $module $stack $word check-ref-function break
         }
+        2 $word AST:Word-ty AST:word-ty-name IO:write-all IO:check
+        2 "\n" IO:write-all IO:check
         $word AST:Word-location " unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
@@ -694,7 +696,7 @@ fn check-lop(
     $scope-id ~ 1 + =>scope-id
     $scope-id ~ #word.lop.locals.id
 
-    $module &bs $self $stack &word.lop.locals $scope-id $word.lop.body check-words drop
+    $module &bs $self $stack &word.lop.locals $scope-id &word.lop.body check-words drop
     &bs "loop" check-brek-stacks
 
     $bs.len 0 = if {
@@ -764,7 +766,7 @@ fn check-blok(
     $scope-id ~ #word.blok.locals.id
     
     $stack AST:Types-len @orig-stack-len
-    $module &bs $self $stack &word.blok.locals $scope-id $word.blok.body check-words @diverges
+    $module &bs $self $stack &word.blok.locals $scope-id &word.blok.body check-words @diverges
 
     $self.arena AST:Types-new @remaining-types
     $orig-stack-len @i

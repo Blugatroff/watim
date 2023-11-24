@@ -299,7 +299,7 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     $self Parser-parse-number
     AST:Local-new-mem
 }
-fn Parser-parse-body(self: .Parser, locals: .AST:Locals) -> .AST:Words {
+fn Parser-parse-body(self: .Parser, locals: .AST:Locals) -> Array:Array<AST:Word> {
     local token: .L:Token
     loop {
         $self.current $self.tokens.len = if { break }
@@ -315,14 +315,14 @@ fn Parser-parse-body(self: .Parser, locals: .AST:Locals) -> .AST:Words {
     }
     $self Parser-parse-words
 }
-fn Parser-parse-words(self: .Parser) -> .AST:Words {
-    AST:Words-new @words
+fn Parser-parse-words(self: .Parser) -> Array:Array<AST:Word> {
+    Array:new<AST:Word> @words
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-peek @token
 
         $token is-start-of-word not if { break }
-        $words $self Parser-parse-word AST:Words-push
+        $self.arena &words $self Parser-parse-word Array:push<AST:Word>
     }
     $words
 }
@@ -333,7 +333,6 @@ fn Parser-parse-signature(self: .Parser) -> .L:Token, .L:Token, AST:Generics, AS
     local token: .L:Token
     local parameters: AST:Locals
     local ret: .AST:Types
-    local body: .AST:Words
     AST:Generics-new @generics
     $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected fn found EOF" U:abort
@@ -1155,7 +1154,7 @@ fn Parser-parse-set-locl(self: .Parser, token: .L:Token) -> AST:Word {
     $word
 }
 
-fn Parser-parse-block(self: .Parser) -> .AST:Words {
+fn Parser-parse-block(self: .Parser) -> Array:Array<AST:Word> {
     local token: .L:Token
     $self Parser-advance #token
     $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
