@@ -2,12 +2,12 @@ import "../std/fmt.watim" as FMT
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/util.watim" as U
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/alloc.watim" as A
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
+import "../std/byte-array.watim" as ByteArray
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -857,14 +857,14 @@ fn generate-global-mems(formatter: .FMT:Formatter, statics-len: i32, modules: .M
         $i 1 + #i
     }
 }
-fn generate-static-mem(formatter: .FMT:Formatter, mem: .S:String) {
+fn generate-static-mem(formatter: .FMT:Formatter, mem: .ByteArray:T) {
     memory buf: i32 4
-    local i: i32
     $formatter FMT:Formatter-write-indent
     $formatter "(data (i32.const 0) \"" FMT:Formatter-write
+    0 @i
     loop {
-        $mem S:String-len $i = if { break }
-        $formatter $mem S:String-unpack drop $i + load8 $buf CORE:escape
+        $mem.len $i = if { break }
+        $formatter $mem $i ByteArray:get $buf CORE:escape
         $buf flip FMT:Formatter-write
         $i 1 + #i
     }
@@ -1367,7 +1367,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
         $modules $i M:Modules-get-value @module
         LOGGING:enabled if {
             2 "Codegen for module: " IO:write-all IO:check
-            2 &module.path S:String-unpack IO:write-all IO:check
+            2 $module.path STR:Str-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
         }
         0 @j
@@ -1383,7 +1383,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
                         2 "Unused function: " IO:write-all IO:check
                         2 $function.ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
                         2 ", in module: " IO:write-all IO:check
-                        2 &module.path S:String-unpack IO:write-all IO:check
+                        2 $module.path STR:Str-unpack IO:write-all IO:check
                         2 "\n" IO:write-all IO:check
                     }
                 }
@@ -1458,7 +1458,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
     $fs DynArray:free<ExternOrFunction>
 }
 
-fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules: .M:Modules) {
+fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .ByteArray:T, modules: .M:Modules) {
     $formatter "(module\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
 
@@ -1483,7 +1483,7 @@ fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .S:String, modules
 
     $formatter $modules generate-table
 
-    $formatter $mem S:String-len $modules generate-global-mems
+    $formatter $mem.len $modules generate-global-mems
 
     $formatter $mem generate-static-mem
     $formatter "\n" FMT:Formatter-write

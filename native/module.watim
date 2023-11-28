@@ -1,4 +1,3 @@
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/io.watim" as IO
 import "../std/str-map.watim" as StrMap
@@ -9,6 +8,7 @@ import "../std/core.watim" as CORE
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
+import "../std/byte-array.watim" as ByteArray
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
@@ -20,25 +20,24 @@ struct Module {
     file: STR:Str
     tokens: Array:Array<L:Token>
     types: DynArray:DynArray<.AST:Type>
-    path: S:String
+    path: STR:Str
     structs: DynArray:DynArray<.AST:Struct>
     fields: DynArray:DynArray<AST:Field>
     types-types: DynArray:DynArray<.AST:Types>
     words-words: Array:Array<Array:Array<AST:Word>>
 }
 
-fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path-ptr: .i32, path-len: i32, mem: .S:String) -> Module {
-    $path-ptr $path-len S:String-new-heap @path
-    $arena $fs &path S:String-unpack FS:read-file @code @str
+fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path: STR:Str, mem: .ByteArray:T) -> Module {
+    $arena $fs $path STR:Str-unpack FS:read-file @code @str
     $code 0 /= if {
         2 "Failed to read file: \"" IO:write-all IO:check
-        2 $path-ptr $path-len IO:write-all IO:check
+        2 $path STR:Str-unpack IO:write-all IO:check
         2 "\" Error Code: " IO:write-all IO:check
         2 $code IO:print-to-fd
         2 "\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $arena $str &path S:String-unpack STR:Str-new L:lex @tokens
+    $arena $str $path L:lex @tokens
     $arena $mem &tokens P:parse @fields @types @items
     
     $arena $items $path $str $tokens $types $fields Module-new
@@ -47,7 +46,7 @@ fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path-ptr: .i32, path-len
 fn Module-new(
     arena: .Arena:Arena,
     items: DynArray:DynArray<.AST:TopItem>, 
-    path: S:String, 
+    path: STR:Str,
     file: STR:Str, 
     tokens: Array:Array<L:Token>, 
     types: DynArray:DynArray<.AST:Type>, 
@@ -61,7 +60,7 @@ fn Module-new(
     $path #self.path
     \AST:Struct-free DynArray:new<.AST:Struct> #self.structs
     $fields #self.fields
-    $arena &self &self.path Module-extract-imports
+    $arena &self $self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
     0!(.AST:Types ->) DynArray:new<.AST:Types> #self.types-types
     Array:new<Array:Array<AST:Word>> #self.words-words
@@ -101,7 +100,7 @@ fn Module-check-for-duplicate-functions(self: .Module) {
     }
 }
 
-fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: .S:String) {
+fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: STR:Str) {
     AST:Imports-new #self.imports
     0 @i
     loop {
@@ -109,14 +108,16 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: .S:St
         &self.items $i DynArray:get<.AST:TopItem> ~ @item
         $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
             $item.imp @imp
-            $module-path S:String-unpack FS:path-dir S:String-new @path
-            &path $imp AST:Import-path-content S:String-append
+            $arena Arena:temp @temp @save
+            $temp $module-path STR:Str-unpack FS:path-dir Arena:push-bytes @path
+            $temp $imp AST:Import-path-content Arena:push-bytes drop
 
             $arena &self.imports
             $item.imp AST:Import-ident L:Token-lexeme ~
-            $arena &path S:String-unpack FS:normalize 
-            AST:Imports-insert
-            $path S:String-free
+            $arena $path $temp.pos $save.pos - FS:normalize @path-len @path-ptr
+            $path-ptr $path-len AST:Imports-insert
+
+            $temp $save Arena:restore
         }
         $i 1 + #i
     }
@@ -130,7 +131,6 @@ fn Module-free(self: Module) {
     $self.types-types DynArray:free<.AST:Types>
     $self.items DynArray:free<.AST:TopItem>
     $self.types DynArray:free<.AST:Type>
-    $self.path S:String-free
     $self.structs DynArray:free<.AST:Struct>
     $self.fields DynArray:free<AST:Field>
 }

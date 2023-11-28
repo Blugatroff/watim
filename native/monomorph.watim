@@ -1,6 +1,5 @@
 import "../std/io.watim" as IO
 import "../std/str.watim" as STR
-import "../std/string.watim" as S
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena

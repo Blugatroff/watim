@@ -8,6 +8,7 @@ struct Array<T> {
     ptr: .T
     len: i32
     cap: i32
+    arena: .A:Arena
 }
 
 fn new<T>() -> Array<T> {
@@ -15,31 +16,44 @@ fn new<T>() -> Array<T> {
     0 !.T #self.ptr
     0 #self.len
     0 #self.cap
+    0 !.A:Arena #self.arena
     $self
+}
+fn check-same-arena<T>(self: .Array<T>, arena: .A:Arena) {
+    $self.arena 0 !.A:Arena = if {
+        $arena #self.arena
+    } else {
+        $self.arena $arena /= if {
+            2 "Array: used different arenas\n" IO:write-all IO:check
+            0 0 / drop
+        }
+    }
 }
 fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
     local self: Array<T>
     $elems #self.cap
     $arena $ptr $elems A:push-many<T> #self.ptr
     $elems #self.len
+    $arena #self.arena
     $self
 }
 fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
     local new-buf: .T
-    local size: i32
+    $self $arena check-same-arena<T>
     $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(T) * + $val store
         $self.len 1 + #self.len
     } else {
-        $self.cap 2 CORE:max 2 * #size
-        $arena $self.ptr $size A:push-many<T> #new-buf
+        $self.cap 2 CORE:max 2 * @size
+        $arena $size A:alloc-many<T> #new-buf
+        $self.ptr $new-buf $self.len CORE:copy<T>
         $size #self.cap
         $new-buf #self.ptr
         $arena $self $val push<T>
     } 
 }
 fn get<T>(self: .Array<T>, index: i32) -> .T {
-    $index $self.len ge if { 
+    $index $self.len ge if {
         2 "Index out of bounds\n" IO:write-all IO:check
         0 0 / drop
         1 CORE:exit
@@ -54,7 +68,7 @@ fn set<T>(self: .Array<T>, index: i32, value: T) -> T {
 }
 fn pop<T>(self: .Array<T>) -> T {
     $self.len 0 = if {
-        2 "Cannot pop from empty DynArray" IO:write-all IO:check
+        2 "Cannot pop from empty Array" IO:write-all IO:check
         1 CORE:exit
     }
     $self $self.len 1 - get<T> ~ 

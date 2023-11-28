@@ -1,5 +1,4 @@
 import "../std/io.watim" as IO
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/alloc.watim" as A
 import "../std/dyn-array.watim" as DynArray
@@ -173,7 +172,7 @@ fn resolve-type(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, gen
                         $module-token L:Token-location "module not found\n" U:abort-with-location
                     }
                 } else {
-                    &module.path S:String-unpack STR:Str-new #path
+                    $module.path #path
                 }
 
                 $modules $path STR:Str-unpack $ident ~ STR:Str-unpack M:Modules-find-struc if {

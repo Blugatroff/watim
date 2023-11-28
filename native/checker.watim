@@ -1,12 +1,12 @@
 import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/core.watim" as CORE
 import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
+import "../std/byte-array.watim" as ByteArray
 
 import "./module.watim" as M
 import "./ast.watim" as AST
@@ -35,7 +35,7 @@ fn check(arena: .Arena:Arena, modules: .M:Modules) {
         $modules $i M:Modules-get-value @module
         LOGGING:enabled if {
             2 "Typechecking module: " IO:write-all IO:check
-            2 &module.path S:String-unpack IO:write-all IO:check
+            2 $module.path STR:Str-unpack IO:write-all IO:check
             2 "\n" IO:write-all IO:check
         }
         &checker $module check-module
@@ -58,17 +58,18 @@ fn check-item(self: .Checker, module: .M:Module, item: .AST:TopItem) {
 }
 
 fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
-    S:String-empty @msg
-    &msg FMT:Formatter-into-string @formatter
+    0 !.Arena:Arena Arena:temp @arena @save
+    ByteArray:new @msg
+    $arena &msg FMT:Formatter-into-string @formatter
     &formatter "return type mismatch:\nexpected: " FMT:Formatter-write
     &formatter 0 !.AST:Types $function AST:Function-rets AST:Types-format
     &formatter "\ngot:      " FMT:Formatter-write
     &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter "\n" FMT:Formatter-write
     $function AST:Function-ident L:Token-location
-    &msg S:String-unpack
+    &msg ByteArray:unpack
     U:abort-with-location
-    $msg S:String-free
+    $arena $save Arena:restore
 }
 fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     local scope-id: CORE:I32
@@ -801,10 +802,12 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
     $self.modules $module $word.qualifier $word resolve-module #module
     $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-function not if {
         drop drop
-        "function: `" S:String-new @msg
-        &msg $word AST:Word-ident ~ STR:Str-unpack S:String-append
-        &msg "` not found\n" S:String-append
-        $word AST:Word-location &msg S:String-unpack U:abort-with-location
+        $self.arena Arena:temp @temp @save
+        $temp "function: `" Arena:push-bytes @msg
+        $temp $word AST:Word-ident ~ STR:Str-unpack Arena:push-bytes drop
+        $temp "` not found\n" Arena:push-bytes drop
+        $word AST:Word-location $msg $temp.pos $save.pos - U:abort-with-location
+        $temp $save Arena:restore
     } else { 
         #word.function #word.ext
     }

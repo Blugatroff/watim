@@ -1,11 +1,11 @@
 import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
+import "../std/byte-array.watim" as ByteArray
 
 import "./lexer.watim" as L
 import "./ast.watim" as AST
@@ -14,13 +14,13 @@ import "./util.watim" as U
 struct Parser {
     tokens: .Array:Array<L:Token>
     current: i32
-    mem: .S:String
+    mem: .ByteArray:T
     types: DynArray:DynArray<.AST:Type>
     fields: DynArray:DynArray<AST:Field>
     file: STR:Str
     arena: .Arena:Arena
 }
-fn Parser-new(arena: .Arena:Arena, tokens: .Array:Array<L:Token>, mem: .S:String) -> Parser {
+fn Parser-new(arena: .Arena:Arena, tokens: .Array:Array<L:Token>, mem: .ByteArray:T) -> Parser {
     local self: Parser
     $arena #self.arena
     $tokens #self.tokens
@@ -846,14 +846,14 @@ fn Parser-parse-word(self: .Parser) -> AST:Word {
 
             $token.string.len #word.size
             $token.string #word.string
-            $self.mem S:String-unpack 
+            $self.mem ByteArray:unpack
             $token.string STR:Str-unpack
             STR:str-find-str if {
                 #word.addr
             } else {
                 drop
-                $self.mem S:String-len #word.addr
-                $self.mem $token.string STR:Str-unpack S:String-append
+                $self.mem.len #word.addr
+                $self.arena $self.mem $token.string STR:Str-unpack ByteArray:push
             }
             $word break
         }
@@ -1259,7 +1259,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(arena: .Arena:Arena, mem: .S:String, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<AST:Field> {
+fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<AST:Field> {
     $arena $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

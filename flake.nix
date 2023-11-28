@@ -17,6 +17,7 @@
                 pkgs.wabt
                 python
                 pkgs.gnuplot
+                pkgs.hyperfine
             ];
         in {
             devShells.default = pkgs.mkShell {

@@ -1,8 +1,8 @@
-import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 import "../std/arena.watim" as Arena
+import "../std/byte-array.watim" as ByteArray
 
 import "./ast.watim" as AST
 import "./util.watim" as U
@@ -75,15 +75,16 @@ fn check-intrinsic(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:Type
     0 1 =
 }
 fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32) {
-    S:String-empty @msg
-    &msg FMT:Formatter-into-string @formatter
+    0 !.Arena:Arena Arena:temp @arena @save
+    ByteArray:new @msg
+    $arena &msg FMT:Formatter-into-string @formatter
     $word AST:Word-location
     &formatter $msg-ptr $msg-len FMT:Formatter-write
     &formatter 0 !.AST:Types $stack AST:Types-format
     &formatter " " FMT:Formatter-write
-    &msg S:String-unpack 
+    &msg ByteArray:unpack
     U:abort-with-location
-    $msg S:String-free
+    $arena $save Arena:restore
 }
 fn check-intrinsic-rotl(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 2 lt if {

@@ -2,7 +2,6 @@ import "../std/core.watim" as CORE
 import "../std/fmt.watim" as FMT
 import "../std/util.watim" as U
 import "../std/str.watim" as STR
-import "../std/string.watim" as S
 import "../std/io.watim" as IO
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array

@@ -1,5 +1,4 @@
 import "../std/alloc.watim" as A
-import "../std/string.watim" as S
 import "../std/str.watim" as STR
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE

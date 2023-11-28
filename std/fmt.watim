@@ -1,22 +1,23 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./string.watim" as S
+import "./byte-array.watim" as ByteArray
+import "./arena.watim" as A
 
 struct Formatter {
     indent-level: i32
     write: (i32, .i32, i32 ->)
-    custom: i32
+    user-data: i32
 }
 
-fn Formatter-new(write: (i32, .i32, i32 ->), custom: i32) -> Formatter {
+fn Formatter-new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
     local self: Formatter
     $write #self.write
     0 #self.indent-level
-    $custom #self.custom
+    $user-data #self.user-data
     $self
 }
 fn Formatter-write(self: .Formatter, ptr: .i32, len: i32) {
-    $self.custom $ptr $len $self.write ->
+    $self.user-data $ptr $len $self.write ->
 }
 fn Formatter-write-indent(self: .Formatter) {
     local i: i32
@@ -53,11 +54,20 @@ fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
     &formatter $item $fmt ->
 }
 
-fn append-string(string: i32, ptr: .i32, len: i32) {
-    $string !.S:String $ptr $len S:String-append
+struct FormatterIntoStringUserData {
+    string: .ByteArray:T
+    arena: .A:Arena
 }
 
-fn Formatter-into-string(target: .S:String) -> Formatter {
-    \append-string $target !i32 Formatter-new
+fn append-string(user-data: i32, ptr: .i32, len: i32) {
+    $user-data !.FormatterIntoStringUserData @user-data
+    $user-data.arena $user-data.string $ptr $len ByteArray:push
+}
+
+fn Formatter-into-string(arena: .A:Arena, target: .ByteArray:T) -> Formatter {
+    $arena A:alloc<FormatterIntoStringUserData> @user-data
+    $arena #user-data.arena
+    $target #user-data.string
+    \append-string $user-data !i32 Formatter-new
 }
 

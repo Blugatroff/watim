@@ -5,12 +5,12 @@ import "../std/fmt.watim" as FMT
 import "../std/fs.watim" as FS
 import "../std/io.watim" as IO
 import "../std/str.watim" as STR
-import "../std/string.watim" as S
 import "../std/util.watim" as U
 import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/arena-graph.watim" as ArenaGraph
+import "../std/byte-array.watim" as ByteArray
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -21,7 +21,6 @@ import "./module.watim" as M
 import "./parser.watim" as P
 import "./resolver.watim" as R
 import "./dump.watim" as DUMP
-import "./graph.watim" as GRAPH
 import "./monomorph.watim" as MONO
 import "./logging.watim" as LOGGING
 
@@ -62,7 +61,6 @@ fn main() {
     &args "-q" find-flag 
     &args "--quiet" find-flag or if { LOGGING:disable }
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
-    &args "--call-graph" find-flag if { CALL_GRAPH set-mode }
     &args "--arena-graphs" find-flag if { ArenaGraph:enable LOGGING:disable }
 
     $args.len 1 le if { print-usage-and-exit }
@@ -79,13 +77,13 @@ fn main() {
  
     mode COMPILE = if {
         M:Modules-new @modules
-        S:String-empty @mem
+        ByteArray:new @mem
         &arena "load-modules" ArenaGraph:mark
-        &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
+        &arena &fs &modules &mem $path load-module-recursive
         &arena "R:resolve" ArenaGraph:mark
         &arena &modules R:resolve
         &arena "MEM:process" ArenaGraph:mark
-        &mem S:String-len &modules MEM:process @stack-start
+        $mem.len &modules MEM:process @stack-start
         &arena "C:check" ArenaGraph:mark
         &arena &modules C:check
         &arena "Modules-mark-reachable" ArenaGraph:mark
@@ -99,26 +97,8 @@ fn main() {
         1 "\n" IO:write-all IO:check
         LOGGING:enabled if { 2 A:report }
 
-        $mem S:String-free
         &modules M:Modules-free
     }
-    mode CALL_GRAPH = if {
-        M:Modules-new @modules
-        S:String-empty @mem
-        &arena &fs &modules &mem $path STR:Str-unpack load-module-recursive
-        &arena &modules R:resolve
-        &mem S:String-len &modules MEM:process @stack-start
-        &arena &modules C:check
-        &modules M:Modules-mark-reachable
-        &modules GRAPH:call-graph-modules @formatted
-        
-        1 &formatted S:String-unpack IO:write-all IO:check
-        
-        $mem S:String-free
-        $formatted S:String-free
-        &modules M:Modules-free
-    }
-
     mode PARSE_AST = if {
         &arena parse-ast
     }
@@ -137,7 +117,7 @@ fn parse-ast(arena: .Arena:Arena) {
     }
     @input
 
-    S:String-empty @mem
+    ByteArray:new @mem
     $arena 
     &mem 
     $arena $input "stdin.watim" STR:Str-new L:lex @tokens
@@ -148,21 +128,20 @@ fn parse-ast(arena: .Arena:Arena) {
     &formatter "\n" FMT:Formatter-write
 
     $items DynArray:free<.AST:TopItem>
-    $mem S:String-free
     $types DynArray:free<.AST:Type>
     $fields DynArray:free<AST:Field>
     $arena $save Arena:restore
 }
 
-fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Modules, mem: .S:String, path-ptr: .i32, path-len: i32) {
+fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Modules, mem: .ByteArray:T, path: STR:Str) {
     LOGGING:enabled if {
         2 "Loading module: " IO:write-all IO:check
-        2 $path-ptr $path-len IO:write-all IO:check
+        2 $path STR:Str-unpack IO:write-all IO:check
         2 "\n" IO:write-all IO:check
     }
-    $arena $fs $path-ptr $path-len $mem M:Module-load @module
+    $arena $fs $path $mem M:Module-load @module
     &module M:Module-imports @imps
-    $arena $modules $path-ptr $path-len STR:Str-new $module M:Modules-insert
+    $arena $modules $path $module M:Modules-insert
     
     0 @i
     loop {
@@ -173,7 +152,7 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
             drop
             $arena $fs
             $modules $mem 
-            $imps $i AST:Imports-get-value .path ~ STR:Str-unpack 
+            $imps $i AST:Imports-get-value .path ~
             load-module-recursive
         }
         $i 1 + #i
