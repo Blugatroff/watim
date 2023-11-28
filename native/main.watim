@@ -139,6 +139,7 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
         2 $path STR:Str-unpack IO:write-all IO:check
         2 "\n" IO:write-all IO:check
     }
+    $arena "loading-module" ArenaGraph:mark
     $arena $fs $path $mem M:Module-load @module
     &module M:Module-imports @imps
     $arena $modules $path $module M:Modules-insert

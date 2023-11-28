@@ -6,7 +6,7 @@ memory SAMPLE: i32 4
 memory ACTIVE: i32 4
 memory ARENAS: i32 20
 memory N_MARKS: i32 4
-memory MARKS: i32 160 // space for 10 marks
+memory MARKS: i32 1600 // space for 100 marks
 
 fn enable() {
     $ENABLED 1 1 = store
@@ -88,6 +88,10 @@ fn end() {
 }
 
 fn mark(arena: .Arena:Arena, str-ptr: .i32, str-len: i32) {
+    $N_MARKS ~ 100 gt if {
+        2 "Maximum number of ArenaGraph marks reached\n" IO:write-all IO:check
+        0 0 / drop
+    }
     $MARKS $N_MARKS ~ sizeof(i32) 4 * * + @ptr
     $ptr sizeof(i32) 0 * + $SAMPLE ~ store
     $ptr sizeof(i32) 1 * + $arena.pos store
