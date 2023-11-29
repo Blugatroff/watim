@@ -11,24 +11,39 @@ memory MEM: i32 49152
 memory TEMP: i32 8192
 
 fn main "_start" () {
-    $MEM 49152 Arena:new @arena
-
     $TEMP 8192 Arena:init-temp
 
-    &arena ARGS:get-args @args
+    0 !.Arena:Arena Arena:temp @temp @save
+    $temp ARGS:get-args @args
 
     $args.len 1 le if {
         2 "\ncat written in Watim\n" IO:write-all IO:check
-        2 "\tUsage: ./run.sh ./samples/cat.watim <file>\n" IO:write-all IO:check
+        2 "\tUsage: ./run.sh ./samples/cat.watim <file1> <file2> ...\n" IO:write-all IO:check
         1 CORE:exit
     }
 
-    &arena FS:init IO:check @fs
+    $temp FS:init IO:check @fs
 
-    &arena &fs &args 1 Array:get<STR:Str> ~ STR:Str-unpack FS:read-file IO:check @str
+    1 @arg-index
+    loop {
+        $args.len $arg-index = if { break }
+        &fs &args $arg-index Array:get<STR:Str> ~ STR:Str-unpack 
+        1 1 = 0 1 = FS:create-rights
+        0 1 = 0 1 = FS:create-rights
+        FS:open-file IO:check @fd
 
-    1 $str STR:Str-unpack IO:write-all IO:check
+        loop {
+            $temp Arena:temp @temp @save
+            128 @buf-len
+            $temp $buf-len Arena:alloc-bytes @buf
+            $fd $buf $buf-len IO:read IO:check @read
+            $read 0 = if { break }
+            1 $buf $read IO:write-all IO:check
+            $temp $save Arena:restore
+        }
+        $arg-index 1 + #arg-index
+    }
 
-    &arena Arena:clear
+    $temp $save Arena:restore
 }
 
