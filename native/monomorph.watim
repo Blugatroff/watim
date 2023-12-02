@@ -210,7 +210,7 @@ fn gather-instances-word(arena: .Arena:Arena, module: .M:Module, generics: .AST:
     }
     2 "gather-instances-word: unhandled word type: " IO:write-all IO:check
     2 $word.ty AST:word-ty-name IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     0 0 / !AST:Word
 } }
 fn gather-instances-iff(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, iff: .AST:If) -> AST:If {
@@ -280,7 +280,7 @@ fn gather-instances-intrinsic(arena: .Arena:Arena, module: .M:Module, generics: 
     $word.intrinsic AST:INTRINSIC_STORE = if { $arena $word.type $generics $module AST:Type-apply-generics drop #new-word.type break }
     2 "gather-instances-intrinsic: unhandled intrinsic-type: " IO:write-all IO:check
     2 $word.intrinsic AST:intrinsic-name IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     0 0 / drop
 } }
 

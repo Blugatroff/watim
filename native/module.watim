@@ -34,7 +34,7 @@ fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path: STR:Str, mem: .Byt
         2 $path STR:Str-unpack IO:write-all IO:check
         2 "\" Error Code: " IO:write-all IO:check
         2 $code IO:print-to-fd
-        2 "\n" IO:write-all IO:check
+        2 IO:newline
         1 CORE:exit
     }
     $arena $str $path L:lex @tokens
@@ -89,7 +89,7 @@ fn Module-check-for-duplicate-functions(self: .Module) {
                         2 $ident L:Token-location L:print-location
                         2 "duplicate function: " IO:write-all IO:check
                         2 $ident L:Token-lexeme ~ STR:Str-unpack IO:write-all IO:check
-                        2 "\n" IO:write-all IO:check
+                        2 IO:newline
                         1 CORE:exit
                     }
                 }

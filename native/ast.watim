@@ -184,7 +184,7 @@ fn Type-size(self: .Type, generics: .Types) -> i32 {
             $concrete-type.ty TYPE_GENERIC = if {
                 2 "Type-size generics must all be concrete types!\n" IO:write-all IO:check
                 2 0 !.Types $generics Types-print
-                2 "\n" IO:write-all IO:check
+                2 IO:newline
                 0 0 / drop
             }
             $generics $self.generic Types-get $generics Type-size break
@@ -414,7 +414,7 @@ fn Type-format(formatter: .FMT:Formatter, self: .Type) { block {
     }
     2 "Type-format unhandled Type-ty: " IO:write-all IO:check
     2 $self Type-ty type-ty-name IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     0 0 / drop
     1 CORE:exit
 } }
@@ -432,7 +432,7 @@ fn Type-is-generic(self: .Type) -> bool { block {
     $self Type-ty TYPE_FUNCTION = if { $self.function.args Types-is-generic $self.function.rets Types-is-generic or break }
     2 "Type-is-generic unhandled Type-ty: " IO:write-all IO:check
     2 $self Type-ty type-ty-name IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     0 0 / drop
     1 CORE:exit
     0 1 = break

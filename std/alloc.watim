@@ -129,7 +129,7 @@ fn alloc(size: i32) -> .i32 {
                 2 $size IO:print-to-fd
                 2 " n-allocs: " IO:write-all IO:check 
                 2 n-allocs 1 + IO:print-to-fd
-                2 "\n" IO:write-all IO:check
+                2 IO:newline
             }
             inc-n-allocs
             $blok 12 + break
@@ -189,7 +189,7 @@ fn free(ptr: .i32) {
         2 $size IO:print-to-fd
         2 " n-allocs: " IO:write-all IO:check 
         2 n-allocs n-frees - 1 - IO:print-to-fd
-        2 "\n" IO:write-all IO:check 
+        2 IO:newline 
     }
     $blok $next-free !i32 store
     $blok 8 + 0 store
@@ -264,7 +264,7 @@ fn print-alloc-list(start: .i32) {
         2 $size IO:print-to-fd
         2 " " IO:write-all IO:check
         2 $used !i32 IO:print-to-fd
-        2 "\n" IO:write-all IO:check 
+        2 IO:newline 
         
         $next #blok
     }

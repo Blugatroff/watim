@@ -43,7 +43,7 @@ fn TopItem-json(formatter: .FMT:Formatter, item: .AST:TopItem) { block {
     }
     2 "TopItem-json TopItem-ty: " IO:write-all IO:check
     2 $item AST:TopItem-ty AST:top-item-ty-name IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     1 CORE:exit
 } }
 

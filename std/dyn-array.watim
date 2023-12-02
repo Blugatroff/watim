@@ -19,15 +19,6 @@ fn new<T>(free: (T ->)) -> DynArray<T> {
     $free #self.free
     $self
 }
-fn init<T>(free: (T ->), ptr: .T, elems: i32) -> DynArray<T> {
-    local self: DynArray<T>
-    $elems #self.cap
-    $elems sizeof(T) * A:alloc !.T #self.ptr
-    $elems #self.len
-    $free #self.free
-    $ptr $self.ptr $elems CORE:copy<T>
-    $self
-}
 fn push<T>(self: .DynArray<T>, val: T) {
     local new-buf: .T
     local size: i32
@@ -70,9 +61,6 @@ fn free<T>(self: DynArray<T>) {
         }
     }
     $self.ptr 0 !.T /= if { $self.ptr !.i32 A:free }
-}
-fn clone-container<T>(self: .DynArray<T>) -> DynArray<T> {
-    0 !(T ->) $self.ptr $self.len init<T>
 }
 fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->), self: .DynArray<T>) {
     $formatter "[" FMT:Formatter-write

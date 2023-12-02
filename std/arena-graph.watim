@@ -23,7 +23,7 @@ fn on-clear(arena: .Arena:Arena) {
     print-arena-levels
     2 "# cleared " IO:write-all IO:check
     2 $arena.name-ptr $arena.name-len IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     $ARENAS $arena.index sizeof(i32) * + 0 store
 }
 
@@ -33,7 +33,7 @@ fn on-alloc(arena: .Arena:Arena, size: i32) {
     2 $size IO:print-to-fd
     2 " bytes in " IO:write-all IO:check
     2 $arena.name-ptr $arena.name-len IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     $ARENAS $arena.index sizeof(i32) * + $arena.pos store
 }
 
@@ -41,7 +41,7 @@ fn on-restore(arena: .Arena:Arena) {
     print-arena-levels
     2 "# restored " IO:write-all IO:check
     2 $arena.name-ptr $arena.name-len IO:write-all IO:check
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
     $ARENAS $arena.index sizeof(i32) * + $arena.pos store
 }
 

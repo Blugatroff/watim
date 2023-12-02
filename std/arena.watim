@@ -44,7 +44,7 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 {
         2 $self.pos IO:print-to-fd
         2 "\n\trequested: " IO:write-all IO:check
         2 $size IO:print-to-fd
-        2 "\n" IO:write-all IO:check
+        2 IO:newline
         0 0 / drop
     }
     $self.ptr $self.pos +

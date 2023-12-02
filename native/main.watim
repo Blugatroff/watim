@@ -137,7 +137,7 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
     LOGGING:enabled if {
         2 "Loading module: " IO:write-all IO:check
         2 $path STR:Str-unpack IO:write-all IO:check
-        2 "\n" IO:write-all IO:check
+        2 IO:newline
     }
     $arena "loading-module" ArenaGraph:mark
     $arena $fs $path $mem M:Module-load @module
@@ -162,7 +162,6 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
 
 fn COMPILE() -> i32 { 1 }
 fn PARSE_AST() -> i32 { 2 }
-fn CALL_GRAPH() -> i32 { 3 }
 
 memory MODE: i32 4
 fn set-mode(mode: i32) { $MODE $mode store }

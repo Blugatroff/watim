@@ -36,7 +36,7 @@ fn check(arena: .Arena:Arena, modules: .M:Modules) {
         LOGGING:enabled if {
             2 "Typechecking module: " IO:write-all IO:check
             2 $module.path STR:Str-unpack IO:write-all IO:check
-            2 "\n" IO:write-all IO:check
+            2 IO:newline
         }
         &checker $module check-module
         $i 1 + #i
@@ -216,7 +216,7 @@ fn check-word(
             &module.types $self $module $stack $word check-ref-function break
         }
         2 $word AST:Word-ty AST:word-ty-name IO:write-all IO:check
-        2 "\n" IO:write-all IO:check
+        2 IO:newline
         $word AST:Word-location " unhandled word in checker\n" U:abort-with-location
         0 0 = break
     }
@@ -326,7 +326,7 @@ fn array-access-mismatch(word: .AST:Word, array-type: .AST:Type) {
     2 "\n\t expected: .[a: n]" IO:write-all IO:check
     2 "\n\t got:      " IO:write-all IO:check
     2 $array-type AST:Type-print
-    2 "\n" IO:write-all IO:check
+    2 IO:newline
 }
 fn check-array-read(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 2 lt if {
@@ -381,7 +381,7 @@ fn check-annotation(stack: .AST:Types, word: .AST:Word) -> bool {
         2 $type AST:Type-print
         2 "\n\t" IO:write-all IO:check
         2 $word.type AST:Type-print
-        2 "\n" IO:write-all IO:check
+        2 IO:newline
         1 CORE:exit
     }
     0 1 =
@@ -648,7 +648,7 @@ fn check-iff(
             2 0 !.AST:Types $iff-stack AST:Types-print
             2 "\n\tElse: " IO:write-all IO:check
             2 0 !.AST:Types $el-stack AST:Types-print
-            2 "\n" IO:write-all IO:check
+            2 IO:newline
             1 CORE:exit
         }
     }
@@ -746,7 +746,7 @@ fn report-brek-stack-mismatch(bs: .DynArray:DynArray<BS:BreakStack>, name-ptr: .
         2 $stack.word AST:Word-location L:print-location
         2 ": " IO:write-all IO:check
         2 0 !.AST:Types $stack.types AST:Types-print
-        2 "\n" IO:write-all IO:check
+        2 IO:newline
         $i 1 + #i
     }
     1 CORE:exit
