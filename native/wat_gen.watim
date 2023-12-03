@@ -296,11 +296,12 @@ fn generate-load-struc(formatter: .FMT:Formatter, type: .AST:Type, generics: .AS
     $formatter " memory.copy" FMT:Formatter-write
 }
 fn generate-deref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
-    $generics $word determine-loads @loads
+    0!.Arena:Arena Arena:temp @temp @save
+    $temp $generics $word determine-loads @loads
     0 @i
     loop {
         $i $loads.len = if { break }
-        &loads $i DynArray:get<i32> ~ @offset
+        &loads $i Array:get<i32> ~ @offset
 
         $i 1 + $loads.len = if {
             $formatter " i32.const " FMT:Formatter-write
@@ -313,7 +314,7 @@ fn generate-deref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Wo
         $i 1 + #i
     }
     $formatter "\n" FMT:Formatter-write
-    $loads DynArray:free<i32>
+    $temp $save Arena:restore
 }
 fn generate-get-ref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
     $formatter "local.get $" FMT:Formatter-write
@@ -322,12 +323,13 @@ fn generate-get-ref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:
     $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
     $formatter " " FMT:Formatter-write
 
-    $generics $word determine-loads @loads
+    0!.Arena:Arena Arena:temp @temp @save
+    $temp $generics $word determine-loads @loads
 
     0 @i
     loop {
         $i $loads.len = if { break }
-        &loads $i DynArray:get<i32> ~ @offset
+        &loads $i Array:get<i32> ~ @offset
 
         $i 1 + $loads.len = if {
             $formatter " i32.const " FMT:Formatter-write
@@ -340,11 +342,11 @@ fn generate-get-ref(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:
         $i 1 + #i
     }
     $formatter "\n" FMT:Formatter-write
-    $loads DynArray:free<i32>
+    $temp $save Arena:restore
 }
-fn determine-loads(generics: .AST:Types, word: .AST:Word) -> DynArray:DynArray<i32> {
+fn determine-loads(arena: .Arena:Arena, generics: .AST:Types, word: .AST:Word) -> Array:Array<i32> {
     $word.src-type @type
-    0!(i32 ->) DynArray:new<i32> @loads
+    Array:new<i32> @loads
     0 @i
     loop {
         $i $word.fields.len = if { break }
@@ -373,7 +375,7 @@ fn determine-loads(generics: .AST:Types, word: .AST:Word) -> DynArray:DynArray<i
                     break
                 }
             }
-            &loads $offset DynArray:push<i32>
+            $arena &loads $offset Array:push<i32>
         } else {
 
             2 $word.token L:Token-location L:print-location
@@ -397,14 +399,15 @@ fn generate-store-word(formatter: .FMT:Formatter, generics: .AST:Types, word: .A
             $word.shadow-id $formatter U:i32-format
         }
     }
-
-    $generics $word determine-loads @loads
+    
+    0!.Arena:Arena Arena:temp @temp @save
+    $temp $generics $word determine-loads @loads
 
     $formatter " " FMT:Formatter-write
     0 @i
     loop {
         $i $loads.len = if { break }
-        &loads $i DynArray:get<i32> ~ @offset
+        &loads $i Array:get<i32> ~ @offset
 
         $formatter " i32.load offset=" FMT:Formatter-write
         $offset $formatter U:i32-format
@@ -421,7 +424,7 @@ fn generate-store-word(formatter: .FMT:Formatter, generics: .AST:Types, word: .A
     }
     $formatter "\n" FMT:Formatter-write
 
-    $loads DynArray:free<i32>
+    $temp $save Arena:restore
 }
 
 fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, generics: .AST:Types, locl-copy-space-ptr: .i32) {
@@ -437,7 +440,8 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, generics: .AST:Types
     $word.shadow-id 0 /= if { $word.shadow-id $formatter U:i32-format }
     $formatter " " FMT:Formatter-write
 
-    $generics $word determine-loads @loads
+    0!.Arena:Arena Arena:temp @temp @save
+    $temp $generics $word determine-loads @loads
 
     $loads.len 0 = if {
         $word.type AST:Type-ty AST:TYPE_STRUCT = if {
@@ -450,7 +454,7 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, generics: .AST:Types
     0 @i
     loop {
         $i $loads.len = if { break }
-        &loads $i DynArray:get<i32> ~ @offset
+        &loads $i Array:get<i32> ~ @offset
 
         $loads.len $i 1 + lt
         $word.type AST:Type-ty AST:TYPE_STRUCT /= 
@@ -469,7 +473,7 @@ fn generate-get(formatter: .FMT:Formatter, word: .AST:Word, generics: .AST:Types
     }
     $formatter "\n" FMT:Formatter-write
 
-    $loads DynArray:free<i32>
+    $temp $save Arena:restore
 }
 fn generate-call(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnals-space-ptr: .i32, word: .AST:Word, current-function-instance-index: i32) {
     local i: i32
@@ -533,7 +537,8 @@ fn generate-call(formatter: .FMT:Formatter, generics: .AST:Types, struc-returnal
     }
 }
 fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word) {
-    $word AST:Word-ty AST:WORD_INIT_LOCAL = if { 0!(i32 ->) DynArray:new<i32> } else { $generics $word determine-loads } @loads
+    0!.Arena:Arena Arena:temp @temp @save
+    $word AST:Word-ty AST:WORD_INIT_LOCAL = if { Array:new<i32> } else { $temp $generics $word determine-loads } @loads
     // TODO: this can be simplified
     $word.type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "local.get $" FMT:Formatter-write
@@ -546,7 +551,7 @@ fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word
             loop {
                 $loads.len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
-                &loads $i DynArray:get<i32> ~ $formatter U:i32-format
+                &loads $i Array:get<i32> ~ $formatter U:i32-format
                 $formatter " i32.add " FMT:Formatter-write
                 $i 1 + $loads.len = if {
                     $formatter " call $intrinsic:flip i32.const " FMT:Formatter-write
@@ -572,7 +577,7 @@ fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word
             loop {
                 $loads.len $i = if { break }
                 $formatter " i32.const " FMT:Formatter-write
-                &loads $i DynArray:get<i32> ~ $formatter U:i32-format
+                &loads $i Array:get<i32> ~ $formatter U:i32-format
                 $formatter " i32.add " FMT:Formatter-write
                 $i 1 + $loads.len = if {
                     $formatter " call $intrinsic:flip " FMT:Formatter-write
@@ -591,7 +596,7 @@ fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word
         }
     }
     $formatter "\n" FMT:Formatter-write
-    $loads DynArray:free<i32>
+    $temp $save Arena:restore
 }
 fn generate-store(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Type) {
     $type AST:Type-ty AST:TYPE_STRUCT =
@@ -1402,7 +1407,8 @@ struct ExternOrFunction {
 
 fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
     local tmp: ExternOrFunction
-    0!(ExternOrFunction ->) DynArray:new<ExternOrFunction> @fs
+    0!.Arena:Arena Arena:temp @temp @save
+    Array:new<ExternOrFunction> @fs
     0 @i
     loop {
         $i $modules M:Modules-len = if { break }
@@ -1419,7 +1425,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
                     0 !.AST:Extern #tmp.ext
                     $item.function #tmp.function
                     $i #tmp.module
-                    &fs $tmp DynArray:push<ExternOrFunction>
+                    $temp &fs $tmp Array:push<ExternOrFunction>
                     $fs.len #item.function.table-index
                 }
             }
@@ -1428,7 +1434,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
                     0 !.AST:Function #tmp.function
                     $item.ext #tmp.ext
                     $i #tmp.module
-                    &fs $tmp DynArray:push<ExternOrFunction>
+                    $temp &fs $tmp Array:push<ExternOrFunction>
                     $fs.len #item.ext.table-index
                 }
             }
@@ -1441,7 +1447,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
     0 @i 
     loop {
         $i $fs.len = if { break }
-        &fs $i DynArray:get<ExternOrFunction> @f
+        &fs $i Array:get<ExternOrFunction> @f
         $f.ext 0 !.AST:Extern /= if {
             $formatter $f.ext.ident L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
         }
@@ -1455,7 +1461,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
         $i 1 + #i
     }
     $formatter "))\n" FMT:Formatter-write
-    $fs DynArray:free<ExternOrFunction>
+    $temp $save Arena:restore
 }
 
 fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .ByteArray:T, modules: .M:Modules) {
