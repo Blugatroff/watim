@@ -128,7 +128,6 @@ fn parse-ast(arena: .Arena:Arena) {
     &formatter "\n" FMT:Formatter-write
 
     $items DynArray:free<.AST:TopItem>
-    $types DynArray:free<.AST:Type>
     $fields DynArray:free<AST:Field>
     $arena $save Arena:restore
 }

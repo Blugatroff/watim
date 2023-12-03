@@ -4,6 +4,7 @@ import "../std/fmt.watim" as FMT
 import "../std/dyn-array.watim" as DynArray
 import "../std/arena.watim" as Arena
 import "../std/byte-array.watim" as ByteArray
+import "../std/array.watim" as Array
 
 import "./lexer.watim" as L
 import "./ast.watim" as AST
@@ -76,6 +77,10 @@ fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Wor
     &formatter "\n" FMT:Formatter-write
     $word AST:Word-location &msg ByteArray:unpack abort-with-location
     $arena $save Arena:restore
+}
+
+fn push-temp-type(arena: .Arena:Arena, temp-types: .Array:Array<.AST:Type>, type: .AST:Type) -> .AST:Type {
+    $arena $temp-types $type Array:push<.AST:Type> $type
 }
 
 fn push-temp-type2(temp-types: .DynArray:DynArray<.AST:Type>, type: .AST:Type) -> .AST:Type {

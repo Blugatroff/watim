@@ -15,7 +15,7 @@ struct Parser {
     tokens: .Array:Array<L:Token>
     current: i32
     mem: .ByteArray:T
-    types: DynArray:DynArray<.AST:Type>
+    types: Array:Array<.AST:Type>
     fields: DynArray:DynArray<AST:Field>
     file: STR:Str
     arena: .Arena:Arena
@@ -26,14 +26,14 @@ fn Parser-new(arena: .Arena:Arena, tokens: .Array:Array<L:Token>, mem: .ByteArra
     $tokens #self.tokens
     0 #self.current
     $mem #self.mem
-    0!(.AST:Type ->) DynArray:new<.AST:Type> #self.types
+    Array:new<.AST:Type> #self.types
     $tokens.len 0 gt if {
         $tokens 0 Array:get<L:Token> L:Token-file ~ #self.file
     }
     0!(AST:Field ->) DynArray:new<AST:Field> #self.fields
     $self
 } 
-fn Parser-free(self: Parser) -> DynArray:DynArray<.AST:Type>, DynArray:DynArray<AST:Field> { 
+fn Parser-free(self: Parser) -> Array:Array<.AST:Type>, DynArray:DynArray<AST:Field> { 
     $self.types $self.fields
 }
 fn Parser-peek(self: .Parser) -> .L:Token {
@@ -515,7 +515,7 @@ fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
 }
 fn Parser-parse-type(self: .Parser) -> .AST:Type {
     $self Parser-parse-type-inner @type
-    &self.types $type DynArray:push<.AST:Type>
+    $self.arena &self.types $type Array:push<.AST:Type>
     $type
 }
 fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
@@ -1259,7 +1259,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, DynArray:DynArray<.AST:Type>, DynArray:DynArray<AST:Field> {
+fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, Array:Array<.AST:Type>, DynArray:DynArray<AST:Field> {
     $arena $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

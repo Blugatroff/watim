@@ -289,28 +289,28 @@ fn Type-child(self: .Type) -> .Type {
 fn Type-apply-generics(arena: .Arena:Arena, self: .Type, generics: .Types, module: .M:Module) -> .Type, bool { block {
     $self.ty TYPE_PTR = if {
         $arena $self Type-child $generics $module Type-apply-generics if {
-            $arena flip Type-new-ptr &module.types flip CU:push-temp-type2 1 1 = break
+            $arena flip Type-new-ptr $arena flip &module.types flip CU:push-temp-type 1 1 = break
         } else {
             drop $self 0 1 = break
         }
     }
     $self.ty TYPE_ARRAY = if {
         $arena $self Type-child $generics $module Type-apply-generics if {
-            $arena flip $self.length Type-new-array &module.types flip CU:push-temp-type2 1 1 = break 
+            $arena flip $self.length Type-new-array $arena flip &module.types flip CU:push-temp-type 1 1 = break 
         } else {
             drop $self 0 1 = break
         }
     }
     $self.ty TYPE_STRUCT = if {
         $arena $self.generics $generics $module Types-apply-generics if { 
-            $arena $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
+            $arena $self.module $self.ident $self.generics Type-new-struc $arena flip &module.types flip CU:push-temp-type @new
             #new.generics
             $arena $self.struc $new.generics $module Struct-apply-generics if { #new.struc } else { drop }
             $new 1 1 = break
         } else {
             drop
             $arena $self.struc $self.generics $module Struct-apply-generics if {
-                $arena $self.module $self.ident $self.generics Type-new-struc &module.types flip CU:push-temp-type2 @new
+                $arena $self.module $self.ident $self.generics Type-new-struc $arena flip &module.types flip CU:push-temp-type @new
                 #new.struc
                 $new 1 1 = break
             } else {
@@ -327,7 +327,7 @@ fn Type-apply-generics(arena: .Arena:Arena, self: .Type, generics: .Types, modul
             flip
             $new-args if { } else { drop $self.function.args }
             flip
-            Type-new-function &module.types flip CU:push-temp-type2
+            Type-new-function $arena flip &module.types flip CU:push-temp-type
             1 1 = break
         } else { drop drop drop $self 0 1 = break }
     }
@@ -761,8 +761,8 @@ fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i3
     $scope-id #self.scope-id
     $self
 }
-fn Local-new-mem(arena: .Arena:Arena, types: .DynArray:DynArray<.Type>, ident: .L:Token, type: .Type, size: i32) -> .Local {
-    LOCAL_MEMORY $ident $arena $type Type-new-ptr $types flip CU:push-temp-type2 0 0 Local-new @self
+fn Local-new-mem(arena: .Arena:Arena, types: .Array:Array<.Type>, ident: .L:Token, type: .Type, size: i32) -> .Local {
+    LOCAL_MEMORY $ident $arena $arena $type Type-new-ptr $types flip CU:push-temp-type 0 0 Local-new @self
     $size #self.size
     $self
 }

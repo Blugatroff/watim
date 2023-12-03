@@ -136,12 +136,12 @@ fn check-word(
 ) -> bool {
     loop {
         $word AST:Word-ty AST:WORD_NUMBER = if {
-            $self.arena $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
+            $self.arena $stack $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type AST:Types-push
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_STRING = if {
-            $self.arena $stack &module.types $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Type-new-ptr U:push-temp-type2 AST:Types-push
-            $self.arena $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
+            $self.arena $stack $self.arena &module.types $self.arena $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type AST:Type-new-ptr U:push-temp-type AST:Types-push
+            $self.arena $stack $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type AST:Types-push
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_CALL = if {
@@ -178,7 +178,7 @@ fn check-word(
             $self.arena $stack $word check-load break
         }
         $word AST:Word-ty AST:WORD_SIZEOF = if {
-            $self.arena $stack &module.types $self.arena AST:Type-new-int32 U:push-temp-type2 AST:Types-push
+            $self.arena $stack $self.arena &module.types $self.arena AST:Type-new-int32 U:push-temp-type AST:Types-push
             0 1 = break
         }
         $word AST:Word-ty AST:WORD_STORE = if {
@@ -223,34 +223,36 @@ fn check-word(
     $word AST:Word-mark-checked
 }
 
-fn check-ref-function(temp-types: .DynArray:DynArray<.AST:Type>, self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
+fn check-ref-function(temp-types: .Array:Array<.AST:Type>, self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word) -> bool {
     $self $module $stack $word 1 1 = check-function-usage drop @rets @params
     
     $self.arena
     $stack 
 
+    $self.arena
     $temp-types
     $self.arena 
     $params
     $rets AST:Type-new-function 
-    U:push-temp-type2
+    U:push-temp-type
 
     AST:Types-push
 
     0 1 =
 }
 
-fn check-call-indirect(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .DynArray:DynArray<.AST:Type>) -> bool {
+fn check-call-indirect(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .Array:Array<.AST:Type>) -> bool {
     $stack AST:Types-len 0 = if {
         $word AST:Word-location "call indirect expected function pointer\n" U:abort-with-location
     }
     $stack AST:Types-pop @fn-type
     $stack $fn-type.function.args $word U:expect-stack
 
-    $arena 
+    $arena
+    $arena
     $arena $fn-type.function.args AST:Types-clone-container
     $arena $fn-type.function.rets AST:Types-clone-container
-    AST:Type-new-function $temp-types flip U:push-temp-type2
+    AST:Type-new-function $temp-types flip U:push-temp-type
     #word.type
 
     $fn-type.function.rets @rets
@@ -265,7 +267,7 @@ fn check-call-indirect(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, 
     0 1 =
 }
 
-fn check-array-init(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .DynArray:DynArray<.AST:Type>) -> bool {
+fn check-array-init(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .Array:Array<.AST:Type>) -> bool {
     $word.size @size
     $stack AST:Types-len $size lt if {
         $word AST:Word-location "not enough values on stack to construct array\n" U:abort-with-location
@@ -286,7 +288,7 @@ fn check-array-init(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, tem
         $size 1 - #size
     }
 
-    $temp-types $arena $elem-type $word.number AST:Type-new-array U:push-temp-type2
+    $arena $temp-types $arena $elem-type $word.number AST:Type-new-array U:push-temp-type
     @array-type
 
     $arena $stack $array-type AST:Types-push
@@ -294,7 +296,7 @@ fn check-array-init(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, tem
     0 1 =
 }
 
-fn check-array-init-zero(stack: .AST:Types, word: .AST:Word, temp-types: .DynArray:DynArray<.AST:Type>) -> bool {
+fn check-array-init-zero(stack: .AST:Types, word: .AST:Word, temp-types: .Array:Array<.AST:Type>) -> bool {
     2 "check-array-init-zero TODO\n" IO:write-all IO:check // TODO
     1 CORE:exit
     0 1 =
@@ -347,7 +349,7 @@ fn check-array-read(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> 
     $arena $stack $array-type AST:Type-child AST:Type-child AST:Types-push
     0 1 =
 }
-fn check-array-ref(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .DynArray:DynArray<.AST:Type>) -> bool {
+fn check-array-ref(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp-types: .Array:Array<.AST:Type>) -> bool {
     $stack AST:Types-len 2 lt if {
         $word AST:Word-location "expected at least 2 arguments for array read\n" U:abort-with-location
     }
@@ -365,8 +367,9 @@ fn check-array-ref(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word, temp
     $arena
     $array-type AST:Type-child AST:Type-child #word.type
     $stack 
-    $temp-types
-    $arena $array-type AST:Type-child AST:Type-child AST:Type-new-ptr U:push-temp-type2
+    $arena $temp-types
+    $arena $array-type AST:Type-child AST:Type-child AST:Type-new-ptr
+    U:push-temp-type
     AST:Types-push
     0 1 =
 }
@@ -507,7 +510,7 @@ fn check-store(stack: .AST:Types, self: .Checker, module: .M:Module, locals: .AS
         0 1 =
     }
 }
-fn check-deref(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:Type>, stack: .AST:Types, word: .AST:Word) -> bool {
+fn check-deref(arena: .Arena:Arena, temp-types: .Array:Array<.AST:Type>, stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 0 = if {
         $word AST:Word-location "stack is empty\n" U:abort-with-location
     }
@@ -515,14 +518,13 @@ fn check-deref(arena: .Arena:Arena, temp-types: .DynArray:DynArray<.AST:Type>, s
     $word.src-type $word check-fields-access #word.type
 
     $word.src-type AST:Type-ty AST:TYPE_PTR = if {
-        $arena $stack $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
+        $arena $stack $arena $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type AST:Types-push
     } else {
-        $arena $stack $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
-        // $stack $word.type AST:Types-push
+        $arena $stack $arena $temp-types $arena $word.type AST:Type-new-ptr U:push-temp-type AST:Types-push
     }
     0 1 =
 }
-fn check-get-ref(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, temp-types: .DynArray:DynArray<.AST:Type>, word: .AST:Word) -> bool {
+fn check-get-ref(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, temp-types: .Array:Array<.AST:Type>, word: .AST:Word) -> bool {
     $locals $word check-locl-fields-access not if {
         $word AST:Word-location "local not found\n" U:abort-with-location
     }
@@ -543,7 +545,7 @@ fn check-get-ref(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, te
     }
 
     $type #word.type
-    $arena $stack $temp-types $arena $type AST:Type-new-ptr U:push-temp-type2 AST:Types-push
+    $arena $stack $arena $temp-types $arena $type AST:Type-new-ptr U:push-temp-type AST:Types-push
     0 1 =
 }
 fn check-init-locl(arena: .Arena:Arena, stack: .AST:Types, locals: .AST:Locals, word: .AST:Word) -> bool {
