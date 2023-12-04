@@ -1,4 +1,4 @@
-extern "wasi_unstable" "proc_exit" fn raw_exit(code: i32)
+extern "wasi_snapshot_preview1" "proc_exit" fn raw_exit(code: i32)
 
 struct I32 { inner: i32 }
 

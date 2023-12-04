@@ -4,8 +4,8 @@ import "./arena.watim" as Arena
 import "./array.watim" as Array
 import "./core.watim" as CORE
 
-extern "wasi_unstable" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
-extern "wasi_unstable" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
+extern "wasi_snapshot_preview1" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
+extern "wasi_snapshot_preview1" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
 
 fn get-args(arena: .Arena:Arena) -> Array:Array<STR:Str> {
     local arg_number_ptr: CORE:I32
