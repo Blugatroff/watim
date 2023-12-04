@@ -20,11 +20,8 @@
                 pkgs.hyperfine
             ];
             buildInputs = [ pkgs.wasmtime ];
-        in {
-            devShells.default = pkgs.mkShell {
-                inherit nativeBuildInputs;
-            };
-            packages.default = pkgs.stdenv.mkDerivation {
+
+            watim = pkgs.stdenv.mkDerivation {
                 inherit nativeBuildInputs buildInputs;
                 name = "watim";
                 src = ./.;
@@ -37,6 +34,11 @@
                     chmod +x $out/bin/watim
                 '';
             };
+        in {
+            devShells.default = pkgs.mkShell {
+                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ watim ] ]);
+            };
+            packages.default = watim;
         });
 }
 
