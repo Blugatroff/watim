@@ -72,7 +72,7 @@ class TestSpec:
         return TestSpec(compilation=compilation, runtime=runtime)
 
 
-default_code = '''extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
+default_code = '''extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 
 fn main "_start" () {
     0 proc_exit
@@ -116,7 +116,7 @@ if len(sys.argv) > 1:
 tests = glob.glob('./tests/*.watim')
 
 def compile(path, onCmd: Callable[[str], None]):
-    cmd = 'wasmtime --dir=. ./watim.wasm -- -q ' + path
+    cmd = 'watim -q ' + path
     onCmd(cmd)
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 

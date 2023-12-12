@@ -1,4 +1,4 @@
-extern "wasi_unstable" "proc_exit" fn proc_exit(code: i32)
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 
 fn main "_start" () {
     2 foo

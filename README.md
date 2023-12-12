@@ -63,9 +63,10 @@ VIM syntax highlighting in [./editor/watim.vim](https://github.com/Blugatroff/wa
 ## Example Program
 This program exits with the exit code read from stdin.
 ```
-extern "wasi_unstable" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
-extern "wasi_unstable" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
-extern "wasi_unstable" "proc_exit" fn exit(code: i32)
+extern "wasi_snapshot_preview1" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
+extern "wasi_snapshot_preview1" "proc_exit" fn raw_exit(code: i32)
+extern "wasi_snapshot_preview1" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
+extern "wasi_snapshot_preview1" "proc_exit" fn exit(code: i32)
 
 struct Iov {
     ptr: .i32
