@@ -11,6 +11,7 @@ import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/arena-graph.watim" as ArenaGraph
 import "../std/byte-array.watim" as ByteArray
+import "../std/page-alloc.watim" as PA
 
 import "./ast.watim" as AST
 import "./checker.watim" as C
@@ -44,16 +45,13 @@ fn find-flag(args: .Array:Array<STR:Str>, ptr: .i32, len: i32) -> bool {
     }
 }
 
-fn main() {
-    memory temp-mem: i32 65536 // 64 kiB
-    memory mem: i32 41943040 // 40 * MiB
-    memory alloc-mem: i32 8388608 // 8 MiB
+fn main "_start" () {
+    1 mem-grow drop // make sure there is enough stack-space
 
-    $temp-mem 65536 Arena:init-temp
+    Arena:init-temp
 
     0!.Arena:Arena Arena:temp @temp @save
     $temp ARGS:get-args @args
-    $temp $save Arena:restore
 
     LOGGING:enable
     COMPILE set-mode
@@ -67,14 +65,18 @@ fn main() {
 
     ArenaGraph:begin
 
-    $mem 41943040 "Main" Arena:new @arena
+    "Main" Arena:new @arena
     &args 1 Array:remove<STR:Str> &arena flip STR:Str-copy-into @path
-
-    $temp-mem 65536 Arena:init-temp
-    $alloc-mem 8388608 A:init
+    
+    Arena:clear-temp
+    Arena:init-temp
+    
+    1 16 rotl 32 * @alloc-mem
+    &arena $alloc-mem Arena:alloc-bytes @alloc-ptr
+    $alloc-ptr $alloc-mem A:init
 
     &arena FS:init "Failed to init fs" IO:exit-with-message @fs
- 
+
     mode COMPILE = if {
         M:Modules-new @modules
         ByteArray:new @mem
@@ -95,7 +97,6 @@ fn main() {
         &arena "GEN:generate" ArenaGraph:mark
         &formatter $stack-start &mem &modules GEN:generate
         1 "\n" IO:write-all IO:check
-        LOGGING:enabled if { 2 A:report }
 
         &modules M:Modules-free
     }
@@ -105,6 +106,14 @@ fn main() {
 
     &arena Arena:clear
     ArenaGraph:end
+    
+    LOGGING:enabled if {
+        2 "Used " IO:write-all IO:check
+        2 0 mem-grow IO:print-to-fd
+        2 " 64KiB pages of memory = " IO:write-all IO:check
+        2 0 mem-grow PA:page-size * 1 20 rotl 1 - + 1 20 rotl / IO:print-to-fd
+        2 "MiB\n" IO:write-all IO:check
+    }
 }
 
 fn parse-ast(arena: .Arena:Arena) {
@@ -165,10 +174,4 @@ fn PARSE_AST() -> i32 { 2 }
 memory MODE: i32 4
 fn set-mode(mode: i32) { $MODE $mode store }
 fn mode() -> i32 { $MODE ~ }
-
-fn start "_start" () {
-    // grow memory to (512 + 256 + 128) * 2B^16 = 56 MiB
-    512 256 128 + + mem-grow 1 /= if { 1 CORE:exit } 
-    main
-}
 

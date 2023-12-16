@@ -1,0 +1,122 @@
+import "./core.watim" as CORE
+import "./io.watim" as IO
+import "./fmt.watim" as FMT
+import "./util.watim" as U
+
+fn page-size() -> i32 { 1 16 rotl }
+fn div-by-page-size(n: i32) -> i32 {
+    // $n 16 shr // TODO: implement shr
+    $n page-size /
+}
+fn div-by-page-size-round-up(n: i32) -> i32 { $n page-size 1 - + div-by-page-size }
+
+fn current-number-of-pages() -> i32 {
+    0 mem-grow
+}
+
+memory ALLOCATOR: PageAllocator 4
+
+struct Page {
+    next: .Page
+}
+
+struct PageAllocator {
+    free-list: .Page
+}
+
+fn init() {
+    $ALLOCATOR @self
+    0 !.Page #self.free-list
+}
+
+fn do-the-mem-grow() -> .i32 {
+    0 mem-grow page-size * !.i32
+    1 mem-grow 1 31 rotl and 0 /= if {
+        2 "Failed to allocate another page of memory\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+}
+
+fn alloc-page() -> .i32 {
+    $ALLOCATOR @self
+    $self.free-list 0 !.Page /= if {
+        $self.free-list !.i32
+        $self.free-list.next #self.free-list
+    } else {
+        do-the-mem-grow
+    }
+}
+fn search-free-list-for-contigious(list: .Page, n: i32) -> .Page { block {
+    1 $n / drop // $n 0 /= assert
+
+    // no free page
+    $list 0!.Page = if { 0!.Page break }
+
+    // only one page requested, use first entry in list
+    $n 1 = if { $list break }
+
+    // list only has one entry but more than page was requested
+    $list.next 0!.Page = if { 0!.Page break }
+
+    1 @run-length
+    $list @run-start
+    loop {
+        $list 0!.Page = if { 0!.Page break }
+        $list.next $list page-size + = if {
+            $run-length 1 + #run-length
+            $list.next #list
+            $run-length $n = if { $run-start break }
+        } else {
+            1 #run-length
+            $list #run-start
+            $list.next #list
+        }
+    }
+} }
+fn contigious-pages(n: i32) -> .i32 { block {
+    $ALLOCATOR @self
+    $self.free-list $n search-free-list-for-contigious @contigious-free
+    $contigious-free 0!.Page /= if {
+        $self.free-list @list
+        loop {
+            $list $contigious-free = if {
+                loop {
+                    $n 0 = if { break }
+                    $list.next.next #list.next
+                    $n 1 - #n
+                }
+                break
+            }
+            break
+        }
+        $contigious-free !.i32 break
+    }
+    do-the-mem-grow @first
+    loop {
+        $n 1 = if { break }
+        do-the-mem-grow drop
+        $n 1 - #n
+    }
+    $first
+} }
+fn discard-page(page: .i32) {
+    $ALLOCATOR @self
+    $page !.Page @page
+    $self.free-list #page.next
+    $page #self.free-list
+
+    // There is currently no way to deallocate pages in wasm.
+    // But there is a proposal for the `memory.discard` instruction: https://github.com/WebAssembly/memory-control/issues/6
+}
+
+fn format-free-list(formatter: .FMT:Formatter) {
+    $ALLOCATOR @self
+    $self.free-list @page
+    loop {
+        $page 0!.Page = if { break }
+        $page !i32 $formatter U:i32-format
+        $formatter "\n" FMT:Formatter-write
+        $page.next #page
+    }
+}
+

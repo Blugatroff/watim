@@ -1,5 +1,6 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
+import "./page-alloc.watim" as PA
 
 memory ON_NEW: (.Arena ->) 4
 memory ON_ALLOC: (.Arena, i32 ->) 4
@@ -13,44 +14,105 @@ fn set-callbacks(on-new: (.Arena ->), on-alloc: (.Arena, i32 ->), on-restore: (.
     $ON_CLEAR $on-clear store
 }
 
-struct Arena {
-    ptr: .i32
-    cap: i32
+fn SINGLE_PAGE() -> i32 { 1 }
+fn MULTIPLE_PAGE() -> i32 { 2 }
+
+struct Page {
+    type: i32
+    next: .Page
     pos: i32
+    num-pages: i32
+}
+
+struct Arena {
+    used-pages: .Page
+    size: i32
     name-ptr: .i32
     name-len: i32
     index: i32
 }
 
-fn new(ptr: .i32, cap: i32, name-ptr: .i32, name-len: i32) -> Arena {
+fn free-page(page: .Page) { block {
+    $page.type SINGLE_PAGE = if {
+        $page !.i32 PA:discard-page
+        break
+    }
+    $page.type MULTIPLE_PAGE = if {
+        loop {
+            $page.num-pages 0 = if { break }
+            $page.num-pages 1 - #page.num-pages
+            $page $page.num-pages PA:page-size * + !.i32 PA:discard-page
+        }
+        break
+    }
+    0 0 / drop
+} }
+
+fn add-page(self: .Arena) {
+    PA:alloc-page !.Page @new-page
+    SINGLE_PAGE #new-page.type
+    $self.used-pages #new-page.next
+    $new-page #self.used-pages
+    0 #new-page.pos
+}
+
+fn add-multiple-page(self: .Arena, n: i32) -> .i32 {
+    1 $n / drop // n 0 /= assert
+    $n PA:contigious-pages !.Page @new-page
+    MULTIPLE_PAGE #new-page.type
+    $self.used-pages #new-page.next
+    PA:page-size sizeof(Page) - #new-page.pos
+    $n #new-page.num-pages
+    $new-page #self.used-pages
+    $new-page sizeof(Page) + !.i32
+}
+
+fn new(name-ptr: .i32, name-len: i32) -> Arena {
     local self: Arena
-    $ptr #self.ptr
-    $cap #self.cap
+    0 !.Page #self.used-pages
     $name-ptr #self.name-ptr
     $name-len #self.name-len
+    0 #self.size
     $ON_NEW ~ 0 !(.Arena ->) /= if { &self $ON_NEW ~ -> }
     $self
 }
 fn clear(self: .Arena) {
-    $self.ptr $self.cap CORE:clear
-    0 #self.pos
+    loop {
+        $self.used-pages 0 !.Page = if { break }
+        $self.used-pages.next
+        $self.used-pages free-page
+        #self.used-pages
+    }
+    0 !.Page #self.used-pages
+    0 #self.size
     $ON_CLEAR ~ 0 !(.Arena ->) /= if { $self $ON_CLEAR ~ -> }
 }
-fn alloc-bytes(self: .Arena, size: i32) -> .i32 {
-    $self.pos $size + $self.cap ge if {
-        2 "Arena out of memory\n\tcapacity:  " IO:write-all IO:check
-        2 $self.cap IO:print-to-fd
-        2 "\n\tpos:       " IO:write-all IO:check
-        2 $self.pos IO:print-to-fd
-        2 "\n\trequested: " IO:write-all IO:check
-        2 $size IO:print-to-fd
-        2 IO:newline
-        0 0 / drop
+fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
+    $size 0 = if { $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i32 break }
+    $self.size $size + #self.size
+    $size PA:page-size sizeof(Page) - gt if {
+        $self $size sizeof(Page) + PA:div-by-page-size-round-up
+        add-multiple-page break
     }
-    $self.ptr $self.pos +
-    $self.pos $size + #self.pos
-    $ON_ALLOC ~ 0 !(.Arena ->) /= if { $self $size $ON_ALLOC ~ -> }
-}
+
+    $self.used-pages.pos sizeof(Page) + $size + PA:page-size gt if { $self add-page }
+
+    $self.used-pages @page
+    loop {
+        $page 0!.Page = if {
+            $self add-page
+            $self $size alloc-bytes
+            break
+        }
+        $page.pos sizeof(Page) + $size + PA:page-size le if { // there is enough space in this page
+            $page sizeof(Page) + $page.pos + !.i32
+            $page.pos $size + #page.pos
+            $ON_ALLOC ~ 0 !(.Arena ->) /= if { $self $size $ON_ALLOC ~ -> }
+            break
+        }
+        $page.next #page
+    }
+} }
 fn alloc<T>(self: .Arena) -> .T {
     $self sizeof(T) alloc-bytes !.T
 }
@@ -75,42 +137,59 @@ fn push-byte(self: .Arena, byte: i32) {
 }
 
 struct ArenaRestorePoint {
+    used-pages: .Page
     pos: i32
+    size: i32
 }
 fn save(self: .Arena) -> ArenaRestorePoint {
     local point: ArenaRestorePoint
-    $self.pos #point.pos
+    $self.used-pages #point.used-pages
+    $self.used-pages.pos #point.pos
+    $self.size #point.size
     $point
 }
 
 fn restore(self: .Arena, point: ArenaRestorePoint) {
-    $point.pos #self.pos
+    $self.size $point.size lt if {
+        0 0 / drop
+    }
+    $self.used-pages 0 !.Page /= if {
+        1 $self.size / drop // $self.size 0 /= assert
+        loop {
+            $self.used-pages $point.used-pages = if { break }
+            $self.used-pages.next 
+            $self.used-pages free-page
+            #self.used-pages
+        }
+        $point.pos #self.used-pages.pos
+        $point.size #self.size
+    }
     $ON_RESTORE ~ 0 !(.Arena ->) /= if { $self $ON_RESTORE ~ -> }
 }
 fn usage(self: .Arena) -> i32 {
-    $self.pos
+    $self.size
 }
 fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
-    $self.pos $point.pos -
+    $self.size $point.size -
 }
 
 memory TEMP1: Arena 24
 memory TEMP2: Arena 24
 
-fn init-temp(ptr: .i32, cap: i32) {
+fn init-temp() {
     $TEMP1 @temp
-    $ptr
-    $cap 2 /
     "Temp1"
     new
     =>temp
 
     $TEMP2 @temp
-    $ptr $cap 2 / +
-    $cap 2 /
     "Temp2"
     new
     =>temp
+}
+fn clear-temp() {
+    $TEMP1 clear
+    $TEMP2 clear
 }
 fn temp(persistent: .Arena) -> ArenaRestorePoint, .Arena {
     $persistent $TEMP1 = if { $TEMP2 } else { $TEMP1 } @arena

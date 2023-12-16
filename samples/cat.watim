@@ -7,11 +7,8 @@ import "../std/core.watim" as CORE
 import "../std/arena.watim" as Arena
 import "../std/array.watim" as Array
 
-memory MEM: i32 49152
-memory TEMP: i32 8192
-
 fn main "_start" () {
-    $TEMP 8192 Arena:init-temp
+    Arena:init-temp
 
     0 !.Arena:Arena Arena:temp @temp @save
     $temp ARGS:get-args @args

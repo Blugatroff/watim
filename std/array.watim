@@ -38,18 +38,25 @@ fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
     $self
 }
 fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
-    local new-buf: .T
     $self $arena check-same-arena<T>
     $self.len 1 + $self.cap le if {
         $self.ptr $self.len sizeof(T) * + $val store
         $self.len 1 + #self.len
     } else {
-        $self.cap 2 CORE:max 2 * @size
-        $arena $size A:alloc-many<T> #new-buf
-        $self.ptr $new-buf $self.len CORE:copy<T>
-        $size #self.cap
-        $new-buf #self.ptr
-        $arena $self $val push<T>
+        $arena A:save @save
+        $self.ptr $self.cap + $arena A:alloc<T> = if {
+            // Optimization in case the newly allocated bytes immediately 
+            // follow the already allocated bytes of this ByteArray.
+            $self.cap 1 + #self.cap
+            $arena $self $val push<T>
+        } else {
+            $arena $save A:restore
+            $self.cap 2 CORE:max 2 * #self.cap
+            $arena $self.cap A:alloc-many<T> @new-buf
+            $self.ptr $new-buf $self.len CORE:copy<T>
+            $new-buf #self.ptr
+            $arena $self $val push<T>
+        }
     } 
 }
 fn get<T>(self: .Array<T>, index: i32) -> .T {
@@ -95,7 +102,7 @@ fn print<T>(fd: i32, print-element: (i32, .T ->), self: .Array<T>) {
         $i $self.len = if { break }
         $fd $self $i get<T> $print-element ->
         $i 1 + #i
-        $i $self.len /= if { 2 ", " IO:write-all IO:check }
+        $i $self.len /= if { $fd ", " IO:write-all IO:check }
     }
     $fd "]" IO:write-all IO:check
 }

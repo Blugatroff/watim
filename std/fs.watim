@@ -3,6 +3,7 @@ import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/arena.watim" as Arena
 import "../std/array.watim" as Array
+import "../std/byte-array.watim" as ByteArray
 
 extern "wasi_snapshot_preview1" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
 extern "wasi_snapshot_preview1" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
@@ -222,25 +223,20 @@ fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) ->
 }
 
 fn read-all(arena: .Arena:Arena, file: i32) -> STR:Str, i32 {
-    $arena Arena:save @save
-    $arena 0 Arena:alloc-bytes @ptr
     64 @buf-size
-
     $arena Arena:temp @temp @temp-save
     $temp $buf-size Arena:alloc-bytes @buf
+    ByteArray:new @out
 
-    0 @read
     loop {
-        $file $buf $buf-size IO:read @code @r
+        $file $buf $buf-size IO:read @code @read
         $code 0 /= if {
-            $arena $save Arena:restore
-            $ptr $read STR:Str-new $code break
+            0!.i32 0 STR:Str-new $code break
         }
-        $r 0 = if {
-            $ptr $read STR:Str-new 0 break
+        $read 0 = if {
+            &out ByteArray:unpack STR:Str-new 0 break
         } else {
-            $arena $buf $r Arena:push-bytes drop
-            $read $r + #read
+            $arena &out $buf $read ByteArray:push
         }
     }
     $temp $temp-save Arena:restore

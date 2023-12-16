@@ -1471,7 +1471,7 @@ fn generate(formatter: .FMT:Formatter, stack-start: i32, mem: .ByteArray:T, modu
     $formatter $modules generate-externs
 
     $formatter FMT:Formatter-write-indent
-    $formatter "(memory 1 1024)\n" FMT:Formatter-write
+    $formatter "(memory 1 65536)\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent
 	$formatter "(export \"memory\" (memory 0))\n" FMT:Formatter-write
     $formatter FMT:Formatter-write-indent

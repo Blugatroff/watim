@@ -123,4 +123,7 @@ fn Str-empty() -> Str {
 fn Str-copy-into(arena: .Arena:Arena, self: Str) -> Str {
     $arena $self.ptr $self.len Arena:push-bytes $self.len Str-new
 }
+fn Str-print(fd: i32, self: .Str) {
+    $fd $self.ptr $self.len IO:write-all IO:check
+}
 

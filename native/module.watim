@@ -114,7 +114,7 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: STR:S
 
             $arena &self.imports
             $item.imp AST:Import-ident L:Token-lexeme ~
-            $arena $path $temp.pos $save.pos - FS:normalize @path-len @path-ptr
+            $arena $path $temp $save Arena:usage-since-save FS:normalize @path-len @path-ptr
             $path-ptr $path-len AST:Imports-insert
 
             $temp $save Arena:restore

@@ -808,7 +808,7 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
         $temp "function: `" Arena:push-bytes @msg
         $temp $word AST:Word-ident ~ STR:Str-unpack Arena:push-bytes drop
         $temp "` not found\n" Arena:push-bytes drop
-        $word AST:Word-location $msg $temp.pos $save.pos - U:abort-with-location
+        $word AST:Word-location $msg $temp $save Arena:usage-since-save U:abort-with-location
         $temp $save Arena:restore
     } else { 
         #word.function #word.ext

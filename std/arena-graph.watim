@@ -34,7 +34,7 @@ fn on-alloc(arena: .Arena:Arena, size: i32) {
     2 " bytes in " IO:write-all IO:check
     2 $arena.name-ptr $arena.name-len IO:write-all IO:check
     2 IO:newline
-    $ARENAS $arena.index sizeof(i32) * + $arena.pos store
+    $ARENAS $arena.index sizeof(i32) * + $arena.size store
 }
 
 fn on-restore(arena: .Arena:Arena) {
@@ -42,7 +42,7 @@ fn on-restore(arena: .Arena:Arena) {
     2 "# restored " IO:write-all IO:check
     2 $arena.name-ptr $arena.name-len IO:write-all IO:check
     2 IO:newline
-    $ARENAS $arena.index sizeof(i32) * + $arena.pos store
+    $ARENAS $arena.index sizeof(i32) * + $arena.size store
 }
 
 fn print-arena-levels() {
@@ -94,7 +94,7 @@ fn mark(arena: .Arena:Arena, str-ptr: .i32, str-len: i32) {
     }
     $MARKS $N_MARKS ~ sizeof(i32) 4 * * + @ptr
     $ptr sizeof(i32) 0 * + $SAMPLE ~ store
-    $ptr sizeof(i32) 1 * + $arena.pos store
+    $ptr sizeof(i32) 1 * + $arena.size store
     $ptr sizeof(i32) 2 * + $str-ptr !i32 store
     $ptr sizeof(i32) 3 * + $str-len store
     $N_MARKS $N_MARKS ~ 1 + store

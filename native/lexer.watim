@@ -5,6 +5,7 @@ import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/fmt.watim" as FMT
 import "../std/array.watim" as Array
+import "../std/byte-array.watim" as ByteArray
 
 fn TOKEN_FN() -> i32 { 1 }
 fn TOKEN_IDENT() -> i32 { 2 }
@@ -154,6 +155,10 @@ fn Token-format(formatter: .FMT:Formatter, self: .Token) {
     $formatter "\", type: " FMT:Formatter-write
     $formatter $self Token-ty token-ty-name FMT:Formatter-write
     $formatter "\n" FMT:Formatter-write
+}
+fn Token-print(fd: i32, self: .Token) {
+    $fd FMT:Formatter-to-fd @fmt
+    &fmt $self Token-format
 }
 
 struct Lexer {
@@ -487,7 +492,7 @@ fn Lexer-lex-ident(lexer: .Lexer) -> Token {
     }
 }
 fn Lexer-lex-string(lexer: .Lexer) -> Token {
-    $lexer.arena 0 A:alloc-bytes @buf
+    ByteArray:new @buf
     $lexer.index #lexer.start
 
     $lexer.line @line
@@ -519,39 +524,38 @@ fn Lexer-lex-string(lexer: .Lexer) -> Token {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
                     
-                    $lexer.arena "\"" A:push-bytes drop break
+                    $lexer.arena &buf "\"" ByteArray:push break
                 }
                 $char "n" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    $lexer.arena "\n" A:push-bytes drop break
+                    $lexer.arena &buf "\n" ByteArray:push break
                 }
                 $char "t" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    $lexer.arena "\t" A:push-bytes drop break
+                    $lexer.arena &buf "\t" ByteArray:push break
                 }
                 $char "r" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    $lexer.arena "\r" A:push-bytes drop break
+                    $lexer.arena &buf "\r" ByteArray:push break
                 }
                 $char "\\" drop load8 = if {
                     $lexer.index 1 + #lexer.index
                     $lexer.column 1 + #lexer.column
-                    $lexer.arena "\\" A:push-bytes drop break
+                    $lexer.arena &buf "\\" ByteArray:push break
                 }
-                $lexer.arena "\\" A:push-bytes drop
-                $lexer.arena $char A:push-byte
+                $lexer.arena &buf "\\" ByteArray:push
+                $lexer.arena &buf $char ByteArray:push-byte
                 break
             }
         } else {
-            $lexer.arena $char A:push-byte
+            $lexer.arena &buf $char ByteArray:push-byte
         }
     }
 
-    $lexer.arena 0 A:alloc-bytes @buf-end
-    $buf $buf-end $buf - STR:Str-new @string
+    &buf ByteArray:unpack STR:Str-new @string
 
     TOKEN_STRING
     &lexer.input
