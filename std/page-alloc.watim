@@ -109,14 +109,3 @@ fn discard-page(page: .i32) {
     // But there is a proposal for the `memory.discard` instruction: https://github.com/WebAssembly/memory-control/issues/6
 }
 
-fn format-free-list(formatter: .FMT:Formatter) {
-    $ALLOCATOR @self
-    $self.free-list @page
-    loop {
-        $page 0!.Page = if { break }
-        $page !i32 $formatter U:i32-format
-        $formatter "\n" FMT:Formatter-write
-        $page.next #page
-    }
-}
-

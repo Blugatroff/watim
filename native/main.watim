@@ -27,7 +27,7 @@ import "./logging.watim" as LOGGING
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
-    2 "Usage: wasmtime --dir=. ./watim.wasm <watim-source-file>\n" IO:write-all IO:check
+    2 "Usage: watim <watim-source-file>\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
     2 "  --parse-ast    Parse stdin into a watim AST in print it as JSON\n" IO:write-all IO:check
@@ -36,11 +36,11 @@ fn print-usage-and-exit() {
 
 fn find-flag(args: .Array:Array<STR:Str>, ptr: .i32, len: i32) -> bool {
     $ptr $len STR:Str-new @str
-    $args \STR:Str-eq &str Array:find<STR:Str, .STR:Str> if { 
+    $args \STR:Str-eq &str Array:find<STR:Str, .STR:Str> if {
         $args flip Array:remove<STR:Str> drop
         1 1 =
     } else { 
-        drop 
+        drop
         0 1 =
     }
 }

@@ -85,6 +85,7 @@ fn clear(self: .Arena) {
     }
     0 !.Page #self.used-pages
     0 #self.size
+    0 #self.index
     $ON_CLEAR ~ 0 !(.Arena ->) /= if { $self $ON_CLEAR ~ -> }
 }
 fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {

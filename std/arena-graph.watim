@@ -1,12 +1,20 @@
-import "./arena.watim" as Arena
+import "./core.watim" as CORE
 import "./io.watim" as IO
+import "./arena.watim" as Arena
+import "./array.watim" as Array
 
 memory ENABLED: bool 4
 memory SAMPLE: i32 4
-memory ACTIVE: i32 4
-memory ARENAS: i32 20
-memory N_MARKS: i32 4
-memory MARKS: i32 1600 // space for 100 marks
+memory ARENAS: Array:Array<i32> 20
+memory MARKS: Array:Array<Marker> 20
+memory ARENA: Arena:Arena 20
+
+struct Marker {
+    sample: i32
+    value: i32
+    label-ptr: .i32
+    label-len: i32
+}
 
 fn enable() {
     $ENABLED 1 1 = store
@@ -14,52 +22,65 @@ fn enable() {
 }
 
 fn on-new(arena: .Arena:Arena) {
-    $ACTIVE ~ #arena.index
-    $ACTIVE $ACTIVE ~ 1 + store
-    $ARENAS $arena.index sizeof(i32) * + 0 store
+    $ARENAS @arenas
+    $ARENA $arenas $arena.size Array:push<i32>
+    $arenas.len #arena.index
 }
 
 fn on-clear(arena: .Arena:Arena) {
-    print-arena-levels
-    2 "# cleared " IO:write-all IO:check
-    2 $arena.name-ptr $arena.name-len IO:write-all IO:check
-    2 IO:newline
-    $ARENAS $arena.index sizeof(i32) * + 0 store
+    $ARENAS @arenas
+    $arena.index 0 /= $arena.index $arenas.len le and if {
+        print-arena-levels
+        2 "# cleared " IO:write-all IO:check
+        2 $arena.name-ptr $arena.name-len IO:write-all IO:check
+        2 IO:newline
+        $ARENAS $arena.index 1 - $arena.size Array:set<i32> drop
+    }
 }
 
 fn on-alloc(arena: .Arena:Arena, size: i32) {
-    print-arena-levels
-    2 "# alloced " IO:write-all IO:check
-    2 $size IO:print-to-fd
-    2 " bytes in " IO:write-all IO:check
-    2 $arena.name-ptr $arena.name-len IO:write-all IO:check
-    2 IO:newline
-    $ARENAS $arena.index sizeof(i32) * + $arena.size store
+    $ARENAS @arenas
+    $arena.index 0 /= $arena.index $arenas.len le and if {
+        print-arena-levels
+        2 "# alloced " IO:write-all IO:check
+        2 $size IO:print-to-fd
+        2 " bytes in " IO:write-all IO:check
+        2 $arena.name-ptr $arena.name-len IO:write-all IO:check
+        2 IO:newline
+        $arenas $arena.index 1 - $arena.size Array:set<i32> drop
+    }
 }
 
 fn on-restore(arena: .Arena:Arena) {
-    print-arena-levels
-    2 "# restored " IO:write-all IO:check
-    2 $arena.name-ptr $arena.name-len IO:write-all IO:check
-    2 IO:newline
-    $ARENAS $arena.index sizeof(i32) * + $arena.size store
+    $ARENAS @arenas
+    $arena.index 0 /= $arena.index $arenas.len le and if {
+        print-arena-levels
+        2 "# restored " IO:write-all IO:check
+        2 $arena.name-ptr $arena.name-len IO:write-all IO:check
+        2 IO:newline
+        $ARENAS $arena.index 1 - $arena.size Array:set<i32> drop
+    }
 }
 
 fn print-arena-levels() {
     2 " " IO:write-all IO:check
     2 $SAMPLE ~ IO:print-to-fd
     $SAMPLE $SAMPLE ~ 1 + store
-    0 @i
+    1 @i
     loop {
         2 "\t" IO:write-all IO:check
-        $ACTIVE ~ $i = if { break }
-        2 $ARENAS $i sizeof(i32) * + ~ IO:print-to-fd
+        $ARENAS @arenas $arenas.len 1 + $i = if { break }
+        2 $ARENAS $i 1 - Array:get<i32> ~ IO:print-to-fd
         $i 1 + #i
     }
 }
 
 fn begin() {
+    Array:new<i32> =>ARENAS
+    Array:new<Marker> =>MARKS
+    0 =>SAMPLE
     $ENABLED ~ if {
+        "ArenaGraph-Arena" Arena:new =>ARENA // store
         2 "$data << EOD\n" IO:write-all IO:check
     }
 }
@@ -69,34 +90,34 @@ fn end() {
         2 "EOD\n" IO:write-all IO:check
         0 @i
         loop {
-            $i $N_MARKS ~ = if { break }
-            $MARKS $i sizeof(i32) 4 * * + @ptr
+            $i $MARKS @marks $marks.len = if { break }
+            $MARKS $i Array:get<Marker> @marker
             2 "set label " IO:write-all IO:check
             2 $i 1 + IO:print-to-fd
             2 " \"" IO:write-all IO:check
-            2 $ptr sizeof(i32) 2 * + ~ !.i32 $ptr sizeof(i32) 3 * + ~ IO:write-all IO:check
+            2 $marker.label-ptr $marker.label-len IO:write-all IO:check
             2 "\" at " IO:write-all IO:check
-            2 $ptr ~ IO:print-to-fd
+            2 $marker.sample IO:print-to-fd
             2 "," IO:write-all IO:check
-            2 $ptr sizeof(i32) 1 * + ~ IO:print-to-fd
+            2 $marker.value IO:print-to-fd
             2 " point pointtype 0\n" IO:write-all IO:check
             $i 1 + #i
         }
         2 "plot \"$data\" using 1:2 title 'Temp1' with lines, \"$data\" using 1:3 title 'Temp2', \"$data\" using 1:4 title 'Main' with lines\n" IO:write-all IO:check
         2 "pause mouse close\n" IO:write-all IO:check
     }
+    $ARENA Arena:clear
+    Array:new<i32> =>ARENAS
+    Array:new<Marker> =>MARKS
+    0 =>SAMPLE
 }
 
 fn mark(arena: .Arena:Arena, str-ptr: .i32, str-len: i32) {
-    $N_MARKS ~ 100 gt if {
-        2 "Maximum number of ArenaGraph marks reached\n" IO:write-all IO:check
-        0 0 / drop
-    }
-    $MARKS $N_MARKS ~ sizeof(i32) 4 * * + @ptr
-    $ptr sizeof(i32) 0 * + $SAMPLE ~ store
-    $ptr sizeof(i32) 1 * + $arena.size store
-    $ptr sizeof(i32) 2 * + $str-ptr !i32 store
-    $ptr sizeof(i32) 3 * + $str-len store
-    $N_MARKS $N_MARKS ~ 1 + store
+    local marker: Marker
+    $SAMPLE ~ #marker.sample
+    $arena.size #marker.value
+    $str-ptr #marker.label-ptr
+    $str-len #marker.label-len
+    $ARENA $MARKS $marker Array:push<Marker>
 }
 
