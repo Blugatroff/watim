@@ -1289,7 +1289,7 @@ fn Struct-apply-generics(arena: .Arena:Arena, self: .Struct, generics: .Types, m
         1 1 = #self.generics-being-applied
         $arena &self.fields $generics $module Fields-apply-generics if {
             $self.ident flip $self.generics 0 1 = Struct-new @new
-            &module.structs $new DynArray:push<.Struct>
+            $arena &module.structs $new Array:push<.Struct>
             $new 1 1 =
         } else {
             drop

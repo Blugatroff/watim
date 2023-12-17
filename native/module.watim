@@ -21,7 +21,7 @@ struct Module {
     tokens: Array:Array<L:Token>
     types: Array:Array<.AST:Type>
     path: STR:Str
-    structs: DynArray:DynArray<.AST:Struct>
+    structs: Array:Array<.AST:Struct>
     fields: Array:Array<AST:Field>
     types-types: DynArray:DynArray<.AST:Types>
     words-words: Array:Array<Array:Array<AST:Word>>
@@ -58,7 +58,7 @@ fn Module-new(
     $tokens #self.tokens
     $types #self.types
     $path #self.path
-    \AST:Struct-free DynArray:new<.AST:Struct> #self.structs
+    Array:new<.AST:Struct> #self.structs
     $fields #self.fields
     $arena &self $self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
@@ -129,7 +129,6 @@ fn Module-imports(self: .Module) -> .AST:Imports {
 
 fn Module-free(self: Module) {
     $self.types-types DynArray:free<.AST:Types>
-    $self.structs DynArray:free<.AST:Struct>
 }
 
 fn Module-items(self: .Module) -> .Array:Array<.AST:TopItem> {
