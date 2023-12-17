@@ -47,7 +47,7 @@ fn check-module(self: .Checker, module: .M:Module) {
     0 @i
     loop {
         $i $items.len = if { break }
-        $self $module $items $i DynArray:get<.AST:TopItem> ~ check-item
+        $self $module $items $i Array:get<.AST:TopItem> ~ check-item
         $i 1 + #i
     }
 }

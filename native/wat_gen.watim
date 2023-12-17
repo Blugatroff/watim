@@ -4,7 +4,6 @@ import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/str.watim" as STR
 import "../std/alloc.watim" as A
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/byte-array.watim" as ByteArray
@@ -821,7 +820,7 @@ fn generate-externs(formatter: .FMT:Formatter, modules: .M:Modules) {
         0 @j
         loop {
             $j $module M:Module-items.len ~ = if { break }
-            $module M:Module-items $j DynArray:get<.AST:TopItem> ~ @item
+            $module M:Module-items $j Array:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
                 $item AST:TopItem-ext @top-item
                 $top-item.reachable if {
@@ -853,7 +852,7 @@ fn generate-global-mems(formatter: .FMT:Formatter, statics-len: i32, modules: .M
         0 @j
         loop {
             $j $module M:Module-items.len ~ = if { break }
-            $module M:Module-items $j DynArray:get<.AST:TopItem> ~ @item
+            $module M:Module-items $j Array:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
                 $formatter $i $statics-len $item.mem generate-global-mem
             }
@@ -1378,7 +1377,7 @@ fn generate-functions(formatter: .FMT:Formatter, modules: .M:Modules) {
         0 @j
         loop {
             $j $module M:Module-items.len ~ = if { break }
-            $module M:Module-items $j DynArray:get<.AST:TopItem> ~ @item
+            $module M:Module-items $j Array:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item AST:TopItem-function @function
                 $function.reachable if {
@@ -1417,7 +1416,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
         0 @j
         loop {
             $j $items.len = if { break }
-            $items $j DynArray:get<.AST:TopItem> ~ @item
+            $items $j Array:get<.AST:TopItem> ~ @item
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item.function.table-index 0 /=
                 $item.function.reachable and

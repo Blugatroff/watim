@@ -22,7 +22,7 @@ fn gather-instances-module(arena: .Arena:Arena, module: .M:Module) {
     0 @i
     loop {
         $i $items.len = if { break }
-        $items $i DynArray:get<.AST:TopItem> ~ @item
+        $items $i Array:get<.AST:TopItem> ~ @item
         $arena $module $item gather-instances-item
         $i 1 + #i
     }

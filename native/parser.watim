@@ -2,7 +2,6 @@ import "../std/alloc.watim" as A
 import "../std/io.watim" as IO
 import "../std/core.watim" as CORE
 import "../std/str.watim" as STR
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/byte-array.watim" as ByteArray
@@ -47,8 +46,8 @@ fn Parser-retreat(self: .Parser) {
     $self.current 0 gt if { $self.current 1 - #self.current }
 }
 
-fn Parser-parse-module(self: .Parser) -> DynArray:DynArray<.AST:TopItem> {
-    \AST:TopItem-free DynArray:new<.AST:TopItem> @items
+fn Parser-parse-module(self: .Parser) -> Array:Array<.AST:TopItem> {
+    Array:new<.AST:TopItem> @items
     loop {
         $self.tokens.len $self.current = if {
             $items break
@@ -56,23 +55,23 @@ fn Parser-parse-module(self: .Parser) -> DynArray:DynArray<.AST:TopItem> {
         loop {
             $self Parser-peek @token
             $token L:Token-ty L:TOKEN_FN = if {
-                &items $self Parser-parse-function AST:TopItem-new-function DynArray:push<.AST:TopItem>
+                $self.arena &items $self Parser-parse-function AST:TopItem-new-function Array:push<.AST:TopItem>
                 break
             }
             $token L:Token-ty L:TOKEN_MEMORY = if {
-                &items $self Parser-parse-mem AST:TopItem-new-mem DynArray:push<.AST:TopItem>
+                $self.arena &items $self Parser-parse-mem AST:TopItem-new-mem Array:push<.AST:TopItem>
                 break
             }
             $token L:Token-ty L:TOKEN_EXTERN = if {
-                &items $self Parser-parse-ext AST:TopItem-new-ext DynArray:push<.AST:TopItem>
+                $self.arena &items $self Parser-parse-ext AST:TopItem-new-ext Array:push<.AST:TopItem>
                 break
             }
             $token L:Token-ty L:TOKEN_IMPORT = if {
-                &items $self Parser-parse-imp AST:TopItem-new-imp DynArray:push<.AST:TopItem>
+                $self.arena &items $self Parser-parse-imp AST:TopItem-new-imp Array:push<.AST:TopItem>
                 break
             }
             $token L:Token-ty L:TOKEN_STRUCT = if {
-                &items $self Parser-parse-struc AST:TopItem-new-struc DynArray:push<.AST:TopItem>
+                $self.arena &items $self Parser-parse-struc AST:TopItem-new-struc Array:push<.AST:TopItem>
                 break
             }
             2 $token L:Token-ty L:token-ty-name IO:write-all IO:check
@@ -1259,7 +1258,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, Array:Array<.AST:Type>, Array:Array<AST:Field> {
+fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> Array:Array<.AST:TopItem>, Array:Array<.AST:Type>, Array:Array<AST:Field> {
     $arena $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

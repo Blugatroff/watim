@@ -6,7 +6,6 @@ import "../std/fs.watim" as FS
 import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/util.watim" as U
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/arena-graph.watim" as ArenaGraph
@@ -136,7 +135,6 @@ fn parse-ast(arena: .Arena:Arena) {
     &formatter &items DUMP:TopItems-json
     &formatter "\n" FMT:Formatter-write
 
-    $items DynArray:free<.AST:TopItem>
     $arena $save Arena:restore
 }
 

@@ -3,24 +3,21 @@ import "../std/fmt.watim" as FMT
 import "../std/util.watim" as U
 import "../std/str.watim" as STR
 import "../std/io.watim" as IO
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 
 import "./ast.watim" as AST
 import "./lexer.watim" as L
 
-fn TopItems-json(formatter: .FMT:Formatter, items: .DynArray:DynArray<.AST:TopItem>) {
-    $items.len @len
-
+fn TopItems-json(formatter: .FMT:Formatter, items: .Array:Array<.AST:TopItem>) {
     $formatter "[\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent
     0 @i
     loop {
-        $len $i = if { break }
+        $items.len $i = if { break }
         $formatter FMT:Formatter-write-indent
-        $formatter $items $i DynArray:get<.AST:TopItem> ~ TopItem-json
+        $formatter $items $i Array:get<.AST:TopItem> ~ TopItem-json
         
-        $i 1 + $len /= if {
+        $i 1 + $items.len /= if {
             $formatter "," FMT:Formatter-write
         }
         $formatter "\n" FMT:Formatter-write
