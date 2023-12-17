@@ -96,8 +96,6 @@ fn main "_start" () {
         &arena "GEN:generate" ArenaGraph:mark
         &formatter $stack-start &mem &modules GEN:generate
         1 "\n" IO:write-all IO:check
-
-        &modules M:Modules-free
     }
     mode PARSE_AST = if {
         &arena parse-ast

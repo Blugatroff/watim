@@ -5,7 +5,6 @@ import "../std/fs.watim" as FS
 import "../std/alloc.watim" as A
 import "../std/fmt.watim" as FMT
 import "../std/core.watim" as CORE
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/byte-array.watim" as ByteArray
@@ -23,7 +22,7 @@ struct Module {
     path: STR:Str
     structs: Array:Array<.AST:Struct>
     fields: Array:Array<AST:Field>
-    types-types: DynArray:DynArray<.AST:Types>
+    types-types: Array:Array<.AST:Types>
     words-words: Array:Array<Array:Array<AST:Word>>
 }
 
@@ -62,7 +61,7 @@ fn Module-new(
     $fields #self.fields
     $arena &self $self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
-    0!(.AST:Types ->) DynArray:new<.AST:Types> #self.types-types
+    Array:new<.AST:Types> #self.types-types
     Array:new<Array:Array<AST:Word>> #self.words-words
     // TODO: check for duplicate structs and memories
     $self
@@ -125,10 +124,6 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: STR:S
 
 fn Module-imports(self: .Module) -> .AST:Imports {
     &self.imports
-}
-
-fn Module-free(self: Module) {
-    $self.types-types DynArray:free<.AST:Types>
 }
 
 fn Module-items(self: .Module) -> .Array:Array<.AST:TopItem> {
@@ -197,15 +192,6 @@ fn Modules-new() -> Modules {
     local self: Modules
     StrMap:new<Module> #self.inner
     $self
-}
-
-fn Modules-free(self: .Modules) {
-    0 @i
-    loop {
-        $i &self.inner StrMap:len<Module> = if { break }
-        &self.inner $i StrMap:get-value<Module> ~ Module-free
-        $i 1 + #i
-    }
 }
 
 fn Modules-insert(arena: .Arena:Arena, self: .Modules, path: STR:Str, module: Module) {

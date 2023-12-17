@@ -3,7 +3,6 @@ import "../std/io.watim" as IO
 import "../std/str.watim" as STR
 import "../std/core.watim" as CORE
 import "../std/fmt.watim" as FMT
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/byte-array.watim" as ByteArray
@@ -80,7 +79,7 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     $scope-id.inner #function.locals.id
 
     $function AST:Function-body @words
-    0!(BS:BreakStack ->) DynArray:new<BS:BreakStack> @bs
+    Array:new<BS:BreakStack> @bs
     $module &bs $self $stack &function.locals &scope-id.inner $words check-words not if {
         // if the function does not diverge, aka does return
         // then check whether the remaining stack matches the return type
@@ -100,12 +99,10 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     } else {
         0 0 = #function.diverges
     }
-
-    $bs DynArray:free<BS:BreakStack>
 }
 fn check-words(
     module: .M:Module,
-    bs: .DynArray:DynArray<BS:BreakStack>,
+    bs: .Array:Array<BS:BreakStack>,
     self: .Checker,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -127,7 +124,7 @@ fn check-words(
 
 fn check-word(
     module: .M:Module,
-    bs: .DynArray:DynArray<BS:BreakStack>,
+    bs: .Array:Array<BS:BreakStack>,
     self: .Checker,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -596,7 +593,7 @@ fn check-cast(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> bool {
 }
 fn check-iff(
     module: .M:Module,
-    bs: .DynArray:DynArray<BS:BreakStack>,
+    bs: .Array:Array<BS:BreakStack>,
     self: .Checker,
     stack: .AST:Types,
     locals: .AST:Locals,
@@ -676,8 +673,8 @@ fn check-iff(
     $true-branch-diverges $false-branch-diverges or
 }
 
-fn check-brek(arena: .Arena:Arena, bs: .DynArray:DynArray<BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {
-    $bs $word $arena $stack AST:Types-clone-container BS:BreakStack-new DynArray:push<BS:BreakStack>
+fn check-brek(arena: .Arena:Arena, bs: .Array:Array<BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {
+    $arena $bs $word $arena $stack AST:Types-clone-container BS:BreakStack-new Array:push<BS:BreakStack>
     loop {
         0 $stack AST:Types-len = if { break }
         $stack AST:Types-pop drop
@@ -693,7 +690,7 @@ fn check-lop(
     scope-id: .i32,
     word: .AST:Word,
 ) -> bool {
-    0!(BS:BreakStack ->) DynArray:new<BS:BreakStack> @bs
+    Array:new<BS:BreakStack> @bs
 
     $locals #word.lop.locals.parent
     $scope-id ~ 1 + =>scope-id
@@ -708,26 +705,25 @@ fn check-lop(
     } else {
         0 @i
         loop {
-            &bs 0 DynArray:get<BS:BreakStack> BS:BreakStack-types AST:Types-len $i = if { break }
-            $self.arena $stack &bs 0 DynArray:get<BS:BreakStack> BS:BreakStack-types $i AST:Types-get AST:Types-push
+            &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types AST:Types-len $i = if { break }
+            $self.arena $stack &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        $self.arena &bs 0 DynArray:get<BS:BreakStack> BS:BreakStack-types AST:Types-clone-container #word.lop.rets
+        $self.arena &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types AST:Types-clone-container #word.lop.rets
         0 1 =
     }
-    $bs DynArray:free<BS:BreakStack>
 }
 
-fn check-brek-stacks(bs: .DynArray:DynArray<BS:BreakStack>, name-ptr: .i32, name-len: i32) { 
+fn check-brek-stacks(bs: .Array:Array<BS:BreakStack>, name-ptr: .i32, name-len: i32) { 
     block {
     $bs.len 0 = if { break }
 
-    $bs 0 DynArray:get<BS:BreakStack> @first
+    $bs 0 Array:get<BS:BreakStack> @first
     
     1 @i
     loop {
         $i $bs.len = if { 0 0 = break }
-        $bs $i DynArray:get<BS:BreakStack> BS:BreakStack-types $first BS:BreakStack-types AST:Types-eq not if {
+        $bs $i Array:get<BS:BreakStack> BS:BreakStack-types $first BS:BreakStack-types AST:Types-eq not if {
             0 1 = break
         }
         $i 1 + #i
@@ -736,14 +732,14 @@ fn check-brek-stacks(bs: .DynArray:DynArray<BS:BreakStack>, name-ptr: .i32, name
     }
 } }
 
-fn report-brek-stack-mismatch(bs: .DynArray:DynArray<BS:BreakStack>, name-ptr: .i32, name-len: i32) {
+fn report-brek-stack-mismatch(bs: .Array:Array<BS:BreakStack>, name-ptr: .i32, name-len: i32) {
     2 "type mismatch in " IO:write-all IO:check
     2 $name-ptr $name-len IO:write-all IO:check
     2 ":\n" IO:write-all IO:check
     0 @i
     loop {
         $i $bs.len = if { break }
-        $bs $i DynArray:get<BS:BreakStack> @stack
+        $bs $i Array:get<BS:BreakStack> @stack
         2 "\t" IO:write-all IO:check
         2 $stack.word AST:Word-location L:print-location
         2 ": " IO:write-all IO:check
@@ -762,7 +758,7 @@ fn check-blok(
     scope-id: .i32,
     word: .AST:Word
 ) -> bool {
-    0!(BS:BreakStack ->) DynArray:new<BS:BreakStack> @bs
+    Array:new<BS:BreakStack> @bs
 
     $locals #word.blok.locals.parent
     $scope-id ~ 1 + =>scope-id
@@ -782,7 +778,7 @@ fn check-blok(
         $stack AST:Types-len $orig-stack-len le if { break }
         $stack AST:Types-pop drop
     }
-    &bs $word $remaining-types BS:BreakStack-new DynArray:push<BS:BreakStack>
+    $self.arena &bs $word $remaining-types BS:BreakStack-new Array:push<BS:BreakStack>
     &bs "block" check-brek-stacks
 
     $bs.len 0 = if {
@@ -790,13 +786,12 @@ fn check-blok(
     } else {
         0 @i
         loop {
-            &bs 0 DynArray:get<BS:BreakStack> BS:BreakStack-types AST:Types-len $i = if { break }
-            $self.arena $stack &bs 0 DynArray:get<BS:BreakStack> BS:BreakStack-types $i AST:Types-get AST:Types-push
+            &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types AST:Types-len $i = if { break }
+            $self.arena $stack &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types $i AST:Types-get AST:Types-push
             $i 1 + #i
         }
-        $self.arena &bs 0 DynArray:get<BS:BreakStack> BS:BreakStack-types AST:Types-clone-container #word.blok.rets
+        $self.arena &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types AST:Types-clone-container #word.blok.rets
     }
-    $bs DynArray:free<BS:BreakStack>
     $diverges
 }
 

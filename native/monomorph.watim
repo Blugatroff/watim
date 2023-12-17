@@ -1,6 +1,5 @@
 import "../std/io.watim" as IO
 import "../std/str.watim" as STR
-import "../std/dyn-array.watim" as DynArray
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 
@@ -33,7 +32,7 @@ fn gather-instances-item(arena: .Arena:Arena, module: .M:Module, item: .AST:TopI
         $item AST:TopItem-function @function
         &function.generics AST:Generics-len 0 = if { // only start gathering at non-generic functions
             $arena AST:Types-new @generics
-            &module.types-types $generics DynArray:push<.AST:Types>
+            $arena &module.types-types $generics Array:push<.AST:Types>
             $arena $module $generics $function gather-instances-function @new-words
             $arena &module.words-words $new-words Array:push<Array:Array<AST:Word>>
             $generics $new-words AST:Instance-new @instance

@@ -5,7 +5,6 @@ import "../std/core.watim" as CORE
 import "../std/util.watim" as U
 import "../std/str-map.watim" as StrMap
 import "../std/fmt.watim" as FMT
-import "../std/dyn-array.watim" as DynArray
 import "../std/arena.watim" as Arena
 import "../std/array.watim" as Array
 
@@ -523,7 +522,7 @@ fn Types-apply-generics(arena: .Arena:Arena, self: .Types, generics: .Types, mod
             $i 1 + #i
         }
         $use-new if {
-            &module.types-types $new DynArray:push<.Types>
+            $arena &module.types-types $new Array:push<.Types>
             $new
         } else { $self }
         $use-new
