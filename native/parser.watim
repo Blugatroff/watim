@@ -16,7 +16,7 @@ struct Parser {
     current: i32
     mem: .ByteArray:T
     types: Array:Array<.AST:Type>
-    fields: DynArray:DynArray<AST:Field>
+    fields: Array:Array<AST:Field>
     file: STR:Str
     arena: .Arena:Arena
 }
@@ -30,10 +30,10 @@ fn Parser-new(arena: .Arena:Arena, tokens: .Array:Array<L:Token>, mem: .ByteArra
     $tokens.len 0 gt if {
         $tokens 0 Array:get<L:Token> L:Token-file ~ #self.file
     }
-    0!(AST:Field ->) DynArray:new<AST:Field> #self.fields
+    Array:new<AST:Field> #self.fields
     $self
 } 
-fn Parser-free(self: Parser) -> Array:Array<.AST:Type>, DynArray:DynArray<AST:Field> { 
+fn Parser-free(self: Parser) -> Array:Array<.AST:Type>, Array:Array<AST:Field> { 
     $self.types $self.fields
 }
 fn Parser-peek(self: .Parser) -> .L:Token {
@@ -134,7 +134,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
             $token L:Token-location "expected {" U:abort-with-location
         }
     }
-    0!(AST:Field ->) DynArray:new<AST:Field> @fields
+    Array:new<AST:Field> @fields
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-advance #token
@@ -152,8 +152,8 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
         }
         $self Parser-parse-type
         AST:Field-new @field
-        &self.fields $field DynArray:push<AST:Field>
-        &fields $field DynArray:push<AST:Field>
+        $self.arena &self.fields $field Array:push<AST:Field>
+        $self.arena &fields $field Array:push<AST:Field>
     }
     $ident $fields $generics 1 1 = AST:Struct-new
 }
@@ -1259,7 +1259,7 @@ fn is-start-of-word(token: .L:Token) -> bool {
     $ty L:TOKEN_ARROW = or
 }
 
-fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, Array:Array<.AST:Type>, DynArray:DynArray<AST:Field> {
+fn parse(arena: .Arena:Arena, mem: .ByteArray:T, tokens: .Array:Array<L:Token>) -> DynArray:DynArray<.AST:TopItem>, Array:Array<.AST:Type>, Array:Array<AST:Field> {
     $arena $tokens $mem Parser-new @parser
     &parser Parser-parse-module
     $parser Parser-free

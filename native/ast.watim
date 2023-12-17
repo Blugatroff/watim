@@ -1185,43 +1185,43 @@ fn Field-print(fd: i32, self: .Field) {
     $fd \Field-format $self FMT:print-it<Field>
 }
 
-fn Fields-eq(self: .DynArray:DynArray<Field>, other: .DynArray:DynArray<Field>) -> bool { block {
+fn Fields-eq(self: .Array:Array<Field>, other: .Array:Array<Field>) -> bool { block {
     $self $other = if { 1 1 = break }
     $self.len $other.len /= if { 0 1 = break }
     0 @i
     loop {
         $i $self.len = if { 1 1 = break }
-        $self $i DynArray:get<Field>
-        $other $i DynArray:get<Field> Field-eq not if { 0 1 = break }
+        $self $i Array:get<Field>
+        $other $i Array:get<Field> Field-eq not if { 0 1 = break }
         $i 1 + #i
     }
 } }
-fn Fields-apply-generics(arena: .Arena:Arena, self: .DynArray:DynArray<Field>, generics: .Types, module: .M:Module) -> DynArray:DynArray<Field>, bool {
-    0!(Field ->) DynArray:new<Field> @new
+fn Fields-apply-generics(arena: .Arena:Arena, self: .Array:Array<Field>, generics: .Types, module: .M:Module) -> Array:Array<Field>, bool {
+    Array:new<Field> @new
     0 1 = @use-new
     0 @i
     loop {
         $i $self.len = if { break }
-        $self $i DynArray:get<Field> @field
-        $arena $field $generics $module Field-apply-generics if {
+        $self $i Array:get<Field> @field
+        $arena $arena $field $generics $module Field-apply-generics if {
             1 1 = #use-new
-            &new flip DynArray:push<Field>
+            &new flip Array:push<Field>
         } else {
-            drop &new $field ~ DynArray:push<Field>
+            drop &new $field ~ Array:push<Field>
         }
         $i 1 + #i
     }
-    $use-new if { $new 1 1 = } else { $new DynArray:free<Field> $self ~ 1 0 = }
+    $use-new if { $new 1 1 = } else { $self ~ 1 0 = }
 }
 
 struct Struct {
     ident: .L:Token
-    fields: DynArray:DynArray<Field>
+    fields: Array:Array<Field>
     generics: Generics
     owns-generics: bool
     generics-being-applied: bool
 }
-fn Struct-new(ident: .L:Token, fields: DynArray:DynArray<Field>, generics: Generics, owns-generics: bool) -> .Struct {
+fn Struct-new(ident: .L:Token, fields: Array:Array<Field>, generics: Generics, owns-generics: bool) -> .Struct {
     sizeof(Struct) A:alloc !.Struct @self
     $ident #self.ident
     $fields #self.fields
@@ -1231,13 +1231,12 @@ fn Struct-new(ident: .L:Token, fields: DynArray:DynArray<Field>, generics: Gener
     $self
 }
 fn Struct-free(self: .Struct) {
-    $self.fields DynArray:free<Field>
     $self !.i32 A:free
 }
 fn Struct-ident(self: .Struct) -> .L:Token {
     $self.ident
 }
-fn Struct-fields(self: .Struct) -> .DynArray:DynArray<Field> {
+fn Struct-fields(self: .Struct) -> .Array:Array<Field> {
     &self.fields
 }
 fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, bool {
@@ -1245,8 +1244,8 @@ fn Struct-find-field(self: .Struct, ident-ptr: .i32, ident-len: i32) -> .Field, 
     0 @i
     loop {
         $i $fields.len = if { 0 !.Field 0 1 = break }
-        $fields $i DynArray:get<Field> Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
-            $fields $i DynArray:get<Field>
+        $fields $i Array:get<Field> Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $fields $i Array:get<Field>
             0 0 = break
         }
         $i 1 + #i
@@ -1258,11 +1257,11 @@ fn Struct-find-field-with-offset(self: .Struct, ident-ptr: .i32, ident-len: i32,
     0 @i
     loop {
         $i $fields.len = if { 0 !.Field 0 0 1 = break }
-        $fields $i DynArray:get<Field> Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
-            $fields $i DynArray:get<Field>
+        $fields $i Array:get<Field> Field-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $fields $i Array:get<Field>
             $offset 0 0 = break
         }
-        $offset $fields $i DynArray:get<Field> Field-type $generics Type-size + #offset
+        $offset $fields $i Array:get<Field> Field-type $generics Type-size + #offset
         $i 1 + #i
     }
 }
@@ -1272,7 +1271,7 @@ fn Struct-size(self: .Struct, generics: .Types) -> i32 {
     loop {
         $i $self Struct-fields .len ~ = if { break }
         $size 
-        $self Struct-fields $i DynArray:get<Field> Field-type $generics Type-size
+        $self Struct-fields $i Array:get<Field> Field-type $generics Type-size
         + #size
         $i 1 + #i
     }

@@ -83,7 +83,3 @@ fn push-temp-type(arena: .Arena:Arena, temp-types: .Array:Array<.AST:Type>, type
     $arena $temp-types $type Array:push<.AST:Type> $type
 }
 
-fn push-temp-type2(temp-types: .DynArray:DynArray<.AST:Type>, type: .AST:Type) -> .AST:Type {
-    $temp-types $type DynArray:push<.AST:Type> $type
-}
-
