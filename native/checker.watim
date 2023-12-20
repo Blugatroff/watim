@@ -690,7 +690,7 @@ fn check-iff(
     $iff $params AST:If-set-params 
     $rets #iff.rets
 
-    $true-branch-diverges $false-branch-diverges or
+    $true-branch-diverges $false-branch-diverges and
 }
 
 fn check-brek(arena: .Arena:Arena, bs: .Array:Array<BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {

@@ -516,7 +516,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
     }
     $self Parser-advance #token
 
-    loop {
+    block {
         $token L:Token-ty L:TOKEN_DOT = if {
             $self.arena $self Parser-parse-type AST:Type-new-ptr break
         }
@@ -643,6 +643,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
             $self.arena $type $length AST:Type-new-array break
         }
         $token L:Token-location "expected type\n" U:abort-with-location
+        CORE:unreachable<.AST:Type>
     }
 }
 fn Parser-parse-intrinsic(self: .Parser, token: .L:Token) -> AST:Word, bool {
