@@ -801,12 +801,12 @@ fn generate-signature(formatter: .FMT:Formatter, module: i32, ident: .L:Token, q
 fn generate-ext(formatter: .FMT:Formatter, module: i32, ext: .AST:Extern) {
     $formatter FMT:Formatter-write-indent
     $formatter "(import " FMT:Formatter-write
-    $formatter $ext AST:Extern-module L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    $formatter $ext.module L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter " " FMT:Formatter-write
-    $formatter $ext AST:Extern-name L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
+    $formatter $ext.name L:Token-lexeme ~ STR:Str-unpack FMT:Formatter-write
     $formatter " (" FMT:Formatter-write
     0 !.AST:Types @generics
-    $formatter $module $ext AST:Extern-ident 0 !.L:Token $ext AST:Extern-parameters $ext AST:Extern-rets $generics 0 generate-signature
+    $formatter $module $ext.ident 0 !.L:Token &ext.params $ext.rets $generics 0 generate-signature
     $formatter "))\n" FMT:Formatter-write
 }
 
@@ -1429,7 +1429,7 @@ fn generate-table(formatter: .FMT:Formatter, modules: .M:Modules) {
             $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
                 $item.ext.table-index 0 /= if {
                     0 !.AST:Function #tmp.function
-                    $item.ext #tmp.ext
+                    &item.ext #tmp.ext
                     $i #tmp.module
                     $temp &fs $tmp Array:push<ExternOrFunction>
                     $fs.len #item.ext.table-index

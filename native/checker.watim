@@ -845,8 +845,8 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
             1 #word.function.table-index
         }
     } else {
-        $word.ext AST:Extern-parameters
-        $word.ext AST:Extern-rets
+        &word.ext.params
+        $word.ext.rets
         $mark-indirect if { 
             1 #word.ext.table-index
         }

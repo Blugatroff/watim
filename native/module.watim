@@ -109,10 +109,10 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: STR:S
             $item.imp @imp
             $arena Arena:temp @temp @save
             $temp $module-path STR:Str-unpack FS:path-dir Arena:push-bytes @path
-            $temp $imp AST:Import-path-content Arena:push-bytes drop
+            $temp &imp AST:Import-path-content Arena:push-bytes drop
 
             $arena &self.imports
-            $item.imp AST:Import-ident L:Token-lexeme ~
+            $item.imp.ident L:Token-lexeme ~
             $arena $path $temp $save Arena:usage-since-save FS:normalize @path-len @path-ptr
             $path-ptr $path-len AST:Imports-insert
 
@@ -160,7 +160,7 @@ fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:
         }
         $item AST:TopItem-ty AST:TOP_ITEM_EXT = if {
             $item AST:TopItem-ext @ext
-            $ext AST:Extern-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
+            $ext.ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
                 $ext 0 !.AST:Function 0 0 = break
             }
         }

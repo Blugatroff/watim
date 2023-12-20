@@ -45,8 +45,8 @@ fn resolve-module(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, p
     }
 }
 fn resolve-extern(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, ext: .AST:Extern, phase: i32) {
-    $arena $modules $module 0 !.AST:Generics $ext AST:Extern-parameters $phase resolve-parameters
-    $arena $modules $module 0 !.AST:Generics $ext AST:Extern-rets $phase resolve-types
+    $arena $modules $module 0 !.AST:Generics &ext.params $phase resolve-parameters
+    $arena $modules $module 0 !.AST:Generics $ext.rets $phase resolve-types
 }
 fn resolve-struc(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, struc: .AST:Struct, phase: i32) {
     $struc AST:Struct-fields @fields

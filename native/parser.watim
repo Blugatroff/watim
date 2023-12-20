@@ -156,13 +156,11 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
     }
     $ident $fields $generics 1 1 = AST:Struct-new
 }
-fn Parser-parse-imp(self: .Parser) -> .AST:Import {
-    local token: .L:Token
-
+fn Parser-parse-imp(self: .Parser) -> AST:Import {
     $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected import" U:abort
     }
-    $self Parser-advance #token
+    $self Parser-advance @token
     $token L:Token-ty L:TOKEN_IMPORT /= if {
         $token L:Token-location "expected import" U:abort-with-location
     }
@@ -191,17 +189,11 @@ fn Parser-parse-imp(self: .Parser) -> .AST:Import {
     $token
     AST:Import-new
 }
-fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
-    local token: .L:Token
-    local module: .L:Token
-    local name: .L:Token
-    local ident: .L:Token
-    local params: AST:Locals
-    local rets: .AST:Types
+fn Parser-parse-ext(self: .Parser) -> AST:Extern {
     $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected extern" U:abort
     }
-    $self Parser-advance #token
+    $self Parser-advance @token
     $token L:Token-ty L:TOKEN_EXTERN /= if {
         $token L:Token-location "expected extern" U:abort-with-location
     }
@@ -212,7 +204,7 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
     $token L:Token-ty L:TOKEN_STRING /= if {
         $token L:Token-location "expected string" U:abort-with-location
     }
-    $token #module
+    $token @module
     $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected string" U:abort
     }
@@ -220,10 +212,10 @@ fn Parser-parse-ext(self: .Parser) -> .AST:Extern {
     $token L:Token-ty L:TOKEN_STRING /= if {
         $token L:Token-location "expected string" U:abort-with-location
     }
-    $token #name
+    $token @name
     $module
     $name
-    $self Parser-parse-signature #rets #params @generics drop #ident
+    $self Parser-parse-signature @rets @params @generics drop @ident
 
     &generics AST:Generics-len 0 /= if {
         $name L:Token-location "externs cannot have generics" U:abort-with-location

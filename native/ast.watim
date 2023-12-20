@@ -1094,9 +1094,8 @@ fn Extern-new(
     ident: .L:Token,
     params: Locals,
     rets: .Types
-) -> .Extern {
-    local self: .Extern
-    sizeof(Extern) A:alloc !.Extern #self
+) -> Extern {
+    local self: Extern
     $module #self.module
     $name #self.name
     $ident #self.ident
@@ -1106,47 +1105,19 @@ fn Extern-new(
     0 #self.table-index
     $self
 }
-fn Extern-module(self: .Extern) -> .L:Token {
-    $self.module
-}
-fn Extern-name(self: .Extern) -> .L:Token {
-    $self.name
-}
-fn Extern-rets(self: .Extern) -> .Types {
-    $self.rets
-}
-fn Extern-parameters(self: .Extern) -> .Locals {
-    &self.params
-}
-fn Extern-ident(self: .Extern) -> .L:Token {
-    $self.ident
-}
-fn Extern-free(self: .Extern) {
-    $self !.i32 A:free
-}
 
 struct Import {
     path: .L:Token
     ident: .L:Token
 }
-fn Import-new(path: .L:Token, ident: .L:Token) -> .Import {
-    local self: .Import
-    sizeof(Import) A:alloc !.Import #self
+fn Import-new(path: .L:Token, ident: .L:Token) -> Import {
+    local self: Import
     $path #self.path
     $ident #self.ident
     $self
 }
-fn Import-free(self: .Import) {
-    $self !.i32 A:free
-}
-fn Import-path(self: .Import) -> .L:Token {
-    $self.path
-}
-fn Import-ident(self: .Import) -> .L:Token {
-    $self.ident
-}
 fn Import-path-content(self: .Import) -> .i32, i32 {
-    $self Import-path L:Token-lexeme ~ 1 STR:Str-drop 1 STR:Str-drop-end STR:Str-unpack 
+    $self.path L:Token-lexeme ~ 1 STR:Str-drop 1 STR:Str-drop-end STR:Str-unpack 
 }
 
 struct Field {
@@ -1321,8 +1292,8 @@ struct TopItem {
     ty: i32
     function: .Function
     mem: .Local
-    ext: .Extern
-    imp: .Import
+    ext: Extern
+    imp: Import
     struc: .Struct
 }
 fn TopItem-new(ty: i32) -> .TopItem {
@@ -1343,16 +1314,16 @@ fn TopItem-new-mem(mem: .Local) -> .TopItem {
     $mem #self.mem
     $self
 }
-fn TopItem-new-ext(ext: .Extern) -> .TopItem {
+fn TopItem-new-ext(ext: Extern) -> .TopItem {
     local self: .TopItem
     TOP_ITEM_EXT TopItem-new #self
     $ext #self.ext
     $self
 }
-fn TopItem-new-imp(imp: .Import) -> .TopItem {
+fn TopItem-new-imp(imp: Import) -> .TopItem {
     local self: .TopItem
     TOP_ITEM_IMPORT TopItem-new #self
-    $imp  #self.imp
+    $imp #self.imp
     $self
 }
 fn TopItem-new-struc(struc: .Struct) -> .TopItem {
@@ -1371,7 +1342,7 @@ fn TopItem-function(self: .TopItem) -> .Function {
     $self.function
 }
 fn TopItem-ext(self: .TopItem) -> .Extern {
-    $self.ext
+    &self.ext
 }
 fn TopItem-free(self: .TopItem) {
     $self TopItem-ty TOP_ITEM_FN = if {
@@ -1379,12 +1350,6 @@ fn TopItem-free(self: .TopItem) {
     }
     $self TopItem-ty TOP_ITEM_MEM = if {
         $self.mem Local-free
-    }
-    $self TopItem-ty TOP_ITEM_EXT = if {
-        $self.ext Extern-free
-    }
-    $self TopItem-ty TOP_ITEM_IMPORT = if {
-        $self.imp Import-free
     }
     $self TopItem-ty TOP_ITEM_STRUCT = if {
         $self.struc Struct-free
