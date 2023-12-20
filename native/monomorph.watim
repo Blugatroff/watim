@@ -248,7 +248,7 @@ fn gather-instances-locals(arena: .Arena:Arena, module: .M:Module, generics: .AS
     $new-locals
 }
 
-fn gather-instances-locl(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, locl: .AST:Local) -> .AST:Local {
+fn gather-instances-locl(arena: .Arena:Arena, module: .M:Module, generics: .AST:Types, locl: .AST:Local) -> AST:Local {
     $arena $locl.type $generics $module AST:Type-apply-generics drop @new-type
     $locl.ty $locl.ident $new-type $locl.scope-id $locl.shadow-id AST:Local-new
 }

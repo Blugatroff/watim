@@ -31,7 +31,7 @@ fn process-module(global-mem-address: .i32, module: .M:Module) {
 
 fn process-item(global-mem-address: .i32, item: .AST:TopItem) {
     $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-        $global-mem-address $item.mem process-mem
+        $global-mem-address &item.mem process-mem
     }
 }
 

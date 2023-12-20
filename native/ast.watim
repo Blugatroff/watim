@@ -751,8 +751,8 @@ struct Local {
     shadow-id: i32
     scope-id: i32
 }
-fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i32) -> .Local {
-    sizeof(Local) A:alloc !.Local @self
+fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i32) -> Local {
+    local self: Local
     $ty #self.ty
     $ident #self.ident
     $type #self.type
@@ -760,32 +760,20 @@ fn Local-new(ty: i32, ident: .L:Token, type: .Type, scope-id: i32, shadow-id: i3
     $scope-id #self.scope-id
     $self
 }
-fn Local-new-mem(arena: .Arena:Arena, types: .Array:Array<.Type>, ident: .L:Token, type: .Type, size: i32) -> .Local {
+fn Local-new-mem(arena: .Arena:Arena, types: .Array:Array<.Type>, ident: .L:Token, type: .Type, size: i32) -> Local {
     LOCAL_MEMORY $ident $arena $arena $type Type-new-ptr $types flip CU:push-temp-type 0 0 Local-new @self
     $size #self.size
     $self
 }
-fn Local-ty(self: .Local) -> i32 {
-    $self.ty
-}
-fn Local-ident(self: .Local) -> .L:Token {
-    $self.ident
-}
-fn Local-type(self: .Local) -> .Type {
-    $self.type
-}
-fn Local-free(self: .Local) {
-    $self !.i32 A:free
-}
 
 struct Locals {
-    inner: Array:Array<.Local>
+    inner: Array:Array<Local>
     parent: .Locals
     id: i32
 }
 fn Locals-new() -> Locals {
     local self: Locals
-    Array:new<.Local> #self.inner
+    Array:new<Local> #self.inner
     0 !.Locals #self.parent
     0 #self.id
     $self
@@ -794,7 +782,7 @@ fn Locals-len(self: .Locals) -> i32 {
     $self.inner.len
 }
 fn Locals-get(self: .Locals, index: i32) -> .Local {
-    &self.inner $index Array:get<.Local> ~
+    &self.inner $index Array:get<Local>
 }
 fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: bool) -> .Local, bool {
     local i: i32
@@ -823,15 +811,15 @@ fn Locals-find(self: .Locals, ident-ptr: .i32, ident-len: i32, search-parents: b
         }
     }
 }
-fn Locals-push(arena: .Arena:Arena, self: .Locals, locl: .Local) {
-    $arena &self.inner $locl Array:push<.Local>
+fn Locals-push(arena: .Arena:Arena, self: .Locals, locl: Local) {
+    $arena &self.inner $locl Array:push<Local>
 }
 fn Locals-contains-mem-or-struc(self: .Locals) -> bool {
     local i: i32
     loop {
         $i $self Locals-len = if { 0 1 = break }
-        $self $i Locals-get Local-ty LOCAL_MEMORY =
-        $self $i Locals-get Local-type Type-ty TYPE_STRUCT = or if {
+        $self $i Locals-get.ty ~ LOCAL_MEMORY =
+        $self $i Locals-get.type.ty ~ TYPE_STRUCT = or if {
             0 0 = break 
         }
         $i 1 + #i
@@ -1291,7 +1279,7 @@ fn top-item-ty-name(ty: i32) -> .i32, i32 {
 struct TopItem {
     ty: i32
     function: .Function
-    mem: .Local
+    mem: Local
     ext: Extern
     imp: Import
     struc: .Struct
@@ -1308,7 +1296,7 @@ fn TopItem-new-function(f: .Function) -> .TopItem {
     $f #self.function
     $self
 }
-fn TopItem-new-mem(mem: .Local) -> .TopItem {
+fn TopItem-new-mem(mem: Local) -> .TopItem {
     local self: .TopItem
     TOP_ITEM_MEM TopItem-new #self
     $mem #self.mem
@@ -1347,9 +1335,6 @@ fn TopItem-ext(self: .TopItem) -> .Extern {
 fn TopItem-free(self: .TopItem) {
     $self TopItem-ty TOP_ITEM_FN = if {
         $self.function Function-free
-    }
-    $self TopItem-ty TOP_ITEM_MEM = if {
-        $self.mem Local-free
     }
     $self TopItem-ty TOP_ITEM_STRUCT = if {
         $self.struc Struct-free

@@ -33,7 +33,7 @@ fn TopItem-json(formatter: .FMT:Formatter, item: .AST:TopItem) { block {
         $formatter $item AST:TopItem-function Function-json break
     }
     $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-        $formatter $item.mem Local-json break
+        $formatter &item.mem Local-json break
     }
     $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
         $formatter &item.imp Import-json break

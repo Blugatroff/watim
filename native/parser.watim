@@ -226,7 +226,7 @@ fn Parser-parse-ext(self: .Parser) -> AST:Extern {
     $rets
     AST:Extern-new
 }
-fn Parser-parse-loc(self: .Parser) -> .AST:Local {
+fn Parser-parse-loc(self: .Parser) -> AST:Local {
     local token: .L:Token
     $self.current $self.tokens.len = if {
         $self.file STR:Str-unpack "expected local" U:abort
@@ -256,21 +256,18 @@ fn Parser-parse-loc(self: .Parser) -> .AST:Local {
     0
     AST:Local-new
 }
-fn Parser-parse-mem(self: .Parser) -> .AST:Local {
-    local token: .L:Token
-    local ident: .L:Token
-    local type: .AST:Type
+fn Parser-parse-mem(self: .Parser) -> AST:Local {
     $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected memory found EOF" U:abort
     }
-    $self Parser-advance #token
+    $self Parser-advance @token
     $token L:Token-ty L:TOKEN_MEMORY /= if {
         $token L:Token-location "expected memory" U:abort-with-location
     }
     $self.tokens.len $self.current = if {
         $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
-    $self Parser-advance #ident
+    $self Parser-advance @ident
     $ident L:Token-ty L:TOKEN_IDENT /= if {
         $ident L:Token-location "expected identifier" U:abort-with-location
     }
@@ -281,7 +278,7 @@ fn Parser-parse-mem(self: .Parser) -> .AST:Local {
     $token L:Token-ty L:TOKEN_COLON /= if {
         $token L:Token-location "expected colon" U:abort-with-location
     }
-    $self Parser-parse-type #type
+    $self Parser-parse-type @type
 
     $self.arena 
     &self.types
@@ -480,29 +477,25 @@ fn Parser-parse-parameters(self: .Parser) -> AST:Locals {
     }
     $params
 }
-fn Parser-parse-parameter(self: .Parser) -> .AST:Local {
-    local ident: .L:Token
-    local token: .L:Token
+fn Parser-parse-parameter(self: .Parser) -> AST:Local {
     $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected identifier found EOF" U:abort
     }
-    $self Parser-advance #ident
+    $self Parser-advance @ident
     $ident L:Token-ty L:TOKEN_IDENT /= if {
         $ident L:Token-location "expected identifier" U:abort-with-location
     }
     $self.current $self.tokens.len = if { 
         $self.file STR:Str-unpack "expected : found EOF" U:abort
     }
-    $self Parser-advance #token
+    $self Parser-advance @token
     $token L:Token-ty L:TOKEN_COLON /= if {
         $ident L:Token-location "expected colon" U:abort-with-location
     }
     AST:LOCAL_ARGUMENT
     $ident
     $self Parser-parse-type
-    0
-    0
-    AST:Local-new
+    0 0 AST:Local-new
 }
 fn Parser-parse-type(self: .Parser) -> .AST:Type {
     $self Parser-parse-type-inner @type

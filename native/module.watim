@@ -177,7 +177,7 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
             $item.mem @mem
             $mem.ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
-                $mem 0 0 = break 
+                &mem 0 0 = break 
             }
         }
         $i 1 + #i

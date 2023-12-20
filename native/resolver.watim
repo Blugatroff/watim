@@ -39,7 +39,7 @@ fn resolve-module(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, p
             $arena $modules $module $item AST:TopItem-ext $phase resolve-extern
         }
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
-            $arena $modules $module $item.mem $phase resolve-memory
+            $arena $modules $module &item.mem $phase resolve-memory
         }
         $i 1 + #i
     }

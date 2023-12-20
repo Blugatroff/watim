@@ -464,9 +464,9 @@ fn check-get-locl(self: .Checker, module: .M:Module, stack: .AST:Types, locals: 
     } else {
         drop drop
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
+            .type ~ #word.type
             $self.modules $module M:Modules-find-index #word.module
             AST:WORD_GET_GLOBAL #word.ty
-            AST:Local-type #word.type
             $self.arena $stack $word.type AST:Types-push
         } else {
             drop
@@ -494,7 +494,7 @@ fn check-store(stack: .AST:Types, self: .Checker, module: .M:Module, locals: .AS
         $module $word AST:Word-ident ~ STR:Str-unpack M:Module-find-mem if {
             #mem
             $self.modules $module M:Modules-find-index #word.module
-            $mem AST:Local-type $word check-fields-access #type
+            $mem.type $word check-fields-access #type
             AST:WORD_STORE_GLOBAL #word.ty
             $type AST:Type-child #word.type
             $stack $type AST:Type-child $word U:expect-stack-one
@@ -873,8 +873,8 @@ fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, wo
     loop {
         $i $param-locals AST:Locals-len = if { break }
         $param-locals $i AST:Locals-get @locl
-        $locl AST:Local-ty AST:LOCAL_ARGUMENT = if {
-            $locl AST:Local-type @type
+        $locl.ty AST:LOCAL_ARGUMENT = if {
+            $locl.type @type
             $self.arena $params $self.arena $type $word.generics $module AST:Type-apply-generics drop AST:Types-push
         }
         $i 1 + #i
