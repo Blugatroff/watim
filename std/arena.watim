@@ -108,7 +108,7 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
         $page.pos sizeof(Page) + $size + PA:page-size le if { // there is enough space in this page
             $page sizeof(Page) + $page.pos + !.i32
             $page.pos $size + #page.pos
-            $ON_ALLOC ~ 0 !(.Arena ->) /= if { $self $size $ON_ALLOC ~ -> }
+            $ON_ALLOC ~ 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC ~ -> }
             break
         }
         $page.next #page

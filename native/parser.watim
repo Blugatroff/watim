@@ -524,7 +524,7 @@ fn Parser-parse-type-inner(self: .Parser) -> .AST:Type {
     }
     $self Parser-advance #token
 
-    loop { // TODO: make this a block
+    loop {
         $token L:Token-ty L:TOKEN_DOT = if {
             $self.arena $self Parser-parse-type AST:Type-new-ptr break
         }
@@ -985,11 +985,8 @@ fn Parser-parse-array-access(self: .Parser, token: .L:Token) -> AST:Word {
         $token L:Token-ty L:TOKEN_DOLLAR = if { AST:WORD_ARRAY_READ break }
         $token L:Token-ty L:TOKEN_AMPERSAND = if { AST:WORD_ARRAY_REF break }
         $token L:Token-ty L:TOKEN_NUMBER = if { AST:WORD_ARRAY_INIT break }
-
         $token L:Token-location "Expected #, $, &, = or an integer\n" U:abort-with-location
-
-        // TODO: insert this automatically because of unreachability
-        0
+        CORE:unreachable<i32>
     } $start-token AST:Word-new @word
 
     $word.ty AST:WORD_ARRAY_INIT = if {

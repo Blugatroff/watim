@@ -182,7 +182,7 @@ fn Type-size(self: .Type, generics: .Types) -> i32 {
             $generics $self.generic Types-get @concrete-type
             $concrete-type.ty TYPE_GENERIC = if {
                 2 "Type-size generics must all be concrete types!\n" IO:write-all IO:check
-                2 0 !.Types $generics Types-print
+                2 $generics Types-print
                 2 IO:newline
                 0 0 / drop
             }
@@ -211,7 +211,7 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
             $a.function.rets $b.function.rets Types-eq 
             and break
         }
-        0 0 = break
+        0 0 =
     }
 }
 
@@ -487,7 +487,7 @@ fn Types-get-ref(self: .Types, index: i32) -> ..Type {
     &self.inner $index Array:get<.Type>
 }
 // argument `generics` is optional/null
-fn Types-format(formatter: .FMT:Formatter, generics: .Types, self: .Types) {
+fn Types-format(formatter: .FMT:Formatter, self: .Types) {
     local i: i32
     0 $self Types-len = if {
         $formatter "[]" FMT:Formatter-write
@@ -537,16 +537,16 @@ fn Types-is-generic(self: .Types) -> bool {
     }
 }
 
-// argument `generics` is optional/null
-fn Types-print(fd: i32, generics: .Types, self: .Types) {
+fn Types-print(fd: i32, self: .Types) {
     $fd FMT:Formatter-to-fd @formatter
-    &formatter $generics $self Types-format
+    &formatter $self Types-format
 }
 fn Types-last(self: .Types) -> .Type {
     $self $self Types-len 1 - Types-get
 }
-fn Types-eq(self: .Types, other: .Types) -> bool {
+fn Types-eq(self: .Types, other: .Types) -> bool { block {
     0 @i
+    $self Types-len $other Types-len /= if { 0 1 = break }
     loop {
         $i $self Types-len =
         $i $other Types-len = or if { 
@@ -557,7 +557,7 @@ fn Types-eq(self: .Types, other: .Types) -> bool {
         }
         $i 1 + #i
     }
-}
+} }
 fn Types-eq-by-size(self: .Types, other: .Types) -> bool {
     0 @i
     loop {

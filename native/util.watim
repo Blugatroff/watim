@@ -70,9 +70,9 @@ fn report-stack-mismatch(stack: .AST:Types, expected: .AST:Types, word: .AST:Wor
     ByteArray:new @msg
     $arena &msg FMT:Formatter-into-string @formatter
     &formatter "\n\texpected: " FMT:Formatter-write
-    &formatter 0 !.AST:Types $expected AST:Types-format
+    &formatter $expected AST:Types-format
     &formatter "\n\tgot:      " FMT:Formatter-write
-    &formatter 0 !.AST:Types $stack AST:Types-format
+    &formatter $stack AST:Types-format
     &formatter "\n" FMT:Formatter-write
     $word AST:Word-location &msg ByteArray:unpack abort-with-location
     $arena $save Arena:restore

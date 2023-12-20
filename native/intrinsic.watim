@@ -80,7 +80,7 @@ fn report-error(stack: .AST:Types, word: .AST:Word, msg-ptr: .i32, msg-len: i32)
     $arena &msg FMT:Formatter-into-string @formatter
     $word AST:Word-location
     &formatter $msg-ptr $msg-len FMT:Formatter-write
-    &formatter 0 !.AST:Types $stack AST:Types-format
+    &formatter $stack AST:Types-format
     &formatter " " FMT:Formatter-write
     &msg ByteArray:unpack
     U:abort-with-location
@@ -103,7 +103,14 @@ fn check-intrinsic-mem-copy(stack: .AST:Types, word: .AST:Word) {
     $stack AST:Types-len 3 lt if {
         $stack $word "expected [.i32, .i32, i32] got: " report-error
     }
-    // TODO: actually check the types :D
+    $stack $stack AST:Types-len 3 - AST:Types-get @dst
+    $stack $stack AST:Types-len 2 - AST:Types-get @src
+    $stack $stack AST:Types-len 1 - AST:Types-get @len
+    $dst AST:Type-ty AST:TYPE_PTR /= if { 1 1 = } else { $dst AST:Type-child AST:Type-ty AST:TYPE_I32 /= }
+    $src AST:Type-ty AST:TYPE_PTR /= if { 1 1 = } else { $src AST:Type-child AST:Type-ty AST:TYPE_I32 /= } or
+    $len AST:Type-ty AST:TYPE_I32 /= or if {
+        $stack $word "expected [i32, i32] got: " report-error
+    }
     $stack AST:Types-pop drop
     $stack AST:Types-pop drop
     $stack AST:Types-pop drop

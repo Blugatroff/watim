@@ -39,6 +39,12 @@ fn exit(code: i32) {
     $code raw_exit
 }
 
+fn unreachable<T>() -> T {
+    local v: T
+    0 0 / drop
+    $v
+}
+
 fn escape(char: i32, dest: .i32) -> i32 {
     local hex-digits-ptr: .i32
     local hex-digits-len: i32

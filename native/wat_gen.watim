@@ -604,8 +604,6 @@ fn generate-store(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Ty
         $type $generics AST:Type-size $formatter U:i32-format
         $formatter " memory.copy" FMT:Formatter-write
     } else {
-        // TODO: this crashes:
-        // $formatter "i32.store" FMT:Formatter-write break
         $formatter "i32.store" FMT:Formatter-write
     }
     $formatter "\n" FMT:Formatter-write
@@ -1288,7 +1286,7 @@ fn generate-function-instance(formatter: .FMT:Formatter, module: i32, instance: 
     generate-signature
 
     $formatter " ;; " FMT:Formatter-write
-    $formatter 0 !.AST:Types $instance.generics AST:Types-format
+    $formatter $instance.generics AST:Types-format
 
     $formatter "\n" FMT:Formatter-write
     $formatter FMT:Formatter-indent

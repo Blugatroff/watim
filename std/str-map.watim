@@ -23,7 +23,7 @@ fn insert<T>(arena: .Arena:Arena, self: .StrMap<T>, key: STR:Str, value: T) {
             break 
         }
         $self $i get-key<T> STR:Str-unpack $key STR:Str-unpack STR:str-eq if {
-            &self.values $i $value Array:set<T>
+            &self.values $i $value Array:set<T> drop
             break
         }
         $i 1 + #i

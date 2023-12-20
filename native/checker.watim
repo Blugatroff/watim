@@ -61,9 +61,9 @@ fn report-return-type-mismatch(stack: .AST:Types, function: .AST:Function) {
     ByteArray:new @msg
     $arena &msg FMT:Formatter-into-string @formatter
     &formatter "return type mismatch:\nexpected: " FMT:Formatter-write
-    &formatter 0 !.AST:Types $function AST:Function-rets AST:Types-format
+    &formatter $function AST:Function-rets AST:Types-format
     &formatter "\ngot:      " FMT:Formatter-write
-    &formatter 0 !.AST:Types $stack AST:Types-format
+    &formatter $stack AST:Types-format
     &formatter "\n" FMT:Formatter-write
     $function AST:Function-ident L:Token-location
     &msg ByteArray:unpack
@@ -79,8 +79,7 @@ fn check-function(self: .Checker, module: .M:Module, function: .AST:Function) {
     $scope-id.inner #function.locals.id
 
     $function AST:Function-body @words
-    Array:new<BS:BreakStack> @bs
-    $module &bs $self $stack &function.locals &scope-id.inner $words check-words not if {
+    $module 0!.Array:Array<BS:BreakStack> $self $stack &function.locals &scope-id.inner $words check-words not if {
         // if the function does not diverge, aka does return
         // then check whether the remaining stack matches the return type
         $stack AST:Types-len $function AST:Function-rets AST:Types-len /= if {
@@ -200,7 +199,6 @@ fn check-word(
             $module $self $stack $locals $scope-id $word check-blok break
         }
         $word AST:Word-ty AST:WORD_ARRAY_INIT = if {
-            // TODO: this results in miscompilation when the break is missing
             $self.arena $stack $word &module.types check-array-init break
         }
         $word AST:Word-ty AST:WORD_ARRAY_INIT_ZERO = if {
@@ -584,8 +582,18 @@ fn check-cast(arena: .Arena:Arena, stack: .AST:Types, word: .AST:Word) -> bool {
     $stack AST:Types-len 0 = if { 
         $word AST:Word-location "expected [a] got []\n" U:abort-with-location
     }
-    // TODO: don't allow all casts
     $stack $stack AST:Types-len 1 - AST:Types-get #word.src-type
+    $word.src-type AST:Type-ty AST:TYPE_PTR =
+    $word.type AST:Type-ty AST:TYPE_PTR /= and
+    $word.type AST:Type-ty AST:TYPE_I32 /= and 
+    $word.src-type AST:Type-ty AST:TYPE_STRUCT = or
+    $word.src-type AST:Type-ty AST:TYPE_I32 =
+    $word.type AST:Type-ty AST:TYPE_PTR /= and
+    $word.type AST:Type-ty AST:TYPE_FUNCTION /= and or
+    if {
+        // TODO: mention types in error message
+        $word AST:Word-location "invalid cast\n" U:abort-with-location
+    }
     $stack AST:Types-pop drop
 
     $arena $stack $word AST:Word-type AST:Types-push
@@ -644,9 +652,9 @@ fn check-iff(
             2 $word AST:Word-location L:print-location
             2 "Type mismatch in if branches:\n" IO:write-all IO:check
             2 "\tIf  : " IO:write-all IO:check
-            2 0 !.AST:Types $iff-stack AST:Types-print
+            2 $iff-stack AST:Types-print
             2 "\n\tElse: " IO:write-all IO:check
-            2 0 !.AST:Types $el-stack AST:Types-print
+            2 $el-stack AST:Types-print
             2 IO:newline
             1 CORE:exit
         }
@@ -655,6 +663,18 @@ fn check-iff(
     $iff-stack AST:Types-min $iff.has-el if { $el-stack AST:Types-min CORE:min } else { } @min
     $self.arena $stack $min $stack AST:Types-len AST:Types-clone-slice #params
     $self.arena $iff-stack $min $iff-stack AST:Types-len AST:Types-clone-slice #rets
+
+    $iff.has-el not if {
+        $rets AST:Types-len 0 /= if {
+            2 $word AST:Word-location L:print-location
+            2 "If branch cannot return without an Else branch!\n" IO:write-all IO:check
+            2 "\tIf: " IO:write-all IO:check
+            2 $iff-stack AST:Types-print
+            2 IO:newline
+            1 CORE:exit
+        }
+    }
+
 
     // clear stack
     loop {
@@ -674,12 +694,18 @@ fn check-iff(
 }
 
 fn check-brek(arena: .Arena:Arena, bs: .Array:Array<BS:BreakStack>, stack: .AST:Types, word: .AST:Word) -> bool {
+    $bs 0!.Array:Array<BS:BreakStack> = if {
+        2 $word AST:Word-location L:print-location
+        2 "cannot use break outside of loop or block\n" IO:write-all IO:check
+        2 IO:newline
+        1 CORE:exit
+    }
     $arena $bs $word $arena $stack AST:Types-clone-container BS:BreakStack-new Array:push<BS:BreakStack>
     loop {
         0 $stack AST:Types-len = if { break }
         $stack AST:Types-pop drop
     }
-    0 1 =
+    1 1 =
 }
 
 fn check-lop(
@@ -714,8 +740,7 @@ fn check-lop(
     }
 }
 
-fn check-brek-stacks(bs: .Array:Array<BS:BreakStack>, name-ptr: .i32, name-len: i32) { 
-    block {
+fn check-brek-stacks(bs: .Array:Array<BS:BreakStack>, name-ptr: .i32, name-len: i32) { block {
     $bs.len 0 = if { break }
 
     $bs 0 Array:get<BS:BreakStack> @first
@@ -743,7 +768,7 @@ fn report-brek-stack-mismatch(bs: .Array:Array<BS:BreakStack>, name-ptr: .i32, n
         2 "\t" IO:write-all IO:check
         2 $stack.word AST:Word-location L:print-location
         2 ": " IO:write-all IO:check
-        2 0 !.AST:Types $stack.types AST:Types-print
+        2 $stack.types AST:Types-print
         2 IO:newline
         $i 1 + #i
     }
@@ -767,18 +792,21 @@ fn check-blok(
     $stack AST:Types-len @orig-stack-len
     $module &bs $self $stack &word.blok.locals $scope-id &word.blok.body check-words @diverges
 
-    $self.arena AST:Types-new @remaining-types
-    $orig-stack-len @i
-    loop {
-        $i $stack AST:Types-len ge if { break }
-        $self.arena $remaining-types $stack $i AST:Types-get AST:Types-push
-        $i 1 + #i
+    $diverges not if {
+        $self.arena AST:Types-new @remaining-types
+        $orig-stack-len @i
+        loop {
+            $i $stack AST:Types-len ge if { break }
+            $self.arena $remaining-types $stack $i AST:Types-get AST:Types-push
+            $i 1 + #i
+        }
+        $self.arena &bs $word $remaining-types BS:BreakStack-new Array:push<BS:BreakStack>
     }
     loop {
         $stack AST:Types-len $orig-stack-len le if { break }
         $stack AST:Types-pop drop
     }
-    $self.arena &bs $word $remaining-types BS:BreakStack-new Array:push<BS:BreakStack>
+
     &bs "block" check-brek-stacks
 
     $bs.len 0 = if {
@@ -792,7 +820,7 @@ fn check-blok(
         }
         $self.arena &bs 0 Array:get<BS:BreakStack> BS:BreakStack-types AST:Types-clone-container #word.blok.rets
     }
-    $diverges
+    0 1 =
 }
 
 fn check-function-usage(self: .Checker, module: .M:Module, stack: .AST:Types, word: .AST:Word, mark-indirect: bool) -> .AST:Types, .AST:Types, .M:Module {
