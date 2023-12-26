@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language>
+<language name="Watim" version="1" kateversion="5.0" section="Sources" extensions="*.watim" author="Jasper Reef (mail@jasperreef.com)" license="MIT" style="watim">
+  <highlighting>
+    <list name="controlFlow">
+      <item>if</item>
+      <item>else</item>
+      <item>loop</item>
+      <item>block</item>
+      <item>break</item>
+    </list>
+    <list name="imports">
+      <item>import</item>
+      <item>as</item>
+    </list>
+    <list name="functions">
+      <item>fn</item>
+    </list>
+    <list name="struct">
+      <item>struct</item>
+    </list>
+    <list name="builtinTypes">
+      <item>i32</item>
+      <item>i64</item>
+      <item>bool</item>
+    </list>
+    <list name="locals">
+      <item>local</item>
+      <item>memory</item>
+    </list>
+    <contexts>
+      <context attribute="Normal" lineEndContext="#pop" name="normal">
+        <keyword attribute="ControlFlow" context="#stay" String="controlFlow"/>
+        <keyword attribute="Import" context="#stay" String="imports"/>
+        <keyword attribute="Function" context="#stay" String="functions"/>
+        <keyword attribute="BuiltinType" context="#stay" String="builtinTypes"/>
+        <keyword attribute="Keyword" context="#stay" String="struct"/>
+        <keyword attribute="Warning" context="#stay" String="locals"/>
+        <DetectChar attribute="String" context="string" char="&quot;"/>
+        <Detect2Chars char="/" char1="/" attribute="Comment" context="comment"/>
+        <Int attribute="Decimal" context="#stay"/>
+        <RegExpr attribute="Definition" context="#stay" String="@[0-9,a-z,A-Z,\-,*,_]*" />
+        <RegExpr attribute="Variable" context="#stay" String="[$#&amp;][0-9,a-z,A-Z,\-,*,_]*" />
+        <RegExpr attribute="Module" context="#stay" String="(?![$@#&amp;])[0-9,a-z,A-Z,\-,*,_]*:(?! )" />
+      </context>
+      <context attribute="String" lineEndContext="#stay" name="string">
+        <RegExpr attribute="String" context="#stay" String="\\." />
+        <DetectChar attribute="String" context="#pop" char="&quot;"/>
+      </context>
+      <context attribute="Comment" lineEndContext="#pop" name="comment">
+        <DetectSpaces attribute="Comment"/>
+        <IncludeRules context="##Comments"/>
+        <DetectIdentifier attribute="Comments"/>
+      </context>
+    </contexts>
+    <itemDatas>
+      <itemData name="Import"      defStyleNum="dsImport"/>
+      <itemData name="ControlFlow" defStyleNum="dsControlFlow"/>
+      <itemData name="Normal"      defStyleNum="dsNormal"/>
+      <itemData name="Warning"     defStyleNum="dsWarning"/>
+      <itemData name="Keyword"     defStyleNum="dsKeyword">
+      <itemData name="Definition"  defStyleNum="dsExtension">
+      <itemData name="Function"    defStyleNum="dsFunction">
+      <itemData name="String"      defStyleNum="dsString"/>
+      <itemData name="Comment"     defStyleNum="dsComment"/>
+      <itemData name="BuiltinType" defStyleNum="dsDataType"/>
+      <itemData name="Decimal"     defStyleNum="dsDecVal"/>
+      <itemData name="Variable"    defStyleNum="dsVariable"/>
+      <itemData name="Module"      defStyleNum="dsConstant"/>
+    </itemDatas>
+  </highlighting>
+  <general>
+    <keywords casesensitive="1"/>
+    <folding indentationsensitive="0"/>
+    <comments>
+      <comment name="singleLine" start="//"/>
+    </comments>
+    <emptyLines>
+      <emptyLine regexpr="\s+"/>
+      <emptyLine regexpr="\s*#.*"/>
+    </emptyLines>
+  </general>
+</language>
+<!-- kate: replace-tabs on; tab-width 4; indent-width 4; -->
+

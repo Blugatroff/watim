@@ -60,6 +60,11 @@ For example:
 ## Editor Support
 VIM syntax highlighting in [./editor/watim.vim](https://github.com/Blugatroff/watim/tree/main/editor/watim.vim)
 
+### Kate
+Syntax highlighting in [./editor/watim.xml](https://github.com/Blugatroff/watim/tree/main/editor/watim.xml)<br>
+Just copy it into one of the directories listed [here](https://docs.kde.org/stable5/en/kate/katepart/highlight.html#idm3839) to install it.
+
+
 ## Example Program
 This program exits with the exit code read from stdin.
 ```
