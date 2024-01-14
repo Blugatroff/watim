@@ -24,7 +24,7 @@ fn process-module(global-mem-address: .i32, module: .M:Module) {
     0 @i
     loop {
         $i $items.len = if { break }
-        $global-mem-address $items $i Array:get<.AST:TopItem> ~ process-item
+        $global-mem-address $items $i Array:get<AST:TopItem> process-item
         $i 1 + #i
     }
 }

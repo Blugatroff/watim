@@ -22,7 +22,7 @@ fn gather-instances-module(arena: .Arena:Arena, module: .M:Module) {
     0 @i
     loop {
         $i $items.len = if { break }
-        $items $i Array:get<.AST:TopItem> ~ @item
+        $items $i Array:get<AST:TopItem> @item
         $arena $module $item gather-instances-item
         $i 1 + #i
     }
@@ -35,7 +35,6 @@ fn gather-instances-item(arena: .Arena:Arena, module: .M:Module, item: .AST:TopI
             $arena AST:Types-new @generics
             $arena &module.types-types $generics Array:push<.AST:Types>
             $arena $module $generics $function gather-instances-function @new-words
-            $arena &module.words-words $new-words Array:push<Array:Array<AST:Word>>
             $generics $new-words AST:Instance-new @instance
             $function.instances $instance AST:Instances-push
         }

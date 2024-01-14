@@ -14,7 +14,7 @@ import "./lexer.watim" as L
 import "./parser.watim" as P
 
 struct Module {
-    items: Array:Array<.AST:TopItem>
+    items: Array:Array<AST:TopItem>
     imports: AST:Imports
     file: STR:Str
     tokens: Array:Array<L:Token>
@@ -23,7 +23,6 @@ struct Module {
     structs: Array:Array<.AST:Struct>
     fields: Array:Array<AST:Field>
     types-types: Array:Array<.AST:Types>
-    words-words: Array:Array<Array:Array<AST:Word>>
 }
 
 fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path: STR:Str, mem: .ByteArray:T) -> Module {
@@ -44,7 +43,7 @@ fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path: STR:Str, mem: .Byt
 
 fn Module-new(
     arena: .Arena:Arena,
-    items: Array:Array<.AST:TopItem>, 
+    items: Array:Array<AST:TopItem>, 
     path: STR:Str,
     file: STR:Str, 
     tokens: Array:Array<L:Token>, 
@@ -62,7 +61,6 @@ fn Module-new(
     $arena &self $self.path Module-extract-imports
     &self Module-check-for-duplicate-functions
     Array:new<.AST:Types> #self.types-types
-    Array:new<Array:Array<AST:Word>> #self.words-words
     // TODO: check for duplicate structs and memories
     $self
 }
@@ -73,12 +71,12 @@ fn Module-check-for-duplicate-functions(self: .Module) {
     loop {
         $i $len = if { break }
         
-        &self.items $i Array:get<.AST:TopItem> ~ @item
+        &self.items $i Array:get<AST:TopItem> @item
         $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
             0 @j
             loop {
                 $j $i = if { break }
-                &self.items $j Array:get<.AST:TopItem> ~ @item2
+                &self.items $j Array:get<AST:TopItem> @item2
                 
                 $item2 AST:TopItem-ty AST:TOP_ITEM_FN = if {
                     $item AST:TopItem-function AST:Function-ident L:Token-lexeme
@@ -104,7 +102,7 @@ fn Module-extract-imports(arena: .Arena:Arena, self: .Module, module-path: STR:S
     0 @i
     loop {
         $i $self.items.len = if { break }
-        &self.items $i Array:get<.AST:TopItem> ~ @item
+        &self.items $i Array:get<AST:TopItem> @item
         $item AST:TopItem-ty AST:TOP_ITEM_IMPORT = if {
             $item.imp @imp
             $arena Arena:temp @temp @save
@@ -126,7 +124,7 @@ fn Module-imports(self: .Module) -> .AST:Imports {
     &self.imports
 }
 
-fn Module-items(self: .Module) -> .Array:Array<.AST:TopItem> {
+fn Module-items(self: .Module) -> .Array:Array<AST:TopItem> {
     &self.items
 }
 
@@ -135,7 +133,7 @@ fn Module-find-struc(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Str
     0 @i
     loop {
         $i $items.len = if { 0 !.AST:Struct 0 1 = break }
-        $items $i Array:get<.AST:TopItem> ~ @item
+        $items $i Array:get<AST:TopItem> @item
         $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
             $item AST:TopItem-struc @struc
             $struc AST:Struct-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
@@ -151,7 +149,7 @@ fn Module-find-function(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:
     0 @i
     loop {
         $i $items.len = if { 0 !.AST:Extern 0 !.AST:Function 0 1 = break }
-        $items $i Array:get<.AST:TopItem> ~ @item
+        $items $i Array:get<AST:TopItem> @item
         $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
             $item AST:TopItem-function @fun
             $fun AST:Function-ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
@@ -173,7 +171,7 @@ fn Module-find-mem(self: .Module, ident-ptr: .i32, ident-len: i32) -> .AST:Local
     0 @i 
     loop {
         $i $items.len = if { 0 !.AST:Local 0 1 = break }
-        $items $i Array:get<.AST:TopItem> ~ @item
+        $items $i Array:get<AST:TopItem> @item
         $item AST:TopItem-ty AST:TOP_ITEM_MEM = if {
             $item.mem @mem
             $mem.ident L:Token-lexeme ~ STR:Str-unpack $ident-ptr $ident-len STR:str-eq if {
@@ -246,7 +244,7 @@ fn Modules-mark-reachable(self: .Modules) {
         loop {
             $items.len $j = if { break }
 
-            $items $j Array:get<.AST:TopItem> ~ @item
+            $items $j Array:get<AST:TopItem> @item
 
             $item AST:TopItem-ty AST:TOP_ITEM_FN = if {
                 $item AST:TopItem-function @function

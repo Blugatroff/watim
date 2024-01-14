@@ -28,7 +28,7 @@ fn resolve-module(arena: .Arena:Arena, modules: .M:Modules, module: .M:Module, p
     0 @i
     loop {
         $i $items.len = if { break }
-        $items $i Array:get<.AST:TopItem> ~ @item
+        $items $i Array:get<AST:TopItem> @item
         $item AST:TopItem-ty AST:TOP_ITEM_STRUCT = if {
             $arena $modules $module $item AST:TopItem-struc $phase resolve-struc
         }

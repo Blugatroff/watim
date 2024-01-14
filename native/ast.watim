@@ -1284,39 +1284,33 @@ struct TopItem {
     imp: Import
     struc: .Struct
 }
-fn TopItem-new(ty: i32) -> .TopItem {
-    local self: .TopItem
-    sizeof(TopItem) A:alloc !.TopItem #self
+fn TopItem-new(ty: i32) -> TopItem {
+    local self: TopItem
     $ty #self.ty
     $self
 }
-fn TopItem-new-function(f: .Function) -> .TopItem {
-    local self: .TopItem
-    TOP_ITEM_FN TopItem-new #self
+fn TopItem-new-function(f: .Function) -> TopItem {
+    TOP_ITEM_FN TopItem-new @self
     $f #self.function
     $self
 }
-fn TopItem-new-mem(mem: Local) -> .TopItem {
-    local self: .TopItem
-    TOP_ITEM_MEM TopItem-new #self
+fn TopItem-new-mem(mem: Local) -> TopItem {
+    TOP_ITEM_MEM TopItem-new @self
     $mem #self.mem
     $self
 }
-fn TopItem-new-ext(ext: Extern) -> .TopItem {
-    local self: .TopItem
-    TOP_ITEM_EXT TopItem-new #self
+fn TopItem-new-ext(ext: Extern) -> TopItem {
+    TOP_ITEM_EXT TopItem-new @self
     $ext #self.ext
     $self
 }
-fn TopItem-new-imp(imp: Import) -> .TopItem {
-    local self: .TopItem
-    TOP_ITEM_IMPORT TopItem-new #self
+fn TopItem-new-imp(imp: Import) -> TopItem {
+    TOP_ITEM_IMPORT TopItem-new @self
     $imp #self.imp
     $self
 }
-fn TopItem-new-struc(struc: .Struct) -> .TopItem {
-    local self: .TopItem
-    TOP_ITEM_STRUCT TopItem-new #self
+fn TopItem-new-struc(struc: .Struct) -> TopItem {
+    TOP_ITEM_STRUCT TopItem-new @self
     $struc #self.struc
     $self
 }
