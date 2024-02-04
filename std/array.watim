@@ -1,8 +1,9 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./str.watim" as STR
 import "./arena.watim" as A
 import "./fmt.watim" as FMT
+import "./byte-slice.watim" as ByteSlice
+import "./byte-array.watim" as ByteArray
 
 struct Array<T> {
     ptr: .T
@@ -95,17 +96,22 @@ fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->),
     }
     $formatter "]" FMT:Formatter-write
 }
-fn print<T>(fd: i32, print-element: (i32, .T ->), self: .Array<T>) {
-    $fd "[" IO:write-all IO:check
+fn print<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { block {
+    $fd "[" IO:write-all @code
+    $code 0 /= if { $code break }
     0 @i
     loop {
-        $i $self.len = if { break }
-        $fd $self $i get<T> $print-element ->
+        $i $self.len = if { 0 break }
+        $fd $self $i get<T> $print-element -> #code
+        $code 0 /= if { $code break }
         $i 1 + #i
-        $i $self.len /= if { $fd ", " IO:write-all IO:check }
-    }
-    $fd "]" IO:write-all IO:check
-}
+        $i $self.len /= if {
+            $fd ", " IO:write-all #code
+            $code 0 /= if { $code break }
+        }
+    } #code $code 0 /= if { $code break }
+    $fd "]" IO:write-all
+} }
 fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
     local i: i32
     loop {
@@ -134,17 +140,17 @@ fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, 
         $uninit flip 0 1 =
     }
 }
-fn join-with(arena: .A:Arena, self: .Array<STR:Str>, del-ptr: .i32, del-len: i32) -> STR:Str {
-    $arena 0 A:alloc-bytes @out-ptr
+fn join-with(arena: .A:Arena, self: .Array<ByteSlice:T>, del-ptr: .i32, del-len: i32) -> ByteArray:T {
+    ByteArray:new @out
     0 @i
     loop {
         $i $self.len = if { break }
-        $arena $self $i get<STR:Str> ~ STR:Str-unpack A:push-bytes drop
+        $arena &out $self $i get<ByteSlice:T> ~ ByteSlice:unpack ByteArray:push
         $i 1 + $self.len /= if {
-            $arena $del-ptr $del-len A:push-bytes drop
+            $arena &out $del-ptr $del-len ByteArray:push
         }
         $i 1 + #i
     }
-    $out-ptr $arena 0 A:alloc-bytes $out-ptr - STR:Str-new
+    $out
 }
 

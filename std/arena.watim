@@ -47,7 +47,20 @@ fn free-page(page: .Page) { block {
     }
     0 0 / drop
 } }
-
+fn visit-page-mem(page: .Page, f: (.i32, i32 ->)) { block {
+    $page.type SINGLE_PAGE = if {
+        $page sizeof(Page) + !.i32 PA:page-size sizeof(Page) - $f ->
+        break
+    }
+    $page.type MULTIPLE_PAGE = if {
+        $page.num-pages @n
+        loop {
+            $n 0 = if { break }
+            $page $n PA:page-size * + sizeof(Page) + !.i32 PA:page-size sizeof(Page) - $f ->
+            $n 1 - #n
+        }
+    }
+} }
 fn add-page(self: .Arena) {
     PA:alloc-page !.Page @new-page
     SINGLE_PAGE #new-page.type
@@ -87,6 +100,19 @@ fn clear(self: .Arena) {
     0 #self.size
     0 #self.index
     $ON_CLEAR ~ 0 !(.Arena ->) /= if { $self $ON_CLEAR ~ -> }
+}
+fn visit-mem(self: .Arena, f: (.i32, i32 ->)) {
+    $self.used-pages @cursor
+    loop {
+        $cursor 0 !.Page = if { break }
+        $cursor.next
+        $cursor $f visit-page-mem
+        #cursor
+    }
+}
+fn shred(self: .Arena) {
+    $self \CORE:clear visit-mem
+    $self clear
 }
 fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
     $size 0 = if { $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i32 break }
@@ -136,6 +162,9 @@ fn push-many<T>(self: .Arena, ptr: .T, n: i32) -> .T {
 fn push-byte(self: .Arena, byte: i32) {
     $self 1 alloc-bytes $byte store8
 }
+fn usage(self: .Arena) -> i32 {
+    $self.size
+}
 
 struct ArenaRestorePoint {
     used-pages: .Page
@@ -149,7 +178,6 @@ fn save(self: .Arena) -> ArenaRestorePoint {
     $self.size #point.size
     $point
 }
-
 fn restore(self: .Arena, point: ArenaRestorePoint) {
     $self.size $point.size lt if {
         0 0 / drop
@@ -166,9 +194,6 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
         $point.size #self.size
     }
     $ON_RESTORE ~ 0 !(.Arena ->) /= if { $self $ON_RESTORE ~ -> }
-}
-fn usage(self: .Arena) -> i32 {
-    $self.size
 }
 fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
     $self.size $point.size -

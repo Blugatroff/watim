@@ -144,3 +144,14 @@ fn abort(msg-ptr: .i32, msg-len: i32) {
     1 CORE:exit
 }
 
+fn write-escaped(fd: i32, ptr: .i32, len: i32) -> i32 {
+    memory escaped-char: i32 4
+    0 @i
+    loop {
+        $i $len = if { 0 break }
+        $fd $escaped-char $ptr $i + load8 $escaped-char CORE:escape write-all @code
+        $code 0 /= if { $code break }
+        $i 1 + #i
+    }
+}
+

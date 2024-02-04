@@ -1,0 +1,75 @@
+import "./core.watim" as CORE
+
+fn eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
+    local i: i32
+    $len-a $len-b = if {
+        loop {
+            $i $len-a = if { 0 0 = break }
+            $ptr-a $i + load8
+            $ptr-b $i + load8
+            /= if {
+                0 1 = break
+            }
+            $i 1 + #i
+        }
+    } else {
+        0 1 =
+    }
+}
+fn find(ptr: .i32, len: i32, byte: i32) -> i32, bool {
+    local i: i32
+    loop {
+        $i $len = if {
+            0 0 1 = break
+        }
+        $ptr $i + load8 $byte = if {
+            $i 0 0 = break
+        }
+        $i 1 + #i
+    }
+}
+fn find-rev(ptr: .i32, len: i32, byte: i32) -> i32, bool {
+    local i: i32
+    $len #i
+    loop {
+        $i 0 = if {
+            0 0 1 = break
+        }
+        $ptr $i 1 - + load8 $byte = if {
+            $i 0 0 = break
+        }
+        $i 1 - #i
+    }
+}
+fn is-prefix(ptr: .i32, len: i32, prefix-ptr: .i32, prefix-len: i32) -> bool {
+    $ptr $len $prefix-len CORE:min $prefix-ptr $prefix-len eq
+}
+fn find-seq(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, bool {
+    0 @prev-index
+    0 @i
+    0 @index
+    loop {
+        $target-len 0 = if { 0 0 0 = break }
+        $len 0 = if {
+            0 $target-len 0 = break
+        }
+        $target-ptr load8 @byte
+        $ptr $len $byte find if {
+            #index
+            $ptr $index + $len $index - 
+            $target-ptr $target-len
+            is-prefix if {
+                $index $prev-index + 0 0 = break
+            }
+        } else {
+            0 1 = break
+        } 
+        $ptr $index + 1 + #ptr
+        $len $index - 1 - #len
+        $index 1 + $prev-index + #prev-index
+    }
+}
+fn is-ascii-digit(char: i32) -> bool {
+    $char 48 ge $char 57 le and
+}
+

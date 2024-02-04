@@ -1,0 +1,46 @@
+import "../std/core.watim" as CORE
+import "../std/arena.watim" as A
+import "../std/args.watim" as ARGS
+import "../std/array.watim" as Array
+import "../std/io.watim" as IO
+import "../std/fs.watim" as FS
+import "../std/byte-array.watim" as ByteArray
+import "../std/byte-slice.watim" as ByteSlice
+
+import "./lexer.watim" as Lexer
+import "./parser.watim" as Parser
+
+fn print-stdout(ptr: .i32, len: i32) {
+    1 $ptr $len IO:write-all IO:check
+}
+
+fn main "_start" () {
+    "Main" A:new @arena
+    &arena ARGS:get-args @args
+    $args.len 1 le if {
+        2 "expected file arg" IO:write-all IO:check
+        1 CORE:exit
+    }
+    &args 1 Array:get<ByteSlice:T> @file-path
+
+    "Files" A:new @files-arena
+    &files-arena FS:init IO:check @fs
+    &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check @file-content
+
+    &file-content ByteArray:to-slice @file-content
+    "Tokens" A:new @tokens-arena
+    &tokens-arena &file-content Lexer:lex @tokens
+    &files-arena A:shred
+
+    1 0 = if {
+        &tokens-arena \print-stdout A:visit-mem
+        0 CORE:exit
+        2 "tokens-arena usage: " IO:write-all IO:check
+        2 &tokens-arena A:usage IO:print-to-fd
+        2 IO:newline
+        0 CORE:exit
+    }
+
+    2 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
+}
+

@@ -1,7 +1,7 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./str.watim" as STR
 import "./arena.watim" as A
+import "./byte-slice.watim" as ByteSlice
 
 struct T {
     ptr: .i32
@@ -73,5 +73,9 @@ fn get(self: .T, index: i32) -> i32 {
 
 fn unpack(self: .T) -> .i32, i32 {
     $self.ptr $self.len
+}
+
+fn to-slice(self: .T) -> ByteSlice:T {
+    $self unpack ByteSlice:new
 }
 

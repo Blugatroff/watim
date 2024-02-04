@@ -1,0 +1,57 @@
+import "./core.watim" as CORE
+import "./io.watim" as IO
+import "./arena.watim" as Arena
+import "./bytes.watim" as Bytes
+
+struct T {
+    ptr: .i32
+    len: i32
+}
+fn new(ptr: .i32, len: i32) -> T {
+    local self: T
+    $ptr #self.ptr
+    $len #self.len
+    $self
+}
+fn unpack(self: T) -> .i32, i32 {
+    $self.ptr $self.len
+}
+fn get-byte(self: .T, index: i32) -> i32 {
+    $index $self.len ge if { 
+        1 "ByteArray:get-byte Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self.ptr $index + load8
+}
+fn slice(self: .T, index: i32, len: i32) -> T {
+    $index $len + $self.len gt if { 
+        1 "ByteArray:slice Index out of bounds\n" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self.ptr $index + $len new
+}
+fn eq(self: .T, other: .T) -> bool {
+    $self ~ unpack $other ~ unpack Bytes:eq
+}
+fn drop(self: T, n: i32) -> T {
+    $n $self.len CORE:min #n
+    $self.ptr $n + 
+    $self.len $n - 
+    new
+}
+fn drop-end(self: T, n: i32) -> T {
+    $n $self.len CORE:min #n
+    $self.ptr
+    $self.len $n -
+    new
+}
+fn empty() -> T {
+    0 !.i32 0 new
+}
+fn write-unescaped(fd: i32, self: .T) -> i32 {
+    $fd $self.ptr $self.len IO:write-all
+}
+fn copy(arena: .Arena:Arena, self: T) -> T {
+    $arena $self.ptr $self.len Arena:push-bytes $self.len new
+}
+

@@ -1,8 +1,9 @@
 import "../std/core.watim" as CORE
 import "../std/io.watim" as IO
-import "../std/str.watim" as STR
 import "../std/arena.watim" as Arena
 import "../std/array.watim" as Array
+import "../std/bytes.watim" as Bytes
+import "../std/byte-slice.watim" as ByteSlice
 import "../std/byte-array.watim" as ByteArray
 
 extern "wasi_snapshot_preview1" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
@@ -26,10 +27,10 @@ fn create-rights(read: bool, write: bool) -> i64 {
 }
 
 struct PreopenedFd {
-    path: STR:Str
+    path: ByteSlice:T
     fd: i32
 }
-fn PreopenedFd-new(fd: i32, path: STR:Str) -> PreopenedFd {
+fn PreopenedFd-new(fd: i32, path: ByteSlice:T) -> PreopenedFd {
     local self: PreopenedFd
     $fd #self.fd
     $path #self.path
@@ -68,7 +69,7 @@ fn init(arena: .Arena:Arena) -> FileSystem, i32 {
         $code 0 /= if {
             break
         }
-        $buf $len STR:Str-new @path
+        $buf $len ByteSlice:new @path
         $temp &fds $fd $path PreopenedFd-new Array:push<PreopenedFd>
         $fd 1 + #fd
     }
@@ -90,7 +91,7 @@ fn find-current-dir(fs: .FileSystem) -> i32, i32 {
             0 0 break
         }
         &fs.preopened-fds $i Array:get<PreopenedFd> @preopened-fd
-        $preopened-fd.path STR:Str-unpack "." STR:str-is-prefix
+        $preopened-fd.path ByteSlice:unpack "." Bytes:is-prefix
         if { $preopened-fd.fd 0 break }
         $i 1 + #i
     }
@@ -103,7 +104,7 @@ struct Prestat {
 
 fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
     local index: i32
-    $path-ptr $path-len "/" drop load8 STR:str-find-rev if {
+    $path-ptr $path-len "/" drop load8 Bytes:find-rev if {
         #index $path-ptr $index
     } else {
         drop $path-ptr $path-len
@@ -114,7 +115,7 @@ fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
 fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> .i32, i32 {
     $arena 0 Arena:alloc-bytes @new-ptr
     0 @new-len
-    $ptr $len $target-ptr $target-len STR:str-find-str if {
+    $ptr $len $target-ptr $target-len Bytes:find-seq if {
         @index
         $arena $ptr $index Arena:push-bytes drop
         $arena $replacement-ptr $replacement-len Arena:push-bytes drop
@@ -137,18 +138,18 @@ fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, targe
         drop $ptr $len
     }
 }
-fn str-split(arena: .Arena:Arena, str-ptr: .i32, str-len: i32, del: i32) -> Array:Array<STR:Str> {
-    Array:new<STR:Str> @splits
+fn str-split(arena: .Arena:Arena, str-ptr: .i32, str-len: i32, del: i32) -> Array:Array<ByteSlice:T> {
+    Array:new<ByteSlice:T> @splits
     loop {
         $str-len 0 = if { break }
-        $str-ptr $str-len $del STR:str-find if {
+        $str-ptr $str-len $del Bytes:find if {
             @index
-            $arena &splits $str-ptr $index STR:Str-new Array:push<STR:Str>
+            $arena &splits $str-ptr $index ByteSlice:new Array:push<ByteSlice:T>
             $str-ptr $index + 1 + #str-ptr
             $str-len $index - 1 - #str-len
         } else {
             drop
-            $arena &splits $str-ptr $str-len STR:Str-new Array:push<STR:Str>
+            $arena &splits $str-ptr $str-len ByteSlice:new Array:push<ByteSlice:T>
             break
         }
     }
@@ -160,7 +161,7 @@ fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $temp 0 Arena:alloc-bytes @out-ptr
     0 @out-len
 
-    $path-ptr $path-len "./" STR:str-is-prefix not if {
+    $path-ptr $path-len "./" Bytes:is-prefix not if {
         $temp "./" Arena:push-bytes drop
         $out-len 2 + #out-len
     }
@@ -172,28 +173,28 @@ fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $temp $out-ptr $out-len "./." "." str-replace #out-len #out-ptr
 
     $temp $out-ptr $out-len "/" drop load8 str-split @splits
-    Array:new<STR:Str> @outsplits
+    Array:new<ByteSlice:T> @outsplits
     0 @i
     loop {
         $i $splits.len = if { break }
         block {
             $i 1 + $splits.len /= if {
-                &splits $i 1 + Array:get<STR:Str> ~ STR:Str-unpack ".." STR:str-eq 
-                &splits $i Array:get<STR:Str> ~ STR:Str-unpack "." STR:str-eq not and
-                &splits $i Array:get<STR:Str> ~ STR:Str-unpack ".." STR:str-eq not and
+                &splits $i 1 + Array:get<ByteSlice:T> ~ ByteSlice:unpack ".." Bytes:eq 
+                &splits $i Array:get<ByteSlice:T> ~ ByteSlice:unpack "." Bytes:eq not and
+                &splits $i Array:get<ByteSlice:T> ~ ByteSlice:unpack ".." Bytes:eq not and
                 if {
                     $i 1 + #i break
                 }
             }
-            $temp &outsplits &splits $i Array:get<STR:Str> ~ Array:push<STR:Str>
+            $temp &outsplits &splits $i Array:get<ByteSlice:T> ~ Array:push<ByteSlice:T>
         }
         $i 1 + #i
     }
     $temp &outsplits "/" Array:join-with @out
-    $path-ptr $path-len $out STR:Str-unpack STR:str-eq if {
-        $arena $out STR:Str-unpack Arena:push-bytes $out.len
+    $path-ptr $path-len &out ByteArray:unpack Bytes:eq if {
+        $arena &out ByteArray:unpack Arena:push-bytes $out.len
     } else {
-        $arena $out STR:Str-unpack normalize
+        $arena &out ByteArray:unpack normalize
     }
     $temp $temp-save Arena:restore
 }
@@ -209,20 +210,20 @@ fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting
     }
 }
 
-fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) -> STR:Str, i32 {
+fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteArray:T, i32 {
     $fs
     $path $path-len
     0 0 = 0 1 = create-rights
     0 1 = 0 1 = create-rights
     open-file @code @fd
     $code 0 /= if {
-        STR:Str-empty $code
+        ByteArray:new $code
     } else {
         $arena $fd read-all
     }
 }
 
-fn read-all(arena: .Arena:Arena, file: i32) -> STR:Str, i32 {
+fn read-all(arena: .Arena:Arena, file: i32) -> ByteArray:T, i32 {
     64 @buf-size
     $arena Arena:temp @temp @temp-save
     $temp $buf-size Arena:alloc-bytes @buf
@@ -231,10 +232,10 @@ fn read-all(arena: .Arena:Arena, file: i32) -> STR:Str, i32 {
     loop {
         $file $buf $buf-size IO:read @code @read
         $code 0 /= if {
-            0!.i32 0 STR:Str-new $code break
+            ByteArray:new $code break
         }
         $read 0 = if {
-            &out ByteArray:unpack STR:Str-new 0 break
+            $out 0 break
         } else {
             $arena &out $buf $read ByteArray:push
         }
