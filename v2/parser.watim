@@ -1,0 +1,672 @@
+import "../std/core.watim" as CORE
+import "../std/io.watim" as IO
+import "../std/array.watim" as Array
+import "../std/arena.watim" as A
+import "../std/byte-slice.watim" as ByteSlice
+import "../std/byte-array.watim" as ByteArray
+import "../std/optional.watim" as Optional
+
+import "./lexer.watim" as L
+
+struct ParsedFunction {
+    parameters: Array:Array<ParsedParameter>
+    returns: Array:Array<ParsedType>
+    words: ParsedWords
+}
+fn ParsedFunction-new(parameters: Array:Array<ParsedParameter>, returns: Array:Array<ParsedType>, words: ParsedWords) -> ParsedFunction {
+    local self: ParsedFunction
+    $parameters #self.parameters
+    $returns #self.returns
+    $words #self.words
+    $self
+}
+fn ParsedFunction-write(fd: i32, self: .ParsedFunction) -> i32 { block {
+    $fd "{ \"parameters\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd \ParsedParameter-write &self.parameters Array:print<ParsedParameter> CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"returns\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd \ParsedType-write &self.returns Array:print<ParsedType> CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"words\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd &self.words ParsedWords-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all
+} }
+
+struct ParsedImport {
+    path: L:Token
+    qualifier: L:Token
+}
+fn ParsedImport-new(path: L:Token, qualifier: L:Token) -> ParsedImport {
+    local self: ParsedImport
+    $path #self.path
+    $qualifier #self.qualifier
+    $self
+}
+fn ParsedImport-write(fd: i32, self: .ParsedImport) -> i32 { block {
+    $fd "{ \"path\": " IO:write-all @code $code 0 /= if { $code break }
+    $fd &self.path L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"qualifier\": " IO:write-all #code $code 0 /= if { $code break }
+    $fd &self.qualifier L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all
+} }
+
+struct ParsedModule {
+    file-path: ByteSlice:T
+    types: ParsedTypes
+    imports: Array:Array<ParsedImport>
+    functions: Array:Array<ParsedFunction>
+}
+fn ParsedModule-new(
+    file-path: ByteSlice:T,
+    types: ParsedTypes,
+    imports: Array:Array<ParsedImport>,
+    functions: Array:Array<ParsedFunction>
+) -> ParsedModule {
+    local self: ParsedModule
+    $file-path #self.file-path
+    $types #self.types
+    $imports #self.imports
+    $functions #self.functions
+    $self
+}
+fn ParsedModule-write(fd: i32, self: .ParsedModule) -> i32 { block {
+    $fd "{ \"file-path\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.file-path ByteSlice:unpack IO:write-escaped CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\", \"types\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd &self.types ParsedTypes-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"imports\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd \ParsedImport-write &self.imports Array:print<ParsedImport> CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"functions\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd \ParsedFunction-write &self.functions Array:print<ParsedFunction> CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all
+} }
+
+struct ParsedParameter {
+    name: L:Token
+    type: ParsedType
+}
+fn ParsedParameter-new(name: L:Token, type: ParsedType) -> ParsedParameter {
+    local self: ParsedParameter
+    $name #self.name
+    $type #self.type
+    $self
+}
+fn ParsedParameter-write(fd: i32, self: .ParsedParameter) -> i32 { block {
+    $fd "{ \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd &self.name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"type\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd &self.type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all
+} }
+
+fn TYPE_I32() -> i32 { 1 }
+fn TYPE_BOOL() -> i32 { 2 }
+fn TYPE_PTR() -> i32 { 3 }
+fn TYPE_STRUCT() -> i32 { 4 }
+fn TypeTy-name(ty: i32) -> .i32, i32 { block {
+    $ty TYPE_I32 = if { "TYPE_I32" break }
+    $ty TYPE_BOOL = if { "TYPE_BOOL" break }
+    $ty TYPE_PTR = if { "TYPE_PTR" break }
+    $ty TYPE_STRUCT = if { "TYPE_STRUCT" break }
+    "" 0 0 / drop
+} }
+
+struct ParsedTypes {
+    buf: ByteArray:T
+}
+fn ParsedTypes-new() -> ParsedTypes {
+    local self: ParsedTypes
+    ByteArray:new #self.buf
+    $self
+}
+fn ParsedTypes-push-ty(arena: .A:Arena, self: .ParsedTypes, ty: i32) -> ParsedType {
+    local type: ParsedType
+    $self.buf.len #type.index
+    $arena &self.buf $ty ByteArray:push-i32
+    $type
+}
+fn ParsedTypes-push-i32(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+    $arena $self TYPE_I32 ParsedTypes-push-ty
+}
+fn ParsedTypes-push-bool(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+    $arena $self TYPE_BOOL ParsedTypes-push-ty
+}
+fn ParsedTypes-push-ptr(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+    $arena $self TYPE_PTR ParsedTypes-push-ty
+}
+fn ParsedTypes-push-struc(arena: .A:Arena, self: .ParsedTypes, name: L:Token) -> ParsedType, i32 {
+    $arena $self TYPE_STRUCT ParsedTypes-push-ty
+    $arena &self.buf 0 1 = !i32 ByteArray:push-i32 // foreign = false
+    $arena &self.buf &name !.i32 sizeof(L:Token) ByteArray:push
+    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+}
+fn ParsedTypes-push-foreign-struc(arena: .A:Arena, self: .ParsedTypes, module: L:Token, name: L:Token) -> ParsedType, i32 {
+    $arena $self TYPE_STRUCT ParsedTypes-push-ty
+    $arena &self.buf 1 1 = !i32 ByteArray:push-i32 // foreign = true
+    $arena &self.buf &module !.i32 sizeof(L:Token) ByteArray:push
+    $arena &self.buf &name !.i32 sizeof(L:Token) ByteArray:push
+    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+}
+fn ParsedTypes-write(fd: i32, self: .ParsedTypes) -> i32 { block {
+    $self.buf.len 4 % 0 /= if { 0 0 / drop }
+    $fd "[" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    0 @cursor
+    loop {
+        $cursor $self.buf.len = if { 0 break }
+        $fd $self $cursor ParsedTypes-write-type @err #cursor $err 0 /= if { $err break }
+        $cursor $self.buf.len /= if {
+            $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        }
+    } CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " ]" IO:write-all
+} }
+fn ParsedTypes-write-type(fd: i32, types: .ParsedTypes, index: i32) -> i32, i32 {
+    block {
+        $types.buf.ptr $index + ~ @ty
+        $index sizeof(i32) + #index // skip `ty`
+        $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd $ty TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        block {
+            $ty TYPE_I32 = $ty TYPE_BOOL = or if { 0 break }
+            $ty TYPE_PTR = if {
+                $fd ", \"child\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $types $index ParsedTypes-write-type flip #index break
+            }
+            $ty TYPE_STRUCT = if {
+                $types.buf.ptr $index + !.bool ~
+                $index sizeof(i32) + #index // skip `foreign`
+                if {
+                    $fd ", \"module\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                    $fd $types.buf.ptr $index + !.L:Token L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+                    $index sizeof(L:Token) + #index // skip `module`
+                }
+                $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $types.buf.ptr $index + !.L:Token L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+                $index sizeof(L:Token) + #index // skip `name`
+
+                $types.buf.ptr $index + ~ @generic-arguments-count
+                $index sizeof(i32) + #index // skip `generic-arguments-count`
+                $fd ", \"generic-arguments\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                loop {
+                    $generic-arguments-count 0 = if { 0 break }
+                    $fd $types $index ParsedTypes-write-type @err #index $err 0 /= if { $err break }
+                    $generic-arguments-count 1 - #generic-arguments-count
+                    $generic-arguments-count 0 = if { 0 break }
+                    $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                } CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd "]" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                0 break
+            }
+            CORE:unreachable<i32>
+        } CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd " }" IO:write-all
+    } $index flip
+}
+
+struct ParsedType {
+    index: i32
+}
+fn ParsedType-write(fd: i32, self: .ParsedType) -> i32 {
+    $fd $self.index IO:print
+}
+
+fn WORD_NUMBER() -> i32 { 1 }
+fn WORD_STRING() -> i32 { 2 }
+fn WORD_GET() -> i32 { 3 }
+fn WORD_CALL() -> i32 { 4 }
+fn WORD_INIT() -> i32 { 5 }
+fn WORD_REF() -> i32 { 6 }
+fn WordTy-name(ty: i32) -> .i32, i32 { block {
+    $ty WORD_NUMBER = if { "WORD_NUMBER" break }
+    $ty WORD_STRING = if { "WORD_STRING" break }
+    $ty WORD_GET = if { "WORD_GET" break }
+    $ty WORD_CALL = if { "WORD_CALL" break }
+    $ty WORD_INIT = if { "WORD_INIT" break }
+    $ty WORD_REF = if { "WORD_REF" break }
+    "" 0 0 / drop
+} }
+struct ParsedWords {
+    buf: ByteArray:T
+}
+fn ParsedWords-new() -> ParsedWords {
+    local self: ParsedWords
+    ByteArray:new #self.buf
+    $self
+}
+fn ParsedWords-push-ty(arena: .A:Arena, self: .ParsedWords, ty: i32) -> ParsedWord {
+    local word: ParsedWord
+    $self.buf.len #word.index
+    $arena &self.buf $ty ByteArray:push-i32
+    $word
+}
+fn ParsedWords-push-token(arena: .A:Arena, self: .ParsedWords, token: L:Token) {
+    $arena &self.buf &token !.i32 sizeof(L:Token) ByteArray:push
+}
+fn ParsedWords-push-number(arena: .A:Arena, self: .ParsedWords, value: L:Token) -> ParsedWord {
+    $arena $self WORD_NUMBER ParsedWords-push-ty
+    $arena $self $value ParsedWords-push-token
+}
+fn ParsedWords-push-string(arena: .A:Arena, self: .ParsedWords, value: L:Token) -> ParsedWord {
+    $arena $self WORD_NUMBER ParsedWords-push-ty
+    $arena $self $value ParsedWords-push-token
+}
+fn ParsedWords-push-get(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> ParsedWord, i32 {
+    $arena $self WORD_GET ParsedWords-push-ty
+    $arena $self $name ParsedWords-push-token
+    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+}
+fn ParsedWords-push-ref(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> ParsedWord, i32 {
+    $arena $self WORD_REF ParsedWords-push-ty
+    $arena $self $name ParsedWords-push-token
+    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+}
+fn ParsedWords-push-init(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> ParsedWord {
+    $arena $self WORD_INIT ParsedWords-push-ty
+    $arena $self $name ParsedWords-push-token
+}
+fn ParsedWords-push-call(arena: .A:Arena, self: .ParsedWords, name: L:Token, generic-arguments: Array:Array<ParsedType>) -> ParsedWord {
+    $arena $self WORD_CALL ParsedWords-push-ty
+    $arena $self $name ParsedWords-push-token
+    $arena &self.buf 0 1 = !i32 ByteArray:push-i32
+    $arena &self.buf $generic-arguments.len ByteArray:push-i32
+    $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedType) * ByteArray:push
+}
+fn ParsedWords-push-foreign-call(arena: .A:Arena, self: .ParsedWords, name: L:Token, module: L:Token, generic-arguments: Array:Array<ParsedType>) -> ParsedWord {
+    $arena $self WORD_CALL ParsedWords-push-ty
+    $arena $self $name ParsedWords-push-token
+    $arena &self.buf 1 1 = !i32 ByteArray:push-i32
+    $arena $self $module ParsedWords-push-token
+    $arena &self.buf $generic-arguments.len ByteArray:push-i32
+    $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedType) * ByteArray:push
+}
+fn ParsedWords-write(fd: i32, self: .ParsedWords) -> i32 { block {
+    $self.buf.len 4 % 0 /= if { 0 0 / drop }
+    $fd "[" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    0 @cursor
+    loop {
+        $cursor $self.buf.len = if { 0 break }
+        $fd $self $cursor ParsedWords-write-word @err #cursor $err 0 /= if { $err break }
+        $cursor $self.buf.len /= if {
+            $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        }
+    } CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " ]" IO:write-all
+} }
+fn ParsedWords-write-word(fd: i32, types: .ParsedWords, index: i32) -> i32, i32 {
+    block {
+        $types.buf.ptr $index + ~ @ty
+        $index sizeof(i32) + #index // skip `ty`
+        $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd $ty WordTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        block {
+            $ty WORD_NUMBER = if {
+                $types.buf.ptr $index + !.L:Token @value
+                $index sizeof(L:Token) + #index // skip `value`
+                $fd ", \"value\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $value L:Token-write break
+            }
+            $ty WORD_GET =
+            $ty WORD_REF = or if {
+                $types.buf.ptr $index + !.L:Token @name
+                $index sizeof(L:Token) + #index // skip `name`
+                $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd ", \"fields\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $types.buf.ptr $index + ~ @field-count
+                $index sizeof(i32) + #index // skip `field-count`
+                loop {
+                    $field-count 0 = if { 0 break }
+                    $types.buf.ptr $index + !.L:Token @field
+                    $index sizeof(L:Token) + #index
+                    $fd $field L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+                    $field-count 1 - #field-count
+                    $field-count 0 = if { 0 break }
+                    $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                } CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd "]" IO:write-all break
+            }
+            $ty WORD_INIT = if {
+                $types.buf.ptr $index + !.L:Token @name
+                $index sizeof(L:Token) + #index // skip `name`
+                $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $name L:Token-write break
+            }
+            $ty WORD_CALL = if {
+                $types.buf.ptr $index + !.L:Token @name
+                $index sizeof(L:Token) + #index // skip `name`
+                $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+
+                $types.buf.ptr $index + !.bool ~
+                $index sizeof(bool) + #index // skip `foreign`
+                if {
+                    $types.buf.ptr $index + !.L:Token @module
+                    $index sizeof(L:Token) + #index // skip `module`
+                    $fd ", \"module\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                    $fd $module L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+                }
+
+                $types.buf.ptr $index + !.i32 ~ @generic-argument-count
+                $index sizeof(i32) + #index // skip `generic-argument-count`
+                $fd ", \"generic-arguments\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                loop {
+                    $generic-argument-count 0 = if { 0 break }
+                    $types.buf.ptr $index + !.ParsedType @type
+                    $index sizeof(ParsedType) + #index
+                    $fd $type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+                    $generic-argument-count 1 - #generic-argument-count
+                    $generic-argument-count 0 = if { 0 break }
+                    $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                } CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd "]" IO:write-all break
+            }
+            2 "ParsedWords-write-word unhandled Word type " IO:write-all IO:check
+            2 $ty WordTy-name IO:write-all IO:check
+            2 IO:newline
+            CORE:unreachable<i32>
+        } CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd " }" IO:write-all
+    } $index flip
+}
+
+struct ParsedWord {
+    index: i32
+}
+fn ParsedWord-write(fd: i32, self: .ParsedWord) -> i32 {
+    $fd $self.index IO:print
+}
+
+fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>) -> ParsedModule {
+    Array:new<ParsedImport> @imports
+    Array:new<ParsedFunction> @functions
+    ParsedTypes-new @types
+    0 @cursor
+    loop {
+        $cursor $tokens.len = if { break }
+        $cursor &file-path $tokens peek @token
+        block {
+            $token L:Token-ty L:TOKEN_IMPORT = if {
+                $cursor &file-path $tokens next #cursor drop // skip the `import`
+                $cursor &file-path $tokens next #cursor @token
+                $token L:Token-ty L:TOKEN_STRING /= if {
+                    &file-path $token "Expected file path" abort
+                }
+                $token @file-path-token
+
+                $cursor &file-path $tokens next #cursor @token
+                $token L:Token-ty L:TOKEN_AS /= if {
+                    &file-path $token "Expected `as`." abort
+                }
+
+                $cursor &file-path $tokens next #cursor @token
+                $token L:Token-ty L:TOKEN_IDENT /= if {
+                    &file-path $token "Expected an identifier as module qualifier." abort
+                }
+                $token @module-qualifier-token
+
+                $arena &imports $file-path-token ~ $module-qualifier-token ~ ParsedImport-new Array:push<ParsedImport>
+                break
+            }
+            $token L:Token-ty L:TOKEN_FN = if {
+                $cursor &file-path $tokens next #cursor drop // skip the `fn`
+                $cursor &file-path $tokens next #cursor @token
+                $token L:Token-ty L:TOKEN_IDENT /= if {
+                    &file-path $token "Expected identifer as function name." abort
+                }
+                $token @function-ident-token
+
+                $cursor &file-path $tokens next #cursor @token
+                $token L:Token-ty L:TOKEN_LEFT_PAREN /=
+                $token L:Token-ty L:TOKEN_STRING /= and if {
+                    &file-path $token "Expected either `(` or a string as exported function name." abort
+                }
+                $token L:Token-ty L:TOKEN_STRING = if {
+                    $token Optional:wrap<.L:Token>
+                    $cursor &file-path $tokens next #cursor #token
+                    $token L:Token-ty L:TOKEN_LEFT_PAREN /= if {
+                        &file-path $token "Expected `(`." abort
+                    }
+                } else { Optional:none<.L:Token> } @function-export-name-token
+
+                Array:new<ParsedParameter> @parameters
+                loop {
+                    $cursor &file-path $tokens next #cursor @token
+                    $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
+
+                    $token L:Token-ty L:TOKEN_IDENT /= if {
+                        &file-path $token "Expected an identifier as function parameter name." abort
+                    }
+                    $token @parameter-name
+
+                    $cursor &file-path $tokens next #cursor @token
+                    $token L:Token-ty L:TOKEN_COLON /= if {
+                        &file-path $token "Expected `:` after function parameter name." abort
+                    }
+                    $arena $cursor &file-path $tokens &types parse-type #cursor @parameter-type
+                    $arena &parameters $parameter-name ~ $parameter-type ParsedParameter-new Array:push<ParsedParameter>
+
+                    $cursor &file-path $tokens next #cursor @token
+                    $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
+                    $token L:Token-ty L:TOKEN_COMMA /= if {
+                        &file-path $token "Expected `,` after function parameter." abort
+                    }
+                }
+                Array:new<ParsedType> @returns
+                $cursor &file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
+                    $cursor &file-path $tokens next #cursor drop // skip the `->`
+                    loop {
+                        $arena $cursor &file-path $tokens &types parse-type #cursor @type
+                        $arena &returns $type Array:push<ParsedType>
+
+                        $cursor &file-path $tokens peek @token
+                        $token L:Token-ty L:TOKEN_COMMA /= if { break }
+                        $cursor &file-path $tokens next #cursor drop // skip the `,`
+                    }
+                }
+                $arena $cursor &file-path $tokens &types parse-words #cursor @words
+                $arena &functions $parameters $returns $words ParsedFunction-new Array:push<ParsedFunction>
+                break
+            }
+            2 "Unhanded token in parser: " IO:write-all IO:check
+            2 $token L:Token-write IO:check
+            2 IO:newline
+            0 0 / drop
+        }
+    }
+    $arena $file-path ByteSlice:copy $types $imports $functions ParsedModule-new
+}
+fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedWords, i32 {
+    ParsedWords-new @words
+    $cursor $file-path $tokens next #cursor @token
+    $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
+        $file-path $token "Expected `{`." abort
+    }
+    loop {
+        $cursor $file-path $tokens peek @token
+        $token L:Token-ty L:TOKEN_RIGHT_BRACE = if {
+            $cursor $file-path $tokens next #cursor drop // skip the `}`
+            break
+        }
+
+        $arena $cursor $file-path $tokens $types &words parse-word #cursor
+
+        $cursor $file-path $tokens peek @token
+        $token L:Token-ty L:TOKEN_RIGHT_BRACE = if {
+            $cursor $file-path $tokens next #cursor drop // skip the `}`
+            break
+        }
+    }
+    $words $cursor
+}
+fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32 {
+    block {
+        $cursor $file-path $tokens next #cursor @token
+        $token L:Token-ty L:TOKEN_NUMBER = if {
+            $arena $words $token ~ ParsedWords-push-number drop
+            break
+        }
+        $token L:Token-ty L:TOKEN_STRING = if {
+            $arena $words $token ~ ParsedWords-push-string drop
+            break
+        }
+        $token L:Token-ty L:TOKEN_DOLLAR =
+        $token L:Token-ty L:TOKEN_AMPERSAND = or
+        if {
+            $token L:Token-ty @type-first-token
+            $cursor $file-path $tokens next #cursor @token
+            $token L:Token-ty L:TOKEN_IDENT /= if {
+                $file-path $token "Expected an identifier as variable name." abort
+            }
+            block {
+                $type-first-token L:TOKEN_DOLLAR = if {
+                    $arena $words $token ~ ParsedWords-push-get flip drop break
+                }
+                $type-first-token L:TOKEN_AMPERSAND = if {
+                    $arena $words $token ~ ParsedWords-push-ref flip drop break
+                }
+                CORE:unreachable<i32>
+            } @field-count-patch
+
+            0 @field-count
+            loop {
+                $cursor $file-path $tokens peek @token
+                $token L:Token-ty L:TOKEN_DOT /= if { break }
+                $cursor $file-path $tokens next #cursor drop // skip the `.`
+
+                $cursor $file-path $tokens next #cursor @token
+                $token L:Token-ty L:TOKEN_IDENT /= if {
+                    $file-path $token "Expected an identifer as field name." abort
+                }
+                $arena $words $token ~ ParsedWords-push-token
+                $field-count 1 + #field-count
+            }
+            $words.buf.ptr $field-count-patch + $field-count store
+            break
+        }
+        $token L:Token-ty L:TOKEN_AT = if {
+            $cursor $file-path $tokens next #cursor @token
+            $token L:Token-ty L:TOKEN_IDENT /= if {
+                $file-path $token "Expected an identifier as variable name." abort
+            }
+            $arena $words $token ~ ParsedWords-push-init drop break
+        }
+        $token L:Token-ty L:TOKEN_IDENT = if {
+            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_COLON = if {
+                $token @module
+                $cursor $file-path $tokens next #cursor drop // skip the `:`
+                $cursor $file-path $tokens next #cursor @name
+                $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
+                    $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor
+                } else { Array:new<ParsedType> } @generic-arguments
+                $arena $words $name ~ $module ~ $generic-arguments ParsedWords-push-foreign-call drop
+            } else {
+                $token @name
+                $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
+                    $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor
+                } else { Array:new<ParsedType> } @generic-arguments
+                $arena $words $name ~ $generic-arguments ParsedWords-push-call drop
+            }
+            break
+        }
+        2 "parse-word: Unhandled Token " IO:write-all IO:check
+        2 $token L:Token-write IO:check
+        2 IO:newline
+        0 0 / drop
+    }
+    $cursor
+}
+fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedType, i32 { block {
+    $cursor $file-path $tokens next #cursor @token
+    $token L:Token-ty L:TOKEN_I32 = if {
+        $arena $types ParsedTypes-push-i32 $cursor break
+    }
+    $token L:Token-ty L:TOKEN_BOOL = if {
+        $arena $types ParsedTypes-push-bool $cursor break
+    }
+    $token L:Token-ty L:TOKEN_DOT = if {
+        $arena $types ParsedTypes-push-ptr
+        $arena $cursor $file-path $tokens $types parse-type flip drop break
+    }
+    $token L:Token-ty L:TOKEN_IDENT = if {
+        $cursor $file-path $tokens peek L:Token-ty L:TOKEN_COLON = if {
+            $cursor $file-path $tokens next #cursor drop // skip the colon
+            $token @module-token
+            $cursor $file-path $tokens next #cursor @struct-name-token
+            $struct-name-token L:Token-ty L:TOKEN_IDENT /= if {
+                $file-path $struct-name-token "Expected an identifier as struct name." abort
+            }
+            $arena $types $module-token ~ $struct-name-token ~ ParsedTypes-push-foreign-struc @generic-arguments-count-patch @type
+            $cursor $file-path $tokens peek @token
+            $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
+                $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor block {} .len ~
+            } else { 0 } $types.buf.ptr $generic-arguments-count-patch + flip store
+            $type $cursor break
+        }
+        $token @struct-name-token
+        $arena $types $struct-name-token ~ ParsedTypes-push-struc @generic-arguments-count-patch @type
+        $cursor $file-path $tokens peek @token
+        $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
+            $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor block {} .len ~
+        } else { 0 } $types.buf.ptr $generic-arguments-count-patch + flip store
+        $type $cursor break
+    }
+    $file-path $token "Failed to parse type" abort CORE:unreachable<ParsedType> CORE:unreachable<i32>
+} }
+fn foo(fd: i32, v: .i32) -> i32 {
+    $fd $v ~ IO:print
+}
+fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Array:Array<ParsedType>, i32 { block {
+    Array:new<ParsedType> @parsed-types
+    $cursor $file-path $tokens next #cursor @token
+    $token L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if {
+        $file-path $token "Expected `<`." abort
+    }
+    loop {
+        $cursor $file-path $tokens peek @token
+        $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { 
+            $cursor $file-path $tokens next #cursor drop // consume the `>`
+            break
+        }
+        $arena $cursor $file-path $tokens $types parse-type #cursor @type
+        $arena &parsed-types $type Array:push<ParsedType>
+        $cursor $file-path $tokens next #cursor @token
+        $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
+        $token L:Token-ty L:TOKEN_COMMA /= if {
+            $file-path $token "Expected `,`." abort
+        }
+    }
+    $parsed-types $cursor
+} }
+fn peek(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> .L:Token {
+    $cursor $tokens.len = if {
+        $cursor 0 = if {
+            2 "Cannot use `peek` with empty array of tokens!" IO:write-all IO:check
+            0 0 / drop
+        }
+        $tokens $cursor 1 - Array:get<L:Token> @previous-token
+        $file-path $previous-token abort-unexpected-eof
+    }
+    $tokens $cursor Array:get<L:Token>
+}
+fn next(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> .L:Token, i32 {
+    $cursor $tokens.len = if {
+        $cursor 0 = if {
+            2 "Cannot use `next` with empty array of tokens!" IO:write-all IO:check
+            0 0 / drop
+        }
+        $tokens $cursor 1 - Array:get<L:Token> @previous-token
+        $file-path $previous-token abort-unexpected-eof
+    }
+    $tokens $cursor Array:get<L:Token>
+    $cursor 1 +
+}
+fn abort-unexpected-eof(file-path: .ByteSlice: T, token: .L:Token) {
+    $file-path $token "Unexpected end of file" abort
+}
+fn abort(file-path: .ByteSlice:T, token: .L:Token, message-ptr: .i32, message-len: i32) {
+    2 $file-path ~ ByteSlice:unpack $token L:Token-location L:print-location IO:check
+    2 ": " IO:write-all IO:check
+    2 $message-ptr $message-len IO:write-all IO:check
+    1 CORE:exit
+}
+

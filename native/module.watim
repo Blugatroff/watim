@@ -27,11 +27,12 @@ struct Module {
 
 fn Module-load(arena: .Arena:Arena, fs: .FS:FileSystem, path: STR:Str, mem: .ByteArray:T) -> Module {
     $arena $fs $path STR:Str-unpack FS:read-file @code @str
+    &str ByteArray:unpack STR:Str-new @str
     $code 0 /= if {
         2 "Failed to read file: \"" IO:write-all IO:check
         2 $path STR:Str-unpack IO:write-all IO:check
         2 "\" Error Code: " IO:write-all IO:check
-        2 $code IO:print-to-fd
+        2 $code IO:print IO:check
         2 IO:newline
         1 CORE:exit
     }

@@ -124,11 +124,11 @@ fn alloc(size: i32) -> .i32 {
             }
             logging if { 
                 2 "ALLOCED ptr: " IO:write-all IO:check 
-                2 $blok 12 + !i32 IO:print-to-fd
+                2 $blok 12 + !i32 IO:print IO:check
                 2 " size: " IO:write-all IO:check 
-                2 $size IO:print-to-fd
+                2 $size IO:print IO:check
                 2 " n-allocs: " IO:write-all IO:check 
-                2 n-allocs 1 + IO:print-to-fd
+                2 n-allocs 1 + IO:print IO:check
                 2 IO:newline
             }
             inc-n-allocs
@@ -136,7 +136,7 @@ fn alloc(size: i32) -> .i32 {
         }
         $next !i32 0 = if {
             2 "ALLOC FAILED NO MEMORY size: " IO:write-all IO:check 
-            2 $size IO:print-to-fd 1 "\n" IO:write-all IO:check
+            2 $size IO:print IO:check 1 "\n" IO:write-all IO:check
             0 0 / CORE:exit
             0 !.i32 break
         }
@@ -184,11 +184,11 @@ fn free(ptr: .i32) {
 
     logging if { 
         2 "FREEING ptr: " IO:write-all IO:check 
-        2 $ptr !i32 IO:print-to-fd
+        2 $ptr !i32 IO:print IO:check
         2 " size: " IO:write-all IO:check 
-        2 $size IO:print-to-fd
+        2 $size IO:print IO:check
         2 " n-allocs: " IO:write-all IO:check 
-        2 n-allocs n-frees - 1 - IO:print-to-fd
+        2 n-allocs n-frees - 1 - IO:print IO:check
         2 IO:newline 
     }
     $blok $next-free !i32 store
@@ -248,7 +248,7 @@ fn print-alloc-list(start: .i32) {
     local size: i32
     local used: bool
     $start #blok
-    2 "BLOCK LIST STARTING AT: " IO:write-all IO:check 2 $blok !i32 IO:print-to-fd 2 10 IO:write-byte IO:check
+    2 "BLOCK LIST STARTING AT: " IO:write-all IO:check 2 $blok !i32 IO:print IO:check 2 10 IO:write-byte IO:check
     loop {
         $blok !i32 0 = if { break }
         $blok ~ !.i32 #next
@@ -256,14 +256,14 @@ fn print-alloc-list(start: .i32) {
         $blok 8 + ~ 0 gt #used
 
         2 "\t" IO:write-all IO:check 
-        2 $blok !i32 IO:print-to-fd
+        2 $blok !i32 IO:print IO:check
         2 ": " IO:write-all IO:check
         2 " " IO:write-all IO:check
-        2 $next !i32 IO:print-to-fd
+        2 $next !i32 IO:print IO:check
         2 " " IO:write-all IO:check
-        2 $size IO:print-to-fd
+        2 $size IO:print IO:check
         2 " " IO:write-all IO:check
-        2 $used !i32 IO:print-to-fd
+        2 $used !i32 IO:print IO:check
         2 IO:newline 
         
         $next #blok
@@ -304,13 +304,13 @@ fn remaining() -> i32 {
 
 fn report(fd: i32) {
     $fd "Memory usage: \n\t" IO:write-all IO:check 
-    $fd usage IO:print-to-fd
+    $fd usage IO:print IO:check
     $fd " bytes,\n\tlargest free blok: " IO:write-all IO:check
-    $fd size-of-largest-free-blok IO:print-to-fd
+    $fd size-of-largest-free-blok IO:print IO:check
     $fd "\n\tactive allocations: " IO:write-all IO:check
-    $fd n-allocs n-frees - IO:print-to-fd
+    $fd n-allocs n-frees - IO:print IO:check
     $fd "\n\ttotal allocations: " IO:write-all IO:check
-    $fd n-allocs IO:print-to-fd
+    $fd n-allocs IO:print IO:check
     $fd "\n" IO:write-all IO:check
 }
 

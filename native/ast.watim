@@ -63,7 +63,7 @@ fn intrinsic-name(intrinsic: i32) -> .i32, i32 {
         $intrinsic INTRINSIC_FLIP = if { "INTRINSIC_FLIP" break }
 
         2 "INVALID INTRINSIC " IO:write-all IO:check
-        $intrinsic IO:print
+        2 $intrinsic IO:print IO:check
         1 CORE:exit
     }
 }

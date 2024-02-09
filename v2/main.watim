@@ -36,11 +36,17 @@ fn main "_start" () {
         &tokens-arena \print-stdout A:visit-mem
         0 CORE:exit
         2 "tokens-arena usage: " IO:write-all IO:check
-        2 &tokens-arena A:usage IO:print-to-fd
+        2 &tokens-arena A:usage IO:print IO:check
         2 IO:newline
         0 CORE:exit
     }
 
-    2 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
+    // 1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
+    // 1 CORE:exit
+
+    "Ast" A:new @ast-arena
+    &ast-arena $file-path ~ &tokens Parser:parse @parsed-module
+
+    1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
 }
 

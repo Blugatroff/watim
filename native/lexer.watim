@@ -106,9 +106,9 @@ fn format-location(formatter: .FMT:Formatter, file-ptr: .i32, file-len: i32, lin
 fn print-location(fd: i32, file-ptr: .i32, file-len: i32, line: i32, column: i32) {
     $fd $file-ptr $file-len IO:write-all IO:check
     $fd ":" IO:write-all IO:check
-    $fd $line IO:print-to-fd
+    $fd $line IO:print IO:check
     $fd ":" IO:write-all IO:check
-    $fd $column IO:print-to-fd
+    $fd $column IO:print IO:check
 }
 
 struct Token {
@@ -404,9 +404,9 @@ fn Lexer-next(lexer: .Lexer) -> Token, bool {
         } 
         2 &lexer.file ~ STR:Str-unpack IO:write-all IO:check
         2 ":" IO:write-all IO:check
-        2 $lexer.line IO:print-to-fd
+        2 $lexer.line IO:print IO:check
         2 ":" IO:write-all IO:check
-        2 $lexer.column IO:print-to-fd
+        2 $lexer.column IO:print IO:check
         2 ": Unexpected character \"" IO:write-all IO:check
         2 &lexeme ~ STR:Str-unpack IO:write-all IO:check
         2 "\"\n" IO:write-all IO:check

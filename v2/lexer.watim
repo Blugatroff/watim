@@ -143,20 +143,26 @@ fn Token-lexeme(self: .Token) -> .i32, i32 { block {
     $self.lexeme.len break
 } }
 fn Token-write(fd: i32, self: .Token) -> i32 { block {
-    2 "{ \"line\": " IO:write-all @code $code 0 /= if { $code break }
-    2 $self Token-line IO:print-to-fd
-    2 ", \"column\": " IO:write-all #code $code 0 /= if { $code break }
-    2 $self Token-column IO:print-to-fd
-    2 ", \"type\": \"" IO:write-all #code $code 0 /= if { $code break }
-    2 $self Token-ty TokenTy-name IO:write-all #code $code 0 /= if { $code break }
-    2 "\", \"lexeme\": \"" IO:write-all #code $code 0 /= if { $code break }
-    2 $self Token-lexeme IO:write-escaped #code $code 0 /= if { $code break }
-    2 "\" }" IO:write-all
+    $fd "{ \"line\": " IO:write-all @code $code 0 /= if { $code break }
+    $fd $self Token-line IO:print CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"column\": " IO:write-all #code $code 0 /= if { $code break }
+    $fd $self Token-column IO:print CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"type\": \"" IO:write-all #code $code 0 /= if { $code break }
+    $fd $self Token-ty TokenTy-name IO:write-all #code $code 0 /= if { $code break }
+    $fd "\", \"lexeme\": \"" IO:write-all #code $code 0 /= if { $code break }
+    $fd $self Token-lexeme IO:write-escaped #code $code 0 /= if { $code break }
+    $fd "\" }" IO:write-all
 } }
-
-fn eof(cursor: i32, code: .ByteSlice:T) -> bool {
-    $cursor $code.len =
+fn Token-location(self: .Token) -> i32, i32 {
+    $self Token-line $self Token-column
 }
+fn print-location(fd: i32, file-path-ptr: .i32, file-path-len: i32, line: i32, column: i32) -> i32 { block {
+    $fd $file-path-ptr $file-path-len IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ":" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $line IO:print CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ":" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $column IO:print
+} }
 
 fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
     1 @line
@@ -213,6 +219,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
                     $cursor 1 + #cursor
                     $column 1 + #column
                     $arena &tokens TOKEN_ARROW $line $start-column Token-new-keyword Array:push<Token>
+                    $done not break
                 }
             }
             $char "=" drop load8 = if {
@@ -224,6 +231,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
                     $cursor 1 + #cursor
                     $column 1 + #column
                     $arena &tokens TOKEN_DOUBLE_ARROW $line $start-column Token-new-keyword Array:push<Token>
+                    $done not break
                 }
             }
             "<>(){}:.,$&#@!~\\" @one-char-tokens-len @one-char-tokens
@@ -233,9 +241,9 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
                 $arena sizeof(i32) 1 + Arena:alloc-bytes !.ImmediateString @lexeme
                 $lexeme !.i32 1 store
                 $lexeme !.i32 4 + $one-char-tokens $index + load8 store8
+                $arena &tokens TOKEN_LEFT_TRIANGLE $index + $line $column $lexeme Token-new Array:push<Token>
                 $cursor 1 + #cursor
                 $column 1 + #column
-                $arena &tokens TOKEN_LEFT_TRIANGLE $index + $line $column $lexeme Token-new Array:push<Token>
                 $done not break
             } else { drop }
             $char "\"" drop load8 = if {

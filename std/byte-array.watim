@@ -31,12 +31,12 @@ fn check-same-arena(self: .T, arena: .A:Arena) {
 }
 
 fn push(arena: .A:Arena, self: .T, ptr: .i32, len: i32) {
+    $ptr $arena $self $len alloc-bytes $len CORE:copy-bytes
+}
+fn alloc-bytes(arena: .A:Arena, self: .T, len: i32) -> .i32 {
     $self $arena check-same-arena
     $self.len $len + $self.cap le if {
-        $ptr
         $self.ptr $self.len +
-        $len
-        CORE:copy-bytes
         $self.len $len + #self.len
     } else {
         $arena A:save @save
@@ -44,22 +44,26 @@ fn push(arena: .A:Arena, self: .T, ptr: .i32, len: i32) {
             // Optimization in case the newly allocated bytes immediately 
             // follow the already allocated bytes of this ByteArray.
             $self.len $len + #self.cap
-            $arena $self $ptr $len push
+            $arena $self $len alloc-bytes
         } else {
             $arena $save A:restore
             $self.cap 16 CORE:max 2 * #self.cap
             $arena $self.cap A:alloc-bytes @new-buf
             $self.ptr $new-buf $self.len CORE:copy-bytes
             $new-buf #self.ptr
-            $arena $self $ptr $len push
+            $arena $self $len alloc-bytes
         }
     }
 }
-
 fn push-byte(arena: .A:Arena, self: .T, byte: i32) {
     local ptr: CORE:I32
     $byte #ptr.inner
     $arena $self &ptr.inner 1 push
+}
+fn push-i32(arena: .A:Arena, self: .T, v: i32) {
+    local ptr: CORE:I32
+    $v #ptr.inner
+    $arena $self &ptr.inner 4 push
 }
 
 fn get(self: .T, index: i32) -> i32 {

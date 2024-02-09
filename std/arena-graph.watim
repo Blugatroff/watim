@@ -43,7 +43,7 @@ fn on-alloc(arena: .Arena:Arena, size: i32) {
     $arena.index 0 /= $arena.index $arenas.len le and if {
         print-arena-levels
         2 "# alloced " IO:write-all IO:check
-        2 $size IO:print-to-fd
+        2 $size IO:print IO:check
         2 " bytes in " IO:write-all IO:check
         2 $arena.name-ptr $arena.name-len IO:write-all IO:check
         2 IO:newline
@@ -64,13 +64,13 @@ fn on-restore(arena: .Arena:Arena) {
 
 fn print-arena-levels() {
     2 " " IO:write-all IO:check
-    2 $SAMPLE ~ IO:print-to-fd
+    2 $SAMPLE ~ IO:print IO:check
     $SAMPLE $SAMPLE ~ 1 + store
     1 @i
     loop {
         2 "\t" IO:write-all IO:check
         $ARENAS @arenas $arenas.len 1 + $i = if { break }
-        2 $ARENAS $i 1 - Array:get<i32> ~ IO:print-to-fd
+        2 $ARENAS $i 1 - Array:get<i32> ~ IO:print IO:check
         $i 1 + #i
     }
 }
@@ -93,13 +93,13 @@ fn end() {
             $i $MARKS @marks $marks.len = if { break }
             $MARKS $i Array:get<Marker> @marker
             2 "set label " IO:write-all IO:check
-            2 $i 1 + IO:print-to-fd
+            2 $i 1 + IO:print IO:check
             2 " \"" IO:write-all IO:check
             2 $marker.label-ptr $marker.label-len IO:write-all IO:check
             2 "\" at " IO:write-all IO:check
-            2 $marker.sample IO:print-to-fd
+            2 $marker.sample IO:print IO:check
             2 "," IO:write-all IO:check
-            2 $marker.value IO:print-to-fd
+            2 $marker.value IO:print IO:check
             2 " point pointtype 0\n" IO:write-all IO:check
             $i 1 + #i
         }

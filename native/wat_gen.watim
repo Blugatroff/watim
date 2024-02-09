@@ -598,8 +598,7 @@ fn generate-set(formatter: .FMT:Formatter, generics: .AST:Types, word: .AST:Word
     $temp $save Arena:restore
 }
 fn generate-store(formatter: .FMT:Formatter, generics: .AST:Types, type: .AST:Type) {
-    $type AST:Type-ty AST:TYPE_STRUCT =
-    $type $generics AST:Type-size 4 /= and if {
+    $type AST:Type-ty AST:TYPE_STRUCT = if {
         $formatter "i32.const " FMT:Formatter-write
         $type $generics AST:Type-size $formatter U:i32-format
         $formatter " memory.copy" FMT:Formatter-write
