@@ -215,6 +215,7 @@ fn WORD_GET() -> i32 { 3 }
 fn WORD_CALL() -> i32 { 4 }
 fn WORD_INIT() -> i32 { 5 }
 fn WORD_REF() -> i32 { 6 }
+fn WORD_IF() -> i32 { 7 }
 fn WordTy-name(ty: i32) -> .i32, i32 { block {
     $ty WORD_NUMBER = if { "WORD_NUMBER" break }
     $ty WORD_STRING = if { "WORD_STRING" break }
@@ -222,6 +223,7 @@ fn WordTy-name(ty: i32) -> .i32, i32 { block {
     $ty WORD_CALL = if { "WORD_CALL" break }
     $ty WORD_INIT = if { "WORD_INIT" break }
     $ty WORD_REF = if { "WORD_REF" break }
+    $ty WORD_IF = if { "WORD_IF" break }
     "" 0 0 / drop
 } }
 struct ParsedWords {
@@ -249,15 +251,18 @@ fn ParsedWords-push-string(arena: .A:Arena, self: .ParsedWords, value: L:Token) 
     $arena $self WORD_NUMBER ParsedWords-push-ty
     $arena $self $value ParsedWords-push-token
 }
+fn ParsedWords-push-patch(arena: .A:Arena, self: .ParsedWords) -> i32 {
+    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+}
 fn ParsedWords-push-get(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> ParsedWord, i32 {
     $arena $self WORD_GET ParsedWords-push-ty
     $arena $self $name ParsedWords-push-token
-    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+    $arena $self ParsedWords-push-patch
 }
 fn ParsedWords-push-ref(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> ParsedWord, i32 {
     $arena $self WORD_REF ParsedWords-push-ty
     $arena $self $name ParsedWords-push-token
-    $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
+    $arena $self ParsedWords-push-patch
 }
 fn ParsedWords-push-init(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> ParsedWord {
     $arena $self WORD_INIT ParsedWords-push-ty
@@ -278,45 +283,50 @@ fn ParsedWords-push-foreign-call(arena: .A:Arena, self: .ParsedWords, name: L:To
     $arena &self.buf $generic-arguments.len ByteArray:push-i32
     $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedType) * ByteArray:push
 }
-fn ParsedWords-write(fd: i32, self: .ParsedWords) -> i32 { block {
+fn ParsedWords-write(fd: i32, self: .ParsedWords) -> i32 {
+    $fd $self 0 0 not ParsedWords-write-n-from flip drop
+}
+fn ParsedWords-write-n-from(fd: i32, self: .ParsedWords, cursor: i32, n: i32) -> i32, i32 { block {
     $self.buf.len 4 % 0 /= if { 0 0 / drop }
-    $fd "[" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    0 @cursor
+    $fd "[" IO:write-all CORE:dup<i32> 0 /= if { $cursor break } else { drop }
     loop {
-        $cursor $self.buf.len = if { 0 break }
+        $cursor $self.buf.len ge if { 0 break }
+        $n 0 = if { 0 break }
         $fd $self $cursor ParsedWords-write-word @err #cursor $err 0 /= if { $err break }
         $cursor $self.buf.len /= if {
             $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
         }
-    } CORE:dup<i32> 0 /= if { break } else { drop }
+        $n 1 - #n
+    } CORE:dup<i32> 0 /= if { $cursor break } else { drop }
+    $cursor
     $fd " ]" IO:write-all
 } }
-fn ParsedWords-write-word(fd: i32, types: .ParsedWords, index: i32) -> i32, i32 {
+fn ParsedWords-write-word(fd: i32, words: .ParsedWords, index: i32) -> i32, i32 {
     block {
-        $types.buf.ptr $index + ~ @ty
+        $words.buf.ptr $index + ~ @ty
         $index sizeof(i32) + #index // skip `ty`
         $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
         $fd $ty WordTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
         $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
         block {
             $ty WORD_NUMBER = if {
-                $types.buf.ptr $index + !.L:Token @value
+                $words.buf.ptr $index + !.L:Token @value
                 $index sizeof(L:Token) + #index // skip `value`
                 $fd ", \"value\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd $value L:Token-write break
             }
             $ty WORD_GET =
             $ty WORD_REF = or if {
-                $types.buf.ptr $index + !.L:Token @name
+                $words.buf.ptr $index + !.L:Token @name
                 $index sizeof(L:Token) + #index // skip `name`
                 $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd $name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd ", \"fields\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                $types.buf.ptr $index + ~ @field-count
+                $words.buf.ptr $index + ~ @field-count
                 $index sizeof(i32) + #index // skip `field-count`
                 loop {
                     $field-count 0 = if { 0 break }
-                    $types.buf.ptr $index + !.L:Token @field
+                    $words.buf.ptr $index + !.L:Token @field
                     $index sizeof(L:Token) + #index
                     $fd $field L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
                     $field-count 1 - #field-count
@@ -326,32 +336,32 @@ fn ParsedWords-write-word(fd: i32, types: .ParsedWords, index: i32) -> i32, i32 
                 $fd "]" IO:write-all break
             }
             $ty WORD_INIT = if {
-                $types.buf.ptr $index + !.L:Token @name
+                $words.buf.ptr $index + !.L:Token @name
                 $index sizeof(L:Token) + #index // skip `name`
                 $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd $name L:Token-write break
             }
             $ty WORD_CALL = if {
-                $types.buf.ptr $index + !.L:Token @name
+                $words.buf.ptr $index + !.L:Token @name
                 $index sizeof(L:Token) + #index // skip `name`
                 $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd $name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
 
-                $types.buf.ptr $index + !.bool ~
+                $words.buf.ptr $index + !.bool ~
                 $index sizeof(bool) + #index // skip `foreign`
                 if {
-                    $types.buf.ptr $index + !.L:Token @module
+                    $words.buf.ptr $index + !.L:Token @module
                     $index sizeof(L:Token) + #index // skip `module`
                     $fd ", \"module\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                     $fd $module L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
                 }
 
-                $types.buf.ptr $index + !.i32 ~ @generic-argument-count
+                $words.buf.ptr $index + !.i32 ~ @generic-argument-count
                 $index sizeof(i32) + #index // skip `generic-argument-count`
                 $fd ", \"generic-arguments\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 loop {
                     $generic-argument-count 0 = if { 0 break }
-                    $types.buf.ptr $index + !.ParsedType @type
+                    $words.buf.ptr $index + !.ParsedType @type
                     $index sizeof(ParsedType) + #index
                     $fd $type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
                     $generic-argument-count 1 - #generic-argument-count
@@ -359,6 +369,22 @@ fn ParsedWords-write-word(fd: i32, types: .ParsedWords, index: i32) -> i32, i32 
                     $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 } CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd "]" IO:write-all break
+            }
+            $ty WORD_IF = if {
+                $words.buf.ptr $index + !.L:Token @token
+                $index sizeof(L:Token) + #index // skip `token`
+                $fd ", \"token\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $fd $token L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+
+                $fd ", \"if-words\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $words.buf.ptr $index + ~ @if-word-count
+                $index sizeof(i32) + #index // skip `if-word-count`
+                $fd $words $index $if-word-count ParsedWords-write-n-from flip #index CORE:dup<i32> 0 /= if { break } else { drop }
+
+                $fd ", \"else-words\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+                $words.buf.ptr $index + ~ @else-word-count
+                $index sizeof(i32) + #index // skip `else-word-count`
+                $fd $words $index $else-word-count ParsedWords-write-n-from flip #index break
             }
             2 "ParsedWords-write-word unhandled Word type " IO:write-all IO:check
             2 $ty WordTy-name IO:write-all IO:check
@@ -463,7 +489,8 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
                         $cursor &file-path $tokens next #cursor drop // skip the `,`
                     }
                 }
-                $arena $cursor &file-path $tokens &types parse-words #cursor @words
+                ParsedWords-new @words
+                $arena $cursor &file-path $tokens &types &words parse-words #cursor drop
                 $arena &functions $parameters $returns $words ParsedFunction-new Array:push<ParsedFunction>
                 break
             }
@@ -475,12 +502,12 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
     }
     $arena $file-path ByteSlice:copy $types $imports $functions ParsedModule-new
 }
-fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedWords, i32 {
-    ParsedWords-new @words
+fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $file-path $token "Expected `{`." abort
     }
+    0 @count
     loop {
         $cursor $file-path $tokens peek @token
         $token L:Token-ty L:TOKEN_RIGHT_BRACE = if {
@@ -488,7 +515,8 @@ fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .A
             break
         }
 
-        $arena $cursor $file-path $tokens $types &words parse-word #cursor
+        $arena $cursor $file-path $tokens $types $words parse-word #cursor
+        $count 1 + #count
 
         $cursor $file-path $tokens peek @token
         $token L:Token-ty L:TOKEN_RIGHT_BRACE = if {
@@ -496,7 +524,7 @@ fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .A
             break
         }
     }
-    $words $cursor
+    $count $cursor
 }
 fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32 {
     block {
@@ -566,6 +594,20 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
                 } else { Array:new<ParsedType> } @generic-arguments
                 $arena $words $name ~ $generic-arguments ParsedWords-push-call drop
             }
+            break
+        }
+        $token L:Token-ty L:TOKEN_IF = if {
+            $arena $words WORD_IF ParsedWords-push-ty drop
+            $arena $words $token ~ ParsedWords-push-token
+            $arena $words ParsedWords-push-patch @if-count-patch
+            $arena $cursor $file-path $tokens $types $words parse-words #cursor @if-word-count
+            $words.buf.ptr $if-count-patch + $if-word-count store
+            $arena $words ParsedWords-push-patch @else-count-patch
+            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ELSE = if {
+                $cursor $file-path $tokens next #cursor drop // skip the `else`
+                $arena $cursor $file-path $tokens $types $words parse-words #cursor
+            } else { 0 } @else-word-count
+            $words.buf.ptr $else-count-patch + $else-word-count store
             break
         }
         2 "parse-word: Unhandled Token " IO:write-all IO:check

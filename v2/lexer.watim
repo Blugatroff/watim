@@ -212,24 +212,20 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
             }
             $char "-" drop load8 = if {
                 $column @start-column
-                $cursor 1 + #cursor
-                $column 1 + #column
-                $cursor $code.len = if { $done break }
-                $code $cursor ByteSlice:get-byte ">" drop load8 = if {
-                    $cursor 1 + #cursor
-                    $column 1 + #column
+                $cursor 1 + $code.len = if { $done break }
+                $code $cursor 1 + ByteSlice:get-byte ">" drop load8 = if {
+                    $cursor 2 + #cursor
+                    $column 2 + #column
                     $arena &tokens TOKEN_ARROW $line $start-column Token-new-keyword Array:push<Token>
                     $done not break
                 }
             }
             $char "=" drop load8 = if {
                 $column @start-column
-                $cursor 1 + #cursor
-                $column 1 + #column
-                $cursor $code.len = if { $done break }
-                $code $cursor ByteSlice:get-byte ">" drop load8 = if {
-                    $cursor 1 + #cursor
-                    $column 1 + #column
+                $cursor 1 + $code.len = if { $done break }
+                $code $cursor 1 + ByteSlice:get-byte ">" drop load8 = if {
+                    $cursor 2 + #cursor
+                    $column 2 + #column
                     $arena &tokens TOKEN_DOUBLE_ARROW $line $start-column Token-new-keyword Array:push<Token>
                     $done not break
                 }
