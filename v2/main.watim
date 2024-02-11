@@ -6,6 +6,7 @@ import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice
+import "../std/page-alloc.watim" as PA
 
 import "./lexer.watim" as Lexer
 import "./parser.watim" as Parser
@@ -32,14 +33,9 @@ fn main "_start" () {
     &tokens-arena &file-content Lexer:lex @tokens
     &files-arena A:shred
 
-    1 0 = if {
-        &tokens-arena \print-stdout A:visit-mem
-        0 CORE:exit
-        2 "tokens-arena usage: " IO:write-all IO:check
-        2 &tokens-arena A:usage IO:print IO:check
-        2 IO:newline
-        0 CORE:exit
-    }
+    2 "tokens-arena usage: " IO:write-all IO:check
+    2 &tokens-arena A:usage IO:print IO:check
+    2 IO:newline
 
     // 1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
     // 1 CORE:exit
@@ -48,5 +44,16 @@ fn main "_start" () {
     &ast-arena $file-path ~ &tokens Parser:parse @parsed-module
 
     1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
+    2 "ast-arena usage: " IO:write-all IO:check
+    2 &ast-arena A:usage IO:print IO:check
+    2 IO:newline
+
+    1 1 = if {
+        2 "Used " IO:write-all IO:check
+        2 0 mem-grow IO:print IO:check
+        2 " 64KiB pages of memory = " IO:write-all IO:check
+        2 0 mem-grow PA:page-size * 1 20 rotl 1 - + 1 20 rotl / IO:print IO:check
+        2 "MiB\n" IO:write-all IO:check
+    }
 }
 

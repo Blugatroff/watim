@@ -44,6 +44,7 @@ fn TOKEN_I32() -> i32 { 35 }
 fn TOKEN_I64() -> i32 { 36 }
 fn TOKEN_ARROW() -> i32 { 37 }
 fn TOKEN_DOUBLE_ARROW() -> i32 { 38 }
+fn TOKEN_SIZEOF() -> i32 { 39 }
 fn TokenTy-name(self: i32) -> .i32, i32 {
     block {
         $self TOKEN_NUMBER = if { "TOKEN_NUMBER" break }
@@ -85,6 +86,7 @@ fn TokenTy-name(self: i32) -> .i32, i32 {
         $self TOKEN_I64 = if { "TOKEN_I64" break }
         $self TOKEN_ARROW = if { "TOKEN_ARROW" break }
         $self TOKEN_DOUBLE_ARROW = if { "TOKEN_DOUBLE_ARROW" break }
+        $self TOKEN_SIZEOF = if { "TOKEN_SIZEOF" break }
         CORE:unreachable<.i32> CORE:unreachable<i32>
     }
 }
@@ -138,6 +140,7 @@ fn Token-lexeme(self: .Token) -> .i32, i32 { block {
     $ty TOKEN_I64 = if { "i64" break }
     $ty TOKEN_ARROW = if { "->" break }
     $ty TOKEN_DOUBLE_ARROW = if { "=>" break }
+    $ty TOKEN_SIZEOF = if { "sizeof" break }
     $self.lexeme 0 !.ImmediateString = if { 0 0 / drop }
     $self.lexeme sizeof(ImmediateString) + !.i32
     $self.lexeme.len break
@@ -331,6 +334,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
                     $lexeme-ptr $lexeme-len "i32" Bytes:eq if { TOKEN_I32 $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "i64" Bytes:eq if { TOKEN_I64 $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "->" Bytes:eq if { TOKEN_ARROW $start-line $start-column Token-new-keyword break }
+                    $lexeme-ptr $lexeme-len "sizeof" Bytes:eq if { TOKEN_SIZEOF $start-line $start-column Token-new-keyword break }
                     $arena sizeof(i32) $lexeme-len + Arena:alloc-bytes !.ImmediateString @lexeme
                     $lexeme !.i32 $lexeme-len store
                     $lexeme-ptr $lexeme sizeof(i32) + !.i32 $lexeme-len CORE:copy-bytes
