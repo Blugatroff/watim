@@ -29,21 +29,24 @@ fn main "_start" () {
     &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check @file-content
 
     &file-content ByteArray:to-slice @file-content
-    "Tokens" A:new @tokens-arena
-    &tokens-arena &file-content Lexer:lex @tokens
+    "Lexer" A:new @lexer-arena
+    &lexer-arena &file-content Lexer:lex @tokens
     &files-arena A:shred
 
+    "Tokens" A:new @tokens-arena
+    &tokens-arena &tokens Lexer:Tokens-copy @tokens
+    &lexer-arena A:shred
+
+    // 1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
     2 "tokens-arena usage: " IO:write-all IO:check
     2 &tokens-arena A:usage IO:print IO:check
     2 IO:newline
-
-    // 1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
     // 1 CORE:exit
 
     "Ast" A:new @ast-arena
     &ast-arena $file-path ~ &tokens Parser:parse @parsed-module
 
-    1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
+    // 1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
     2 "ast-arena usage: " IO:write-all IO:check
     2 &ast-arena A:usage IO:print IO:check
     2 IO:newline

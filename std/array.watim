@@ -30,6 +30,14 @@ fn check-same-arena<T>(self: .Array<T>, arena: .A:Arena) {
         }
     }
 }
+fn new-with-capacity<T>(arena: .A:Arena, elems: i32) -> Array<T> {
+    local self: Array<T>
+    $arena #self.arena
+    $elems #self.cap
+    $arena $self.cap A:alloc-many<T> #self.ptr
+    0 #self.len
+    $self
+}
 fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
     local self: Array<T>
     $elems #self.cap
@@ -49,16 +57,26 @@ fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
             // Optimization in case the newly allocated bytes immediately 
             // follow the already allocated bytes of this ByteArray.
             $self.cap 1 + #self.cap
-            $arena $self $val push<T>
+            $self $val push-assert-no-alloc<T>
         } else {
             $arena $save A:restore
             $self.cap 2 CORE:max 2 * #self.cap
             $arena $self.cap A:alloc-many<T> @new-buf
             $self.ptr $new-buf $self.len CORE:copy<T>
             $new-buf #self.ptr
-            $arena $self $val push<T>
+            $self $val push-assert-no-alloc<T>
         }
     } 
+}
+fn push-assert-no-alloc<T>(self: .Array<T>, val: T) {
+    $self.len 1 + $self.cap le if {
+        $self.ptr $self.len sizeof(T) * + $val store
+        $self.len 1 + #self.len
+    } else {
+        2 "Array:push-assert-no-alloc: needed to allocate, assert failed!\n" IO:write-all IO:check
+        0 0 / drop
+        1 CORE:exit
+    }
 }
 fn get<T>(self: .Array<T>, index: i32) -> .T {
     $index $self.len ge if {

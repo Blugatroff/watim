@@ -121,6 +121,13 @@ fn Token-column(self: .Token) -> i32 {
     $self.ty-and-line-and-column 6 rotr 1023 and
 }
 fn Token-lexeme(self: .Token) -> .i32, i32 { block {
+    $self Token-hardcoded-lexeme @len @ptr
+    $ptr 0 !.i32 /= if { $ptr $len break }
+    $self.lexeme 0 !.ImmediateString = if { 0 0 / drop }
+    $self.lexeme sizeof(ImmediateString) + !.i32
+    $self.lexeme.len break
+} }
+fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 { block {
     $self Token-ty @ty
     $ty TOKEN_FN = if { "fn" break }
     $ty TOKEN_IMPORT = if { "import" break }
@@ -141,9 +148,7 @@ fn Token-lexeme(self: .Token) -> .i32, i32 { block {
     $ty TOKEN_ARROW = if { "->" break }
     $ty TOKEN_DOUBLE_ARROW = if { "=>" break }
     $ty TOKEN_SIZEOF = if { "sizeof" break }
-    $self.lexeme 0 !.ImmediateString = if { 0 0 / drop }
-    $self.lexeme sizeof(ImmediateString) + !.i32
-    $self.lexeme.len break
+    0 !.i32 0 break
 } }
 fn Token-write(fd: i32, self: .Token) -> i32 { block {
     $fd "{ \"line\": " IO:write-all @code $code 0 /= if { $code break }
@@ -159,6 +164,26 @@ fn Token-write(fd: i32, self: .Token) -> i32 { block {
 fn Token-location(self: .Token) -> i32, i32 {
     $self Token-line $self Token-column
 }
+fn Token-copy(arena: .Arena:Arena, self: .Token) -> Token {
+    $self ~ @copy
+    $self.lexeme 0 !.ImmediateString /= if {
+        $arena $self.lexeme.len sizeof(i32) + Arena:alloc-bytes !.ImmediateString #copy.lexeme
+        $self.lexeme.len #copy.lexeme.len
+        $self.lexeme sizeof(i32) + !.i32 $copy.lexeme sizeof(i32) + !.i32 $self.lexeme.len CORE:copy-bytes
+    }
+    $copy
+}
+fn Tokens-copy(arena: .Arena:Arena, src: .Array:Array<Token>) -> Array:Array<Token> {
+    $arena $src.len Array:new-with-capacity<Token> @dst
+    0 @i
+    loop {
+        $i $src.len = if { break }
+        &dst $arena $src $i Array:get<Token> Token-copy Array:push-assert-no-alloc<Token>
+        $i 1 + #i
+    }
+    $dst
+}
+
 fn print-location(fd: i32, file-path-ptr: .i32, file-path-len: i32, line: i32, column: i32) -> i32 { block {
     $fd $file-path-ptr $file-path-len IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ":" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
