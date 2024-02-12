@@ -1,32 +1,65 @@
-import "../std/core.watim" as CORE
+import "../std/core.watim" as Core
 import "../std/arena.watim" as A
-import "../std/args.watim" as ARGS
+import "../std/args.watim" as Args
 import "../std/array.watim" as Array
+import "../std/str.watim" as Str
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice
 import "../std/page-alloc.watim" as PA
 
+import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
 import "./parser.watim" as Parser
 
-fn print-stdout(ptr: .i32, len: i32) {
-    1 $ptr $len IO:write-all IO:check
+fn print-usage-and-exit() {
+    2 "The native Watim compiler\n\n" IO:write-all IO:check
+    2 "Usage: watim <watim-source-file>\n" IO:write-all IO:check
+    2 "Options:\n" IO:write-all IO:check
+    2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
+    2 "  --lex          Lex stdin into watim Tokens and print them as JSON\n" IO:write-all IO:check
+    2 "  --parse        Parse stdin into a watim AST in print it as JSON\n" IO:write-all IO:check
+    1 Core:exit
 }
+
+fn find-flag(args: .Array:Array<ByteSlice:T>, ptr: .i32, len: i32) -> bool {
+    $ptr $len ByteSlice:new @str
+    $args \ByteSlice:eq &str Array:find<ByteSlice:T, .ByteSlice:T> if {
+        $args flip Array:remove<ByteSlice:T> drop
+        1 1 =
+    } else { 
+        drop
+        0 1 =
+    }
+}
+
+fn MODE_COMPILE() -> i32 { 1 }
+fn MODE_LEX() -> i32 { 2 }
+fn MODE_PARSE() -> i32 { 3 }
 
 fn main "_start" () {
     "Main" A:new @arena
-    &arena ARGS:get-args @args
+    &arena Args:get-args @args
+    
+    &args "-q" find-flag &args "--quiet" find-flag or Logging:set
+    MODE_COMPILE @mode
+    &args "--lex" find-flag if { MODE_LEX #mode }
+    &args "--parse" find-flag if { MODE_PARSE #mode }
+
     $args.len 1 le if {
-        2 "expected file arg" IO:write-all IO:check
-        1 CORE:exit
+        print-usage-and-exit
     }
     &args 1 Array:get<ByteSlice:T> @file-path
 
     "Files" A:new @files-arena
     &files-arena FS:init IO:check @fs
-    &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check @file-content
+
+    $file-path ~ ByteSlice:unpack "-" Str:str-eq if {
+        &files-arena 0 FS:read-all IO:check
+    } else {
+        &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check
+    } @file-content
 
     &file-content ByteArray:to-slice @file-content
     "Lexer" A:new @lexer-arena
@@ -37,21 +70,33 @@ fn main "_start" () {
     &tokens-arena &tokens Lexer:Tokens-copy @tokens
     &lexer-arena A:shred
 
-    // 1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
-    2 "tokens-arena usage: " IO:write-all IO:check
-    2 &tokens-arena A:usage IO:print IO:check
-    2 IO:newline
-    // 1 CORE:exit
+    $mode MODE_LEX = if {
+        1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
+        Logging:enabled if {
+            2 "tokens-arena usage: " IO:write-all IO:check
+            2 &tokens-arena A:usage IO:print IO:check
+            2 IO:newline
+        }
+        exit
+    }
 
     "Ast" A:new @ast-arena
     &ast-arena $file-path ~ &tokens Parser:parse @parsed-module
 
-    // 1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
-    2 "ast-arena usage: " IO:write-all IO:check
-    2 &ast-arena A:usage IO:print IO:check
-    2 IO:newline
+    $mode MODE_PARSE = if {
+        1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
+        Logging:enabled if {
+            2 "ast-arena usage: " IO:write-all IO:check
+            2 &ast-arena A:usage IO:print IO:check
+            2 IO:newline
+        }
+        exit
+    }
+    exit
+}
 
-    1 1 = if {
+fn exit() {
+    Logging:enabled if {
         2 "Used " IO:write-all IO:check
         2 0 mem-grow IO:print IO:check
         2 " 64KiB pages of memory = " IO:write-all IO:check

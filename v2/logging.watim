@@ -1,0 +1,7 @@
+memory LOGGING: bool 4
+
+fn set(v: bool) { $LOGGING $v store }
+fn enable() { $LOGGING 0 0 = store }
+fn disable() { $LOGGING 0 1 = store }
+fn enabled() -> bool { $LOGGING ~ }
+
