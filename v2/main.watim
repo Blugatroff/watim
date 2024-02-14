@@ -41,8 +41,8 @@ fn MODE_PARSE() -> i32 { 3 }
 fn main "_start" () {
     "Main" A:new @arena
     &arena Args:get-args @args
-    
-    &args "-q" find-flag &args "--quiet" find-flag or Logging:set
+
+    &args "-q" find-flag &args "--quiet" find-flag or not Logging:set
     MODE_COMPILE @mode
     &args "--lex" find-flag if { MODE_LEX #mode }
     &args "--parse" find-flag if { MODE_PARSE #mode }
@@ -103,5 +103,6 @@ fn exit() {
         2 0 mem-grow PA:page-size * 1 20 rotl 1 - + 1 20 rotl / IO:print IO:check
         2 "MiB\n" IO:write-all IO:check
     }
+    0 Core:exit
 }
 
