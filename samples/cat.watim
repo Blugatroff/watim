@@ -1,9 +1,8 @@
-import "../std/alloc.watim" as A
-import "../std/args.watim" as ARGS
-import "../std/str.watim" as STR
+import "../std/args.watim" as Args
+import "../std/byte-slice.watim" as ByteSlice
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
-import "../std/core.watim" as CORE
+import "../std/core.watim" as Core
 import "../std/arena.watim" as Arena
 import "../std/array.watim" as Array
 
@@ -11,12 +10,12 @@ fn main "_start" () {
     Arena:init-temp
 
     0 !.Arena:Arena Arena:temp @temp @save
-    $temp ARGS:get-args @args
+    $temp Args:get-args @args
 
     $args.len 1 le if {
         2 "\ncat written in Watim\n" IO:write-all IO:check
         2 "\tUsage: ./run.sh ./samples/cat.watim <file1> <file2> ...\n" IO:write-all IO:check
-        1 CORE:exit
+        1 Core:exit
     }
 
     $temp FS:init IO:check @fs
@@ -24,7 +23,7 @@ fn main "_start" () {
     1 @arg-index
     loop {
         $args.len $arg-index = if { break }
-        &fs &args $arg-index Array:get<STR:Str> ~ STR:Str-unpack 
+        &fs &args $arg-index Array:get<ByteSlice:T> ~ ByteSlice:unpack
         1 1 = 0 1 = FS:create-rights
         0 1 = 0 1 = FS:create-rights
         FS:open-file IO:check @fd
