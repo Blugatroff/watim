@@ -23,7 +23,9 @@ fn copy<T>(a: .T, b: .T, len: i32) {
 }
 
 fn copy-bytes(a: .i32, b: .i32, len: i32) {
-    $b !.i32 $a !.i32 $len mem-copy
+    $len 0 /= if {
+        $b !.i32 $a !.i32 $len mem-copy
+    }
 }
 
 fn bytes-eq(a: .i32, b: .i32, len: i32) -> bool {
