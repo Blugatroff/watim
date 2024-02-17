@@ -13,11 +13,11 @@ struct ParsedFunction {
     export-name: Optional:T<L:Token>
     generic-parameters: Array:Array<L:Token>
     parameters: Array:Array<ParsedNamedType>
-    returns: Array:Array<ParsedType>
+    returns: Array:Array<ParsedTypeHandle>
     locals: Array:Array<ParsedNamedType>
     words: ParsedWords
 }
-fn ParsedFunction-new(export-name: Optional:T<L:Token>, name: L:Token, generic-parameters: Array:Array<L:Token>, parameters: Array:Array<ParsedNamedType>, returns: Array:Array<ParsedType>, locals: Array:Array<ParsedNamedType>, words: ParsedWords) -> ParsedFunction {
+fn ParsedFunction-new(export-name: Optional:T<L:Token>, name: L:Token, generic-parameters: Array:Array<L:Token>, parameters: Array:Array<ParsedNamedType>, returns: Array:Array<ParsedTypeHandle>, locals: Array:Array<ParsedNamedType>, words: ParsedWords) -> ParsedFunction {
     local self: ParsedFunction
     $export-name #self.export-name
     $name #self.name
@@ -42,7 +42,7 @@ fn ParsedFunction-write(fd: i32, self: .ParsedFunction) -> i32 { block {
     $fd ", \"parameters\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd \ParsedNamedType-write &self.parameters Array:print<ParsedNamedType> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"returns\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd \ParsedType-write &self.returns Array:print<ParsedType> CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd \ParsedTypeHandle-write &self.returns Array:print<ParsedTypeHandle> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"locals\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd \ParsedNamedType-write &self.locals Array:print<ParsedNamedType> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"words\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
@@ -55,9 +55,9 @@ struct ParsedExternFunction {
     external-name: L:Token
     name: L:Token
     parameters: Array:Array<ParsedNamedType>
-    returns: Array:Array<ParsedType>
+    returns: Array:Array<ParsedTypeHandle>
 }
-fn ParsedExternFunction-new(external-module: L:Token, external-name: L:Token, name: L:Token, parameters: Array:Array<ParsedNamedType>, returns: Array:Array<ParsedType>) -> ParsedExternFunction {
+fn ParsedExternFunction-new(external-module: L:Token, external-name: L:Token, name: L:Token, parameters: Array:Array<ParsedNamedType>, returns: Array:Array<ParsedTypeHandle>) -> ParsedExternFunction {
     local self: ParsedExternFunction
     $external-module #self.external-module
     $external-name #self.external-name
@@ -76,15 +76,15 @@ fn ParsedExternFunction-write(fd: i32, self: .ParsedExternFunction) -> i32 { blo
     $fd ", \"parameters\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd \ParsedNamedType-write &self.parameters Array:print<ParsedNamedType> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"returns\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd \ParsedType-write &self.returns Array:print<ParsedType> CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd \ParsedTypeHandle-write &self.returns Array:print<ParsedTypeHandle> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " }" IO:write-all
 } }
 
 struct ParsedNamedType {
     name: L:Token
-    type: ParsedType
+    type: ParsedTypeHandle
 }
-fn ParsedNamedType-new(name: L:Token, type: ParsedType) -> ParsedNamedType {
+fn ParsedNamedType-new(name: L:Token, type: ParsedTypeHandle) -> ParsedNamedType {
     local self: ParsedNamedType
     $name #self.name
     $type #self.type
@@ -94,7 +94,7 @@ fn ParsedNamedType-write(fd: i32, self: .ParsedNamedType) -> i32 { block {
     $fd "{ \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd &self.name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"type\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd &self.type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd &self.type ParsedTypeHandle-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " }" IO:write-all
 } }
 
@@ -140,10 +140,10 @@ fn ParsedStruct-write(fd: i32, self: .ParsedStruct) -> i32 { block {
 
 struct ParsedMemory {
     name: L:Token
-    type: ParsedType
+    type: ParsedTypeHandle
     size: L:Token
 }
-fn ParsedMemory(name: L:Token, type: ParsedType, size: L:Token) -> ParsedMemory {
+fn ParsedMemory(name: L:Token, type: ParsedTypeHandle, size: L:Token) -> ParsedMemory {
     local self: ParsedMemory
     $name #self.name
     $type #self.type
@@ -154,7 +154,7 @@ fn ParsedMemory-write(fd: i32, self: .ParsedMemory) -> i32 { block {
     $fd "{ \"name\": " IO:write-all @code $code 0 /= if { $code break }
     $fd &self.name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"type\": " IO:write-all #code $code 0 /= if { $code break }
-    $fd &self.type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd &self.type ParsedTypeHandle-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"size\": " IO:write-all #code $code 0 /= if { $code break }
     $fd &self.size L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " }" IO:write-all
@@ -225,122 +225,262 @@ fn ParsedTypes-new() -> ParsedTypes {
     ByteArray:new #self.buf
     $self
 }
-fn ParsedTypes-push-ty(arena: .A:Arena, self: .ParsedTypes, ty: i32) -> ParsedType {
-    local type: ParsedType
+fn ParsedTypes-push-ty(arena: .A:Arena, self: .ParsedTypes, ty: i32) -> ParsedTypeHandle {
+    local type: ParsedTypeHandle
     $self.buf.len #type.index
     $arena &self.buf $ty ByteArray:push-i32
     $type
 }
-fn ParsedTypes-push-i32(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+fn ParsedTypes-push-i32(arena: .A:Arena, self: .ParsedTypes) -> ParsedTypeHandle {
     $arena $self TYPE_I32 ParsedTypes-push-ty
 }
-fn ParsedTypes-push-i64(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+fn ParsedTypes-push-i64(arena: .A:Arena, self: .ParsedTypes) -> ParsedTypeHandle {
     $arena $self TYPE_I64 ParsedTypes-push-ty
 }
-fn ParsedTypes-push-bool(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+fn ParsedTypes-push-bool(arena: .A:Arena, self: .ParsedTypes) -> ParsedTypeHandle {
     $arena $self TYPE_BOOL ParsedTypes-push-ty
 }
-fn ParsedTypes-push-ptr(arena: .A:Arena, self: .ParsedTypes) -> ParsedType {
+fn ParsedTypes-push-ptr(arena: .A:Arena, self: .ParsedTypes) -> ParsedTypeHandle {
     $arena $self TYPE_PTR ParsedTypes-push-ty
 }
-fn ParsedTypes-push-struc(arena: .A:Arena, self: .ParsedTypes, name: L:Token) -> ParsedType, i32 {
+fn ParsedTypes-push-struc(arena: .A:Arena, self: .ParsedTypes, name: L:Token) -> ParsedTypeHandle, i32 {
     $arena $self TYPE_STRUCT ParsedTypes-push-ty
     $arena &self.buf 0 1 = !i32 ByteArray:push-i32 // foreign = false
     $arena &self.buf &name !.i32 sizeof(L:Token) ByteArray:push
     $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
 }
-fn ParsedTypes-push-foreign-struc(arena: .A:Arena, self: .ParsedTypes, module: L:Token, name: L:Token) -> ParsedType, i32 {
+fn ParsedTypes-push-foreign-struc(arena: .A:Arena, self: .ParsedTypes, module: L:Token, name: L:Token) -> ParsedTypeHandle, i32 {
     $arena $self TYPE_STRUCT ParsedTypes-push-ty
     $arena &self.buf 1 1 = !i32 ByteArray:push-i32 // foreign = true
     $arena &self.buf &module !.i32 sizeof(L:Token) ByteArray:push
     $arena &self.buf &name !.i32 sizeof(L:Token) ByteArray:push
     $self.buf.len $arena &self.buf sizeof(i32) ByteArray:alloc-bytes drop
 }
-fn ParsedTypes-write(fd: i32, self: .ParsedTypes) -> i32 { block {
-    $self.buf.len 4 % 0 /= if { 0 0 / drop }
+fn ParsedTypes-write(fd: i32, self: .ParsedTypes) -> i32 {
+    $fd $self ParsedTypes-iterator ParsedTypesIterator-write
+}
+struct ParsedTypesIterator {
+    buf: .i32
+    buf-len: i32
+    index: i32
+    len: i32
+}
+fn ParsedTypes-iterator(self: .ParsedTypes) -> ParsedTypesIterator {
+    $self.buf.ptr $self.buf.len 0 0 not ParsedTypes-range-iterator
+}
+fn ParsedTypes-range-iterator(buf: .i32, buf-len: i32, index: i32, len: i32) -> ParsedTypesIterator {
+    local iterator: ParsedTypesIterator
+    $buf #iterator.buf
+    $buf-len #iterator.buf-len
+    $index #iterator.index
+    $len #iterator.len
+    $iterator
+}
+fn ParsedTypesIterator-done(self: .ParsedTypesIterator) -> bool {
+    $self.len 0 =
+    $self.index $self.buf-len = or
+}
+fn ParsedTypesIterator-next(self: .ParsedTypesIterator) { block {
+    0 $self.len / drop // assert self.len /= 0
+    $self.len 1 - #self.len
+    $self.buf $self.index + ~ @ty
+    $self.index sizeof(i32) + #self.index // skip `ty`
+    $ty TYPE_I32 = $ty TYPE_I64 = or $ty TYPE_BOOL = or if { break }
+    $ty TYPE_PTR = if {
+        $self.len 1 + #self.len
+        $self ParsedTypesIterator-next
+        break
+    }
+    $ty TYPE_STRUCT = if {
+        $self.buf $self.index + !.bool ~
+        $self.index sizeof(i32) + #self.index // skip `foreign`
+        if { $self.index sizeof(L:Token) + #self.index } // skip `module`
+        $self.index sizeof(L:Token) + #self.index // skip `name`
+        $self.buf $self.index + ~ @generic-arguments-count
+        $self.index sizeof(i32) + #self.index // skip `generic-arguments-count`
+        $self.len $generic-arguments-count + #self.len
+        loop {
+            $generic-arguments-count 0 = if { break }
+            $self ParsedTypesIterator-next
+            $generic-arguments-count 1 - #generic-arguments-count
+        }
+        break
+    }
+    $ty TYPE_FUN = if {
+        $self.index sizeof(i32) + #self.index // skip `parameter-count`
+        $self.buf $self.index + ~ @returns-offset // the offset from this value itself to the start of the returns
+        $self.index $returns-offset + #self.index // skip `returns-offset`
+
+        $self.buf $self.index + ~ @return-count
+        $self.index sizeof(i32) + #self.index // skip `return-count`
+        $self.len $return-count + #self.len
+        loop {
+            $return-count 0 = if { break }
+            $self ParsedTypesIterator-next
+            $return-count 1 - #return-count
+        }
+        break
+    }
+    2 $ty TypeTy-name IO:write-all IO:check
+    0 0 / drop
+} }
+fn ParsedTypesIterator-current(self: .ParsedTypesIterator) -> ParsedType {
+    $self.buf $self.index + ParsedType
+}
+fn ParsedTypesIterator-write(fd: i32, self: ParsedTypesIterator) -> i32 { block {
     $fd "[" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    0 @cursor
     loop {
-        $cursor $self.buf.len = if { 0 break }
-        $fd $self $cursor ParsedTypes-write-type @err #cursor $err 0 /= if { $err break }
-        $cursor $self.buf.len /= if {
+        &self ParsedTypesIterator-done if { 0 break }
+        &self ParsedTypesIterator-current @type
+        $fd &type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+        &self ParsedTypesIterator-next
+        &self ParsedTypesIterator-done not if {
             $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
         }
     } CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " ]" IO:write-all
 } }
-fn ParsedTypes-write-type(fd: i32, types: .ParsedTypes, index: i32) -> i32, i32 {
-    block {
-        $types.buf.ptr $index + ~ @ty
-        $index sizeof(i32) + #index // skip `ty`
-        $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-        $fd $ty TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-        $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-        block {
-            $ty TYPE_I32 = $ty TYPE_BOOL = or if { 0 break }
-            $ty TYPE_PTR = if {
-                $fd ", \"child\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                $fd $types $index ParsedTypes-write-type flip #index break
-            }
-            $ty TYPE_STRUCT = if {
-                $types.buf.ptr $index + !.bool ~
-                $index sizeof(i32) + #index // skip `foreign`
-                if {
-                    $fd ", \"module\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                    $fd $types.buf.ptr $index + !.L:Token L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
-                    $index sizeof(L:Token) + #index // skip `module`
-                }
-                $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                $fd $types.buf.ptr $index + !.L:Token L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
-                $index sizeof(L:Token) + #index // skip `name`
 
-                $types.buf.ptr $index + ~ @generic-arguments-count
-                $index sizeof(i32) + #index // skip `generic-arguments-count`
-                $fd ", \"generic-arguments\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                loop {
-                    $generic-arguments-count 0 = if { 0 break }
-                    $fd $types $index ParsedTypes-write-type @err #index $err 0 /= if { $err break }
-                    $generic-arguments-count 1 - #generic-arguments-count
-                    $generic-arguments-count 0 = if { 0 break }
-                    $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                } CORE:dup<i32> 0 /= if { break } else { drop }
-                $fd "]" IO:write-all break
-            }
-            $ty TYPE_FUN = if {
-                $types.buf.ptr $index + ~ @parameter-count
-                $index sizeof(i32) + #index // skip `parameter-count`
-                $fd ", \"parameters\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                loop {
-                    $parameter-count 0 = if { 0 break }
-                    $fd $types $index ParsedTypes-write-type @err #index $err 0 /= if { $err break }
-                    $parameter-count 1 - #parameter-count
-                    $parameter-count 0 = if { 0 break }
-                    $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                } CORE:dup<i32> 0 /= if { break } else { drop }
-                $fd "]" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-
-                $types.buf.ptr $index + ~ @return-count
-                $index sizeof(i32) + #index // skip `return-count`
-                $fd ", \"returns\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                loop {
-                    $return-count 0 = if { 0 break }
-                    $fd $types $index ParsedTypes-write-type @err #index $err 0 /= if { $err break }
-                    $return-count 1 - #return-count
-                    $return-count 0 = if { 0 break }
-                    $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                } CORE:dup<i32> 0 /= if { break } else { drop }
-                $fd "]" IO:write-all break
-            }
-            CORE:unreachable<i32>
-        } CORE:dup<i32> 0 /= if { break } else { drop }
-        $fd " }" IO:write-all
-    } $index flip
+struct ParsedStructType {
+    base: .i32
 }
+fn ParsedStructType(base: .i32) -> ParsedStructType {
+    local self: ParsedStructType
+    $base #self.base
+    $self
+}
+fn ParsedStructType-is-foreign(self: ParsedStructType) -> bool {
+    $self.base !.bool ~
+}
+fn ParsedStructType-module(self: ParsedStructType) -> .L:Token {
+    $self ParsedStructType-is-foreign if {
+        $self.base sizeof(i32) + !.L:Token
+    } else {
+        CORE:unreachable<.L:Token>
+    }
+}
+fn ParsedStructType-name(self: ParsedStructType) -> .L:Token {
+    $self.base sizeof(i32) + $self ParsedStructType-is-foreign !i32 sizeof(L:Token) * + !.L:Token
+}
+fn ParsedStructType-generic-arguments(self: ParsedStructType) -> ParsedTypesIterator {
+    sizeof(i32) $self ParsedStructType-is-foreign !i32 sizeof(L:Token) * + sizeof(L:Token) + @generic-arguments-count-offset
+    $self.base
+    0 not // Length of buf is unknown, rely on the size of elements instead
+    $generic-arguments-count-offset sizeof(i32) +
+    $self.base $generic-arguments-count-offset + ~
+    ParsedTypes-range-iterator
+}
+fn ParsedStructType-write(fd: i32, self: .ParsedStructType) -> i32 { block {
+    $self ~ @self
+    $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd TYPE_STRUCT TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $self ParsedStructType-is-foreign if {
+        $fd ", \"module\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd $self ParsedStructType-module L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+    }
+    $fd ", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedStructType-name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+
+    $fd ", \"generic-arguments\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $self ParsedStructType-generic-arguments @generic-arguments
+    $fd $generic-arguments ParsedTypesIterator-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all break
+} }
+
+struct ParsedFunType {
+    base: .i32
+}
+fn ParsedFunType(base: .i32) -> ParsedFunType {
+    local self: ParsedFunType
+    $base #self.base
+    $self
+}
+fn ParsedFunType-parameters(self: ParsedFunType) -> ParsedTypesIterator {
+    $self.base
+    0 not
+    sizeof(i32) sizeof(i32) +
+    $self.base ~
+    ParsedTypes-range-iterator
+}
+fn ParsedFunType-returns(self: ParsedFunType) -> ParsedTypesIterator {
+    $self.base
+    0 not
+    $self.base sizeof(i32) + ~ sizeof(i32) +
+    $self.base $self.base sizeof(i32) + ~ sizeof(i32) + + ~
+    ParsedTypes-range-iterator
+}
+fn ParsedFunType-write(fd: i32, self: .ParsedFunType) -> i32 { block {
+    $self ~ @self
+    $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd TYPE_FUN TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\", \"parameters\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedFunType-parameters ParsedTypesIterator-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\", \"returns\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedFunType-returns ParsedTypesIterator-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all break
+} }
+
+struct ParsedPtrType {
+    base: .i32
+}
+fn ParsedPtrType(base: .i32) -> ParsedPtrType {
+    local self: ParsedPtrType
+    $base #self.base
+    $self
+}
+fn ParsedPtrType-child(self: ParsedPtrType) -> ParsedType {
+    $self.base ParsedType
+}
+fn ParsedPtrType-write(fd: i32, self: .ParsedPtrType) -> i32 { block {
+    $self ~ @self
+    $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd TYPE_PTR TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"child\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedPtrType-child @child &child ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all break
+} }
 
 struct ParsedType {
+    base: .i32
+}
+fn ParsedType(base: .i32) -> ParsedType {
+    local self: ParsedType
+    $base #self.base
+    $self
+}
+fn ParsedType-ty(self: .ParsedType) -> i32 {
+    $self.base ~
+}
+fn ParsedType-write(fd: i32, self: .ParsedType) -> i32 { block {
+    $self ParsedType-ty @ty
+    $ty TYPE_STRUCT = if {
+        $self.base sizeof(i32) + ParsedStructType @type
+        $fd &type ParsedStructType-write break
+    }
+    $ty TYPE_PTR = if {
+        $self.base sizeof(i32) + ParsedPtrType @type
+        $fd &type ParsedPtrType-write break
+    }
+    $ty TYPE_I32 = $ty TYPE_I64 = or $ty TYPE_BOOL = or if {
+        $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd TYPE_STRUCT TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        $fd "\" }" IO:write-all break
+    }
+    $ty TYPE_FUN = if {
+        $self.base sizeof(i32) + ParsedFunType @type
+        $fd &type ParsedFunType-write break
+        0 break
+    }
+    2 $ty TypeTy-name IO:write-all IO:check
+    CORE:unreachable<i32>
+} }
+
+struct ParsedTypeHandle {
     index: i32
 }
-fn ParsedType-write(fd: i32, self: .ParsedType) -> i32 {
+fn ParsedTypeHandle-write(fd: i32, self: .ParsedTypeHandle) -> i32 {
     $fd $self.index IO:print
 }
 
@@ -435,20 +575,20 @@ fn ParsedWords-push-init(arena: .A:Arena, self: .ParsedWords, name: L:Token) -> 
     $arena $self WORD_INIT ParsedWords-push-ty
     $arena $self $name ParsedWords-push-token
 }
-fn ParsedWords-push-call(arena: .A:Arena, self: .ParsedWords, name: L:Token, generic-arguments: Array:Array<ParsedType>) -> ParsedWord {
+fn ParsedWords-push-call(arena: .A:Arena, self: .ParsedWords, name: L:Token, generic-arguments: Array:Array<ParsedTypeHandle>) -> ParsedWord {
     $arena $self WORD_CALL ParsedWords-push-ty
     $arena $self $name ParsedWords-push-token
     $arena &self.buf 0 1 = !i32 ByteArray:push-i32
     $arena &self.buf $generic-arguments.len ByteArray:push-i32
-    $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedType) * ByteArray:push
+    $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedTypeHandle) * ByteArray:push
 }
-fn ParsedWords-push-foreign-call(arena: .A:Arena, self: .ParsedWords, name: L:Token, module: L:Token, generic-arguments: Array:Array<ParsedType>) -> ParsedWord {
+fn ParsedWords-push-foreign-call(arena: .A:Arena, self: .ParsedWords, name: L:Token, module: L:Token, generic-arguments: Array:Array<ParsedTypeHandle>) -> ParsedWord {
     $arena $self WORD_CALL ParsedWords-push-ty
     $arena $self $name ParsedWords-push-token
     $arena &self.buf 1 1 = !i32 ByteArray:push-i32
     $arena $self $module ParsedWords-push-token
     $arena &self.buf $generic-arguments.len ByteArray:push-i32
-    $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedType) * ByteArray:push
+    $arena &self.buf $generic-arguments.ptr !.i32 $generic-arguments.len sizeof(ParsedTypeHandle) * ByteArray:push
 }
 fn ParsedWords-push-load(arena: .A:Arena, self: .ParsedWords, token: L:Token) -> ParsedWord {
     $arena $self WORD_LOAD ParsedWords-push-ty
@@ -458,15 +598,15 @@ fn ParsedWords-push-break(arena: .A:Arena, self: .ParsedWords, token: L:Token) -
     $arena $self WORD_BREAK ParsedWords-push-ty
     $arena $self $token ParsedWords-push-token
 }
-fn ParsedWords-push-cast(arena: .A:Arena, self: .ParsedWords, token: L:Token, type: ParsedType) -> ParsedWord {
+fn ParsedWords-push-cast(arena: .A:Arena, self: .ParsedWords, token: L:Token, type: ParsedTypeHandle) -> ParsedWord {
     $arena $self WORD_CAST ParsedWords-push-ty
     $arena $self $token ParsedWords-push-token
-    $arena &self.buf &type !.i32 sizeof(ParsedType) ByteArray:push
+    $arena &self.buf &type !.i32 sizeof(ParsedTypeHandle) ByteArray:push
 }
-fn ParsedWords-push-sizeof(arena: .A:Arena, self: .ParsedWords, token: L:Token, type: ParsedType) -> ParsedWord {
+fn ParsedWords-push-sizeof(arena: .A:Arena, self: .ParsedWords, token: L:Token, type: ParsedTypeHandle) -> ParsedWord {
     $arena $self WORD_SIZEOF ParsedWords-push-ty
     $arena $self $token ParsedWords-push-token
-    $arena &self.buf &type !.i32 sizeof(ParsedType) ByteArray:push
+    $arena &self.buf &type !.i32 sizeof(ParsedTypeHandle) ByteArray:push
 }
 fn ParsedWords-push-get-field(arena: .A:Arena, self: .ParsedWords, token: L:Token) -> ParsedWord, i32 {
     $arena $self WORD_GET_FIELD ParsedWords-push-ty
@@ -475,6 +615,7 @@ fn ParsedWords-push-get-field(arena: .A:Arena, self: .ParsedWords, token: L:Toke
 }
 fn ParsedWords-push-indirect-call(arena: .A:Arena, self: .ParsedWords, token: L:Token) -> ParsedWord {
     $arena $self WORD_INDIRECT_CALL ParsedWords-push-ty
+    $arena $self $token ParsedWords-push-token
 }
 fn ParsedWords-write(fd: i32, self: .ParsedWords) -> i32 {
     $fd $self 0 0 not ParsedWords-write-n-from flip drop
@@ -567,9 +708,9 @@ fn ParsedWords-write-word(fd: i32, words: .ParsedWords, index: i32) -> i32, i32 
                 $fd ", \"generic-arguments\": [" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 loop {
                     $generic-argument-count 0 = if { 0 break }
-                    $words.buf.ptr $index + !.ParsedType @type
-                    $index sizeof(ParsedType) + #index
-                    $fd $type ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+                    $words.buf.ptr $index + !.ParsedTypeHandle @type
+                    $index sizeof(ParsedTypeHandle) + #index
+                    $fd $type ParsedTypeHandle-write CORE:dup<i32> 0 /= if { break } else { drop }
                     $generic-argument-count 1 - #generic-argument-count
                     $generic-argument-count 0 = if { 0 break }
                     $fd ", " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
@@ -622,9 +763,9 @@ fn ParsedWords-write-word(fd: i32, words: .ParsedWords, index: i32) -> i32, i32 
                 $fd ", \"token\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd $token L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
                 $fd ", \"type\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-                $words.buf.ptr $index + !.ParsedType @type
-                $index sizeof(ParsedType) + #index // skip `type`
-                $fd $type ParsedType-write break
+                $words.buf.ptr $index + !.ParsedTypeHandle @type
+                $index sizeof(ParsedTypeHandle) + #index // skip `type`
+                $fd $type ParsedTypeHandle-write break
             }
             2 "ParsedWords-write-word unhandled Word type " IO:write-all IO:check
             2 $ty WordTy-name IO:write-all IO:check
@@ -744,7 +885,7 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
     }
     $arena $file-path ByteSlice:copy $types $imports $structs $functions $memories ParsedModule-new
 }
-fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Optional:T<L:Token>, .L:Token, Array:Array<L:Token>, Array:Array<ParsedNamedType>, Array:Array<ParsedType>, i32 {
+fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Optional:T<L:Token>, .L:Token, Array:Array<L:Token>, Array:Array<ParsedNamedType>, Array:Array<ParsedTypeHandle>, i32 {
     $cursor $file-path $tokens next #cursor drop // skip the `fn`
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_IDENT /= if {
@@ -792,12 +933,12 @@ fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
             $file-path $token "Expected `,` after function parameter." abort
         }
     }
-    Array:new<ParsedType> @returns
+    Array:new<ParsedTypeHandle> @returns
     $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
         $cursor $file-path $tokens next #cursor drop // skip the `->`
         loop {
             $arena $cursor $file-path $tokens $types parse-type #cursor @type
-            $arena &returns $type Array:push<ParsedType>
+            $arena &returns $type Array:push<ParsedTypeHandle>
 
             $cursor $tokens.len = if { break }
             $cursor $file-path $tokens peek @token
@@ -920,13 +1061,13 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
                 $cursor $file-path $tokens next #cursor @name
                 $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
                     $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor
-                } else { Array:new<ParsedType> } @generic-arguments
+                } else { Array:new<ParsedTypeHandle> } @generic-arguments
                 $arena $words $name ~ $module ~ $generic-arguments ParsedWords-push-foreign-call drop
             } else {
                 $token @name
                 $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
                     $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor
-                } else { Array:new<ParsedType> } @generic-arguments
+                } else { Array:new<ParsedTypeHandle> } @generic-arguments
                 $arena $words $name ~ $generic-arguments ParsedWords-push-call drop
             }
             break
@@ -1035,7 +1176,7 @@ fn parse-field-accesses(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, t
     }
     $field-count
 }
-fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedType, i32 { block {
+fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedTypeHandle, i32 { block {
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_I32 = if {
         $arena $types ParsedTypes-push-i32 $cursor break
@@ -1077,6 +1218,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         $arena $types TYPE_FUN ParsedTypes-push-ty @type
 
         $types.buf.len $arena &types.buf sizeof(i32) ByteArray:alloc-bytes drop @parameter-count-patch
+        $types.buf.len $arena &types.buf sizeof(i32) ByteArray:alloc-bytes drop @returns-index-patch
         0 @parameter-count
         loop {
             $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
@@ -1096,6 +1238,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         }
         $types.buf.ptr $parameter-count-patch + $parameter-count store
 
+        $types.buf.ptr $returns-index-patch + $types.buf.len $returns-index-patch - store
         $types.buf.len $arena &types.buf sizeof(i32) ByteArray:alloc-bytes drop @return-count-patch
         0 @return-count
         loop {
@@ -1117,13 +1260,13 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         $types.buf.ptr $return-count-patch + $return-count store
         $type $cursor break
     }
-    $file-path $token "Failed to parse type" abort CORE:unreachable<ParsedType> CORE:unreachable<i32>
+    $file-path $token "Failed to parse type" abort CORE:unreachable<ParsedTypeHandle> CORE:unreachable<i32>
 } }
 fn foo(fd: i32, v: .i32) -> i32 {
     $fd $v ~ IO:print
 }
-fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Array:Array<ParsedType>, i32 { block {
-    Array:new<ParsedType> @parsed-types
+fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Array:Array<ParsedTypeHandle>, i32 { block {
+    Array:new<ParsedTypeHandle> @parsed-types
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if {
         $file-path $token "Expected `<`." abort
@@ -1135,7 +1278,7 @@ fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T
             break
         }
         $arena $cursor $file-path $tokens $types parse-type #cursor @type
-        $arena &parsed-types $type Array:push<ParsedType>
+        $arena &parsed-types $type Array:push<ParsedTypeHandle>
         $cursor $file-path $tokens next #cursor @token
         $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
         $token L:Token-ty L:TOKEN_COMMA /= if {
