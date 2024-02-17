@@ -71,7 +71,7 @@ fn add-page(self: .Arena) {
 
 fn add-multiple-page(self: .Arena, n: i32) -> .i32 {
     1 $n / drop // n 0 /= assert
-    $n PA:contigious-pages !.Page @new-page
+    $n PA:contiguous-pages !.Page @new-page
     MULTIPLE_PAGE #new-page.type
     $self.used-pages #new-page.next
     PA:page-size sizeof(Page) - #new-page.pos

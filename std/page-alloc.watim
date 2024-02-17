@@ -46,7 +46,12 @@ fn alloc-page() -> .i32 {
         do-the-mem-grow
     }
 }
-fn search-free-list-for-contigious(list: .Page, n: i32) -> .Page { block {
+fn search-free-list-for-contiguous(list: .Page, n: i32) -> .Page { block {
+    // TODO: This function only finds contiguous free pages which are also contguous in the free-list.
+    // That is they need to be sorted in the free-list, according to their address, to be found by this naive function.
+    // The fix would either be to keep the free-list sorted on every `discard-page`
+    // or to only sort the list on large allocations across multiple pages.
+
     1 $n / drop // $n 0 /= assert
 
     // no free page
@@ -68,28 +73,39 @@ fn search-free-list-for-contigious(list: .Page, n: i32) -> .Page { block {
             $run-length $n = if { $run-start break }
         } else {
             1 #run-length
-            $list #run-start
             $list.next #list
+            $list #run-start
         }
     }
 } }
-fn contigious-pages(n: i32) -> .i32 { block {
+fn contiguous-pages(n: i32) -> .i32 { block {
     $ALLOCATOR @self
-    $self.free-list $n search-free-list-for-contigious @contigious-free
-    $contigious-free 0!.Page /= if {
+    $self.free-list $n search-free-list-for-contiguous @contiguous-free
+    $contiguous-free 0!.Page /= if {
         $self.free-list @list
-        loop {
-            $list $contigious-free = if {
-                loop {
-                    $n 0 = if { break }
-                    $list.next.next #list.next
-                    $n 1 - #n
-                }
-                break
+        $list $contiguous-free = if {
+            loop {
+                $n 0 = if { break }
+                $list.next 0 !.Page /= $list page-size + $list.next /= and if { 0 0 / drop }
+                $list.next #list
+                $n 1 - #n
             }
-            break
+            $list #self.free-list
+        } else {
+            loop {
+                $list.next $contiguous-free = if {
+                    loop {
+                        $n 0 = if { break }
+                        $list.next.next 0 !.Page /= $list.next page-size + $list.next.next /= and if { 0 0 / drop }
+                        $list.next.next #list.next
+                        $n 1 - #n
+                    }
+                    break
+                }
+                $list.next #list
+            }
         }
-        $contigious-free !.i32 break
+        $contiguous-free !.i32 break
     }
     do-the-mem-grow @first
     loop {
