@@ -19,6 +19,7 @@ extern "wasi_snapshot_preview1" "path_open" fn path_open(
     fd_flags: i32, 
     res_fd: .i32
 ) -> i32
+extern "wasi_snapshot_preview1" "fd_close" fn close(fd: i32) -> i32
 
 fn create-rights(read: bool, write: bool) -> i64 {
     $read !i64 1 rotl // 1 << 1
@@ -210,18 +211,24 @@ fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting
     }
 }
 
-fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteArray:T, i32 {
+fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteArray:T, i32 { block {
     $fs
     $path $path-len
     0 0 = 0 1 = create-rights
     0 1 = 0 1 = create-rights
     open-file @code @fd
     $code 0 /= if {
-        ByteArray:new $code
-    } else {
-        $arena $fd read-all
+        $fd close drop
+        ByteArray:new $code break
     }
-}
+    $arena $fd read-all @code
+    $code 0 /= if {
+        $fd close drop
+        $code
+    } else {
+        $fd close
+    }
+} }
 
 fn read-all(arena: .Arena:Arena, file: i32) -> ByteArray:T, i32 {
     64 @buf-size

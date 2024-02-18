@@ -38,6 +38,7 @@ fn main "_start" () {
             $temp $save Arena:restore
         }
         $arg-index 1 + #arg-index
+        $fd FS:close IO:check
     }
 
     $temp $save Arena:restore
