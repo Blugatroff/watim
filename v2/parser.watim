@@ -207,6 +207,7 @@ fn TYPE_PTR() -> i32 { 3 }
 fn TYPE_STRUCT() -> i32 { 4 }
 fn TYPE_I64() -> i32 { 5 }
 fn TYPE_FUN() -> i32 { 6 }
+fn TYPE_GENERIC() -> i32 { 7 }
 fn TypeTy-name(ty: i32) -> .i32, i32 { block {
     $ty TYPE_I32 = if { "TYPE_I32" break }
     $ty TYPE_BOOL = if { "TYPE_BOOL" break }
@@ -214,6 +215,7 @@ fn TypeTy-name(ty: i32) -> .i32, i32 { block {
     $ty TYPE_STRUCT = if { "TYPE_STRUCT" break }
     $ty TYPE_I64 = if { "TYPE_I64" break }
     $ty TYPE_FUN = if { "TYPE_FUN" break }
+    $ty TYPE_GENERIC = if { "TYPE_GENERIC" break }
     "" 0 0 / drop
 } }
 
@@ -242,6 +244,11 @@ fn ParsedTypes-push-bool(arena: .A:Arena, self: .ParsedTypes) -> ParsedTypeHandl
 }
 fn ParsedTypes-push-ptr(arena: .A:Arena, self: .ParsedTypes) -> ParsedTypeHandle {
     $arena $self TYPE_PTR ParsedTypes-push-ty
+}
+fn ParsedTypes-push-generic(arena: .A:Arena, self: .ParsedTypes, name: .L:Token, parameter-index: i32) -> ParsedTypeHandle {
+    $arena $self TYPE_GENERIC ParsedTypes-push-ty
+    $arena &self.buf &name !.i32 sizeof(L:Token) ByteArray:push
+    $arena &self.buf $parameter-index ByteArray:push-i32
 }
 fn ParsedTypes-push-struc(arena: .A:Arena, self: .ParsedTypes, name: L:Token) -> ParsedTypeHandle, i32 {
     $arena $self TYPE_STRUCT ParsedTypes-push-ty
@@ -319,6 +326,10 @@ fn ParsedTypesIterator-next(self: .ParsedTypesIterator) { block {
             $self ParsedTypesIterator-next
             $return-count 1 - #return-count
         }
+        break
+    }
+    $ty TYPE_GENERIC = if {
+        $self.index sizeof(L:Token) + sizeof(i32) + #self.index
         break
     }
     2 $ty TypeTy-name IO:write-all IO:check
@@ -436,9 +447,32 @@ fn ParsedPtrType-write(fd: i32, self: .ParsedPtrType) -> i32 { block {
     $self ~ @self
     $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd TYPE_PTR TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd "\"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd ", \"child\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\", \"child\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd $self ParsedPtrType-child @child &child ParsedType-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all break
+} }
+
+struct ParsedGenericType {
+    base: .i32
+}
+fn ParsedGenericType(base: .i32) -> ParsedGenericType {
+    local self: ParsedGenericType
+    $base #self.base
+    $self
+}
+fn ParsedGenericType-name(self: .ParsedGenericType) -> .L:Token {
+    $self.base !.L:Token
+}
+fn ParsedGenericType-parameter-index(self: .ParsedGenericType) -> i32 {
+    $self.base sizeof(L:Token) + ~
+}
+fn ParsedGenericType-write(fd: i32, self: .ParsedGenericType) -> i32 { block {
+    $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd TYPE_GENERIC TypeTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedGenericType-name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd "\", \"parameter-index\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedGenericType-parameter-index IO:print CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " }" IO:write-all break
 } }
 
@@ -471,7 +505,10 @@ fn ParsedType-write(fd: i32, self: .ParsedType) -> i32 { block {
     $ty TYPE_FUN = if {
         $self.base sizeof(i32) + ParsedFunType @type
         $fd &type ParsedFunType-write break
-        0 break
+    }
+    $ty TYPE_GENERIC = if {
+        $self.base sizeof(i32) + ParsedGenericType @type
+        $fd &type ParsedGenericType-write break
     }
     2 $ty TypeTy-name IO:write-all IO:check
     CORE:unreachable<i32>
@@ -820,7 +857,7 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
             $token L:Token-ty L:TOKEN_FN = if {
                 $arena $cursor &file-path $tokens &types parse-function-signature #cursor @returns @parameters @generic-parameters @name @export-name 
                 ParsedWords-new @words
-                $arena $cursor &file-path $tokens &types &words parse-words-with-locals #cursor drop @locals @memories
+                $arena $cursor &file-path $tokens &generic-parameters &types &words parse-words-with-locals #cursor drop @locals @memories
                 $arena &functions $export-name $name ~ $generic-parameters $parameters $returns $locals $words ParsedFunction-new Array:push<ParsedFunction>
                 break
             }
@@ -867,14 +904,15 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
                     $token L:Token-ty L:TOKEN_COLON /= if {
                         &file-path $token "Expected `:` after field name." abort
                     }
-                    $arena $cursor &file-path $tokens &types parse-type #cursor @type
+                    $arena $cursor &file-path $tokens &generic-parameters &types parse-type #cursor @type
                     $arena &fields $name ~ $type ParsedNamedType-new Array:push<ParsedNamedType>
                 }
                 $arena &structs $name ~ $generic-parameters $fields ParsedStruct-new Array:push<ParsedStruct>
                 break
             }
             $token L:Token-ty L:TOKEN_MEMORY = if {
-                $arena &memories $arena $cursor &file-path $tokens &types parse-memory #cursor Array:push<ParsedMemory>
+                Array:new<L:Token> @empty
+                $arena &memories $arena $cursor &file-path $tokens &empty &types parse-memory #cursor Array:push<ParsedMemory>
                 break
             }
             2 "Unhanded token in parser: " IO:write-all IO:check
@@ -924,7 +962,7 @@ fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
         $token L:Token-ty L:TOKEN_COLON /= if {
             $file-path $token "Expected `:` after function parameter name." abort
         }
-        $arena $cursor $file-path $tokens $types parse-type #cursor @parameter-type
+        $arena $cursor $file-path $tokens &generic-parameters $types parse-type #cursor @parameter-type
         $arena &parameters $parameter-name ~ $parameter-type ParsedNamedType-new Array:push<ParsedNamedType>
 
         $cursor $file-path $tokens next #cursor @token
@@ -937,7 +975,7 @@ fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
     $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
         $cursor $file-path $tokens next #cursor drop // skip the `->`
         loop {
-            $arena $cursor $file-path $tokens $types parse-type #cursor @type
+            $arena $cursor $file-path $tokens &generic-parameters $types parse-type #cursor @type
             $arena &returns $type Array:push<ParsedTypeHandle>
 
             $cursor $tokens.len = if { break }
@@ -948,7 +986,7 @@ fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
     }
     $function-export-name-token $function-ident-token $generic-parameters $parameters $returns $cursor
 }
-fn parse-words-with-locals(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> Array:Array<ParsedMemory>, Array:Array<ParsedNamedType>, i32, i32 {
+fn parse-words-with-locals(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> Array:Array<ParsedMemory>, Array:Array<ParsedNamedType>, i32, i32 {
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $file-path $token "Expected `{`." abort
@@ -957,7 +995,7 @@ fn parse-words-with-locals(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T
     Array:new<ParsedMemory> @memories
     loop {
         $cursor $file-path $tokens peek L:Token-ty L:TOKEN_MEMORY /= if { break }
-        $arena &memories $arena $cursor $file-path $tokens $types parse-memory #cursor Array:push<ParsedMemory>
+        $arena &memories $arena $cursor $file-path $tokens $generic-parameters $types parse-memory #cursor Array:push<ParsedMemory>
     }
 
     Array:new<ParsedNamedType> @locals
@@ -974,20 +1012,20 @@ fn parse-words-with-locals(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T
         $token L:Token-ty L:TOKEN_COLON /= if {
             $file-path $name "Expected `:` after local name." abort
         }
-        $arena $cursor $file-path $tokens $types parse-type #cursor @type
+        $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor @type
         $arena &locals $name ~ $type ParsedNamedType-new Array:push<ParsedNamedType>
     }
     $memories $locals
-    $arena $cursor $file-path $tokens $types $words parse-words-inner
+    $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words-inner
 }
-fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
+fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $file-path $token "Expected `{`." abort
     }
-    $arena $cursor $file-path $tokens $types $words parse-words-inner
+    $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words-inner
 }
-fn parse-words-inner(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
+fn parse-words-inner(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
     0 @count
     loop {
         $cursor $file-path $tokens peek @token
@@ -996,7 +1034,7 @@ fn parse-words-inner(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, toke
             break
         }
 
-        $arena $cursor $file-path $tokens $types $words parse-word #cursor
+        $arena $cursor $file-path $tokens $types $generic-parameters $words parse-word #cursor
         $count 1 + #count
 
         $cursor $file-path $tokens peek @token
@@ -1007,7 +1045,7 @@ fn parse-words-inner(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, toke
     }
     $count $cursor
 }
-fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32 {
+fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, generic-parameters: .Array:Array<L:Token>, words: .ParsedWords) -> i32 {
     block {
         $cursor $file-path $tokens next #cursor @token
         $token L:Token-ty L:TOKEN_NUMBER = if {
@@ -1060,13 +1098,13 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
                 $cursor $file-path $tokens next #cursor drop // skip the `:`
                 $cursor $file-path $tokens next #cursor @name
                 $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
-                    $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor
+                    $arena $cursor $file-path $tokens $generic-parameters $types parse-generic-arguments #cursor
                 } else { Array:new<ParsedTypeHandle> } @generic-arguments
                 $arena $words $name ~ $module ~ $generic-arguments ParsedWords-push-foreign-call drop
             } else {
                 $token @name
                 $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
-                    $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor
+                    $arena $cursor $file-path $tokens $generic-parameters $types parse-generic-arguments #cursor
                 } else { Array:new<ParsedTypeHandle> } @generic-arguments
                 $arena $words $name ~ $generic-arguments ParsedWords-push-call drop
             }
@@ -1076,12 +1114,12 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             $arena $words WORD_IF ParsedWords-push-ty drop
             $arena $words $token ~ ParsedWords-push-token
             $arena $words ParsedWords-push-patch @if-count-patch
-            $arena $cursor $file-path $tokens $types $words parse-words #cursor @if-word-count
+            $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words #cursor @if-word-count
             $words.buf.ptr $if-count-patch + $if-word-count store
             $arena $words ParsedWords-push-patch @else-count-patch
             $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ELSE = if {
                 $cursor $file-path $tokens next #cursor drop // skip the `else`
-                $arena $cursor $file-path $tokens $types $words parse-words #cursor
+                $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words #cursor
             } else { 0 } @else-word-count
             $words.buf.ptr $else-count-patch + $else-word-count store
             break
@@ -1092,7 +1130,7 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             $arena $words $token L:Token-ty L:TOKEN_BLOCK = if { WORD_BLOCK } else { WORD_LOOP } ParsedWords-push-ty drop
             $arena $words $token ~ ParsedWords-push-token
             $arena $words ParsedWords-push-patch @word-count-patch
-            $arena $cursor $file-path $tokens $types $words parse-words #cursor @word-count
+            $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words #cursor @word-count
             $words.buf.ptr $word-count-patch + $word-count store break
         }
         $token L:Token-ty L:TOKEN_TILDE = if {
@@ -1100,14 +1138,14 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         }
         $token L:Token-ty L:TOKEN_BACKSLASH = if {
             $words.buf.len @word-ty-patch
-            $arena $cursor $file-path $tokens $types $words parse-word #cursor
+            $arena $cursor $file-path $tokens $types $generic-parameters $words parse-word #cursor
             $words.buf.ptr $word-ty-patch + WORD_FUN_REF store break
         }
         $token L:Token-ty L:TOKEN_BREAK = if {
             $arena $words $token ~ ParsedWords-push-break drop break
         }
         $token L:Token-ty L:TOKEN_BANG = if {
-            $arena $cursor $file-path $tokens $types parse-type #cursor @type
+            $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor @type
             $arena $words $token ~ $type ParsedWords-push-cast drop break
         }
         $token L:Token-ty L:TOKEN_SIZEOF = if {
@@ -1116,7 +1154,7 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             $token L:Token-ty L:TOKEN_LEFT_PAREN /= if {
                 $file-path $token "Expected `(` after `sizeof`." abort
             }
-            $arena $cursor $file-path $tokens $types parse-type #cursor @type
+            $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor @type
             $cursor $file-path $tokens next #cursor @token
             $token L:Token-ty L:TOKEN_RIGHT_PAREN /= if {
                 $file-path $token "Expected `)` to close preceeding `sizeof(`." abort
@@ -1138,7 +1176,7 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
     }
     $cursor
 }
-fn parse-memory(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedMemory, i32 {
+fn parse-memory(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedMemory, i32 {
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_MEMORY /= if {
         $file-path $token "Expected `memory`." abort
@@ -1152,7 +1190,7 @@ fn parse-memory(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .
     $token L:Token-ty L:TOKEN_COLON /= if {
         $file-path $token "Expected `:` after for memory identifier." abort
     }
-    $arena $cursor $file-path $tokens $types parse-type #cursor @type
+    $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor @type
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_NUMBER /= if {
         $file-path $token "Expected number after memory type." abort
@@ -1176,7 +1214,7 @@ fn parse-field-accesses(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, t
     }
     $field-count
 }
-fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedTypeHandle, i32 { block {
+fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedTypeHandle, i32 { block {
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_I32 = if {
         $arena $types ParsedTypes-push-i32 $cursor break
@@ -1186,12 +1224,18 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
     }
     $token L:Token-ty L:TOKEN_DOT = if {
         $arena $types ParsedTypes-push-ptr
-        $arena $cursor $file-path $tokens $types parse-type flip drop break
+        $arena $cursor $file-path $tokens $generic-parameters $types parse-type flip drop break
     }
     $token L:Token-ty L:TOKEN_I64 = if {
         $arena $types ParsedTypes-push-i64 $cursor break
     }
     $token L:Token-ty L:TOKEN_IDENT = if {
+        $generic-parameters \L:Token-eq-by-lexeme $token Array:find<L:Token, .L:Token> if {
+            @parameter-index
+            $arena $types $token $parameter-index ParsedTypes-push-generic
+            $cursor
+            break
+        } else { drop }
         $cursor $file-path $tokens peek L:Token-ty L:TOKEN_COLON = if {
             $cursor $file-path $tokens next #cursor drop // skip the colon
             $token @module-token
@@ -1202,7 +1246,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             $arena $types $module-token ~ $struct-name-token ~ ParsedTypes-push-foreign-struc @generic-arguments-count-patch @type
             $cursor $file-path $tokens peek @token
             $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
-                $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor block {} .len ~
+                $arena $cursor $file-path $tokens $generic-parameters $types parse-generic-arguments #cursor block {} .len ~
             } else { 0 } $types.buf.ptr $generic-arguments-count-patch + flip store
             $type $cursor break
         }
@@ -1210,7 +1254,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         $arena $types $struct-name-token ~ ParsedTypes-push-struc @generic-arguments-count-patch @type
         $cursor $file-path $tokens peek @token
         $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
-            $arena $cursor $file-path $tokens $types parse-generic-arguments #cursor block {} .len ~
+            $arena $cursor $file-path $tokens $generic-parameters $types parse-generic-arguments #cursor block {} .len ~
         } else { 0 } $types.buf.ptr $generic-arguments-count-patch + flip store
         $type $cursor break
     }
@@ -1225,7 +1269,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
                 $cursor $file-path $tokens next #cursor drop // skip the `->`
                 break
             }
-            $arena $cursor $file-path $tokens $types parse-type #cursor drop
+            $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor drop
             $parameter-count 1 + #parameter-count
             $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
                 $cursor $file-path $tokens next #cursor drop // skip the `->`
@@ -1246,7 +1290,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
                 $cursor $file-path $tokens next #cursor drop // skip the `)`
                 break
             }
-            $arena $cursor $file-path $tokens $types parse-type #cursor drop
+            $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor drop
             $return-count 1 + #return-count
             $cursor $file-path $tokens peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { 
                 $cursor $file-path $tokens next #cursor drop // skip the `)`
@@ -1265,7 +1309,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
 fn foo(fd: i32, v: .i32) -> i32 {
     $fd $v ~ IO:print
 }
-fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Array:Array<ParsedTypeHandle>, i32 { block {
+fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes) -> Array:Array<ParsedTypeHandle>, i32 { block {
     Array:new<ParsedTypeHandle> @parsed-types
     $cursor $file-path $tokens next #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_TRIANGLE /= if {
@@ -1277,7 +1321,7 @@ fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T
             $cursor $file-path $tokens next #cursor drop // skip the `>`
             break
         }
-        $arena $cursor $file-path $tokens $types parse-type #cursor @type
+        $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor @type
         $arena &parsed-types $type Array:push<ParsedTypeHandle>
         $cursor $file-path $tokens next #cursor @token
         $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
