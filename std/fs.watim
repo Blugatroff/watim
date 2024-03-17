@@ -113,15 +113,13 @@ fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
 }
 
 
-fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> .i32, i32 {
-    $arena 0 Arena:alloc-bytes @new-ptr
-    0 @new-len
+fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> ByteArray:T {
+    ByteArray:new @new
     $ptr $len $target-ptr $target-len Bytes:find-seq if {
         @index
-        $arena $ptr $index Arena:push-bytes drop
-        $arena $replacement-ptr $replacement-len Arena:push-bytes drop
-        $new-len $index + $replacement-len + #new-len
-        
+        $arena &new $ptr $index ByteArray:push
+        $arena &new $replacement-ptr $replacement-len ByteArray:push
+
         $arena
         $ptr $index + $target-len + @next-ptr $next-ptr
         $len $index - $target-len -
@@ -129,14 +127,12 @@ fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, targe
         $target-len
         $replacement-ptr
         $replacement-len
-        str-replace @new-next-len @new-next-ptr
+        str-replace @new-next
 
-        $arena $new-next-ptr $new-next-len Arena:push-bytes drop
-        $new-len $new-next-len + #new-len
-
-        $new-ptr $new-len
+        $arena &new &new-next ByteArray:unpack ByteArray:push
+        $new
     } else {
-        drop $ptr $len
+        drop $ptr $len ByteArray:init
     }
 }
 fn str-split(arena: .Arena:Arena, str-ptr: .i32, str-len: i32, del: i32) -> Array:Array<ByteSlice:T> {
@@ -159,21 +155,18 @@ fn str-split(arena: .Arena:Arena, str-ptr: .i32, str-len: i32, del: i32) -> Arra
 
 fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $arena Arena:temp @temp @temp-save
-    $temp 0 Arena:alloc-bytes @out-ptr
-    0 @out-len
+    ByteArray:new @out
 
     $path-ptr $path-len "./" Bytes:is-prefix not if {
-        $temp "./" Arena:push-bytes drop
-        $out-len 2 + #out-len
+        $temp &out "./" ByteArray:push
     }
-    $temp $path-ptr $path-len Arena:push-bytes drop
-    $out-len $path-len + #out-len
-    
-    $temp $out-ptr $out-len "//" "/" str-replace #out-len #out-ptr
-    $temp $out-ptr $out-len "/./" "/" str-replace #out-len #out-ptr
-    $temp $out-ptr $out-len "./." "." str-replace #out-len #out-ptr
+    $temp &out $path-ptr $path-len ByteArray:push
 
-    $temp $out-ptr $out-len "/" drop load8 str-split @splits
+    $temp &out ByteArray:unpack "//" "/" str-replace #out
+    $temp &out ByteArray:unpack "/./" "/" str-replace #out
+    $temp &out ByteArray:unpack "./." "." str-replace #out
+
+    $temp &out ByteArray:unpack "/" drop load8 str-split @splits
     Array:new<ByteSlice:T> @outsplits
     0 @i
     loop {

@@ -12,6 +12,7 @@ import "../std/page-alloc.watim" as PA
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
 import "./parser.watim" as Parser
+import "./deptree.watim" as DepTree
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -39,6 +40,7 @@ fn MODE_LEX() -> i32 { 2 }
 fn MODE_PARSE() -> i32 { 3 }
 
 fn main "_start" () {
+    A:init-temp
     "Main" A:new @arena
     &arena Args:get-args @args
 
@@ -55,44 +57,125 @@ fn main "_start" () {
     "Files" A:new @files-arena
     &files-arena FS:init IO:check @fs
 
-    $file-path ~ ByteSlice:unpack "-" Str:str-eq if {
+    $mode MODE_COMPILE /= if {
+        $file-path ~ ByteSlice:unpack "-" Str:str-eq if {
+            &files-arena 0 FS:read-all IO:check
+        } else {
+            &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check
+        } @file-content
+        &file-content ByteArray:to-slice @file-content
+
+        "Lexer" A:new @lexer-arena
+        &lexer-arena &file-content Lexer:lex @tokens
+        &files-arena A:shred
+
+        "Tokens" A:new @tokens-arena
+        &tokens-arena &tokens Lexer:Tokens-copy @tokens
+        &lexer-arena A:shred
+
+        $mode MODE_LEX = if {
+            1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
+            Logging:enabled if {
+                2 "tokens-arena usage: " IO:write-all IO:check
+                2 &tokens-arena A:usage IO:print IO:check
+                2 IO:newline
+            }
+            exit
+        }
+
+        "Ast" A:new @ast-arena
+        &ast-arena $file-path ~ &tokens Parser:parse @parsed-module
+
+        $mode MODE_PARSE = if {
+            1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
+            Logging:enabled if {
+                2 "ast-arena usage: " IO:write-all IO:check
+                2 &ast-arena A:usage IO:print IO:check
+                2 IO:newline
+            }
+            exit
+        }
+        exit
+    }
+
+    Array:new<Parser:ParsedModule> @modules
+    Array:new<ByteSlice:T> @imp-stack
+    &arena &fs &modules &imp-stack $file-path ~ load-modules-recursively
+
+    &arena &modules DepTree:determine-compilation-order @modules-in-compilation-order
+}
+
+fn load-modules-recursively(arena: .A:Arena, fs: .FS:FileSystem, modules: .Array:Array<Parser:ParsedModule>, imp-stack: .Array:Array<ByteSlice:T>, path: ByteSlice:T) {
+    Logging:enabled if {
+        2 "Loading module: " IO:write-all IO:check
+        2 $path ByteSlice:unpack IO:write-all IO:check
+    }
+
+    "Files" A:new @files-arena
+    $path ByteSlice:unpack "-" Str:str-eq if {
         &files-arena 0 FS:read-all IO:check
     } else {
-        &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check
+        &files-arena $fs $path ByteSlice:unpack FS:read-file IO:check
     } @file-content
-
     &file-content ByteArray:to-slice @file-content
+
+    Logging:enabled if {
+        2 " - Lexing" IO:write-all IO:check
+    }
     "Lexer" A:new @lexer-arena
     &lexer-arena &file-content Lexer:lex @tokens
     &files-arena A:shred
 
-    "Tokens" A:new @tokens-arena
-    &tokens-arena &tokens Lexer:Tokens-copy @tokens
+    $arena @tokens-arena // "Tokens" A:new @tokens-arena
+    $tokens-arena &tokens Lexer:Tokens-copy @tokens
     &lexer-arena A:shred
 
-    $mode MODE_LEX = if {
-        1 \Lexer:Token-write &tokens Array:print<Lexer:Token> IO:check 2 IO:newline
-        Logging:enabled if {
-            2 "tokens-arena usage: " IO:write-all IO:check
-            2 &tokens-arena A:usage IO:print IO:check
-            2 IO:newline
-        }
-        exit
+    Logging:enabled if {
+        2 " - Parsing" IO:write-all IO:check
+    }
+    $arena @ast-arena // "Ast" A:new @ast-arena
+    $ast-arena $path &tokens Parser:parse @parsed-module
+
+    Logging:enabled if {
+        2 " - DONE" IO:write-all IO:check 2 IO:newline
     }
 
-    "Ast" A:new @ast-arena
-    &ast-arena $file-path ~ &tokens Parser:parse @parsed-module
+    0 @i
+    loop {
+        $parsed-module.imports.len $i = if { break }
+        &parsed-module.imports $i Array:get<Parser:ParsedImport> @imp
+        ByteArray:new @absolute-path
 
-    $mode MODE_PARSE = if {
-        1 &parsed-module Parser:ParsedModule-write IO:check 2 IO:newline
-        Logging:enabled if {
-            2 "ast-arena usage: " IO:write-all IO:check
-            2 &ast-arena A:usage IO:print IO:check
-            2 IO:newline
+        $arena A:temp @temp @temp-save
+
+        $temp &absolute-path $path ByteSlice:unpack FS:path-dir ByteArray:push
+        $temp &absolute-path $arena &imp.path Lexer:Token-string-content ByteSlice:unpack ByteArray:push
+        $temp &absolute-path ByteArray:unpack FS:normalize ByteSlice:new @absolute-path
+
+        $imp-stack \ByteSlice:eq &absolute-path Array:find<ByteSlice:T, .ByteSlice:T> if {
+            @i
+            2 $parsed-module.file-path ByteSlice:unpack &imp.path Lexer:Token-location Lexer:print-location IO:check
+            2 ": Module import cycle detected: " IO:write-all IO:check
+            loop {
+                $i $imp-stack.len = if { break }
+                2 $imp-stack $i Array:get<ByteSlice:T> ~ ByteSlice:unpack IO:write-all IO:check
+                2 " -> " IO:write-all IO:check
+                $i 1 + #i
+            }
+            2 $absolute-path ByteSlice:unpack IO:write-all IO:check
+            2 "\n" IO:write-all IO:check
+            1 Core:exit
+        } else { drop }
+
+        $modules \Parser:ParsedModule-path-eq &absolute-path Array:find<Parser:ParsedModule, .ByteSlice:T> flip drop not if {
+            $arena $imp-stack $absolute-path Array:push<ByteSlice:T>
+            $arena $fs $modules $imp-stack $absolute-path load-modules-recursively
+            $imp-stack Array:pop<ByteSlice:T> drop
         }
-        exit
+        $temp $temp-save A:restore
+        $i 1 + #i
     }
-    exit
+    $arena $modules $parsed-module Array:push<Parser:ParsedModule>
 }
 
 fn exit() {

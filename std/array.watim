@@ -90,7 +90,7 @@ fn last<T>(self: .Array<T>) -> .T {
     $self $self.len 1 - get<T>
 }
 fn set<T>(self: .Array<T>, index: i32, value: T) -> T {
-    $self $index get<T> CORE:dup<.T> $value store ~
+    $self $index get<T> CORE:dup<.T> ~ flip $value store
 }
 fn pop<T>(self: .Array<T>) -> T {
     $self.len 0 = if {
@@ -140,14 +140,39 @@ fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool 
         $i 1 + #i
     }
 }
+fn find-ref<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> .T, bool {
+    $self $compare $value find<T, A> if {
+        $self flip get<T> 1 1 =
+    } else {
+        drop 0 !.T 0 1 =
+    }
+}
 fn remove<T>(self: .Array<T>, index: i32) -> T {
     $self $index get<T> ~ @value
     $self.ptr $index 1 + sizeof(T) * +
     $self.ptr $index sizeof(T) * +
     $self.len $index - 1 -
     CORE:copy<T>
+    $self.len 1 - #self.len
     $value
 }
+fn swap<T>(self: .Array<T>, a: i32, b: i32) {
+    $a $b /= if {
+        $self $a
+        $self $b $self $a get<T> ~ set<T>
+        set<T> drop
+    }
+}
+fn reverse<T>(self: .Array<T>) { block {
+    $self.len 1 le if { break }
+    0 @i
+    loop {
+        $self.len 1 - $i - @j
+        $i $j ge if { break }
+        $self $i $j swap<T>
+        $i 1 + #i
+    }
+} }
 fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {
     local uninit: T
     $self $compare $value find<T, A> if {

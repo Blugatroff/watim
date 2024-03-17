@@ -19,6 +19,15 @@ fn new() -> T {
     $self
 }
 
+fn init(ptr: .i32, len: i32) -> T {
+    local self: T
+    $ptr #self.ptr
+    $len #self.len
+    $len #self.cap
+    0 !.A:Arena #self.arena
+    $self
+}
+
 fn check-same-arena(self: .T, arena: .A:Arena) {
     $self.arena 0 !.A:Arena = if {
         $arena #self.arena

@@ -161,7 +161,7 @@ fn ParsedMemory-write(fd: i32, self: .ParsedMemory) -> i32 { block {
 } }
 
 struct ParsedModule {
-    file-path: ByteSlice:T
+    file-path: ByteSlice:T // absolute path
     types: ParsedTypes
     imports: Array:Array<ParsedImport>
     structs: Array:Array<ParsedStruct>
@@ -200,6 +200,12 @@ fn ParsedModule-write(fd: i32, self: .ParsedModule) -> i32 { block {
     $fd \ParsedMemory-write &self.memories Array:print<ParsedMemory> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " }" IO:write-all
 } }
+fn ParsedModule-path-eq(self: .ParsedModule, path: .ByteSlice:T) -> bool {
+    &self.file-path $path ByteSlice:eq
+}
+fn ParsedModule-write-path(fd: i32, self: .ParsedModule) -> i32 {
+    $fd $self.file-path ByteSlice:unpack IO:write-all
+}
 
 fn TYPE_I32() -> i32 { 1 }
 fn TYPE_BOOL() -> i32 { 2 }

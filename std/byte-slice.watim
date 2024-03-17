@@ -51,6 +51,10 @@ fn empty() -> T {
 fn write-unescaped(fd: i32, self: .T) -> i32 {
     $fd $self.ptr $self.len IO:write-all
 }
+fn unescape(arena: .Arena:Arena, self: T) -> T {
+    // TODO: actually unescape instead of assuming nothing is escaped
+    $arena $self copy
+}
 fn copy(arena: .Arena:Arena, self: T) -> T {
     $arena $self.ptr $self.len Arena:push-bytes $self.len new
 }

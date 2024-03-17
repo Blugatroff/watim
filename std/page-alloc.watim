@@ -1,7 +1,5 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./fmt.watim" as FMT
-import "./util.watim" as U
 
 fn page-size() -> i32 { 1 16 rotl }
 fn div-by-page-size(n: i32) -> i32 {

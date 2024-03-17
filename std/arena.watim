@@ -115,7 +115,14 @@ fn shred(self: .Arena) {
     $self clear
 }
 fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
-    $size 0 = if { $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i32 break }
+    $size 0 = if {
+        $self.used-pages 0 !.Page = if {
+            // Cannot request the current cursor when no page has been allocated yet.
+            // Perhaps the arena should allocate a page? For now just crash!
+            0 0 / drop 
+        }
+        $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i32 break
+    }
     $self.size $size + #self.size
     $size PA:page-size sizeof(Page) - gt if {
         $self $size sizeof(Page) + PA:div-by-page-size-round-up
@@ -199,8 +206,8 @@ fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
     $self.size $point.size -
 }
 
-memory TEMP1: Arena 24
-memory TEMP2: Arena 24
+memory TEMP1: Arena 20
+memory TEMP2: Arena 20
 
 fn init-temp() {
     $TEMP1 @temp
