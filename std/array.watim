@@ -46,6 +46,14 @@ fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
     $arena #self.arena
     $self
 }
+fn init-no-copy<T>(ptr: .T, elems: i32) -> Array<T> {
+    local self: Array<T>
+    $ptr #self.ptr
+    $elems #self.len
+    $elems #self.cap
+    0 !.A:Arena #self.arena
+    $self
+}
 fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
     $self $arena check-same-arena<T>
     $self.len 1 + $self.cap le if {
