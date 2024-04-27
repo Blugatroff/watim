@@ -886,24 +886,24 @@ fn ParsedVarWord(word: ParsedWord) -> ParsedVarWord {
     $word.base #self.base
     $self
 }
-fn ParsedVarWord-ty(self: ParsedVarWord) -> i32 {
+fn ParsedVarWord-ty(self: .ParsedVarWord) -> i32 {
     $self.base ~
 }
-fn ParsedVarWord-name(self: ParsedVarWord) -> .L:Token {
+fn ParsedVarWord-name(self: .ParsedVarWord) -> .L:Token {
     $self.base sizeof(i32) + !.L:Token
 }
-fn ParsedVarWord-fields(self: ParsedVarWord) -> Array:Array<L:Token> {
+fn ParsedVarWord-fields(self: .ParsedVarWord) -> Array:Array<L:Token> {
     $self.base sizeof(i32) + sizeof(L:Token) + sizeof(i32) + !.L:Token
     $self.base sizeof(i32) + sizeof(L:Token) + ~
     Array:init-no-copy<L:Token>
 }
 fn ParsedVarWord-write(fd: i32, self: .ParsedVarWord) -> i32 { block {
     $fd "{ \"ty\": \"" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd $self ~ ParsedVarWord-ty WordTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedVarWord-ty WordTy-name IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd "\", \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $fd $self ~ ParsedVarWord-name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+    $fd $self ParsedVarWord-name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"fields\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $self ~ ParsedVarWord-fields @fields
+    $self ParsedVarWord-fields @fields
     $fd \L:Token-write &fields Array:print<L:Token> CORE:dup<i32> 0 /= if { break } else { drop }
     $fd " }" IO:write-all
 } }
@@ -1061,23 +1061,23 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
     ParsedTypes-new @types
     0 @cursor
     loop {
-        $cursor $tokens.len = if { break }
-        $cursor &file-path $tokens peek @token
+        $cursor &file-path $tokens peek-non-space-opt @token
+        $token 0 !.L:Token = if { break }
         block {
             $token L:Token-ty L:TOKEN_IMPORT = if {
-                $cursor &file-path $tokens next #cursor drop // skip the `import`
-                $cursor &file-path $tokens next #cursor @token
+                $cursor &file-path $tokens next-non-space #cursor drop // skip the `import`
+                $cursor &file-path $tokens next-non-space #cursor @token
                 $token L:Token-ty L:TOKEN_STRING /= if {
                     &file-path $token "Expected file path" abort
                 }
                 $token @file-path-token
 
-                $cursor &file-path $tokens next #cursor @token
+                $cursor &file-path $tokens next-non-space #cursor @token
                 $token L:Token-ty L:TOKEN_AS /= if {
                     &file-path $token "Expected `as`." abort
                 }
 
-                $cursor &file-path $tokens next #cursor @token
+                $cursor &file-path $tokens next-non-space #cursor @token
                 $token L:Token-ty L:TOKEN_IDENT /= if {
                     &file-path $token "Expected an identifier as module qualifier." abort
                 }
@@ -1087,19 +1087,19 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
                 break
             }
             $token L:Token-ty L:TOKEN_FN = if {
-                $arena $cursor &file-path $tokens &types parse-function-signature #cursor @returns @parameters @generic-parameters @name @export-name 
+                $arena $cursor &file-path $tokens &types parse-function-signature #cursor @returns @parameters @generic-parameters @name @export-name
                 ParsedWords-new @words
                 $arena $cursor &file-path $tokens &generic-parameters &types &words parse-words-with-locals #cursor drop @locals @memories
                 $arena &functions $export-name $name ~ $generic-parameters $parameters $returns $locals $words ParsedFunction-new Array:push<ParsedFunction>
                 break
             }
             $token L:Token-ty L:TOKEN_EXTERN = if {
-                $cursor &file-path $tokens next #cursor drop // skip the `import`
-                $cursor &file-path $tokens next #cursor @extern-module
+                $cursor &file-path $tokens next-non-space #cursor drop // skip the `extern`
+                $cursor &file-path $tokens next-non-space #cursor @extern-module
                 $extern-module L:Token-ty L:TOKEN_STRING /= if {
                     &file-path $extern-module "Expected string as extern module name" abort
                 }
-                $cursor &file-path $tokens next #cursor @extern-name
+                $cursor &file-path $tokens next-non-space #cursor @extern-name
                 $extern-name L:Token-ty L:TOKEN_STRING /= if {
                     &file-path $extern-name "Expected string as extern name" abort
                 }
@@ -1108,8 +1108,8 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
                 break
             }
             $token L:Token-ty L:TOKEN_STRUCT = if {
-                $cursor &file-path $tokens next #cursor drop // skip the `struct`
-                $cursor &file-path $tokens next #cursor @name
+                $cursor &file-path $tokens next-non-space #cursor drop // skip the `struct`
+                $cursor &file-path $tokens next-non-space #cursor @name
                 $name L:Token-ty L:TOKEN_IDENT /= if {
                     &file-path $name "Expected identifer as struct name." abort
                 }
@@ -1118,17 +1118,17 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
                     $arena $cursor &file-path $tokens parse-generic-parameters #cursor
                 } else { Array:new<L:Token> } @generic-parameters
 
-                $cursor &file-path $tokens next #cursor @token
+                $cursor &file-path $tokens next-non-space #cursor @token
                 $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
                     &file-path $token "Expected `{`." abort
                 }
                 Array:new<ParsedNamedType> @fields
                 loop {
-                    $cursor &file-path $tokens peek L:Token-ty L:TOKEN_RIGHT_BRACE = if { 
-                        $cursor &file-path $tokens next #cursor drop // skip the `}`
+                    $cursor &file-path $tokens peek-non-space-opt L:Token-ty L:TOKEN_RIGHT_BRACE = if { 
+                        $cursor &file-path $tokens next-non-space #cursor drop // skip the `}`
                         break
                     }
-                    $cursor &file-path $tokens next #cursor @name
+                    $cursor &file-path $tokens next-non-space #cursor @name
                     $name L:Token-ty L:TOKEN_IDENT /= if {
                         &file-path $name "Expected identifer as struct field name." abort
                     }
@@ -1155,34 +1155,47 @@ fn parse(arena: .A:Arena, file-path: ByteSlice:T, tokens: .Array:Array<L:Token>)
     }
     $arena $file-path ByteSlice:copy $types $imports $structs $functions $memories ParsedModule-new
 }
+fn skip-space(cursor: i32, tokens: .Array:Array<L:Token>) -> i32 {
+    loop {
+        $tokens.len $cursor = if {
+            $cursor break
+        } else {
+            $tokens $cursor Array:get<L:Token> L:Token-ty L:TOKEN_SPACE = if {
+                $cursor 1 + #cursor
+            } else {
+                $cursor break
+            }
+        }
+    }
+}
 fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes) -> Optional:T<L:Token>, .L:Token, Array:Array<L:Token>, Array:Array<ParsedNamedType>, Array:Array<ParsedTypeHandle>, i32 {
-    $cursor $file-path $tokens next #cursor drop // skip the `fn`
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor drop // skip the `fn`
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_IDENT /= if {
         $file-path $token "Expected identifer as function name." abort
     }
     $token @function-ident-token
 
-    $cursor $file-path $tokens peek @token
+    $cursor $file-path $tokens peek-non-space @token
     $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
         $arena $cursor $file-path $tokens parse-generic-parameters #cursor
     } else { Array:new<L:Token> } @generic-parameters
 
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_PAREN /=
     $token L:Token-ty L:TOKEN_STRING /= and if {
         $file-path $token "Expected either `(` or a string as exported function name." abort
     }
     $token L:Token-ty L:TOKEN_STRING = if {
         $token ~ Optional:wrap<L:Token>
-        $cursor $file-path $tokens next #cursor #token
+        $cursor $file-path $tokens next-non-space #cursor #token
         $token L:Token-ty L:TOKEN_LEFT_PAREN /= if {
             $file-path $token "Expected `(`." abort }
     } else { Optional:none<L:Token> } @function-export-name-token
 
     Array:new<ParsedNamedType> @parameters
     loop {
-        $cursor $file-path $tokens next #cursor @token
+        $cursor $file-path $tokens next-non-space #cursor @token
         $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
 
         $token L:Token-ty L:TOKEN_IDENT /= if {
@@ -1190,57 +1203,57 @@ fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
         }
         $token @parameter-name
 
-        $cursor $file-path $tokens next #cursor @token
+        $cursor $file-path $tokens next-non-space #cursor @token
         $token L:Token-ty L:TOKEN_COLON /= if {
             $file-path $token "Expected `:` after function parameter name." abort
         }
         $arena $cursor $file-path $tokens &generic-parameters $types parse-type #cursor @parameter-type
         $arena &parameters $parameter-name ~ $parameter-type ParsedNamedType-new Array:push<ParsedNamedType>
 
-        $cursor $file-path $tokens next #cursor @token
+        $cursor $file-path $tokens next-non-space #cursor @token
         $token L:Token-ty L:TOKEN_RIGHT_PAREN = if { break }
         $token L:Token-ty L:TOKEN_COMMA /= if {
             $file-path $token "Expected `,` after function parameter." abort
         }
     }
     Array:new<ParsedTypeHandle> @returns
-    $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
-        $cursor $file-path $tokens next #cursor drop // skip the `->`
+    $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_ARROW = if {
+        $cursor $file-path $tokens next-non-space #cursor drop // skip the `->`
         loop {
             $arena $cursor $file-path $tokens &generic-parameters $types parse-type #cursor @type
             $arena &returns $type Array:push<ParsedTypeHandle>
 
             $cursor $tokens.len = if { break }
-            $cursor $file-path $tokens peek @token
+            $cursor $file-path $tokens peek-non-space @token
             $token L:Token-ty L:TOKEN_COMMA /= if { break }
-            $cursor $file-path $tokens next #cursor drop // skip the `,`
+            $cursor $file-path $tokens next-non-space #cursor drop // skip the `,`
         }
     }
     $function-export-name-token $function-ident-token $generic-parameters $parameters $returns $cursor
 }
 fn parse-words-with-locals(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> Array:Array<ParsedMemory>, Array:Array<ParsedNamedType>, i32, i32 {
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $file-path $token "Expected `{`." abort
     }
 
     Array:new<ParsedMemory> @memories
     loop {
-        $cursor $file-path $tokens peek L:Token-ty L:TOKEN_MEMORY /= if { break }
+        $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_MEMORY /= if { break }
         $arena &memories $arena $cursor $file-path $tokens $generic-parameters $types parse-memory #cursor Array:push<ParsedMemory>
     }
 
     Array:new<ParsedNamedType> @locals
     loop {
-        $cursor $file-path $tokens peek L:Token-ty L:TOKEN_LOCAL /= if {
+        $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_LOCAL /= if {
             break
         }
-        $cursor $file-path $tokens next #cursor drop // skip the `local`
-        $cursor $file-path $tokens next #cursor @name
+        $cursor $file-path $tokens next-non-space #cursor drop // skip the `local`
+        $cursor $file-path $tokens next-non-space #cursor @name
         $name L:Token-ty L:TOKEN_IDENT /= if {
             $file-path $name "Expected identifier as local name." abort
         }
-        $cursor $file-path $tokens next #cursor @token
+        $cursor $file-path $tokens next-non-space #cursor @token
         $token L:Token-ty L:TOKEN_COLON /= if {
             $file-path $name "Expected `:` after local name." abort
         }
@@ -1251,7 +1264,7 @@ fn parse-words-with-locals(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T
     $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words-inner
 }
 fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $file-path $token "Expected `{`." abort
     }
@@ -1260,18 +1273,18 @@ fn parse-words(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .A
 fn parse-words-inner(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes, words: .ParsedWords) -> i32, i32 {
     0 @count
     loop {
-        $cursor $file-path $tokens peek @token
+        $cursor $file-path $tokens peek-non-space @token
         $token L:Token-ty L:TOKEN_RIGHT_BRACE = if {
-            $cursor $file-path $tokens next #cursor drop // skip the `}`
+            $cursor $file-path $tokens next-non-space #cursor drop // skip the `}`
             break
         }
 
         $arena $cursor $file-path $tokens $types $generic-parameters $words parse-word #cursor
         $count 1 + #count
 
-        $cursor $file-path $tokens peek @token
+        $cursor $file-path $tokens peek-non-space @token
         $token L:Token-ty L:TOKEN_RIGHT_BRACE = if {
-            $cursor $file-path $tokens next #cursor drop // skip the `}`
+            $cursor $file-path $tokens next-non-space #cursor drop // skip the `}`
             break
         }
     }
@@ -1279,7 +1292,8 @@ fn parse-words-inner(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, toke
 }
 fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, types: .ParsedTypes, generic-parameters: .Array:Array<L:Token>, words: .ParsedWords) -> i32 {
     block {
-        $cursor $file-path $tokens next #cursor @token
+        $cursor @word-start-cursor
+        $cursor $file-path $tokens next-non-space #cursor @token
         $token L:Token-ty L:TOKEN_NUMBER = if {
             $arena $words $token ~ ParsedWords-push-number drop
             break
@@ -1294,7 +1308,7 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         $token L:Token-ty L:TOKEN_DOUBLE_ARROW = or
         if {
             $token L:Token-ty @type-first-token
-            $cursor $file-path $tokens next #cursor @token
+            $cursor $file-path $tokens next-non-space #cursor @token
             $token L:Token-ty L:TOKEN_IDENT /= if {
                 $file-path $token "Expected an identifier as variable name." abort
             }
@@ -1313,7 +1327,11 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
                 }
                 CORE:unreachable<i32>
             } @field-count-patch
-            $arena $cursor $file-path $tokens $words parse-field-accesses @field-count
+            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_SPACE = if {
+                0
+            } else {
+                $arena $cursor $file-path $tokens $words parse-field-accesses #cursor
+            } @field-count
             $words.buf.ptr $field-count-patch + $field-count store
             break
         }
@@ -1353,8 +1371,8 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
 
             $arena $words ParsedWords-push-patch @else-count-patch
             $arena $words ParsedWords-push-patch @else-words-byte-len-patch
-            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ELSE = if {
-                $cursor $file-path $tokens next #cursor drop // skip the `else`
+            $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_ELSE = if {
+                $cursor $file-path $tokens next-non-space #cursor drop // skip the `else`
                 $arena $cursor $file-path $tokens $generic-parameters $types $words parse-words #cursor
             } else { 0 } @else-word-count
             $words.buf.ptr $else-count-patch + $else-word-count store
@@ -1403,7 +1421,7 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         }
         $token L:Token-ty L:TOKEN_DOT = if {
             $arena $words $token ~ ParsedWords-push-get-field flip drop @field-count-patch
-            $arena $cursor $file-path $tokens $words parse-field-accesses @field-count
+            $arena $word-start-cursor $file-path $tokens $words parse-field-accesses #cursor @field-count
             $words.buf.ptr $field-count-patch + $field-count store break
         }
         $token L:Token-ty L:TOKEN_ARROW = if {
@@ -1438,8 +1456,9 @@ fn parse-memory(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .
     $name-token ~ $type $token ~ ParsedMemory
     $cursor
 }
-fn parse-field-accesses(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, words: .ParsedWords) -> i32 {
+fn parse-field-accesses(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, words: .ParsedWords) -> i32, i32 {
     0 @field-count
+    $cursor $tokens skip-space #cursor
     loop {
         $cursor $file-path $tokens peek @token
         $token L:Token-ty L:TOKEN_DOT /= if { break }
@@ -1452,10 +1471,10 @@ fn parse-field-accesses(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, t
         $arena $words $token ~ ParsedWords-push-token
         $field-count 1 + #field-count
     }
-    $field-count
+    $field-count $cursor
 }
 fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedTypeHandle, i32 { block {
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_I32 = if {
         $arena $types ParsedTypes-push-i32 $cursor break
     }
@@ -1476,15 +1495,15 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             $cursor
             break
         } else { drop }
-        $cursor $file-path $tokens peek L:Token-ty L:TOKEN_COLON = if {
-            $cursor $file-path $tokens next #cursor drop // skip the colon
+        $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_COLON = if {
+            $cursor $file-path $tokens next-non-space #cursor drop // skip the colon
             $token @module-token
-            $cursor $file-path $tokens next #cursor @struct-name-token
+            $cursor $file-path $tokens next-non-space #cursor @struct-name-token
             $struct-name-token L:Token-ty L:TOKEN_IDENT /= if {
                 $file-path $struct-name-token "Expected an identifier as struct name." abort
             }
             $arena $types $module-token ~ $struct-name-token ~ ParsedTypes-push-foreign-struc @generic-arguments-count-patch @type
-            $cursor $file-path $tokens peek @token
+            $cursor $file-path $tokens peek-non-space @token
             $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
                 $arena $cursor $file-path $tokens $generic-parameters $types parse-generic-arguments #cursor block {} .len ~
             } else { 0 } $types.buf.ptr $generic-arguments-count-patch + flip store
@@ -1492,7 +1511,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         }
         $token @struct-name-token
         $arena $types $struct-name-token ~ ParsedTypes-push-struc @generic-arguments-count-patch @type
-        $cursor $file-path $tokens peek @token
+        $cursor $file-path $tokens peek-non-space @token
         $token L:Token-ty L:TOKEN_LEFT_TRIANGLE = if {
             $arena $cursor $file-path $tokens $generic-parameters $types parse-generic-arguments #cursor block {} .len ~
         } else { 0 } $types.buf.ptr $generic-arguments-count-patch + flip store
@@ -1505,17 +1524,17 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         $types.buf.len $arena &types.buf sizeof(i32) ByteArray:alloc-bytes drop @returns-index-patch
         0 @parameter-count
         loop {
-            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
-                $cursor $file-path $tokens next #cursor drop // skip the `->`
+            $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_ARROW = if {
+                $cursor $file-path $tokens next-non-space #cursor drop // skip the `->`
                 break
             }
             $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor drop
             $parameter-count 1 + #parameter-count
             $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
-                $cursor $file-path $tokens next #cursor drop // skip the `->`
+                $cursor $file-path $tokens next-non-space #cursor drop // skip the `->`
                 break
             }
-            $cursor $file-path $tokens next #cursor @token
+            $cursor $file-path $tokens next-non-space #cursor @token
             $token L:Token-ty L:TOKEN_COMMA /= if {
                 $file-path $token "Expected `,` in argument list of function type." abort
             }
@@ -1526,17 +1545,17 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
         $types.buf.len $arena &types.buf sizeof(i32) ByteArray:alloc-bytes drop @return-count-patch
         0 @return-count
         loop {
-            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { 
-                $cursor $file-path $tokens next #cursor drop // skip the `)`
+            $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_RIGHT_PAREN = if { 
+                $cursor $file-path $tokens next-non-space #cursor drop // skip the `)`
                 break
             }
             $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor drop
             $return-count 1 + #return-count
-            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_RIGHT_PAREN = if { 
-                $cursor $file-path $tokens next #cursor drop // skip the `)`
+            $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_RIGHT_PAREN = if { 
+                $cursor $file-path $tokens next-non-space #cursor drop // skip the `)`
                 break
             }
-            $cursor $file-path $tokens next #cursor @token
+            $cursor $file-path $tokens next-non-space #cursor @token
             $token L:Token-ty L:TOKEN_COMMA /= if {
                 $file-path $token "Expected `,` in argument list of function type." abort
             }
@@ -1546,9 +1565,6 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
     }
     $file-path $token "Failed to parse type" abort CORE:unreachable<ParsedTypeHandle> CORE:unreachable<i32>
 } }
-fn foo(fd: i32, v: .i32) -> i32 {
-    $fd $v ~ IO:print
-}
 fn parse-generic-arguments(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes) -> Array:Array<ParsedTypeHandle>, i32 { block {
     Array:new<ParsedTypeHandle> @parsed-types
     $cursor $file-path $tokens next #cursor @token
@@ -1604,6 +1620,30 @@ fn peek(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> 
     }
     $tokens $cursor Array:get<L:Token>
 }
+fn peek-non-space-opt(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> .L:Token {
+    loop {
+        $tokens.len $cursor = if {
+            0 !.L:Token break
+        }
+        $tokens $cursor Array:get<L:Token> @token
+        $token L:Token-ty L:TOKEN_SPACE /= if {
+            $token break
+        }
+        $cursor 1 + #cursor
+    }
+}
+fn peek-non-space(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> .L:Token {
+    $cursor $file-path $tokens peek-non-space-opt @token
+    $token 0 !.L:Token = if {
+        $cursor 0 = if {
+            2 "Cannot use `peek-non-space` with empty array of tokens!" IO:write-all IO:check
+            0 0 / drop
+        }
+        $tokens $cursor 1 - Array:get<L:Token> @previous-token
+        $file-path $previous-token abort-unexpected-eof
+    }
+    $token
+}
 fn next(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> .L:Token, i32 {
     $cursor $tokens.len = if {
         $cursor 0 = if {
@@ -1615,6 +1655,10 @@ fn next(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> 
     }
     $tokens $cursor Array:get<L:Token>
     $cursor 1 +
+}
+fn next-non-space(cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>) -> .L:Token, i32 {
+    $cursor $tokens skip-space
+    $file-path $tokens next
 }
 fn abort-unexpected-eof(file-path: .ByteSlice: T, token: .L:Token) {
     $file-path $token "Unexpected end of file" abort

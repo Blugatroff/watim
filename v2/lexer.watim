@@ -45,6 +45,7 @@ fn TOKEN_I64() -> i32 { 36 }
 fn TOKEN_ARROW() -> i32 { 37 }
 fn TOKEN_DOUBLE_ARROW() -> i32 { 38 }
 fn TOKEN_SIZEOF() -> i32 { 39 }
+fn TOKEN_SPACE() -> i32 { 40 }
 fn TokenTy-name(self: i32) -> .i32, i32 {
     block {
         $self TOKEN_NUMBER = if { "TOKEN_NUMBER" break }
@@ -52,7 +53,6 @@ fn TokenTy-name(self: i32) -> .i32, i32 {
         $self TOKEN_IMPORT = if { "TOKEN_IMPORT" break }
         $self TOKEN_IDENT = if { "TOKEN_IDENT" break }
         $self TOKEN_STRING = if { "TOKEN_STRING" break }
-
         $self TOKEN_LEFT_TRIANGLE = if { "TOKEN_LEFT_TRIANGLE" break }
         $self TOKEN_RIGHT_TRIANGLE = if { "TOKEN_RIGHT_TRIANGLE" break }
         $self TOKEN_LEFT_PAREN = if { "TOKEN_LEFT_PAREN" break }
@@ -69,7 +69,6 @@ fn TokenTy-name(self: i32) -> .i32, i32 {
         $self TOKEN_BANG = if { "TOKEN_BANG" break }
         $self TOKEN_TILDE = if { "TOKEN_TILDE" break }
         $self TOKEN_BACKSLASH = if { "TOKEN_BACKSLASH" break }
-
         $self TOKEN_MEMORY = if { "TOKEN_MEMORY" break }
         $self TOKEN_LOCAL = if { "TOKEN_LOCAL" break }
         $self TOKEN_AS = if { "TOKEN_AS" break }
@@ -87,6 +86,7 @@ fn TokenTy-name(self: i32) -> .i32, i32 {
         $self TOKEN_ARROW = if { "TOKEN_ARROW" break }
         $self TOKEN_DOUBLE_ARROW = if { "TOKEN_DOUBLE_ARROW" break }
         $self TOKEN_SIZEOF = if { "TOKEN_SIZEOF" break }
+        $self TOKEN_SPACE = if { "TOKEN_SPACE" break }
         CORE:unreachable<.i32> CORE:unreachable<i32>
     }
 }
@@ -152,6 +152,7 @@ fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 { block {
     $ty TOKEN_ARROW = if { "->" break }
     $ty TOKEN_DOUBLE_ARROW = if { "=>" break }
     $ty TOKEN_SIZEOF = if { "sizeof" break }
+    $ty TOKEN_SPACE = if { " " break }
     0 !.i32 0 break
 } }
 fn Token-write(fd: i32, self: .Token) -> i32 { block {
@@ -196,8 +197,19 @@ fn print-location(fd: i32, file-path-ptr: .i32, file-path-len: i32, line: i32, c
     $fd ":" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd $line IO:print CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ":" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+
     $fd $column IO:print
 } }
+
+fn add-space(arena: .Arena:Arena, tokens: .Array:Array<Token>, line: i32, column: i32) {
+    $tokens.len 0 = if {
+        1 1 =
+    } else {
+        $tokens Array:last<Token> Token-ty TOKEN_SPACE /=
+    } if {
+        $arena $tokens TOKEN_SPACE $line $column Token-new-keyword Array:push<Token>
+    }
+}
 
 fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
     1 @line
@@ -226,21 +238,25 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice:T) -> Array:Array<Token> {
                 }
             }
             $char "\n" drop load8 = if {
+                $arena &tokens $line $column add-space
                 $cursor 1 + #cursor
                 1 #column
                 $line 1 + #line
                 $done not break
             }
             $char "\r" drop load8 = if {
+                $arena &tokens $line $column add-space
                 $cursor 1 + #cursor
                 $done not break
             }
             $char " " drop load8 = if {
+                $arena &tokens $line $column add-space
                 $cursor 1 + #cursor
                 $column 1 + #column
                 $done not break
             }
             $char "\t" drop load8 = if {
+                $arena &tokens $line $column add-space
                 $cursor 1 + #cursor
                 $column 1 + #column
                 $done not break
