@@ -224,10 +224,44 @@ fn Token-json(formatter: .FMT:Formatter, token: .L:Token) {
     $formatter FMT:Formatter-write-indent
     $formatter "\"lexeme\": \"" FMT:Formatter-write
     $formatter $token.lexeme STR:Str-unpack write-escaped
-    $formatter "\"\n" FMT:Formatter-write
+    $formatter "\",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"ty\": \"" FMT:Formatter-write
+    $formatter $token L:Token-ty L:token-ty-name FMT:Formatter-write
+    $formatter "\",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"line\": " FMT:Formatter-write
+    $token L:Token-line $formatter U:i32-format
+    $formatter ",\n" FMT:Formatter-write
+    $formatter FMT:Formatter-write-indent
+    $formatter "\"column\": " FMT:Formatter-write
+    $token L:Token-column $formatter U:i32-format
+    $formatter "\n" FMT:Formatter-write
 
     $formatter FMT:Formatter-dedent
     $formatter FMT:Formatter-write-indent
     $formatter "}" FMT:Formatter-write
+}
+
+fn Tokens-json(formatter: .FMT:Formatter, tokens: .Array:Array<L:Token>) {
+    $formatter "[\n" FMT:Formatter-write
+    $formatter FMT:Formatter-indent
+
+    0 @i
+    loop {
+        $i $tokens.len = if { break }
+
+        $formatter FMT:Formatter-write-indent
+        $formatter $tokens $i Array:get<L:Token> Token-json
+        $i 1 + $tokens.len /= if {
+            $formatter "," FMT:Formatter-write
+        }
+        $formatter "\n" FMT:Formatter-write
+        $i 1 + #i
+    }
+
+    $formatter FMT:Formatter-dedent
+    $formatter FMT:Formatter-write-indent
+    $formatter "]\n" FMT:Formatter-write
 }
 

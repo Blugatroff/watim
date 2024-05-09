@@ -15,9 +15,10 @@
             nativeBuildInputs = [
                 pkgs.wasmtime
                 pkgs.wabt
-                python
                 pkgs.gnuplot
                 pkgs.hyperfine
+                python
+                pkgs.mypy
             ];
             buildInputs = [ pkgs.wasmtime ];
 

@@ -58,6 +58,7 @@ fn main "_start" () {
     &args "-q" find-flag 
     &args "--quiet" find-flag or if { LOGGING:disable }
     &args "--parse-ast" find-flag if { PARSE_AST set-mode }
+    &args "--lex" find-flag if { LEX set-mode }
     &args "--arena-graphs" find-flag if { ArenaGraph:enable LOGGING:disable }
 
     $args.len 1 le if { print-usage-and-exit }
@@ -100,10 +101,13 @@ fn main "_start" () {
     mode PARSE_AST = if {
         &arena parse-ast
     }
+    mode LEX = if {
+        &arena lex
+    }
 
     &arena Arena:clear
     ArenaGraph:end
-    
+
     LOGGING:enabled if {
         2 "Used " IO:write-all IO:check
         2 0 mem-grow IO:print IO:check
@@ -128,9 +132,28 @@ fn parse-ast(arena: .Arena:Arena) {
     &mem 
     $arena $input "stdin.watim" STR:Str-new L:lex @tokens
     &tokens P:parse @fields @types @items
-    
+
     FMT:Formatter-stdout @formatter
     &formatter &items DUMP:TopItems-json
+    &formatter "\n" FMT:Formatter-write
+
+    $arena $save Arena:restore
+}
+
+fn lex(arena: .Arena:Arena) {
+    $arena Arena:save @save
+    $arena 0 FS:read-all @code 
+    $code 0 /= if {
+        2 "Failed to read stdin, Error Code: " IO:write-all IO:check
+        2 $code IO:print IO:check
+        1 CORE:exit
+    }
+    @input &input ByteArray:unpack STR:Str-new @input
+
+    $arena $input "stdin.watim" STR:Str-new L:lex @tokens
+
+    FMT:Formatter-stdout @formatter
+    &formatter &tokens DUMP:Tokens-json
     &formatter "\n" FMT:Formatter-write
 
     $arena $save Arena:restore
@@ -165,6 +188,7 @@ fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Mo
 
 fn COMPILE() -> i32 { 1 }
 fn PARSE_AST() -> i32 { 2 }
+fn LEX() -> i32 { 3 }
 
 memory MODE: i32 4
 fn set-mode(mode: i32) { $MODE $mode store }

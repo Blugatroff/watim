@@ -84,7 +84,11 @@ fn contiguous-pages(n: i32) -> .i32 { block {
         $list $contiguous-free = if {
             loop {
                 $n 0 = if { break }
-                $list.next 0 !.Page /= $list page-size + $list.next /= and if { 0 0 / drop }
+                $n 1 /= if {
+                    $list.next 0 !.Page /= $list page-size + $list.next /= and if {
+                        0 0 / drop
+                    }
+                }
                 $list.next #list
                 $n 1 - #n
             }
@@ -94,7 +98,11 @@ fn contiguous-pages(n: i32) -> .i32 { block {
                 $list.next $contiguous-free = if {
                     loop {
                         $n 0 = if { break }
-                        $list.next.next 0 !.Page /= $list.next page-size + $list.next.next /= and if { 0 0 / drop }
+                        $n 1 /= if {
+                            $list.next.next 0 !.Page /= $list.next page-size + $list.next.next /= and if {
+                                0 0 / drop
+                            }
+                        }
                         $list.next.next #list.next
                         $n 1 - #n
                     }
