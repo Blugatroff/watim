@@ -13,8 +13,8 @@ fn TOKEN_LEFT_PAREN() -> i32 { 3 }
 fn TOKEN_RIGHT_PAREN() -> i32 { 4 }
 fn TOKEN_COLON() -> i32 { 5 }
 fn TOKEN_DOT() -> i32 { 6 }
-fn TOKEN_LEFT_CURLY() -> i32 { 7 }
-fn TOKEN_RIGHT_CURLY() -> i32 { 8 }
+fn TOKEN_LEFT_BRACE() -> i32 { 7 }
+fn TOKEN_RIGHT_BRACE() -> i32 { 8 }
 fn TOKEN_BANG() -> i32 { 9 }
 fn TOKEN_STRING() -> i32 { 10 }
 fn TOKEN_ARROW() -> i32 { 11 }
@@ -57,8 +57,8 @@ fn token-ty-name(ty: i32) -> .i32, i32 {
         $ty TOKEN_RIGHT_PAREN = if { "TOKEN_RIGHT_PAREN" break }
         $ty TOKEN_COLON = if { "TOKEN_COLON" break }
         $ty TOKEN_DOT = if { "TOKEN_DOT" break }
-        $ty TOKEN_LEFT_CURLY = if { "TOKEN_LEFT_CURLY" break }
-        $ty TOKEN_RIGHT_CURLY = if { "TOKEN_RIGHT_CURLY" break }
+        $ty TOKEN_LEFT_BRACE = if { "TOKEN_LEFT_BRACE" break }
+        $ty TOKEN_RIGHT_BRACE = if { "TOKEN_RIGHT_BRACE" break }
         $ty TOKEN_BANG = if { "TOKEN_BANG" break }
         $ty TOKEN_STRING = if { "TOKEN_STRING" break }
         $ty TOKEN_ARROW = if { "TOKEN_ARROW" break }
@@ -288,13 +288,13 @@ fn Lexer-next(lexer: .Lexer) -> Token, bool {
             1 1 = break
         }
         $char "{" drop load8 = if {
-            TOKEN_LEFT_CURLY $lexeme $lexer.file $lexer.line $lexer.column Token-new 
+            TOKEN_LEFT_BRACE $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
             1 1 = break
         }
         $char "}" drop load8 = if {
-            TOKEN_RIGHT_CURLY $lexeme $lexer.file $lexer.line $lexer.column Token-new 
+            TOKEN_RIGHT_BRACE $lexeme $lexer.file $lexer.line $lexer.column Token-new 
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
             1 1 = break
@@ -364,9 +364,10 @@ fn Lexer-next(lexer: .Lexer) -> Token, bool {
         }
         $char ">" drop load8 = if {
             &lexer.input $lexer.index 1 STR:Str-slice #lexeme
+            TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new
             $lexer.index 1 + #lexer.index
             $lexer.column 1 + #lexer.column
-            TOKEN_RIGHT_TRIANGLE $lexeme $lexer.file $lexer.line $lexer.column Token-new 1 1 = break
+            1 1 = break
         } 
         $char "\\" drop load8 = if {
             TOKEN_BACKSLASH $lexeme $lexer.file $lexer.line $lexer.column Token-new 
@@ -378,9 +379,9 @@ fn Lexer-next(lexer: .Lexer) -> Token, bool {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 
                 &lexer.input $lexer.index 1 + STR:Str-get ">" drop load8 = if {
                     &lexer.input $lexer.index 2 STR:Str-slice #lexeme
+                    TOKEN_DOUBLE_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
-                    TOKEN_DOUBLE_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
                     1 1 = break
                 }
             }
@@ -389,9 +390,9 @@ fn Lexer-next(lexer: .Lexer) -> Token, bool {
             &lexer.input STR:Str-len $lexer.index 1 + gt if { 
                 &lexer.input $lexer.index 1 + STR:Str-get ">" drop load8 = if {
                     &lexer.input $lexer.index 2 STR:Str-slice #lexeme
+                    TOKEN_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
                     $lexer.index 2 + #lexer.index
                     $lexer.column 2 + #lexer.column
-                    TOKEN_ARROW $lexeme $lexer.file $lexer.line $lexer.column Token-new 
                     1 1 = break
                 }
             }

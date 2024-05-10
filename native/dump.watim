@@ -83,7 +83,7 @@ fn Function-json(formatter: .FMT:Formatter, fun: .AST:Function) {
     $formatter FMT:Formatter-indent
 
     $formatter FMT:Formatter-write-indent
-    $formatter "\"ty\": \"function\",\n" FMT:Formatter-write
+    $formatter "\"ty\": \"TOP_ITEM_FN\",\n" FMT:Formatter-write
 
     $formatter FMT:Formatter-write-indent
     $formatter "\"ident\": \"" FMT:Formatter-write
@@ -158,7 +158,7 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
 
     loop {
         $word.ty AST:WORD_NUMBER = if {
-            $formatter "number\",\n" FMT:Formatter-write
+            $formatter "WORD_NUMBER\",\n" FMT:Formatter-write
 
             $formatter FMT:Formatter-write-indent
             $formatter "\"number\": " FMT:Formatter-write
@@ -167,7 +167,7 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
             break
         }
         $word.ty AST:WORD_STRING = if {
-            $formatter "string\",\n" FMT:Formatter-write
+            $formatter "WORD_STRING\",\n" FMT:Formatter-write
 
             $formatter FMT:Formatter-write-indent
             $formatter "\"string\": \"" FMT:Formatter-write
@@ -177,7 +177,7 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
             break
         }
         $word.ty AST:WORD_CALL = if {
-            $formatter "call\",\n" FMT:Formatter-write
+            $formatter "WORD_CALL\",\n" FMT:Formatter-write
 
             $formatter FMT:Formatter-write-indent
             $formatter "\"ident\": \"" FMT:Formatter-write
@@ -195,7 +195,7 @@ fn Word-json(formatter: .FMT:Formatter, word: .AST:Word) {
             break
         }
         $word.ty AST:WORD_GET_LOCAL = if {
-            $formatter "get_local\",\n" FMT:Formatter-write
+            $formatter "WORD_GET_LOCAL\",\n" FMT:Formatter-write
             $formatter FMT:Formatter-write-indent
             $formatter "\"token\": " FMT:Formatter-write
             $formatter $word.token Token-json

@@ -101,7 +101,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
         $self.file STR:Str-unpack "expected { or <" U:abort
     }
     $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_LEFT_CURLY /= 
+    $token L:Token-ty L:TOKEN_LEFT_BRACE /= 
     $token L:Token-ty L:TOKEN_LEFT_TRIANGLE /= and
     if {
         $token L:Token-location "expected { or <" U:abort-with-location
@@ -129,7 +129,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
             $self.file STR:Str-unpack "expected {" U:abort
         }
         $self Parser-advance #token
-        $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+        $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
             $token L:Token-location "expected {" U:abort-with-location
         }
     }
@@ -137,7 +137,7 @@ fn Parser-parse-struc(self: .Parser) -> .AST:Struct {
     loop {
         $self.current $self.tokens.len = if { break }
         $self Parser-advance #token
-        $token L:Token-ty L:TOKEN_RIGHT_CURLY = if { break }
+        $token L:Token-ty L:TOKEN_RIGHT_BRACE = if { break }
         $token L:Token-ty L:TOKEN_IDENT /= if {
             $token L:Token-location "expected identifier" U:abort-with-location
         }
@@ -416,7 +416,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
         $self.file STR:Str-unpack "expected { found EOF" U:abort
     }
     $self Parser-advance @token
-    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+    $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $token L:Token-location "expected {" U:abort-with-location
     }
     $self &locals Parser-parse-body @body
@@ -424,7 +424,7 @@ fn Parser-parse-function(self: .Parser) -> .AST:Function {
         $self.file STR:Str-unpack "expected } found EOF" U:abort
     }
     $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+    $token L:Token-ty L:TOKEN_RIGHT_BRACE /= if {
         $token L:Token-location "expected }" U:abort-with-location
     }
     $self.arena
@@ -1131,7 +1131,7 @@ fn Parser-parse-set-locl(self: .Parser, token: .L:Token) -> AST:Word {
 fn Parser-parse-block(self: .Parser) -> Array:Array<AST:Word> {
     local token: .L:Token
     $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+    $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $token L:Token-location "expected {" U:abort-with-location
     }
     $self Parser-parse-words
@@ -1139,7 +1139,7 @@ fn Parser-parse-block(self: .Parser) -> Array:Array<AST:Word> {
         $self.file STR:Str-unpack "expected }" U:abort
     }
     $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+    $token L:Token-ty L:TOKEN_RIGHT_BRACE /= if {
         $token L:Token-location "expected }" U:abort-with-location
     }
 }
@@ -1159,7 +1159,7 @@ fn Parser-parse-iff(self: .Parser) -> AST:If {
         $self.file STR:Str-unpack "exected {" U:abort
     }
     $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+    $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
         $token L:Token-location "expected {" U:abort-with-location
     }
     $self Parser-parse-words
@@ -1167,7 +1167,7 @@ fn Parser-parse-iff(self: .Parser) -> AST:If {
         $self.file STR:Str-unpack "exected }" U:abort
     }
     $self Parser-advance #token
-    $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+    $token L:Token-ty L:TOKEN_RIGHT_BRACE /= if {
         $token L:Token-location "expected }" U:abort-with-location
     }
     $self.current $self.tokens.len lt if {
@@ -1178,7 +1178,7 @@ fn Parser-parse-iff(self: .Parser) -> AST:If {
                 $self.file STR:Str-unpack "expected {" U:abort
             }
             $self Parser-advance #token
-            $token L:Token-ty L:TOKEN_LEFT_CURLY /= if {
+            $token L:Token-ty L:TOKEN_LEFT_BRACE /= if {
                 $token L:Token-location "expected {" U:abort-with-location
             }
             $self Parser-parse-words
@@ -1186,7 +1186,7 @@ fn Parser-parse-iff(self: .Parser) -> AST:If {
                 $self.file STR:Str-unpack "expected }" U:abort
             }
             $self Parser-advance #token
-            $token L:Token-ty L:TOKEN_RIGHT_CURLY /= if {
+            $token L:Token-ty L:TOKEN_RIGHT_BRACE /= if {
                 $token L:Token-location "expected }" U:abort-with-location
             }
             AST:If-new-with-el
