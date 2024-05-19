@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, asdict, field
 from enum import Enum
-from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, assert_never
+from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, assert_never
 from abc import ABC, abstractmethod
 from shutil import copyfile
 from functools import reduce
@@ -254,14 +254,13 @@ class PrimitiveType(str, Enum):
     I32 = "TYPE_I32"
     I64 = "TYPE_I64"
     BOOL = "TYPE_BOOL"
-    PTR = "TYPE_PTR"
 
 @dataclass
 class ParsedPtrType:
     child: 'ParsedType'
 
 @dataclass
-class ParsedGenericType:
+class GenericType:
     token: Token
     generic_index: int
 
@@ -282,19 +281,19 @@ class ParsedFunctionType:
     args: List['ParsedType']
     rets: List['ParsedType']
 
-ParsedType = PrimitiveType | ParsedPtrType | ParsedGenericType | ParsedForeignType | ParsedStructType | ParsedFunctionType
+ParsedType = PrimitiveType | ParsedPtrType | GenericType | ParsedForeignType | ParsedStructType | ParsedFunctionType
 
 
 @dataclass
-class ParsedNumberWord:
+class NumberWord:
     token: Token
 
 @dataclass
-class ParsedStringWord:
+class StringWord:
     token: Token
 
 @dataclass
-class ParsedDerefWord:
+class DerefWord:
     token: Token
 
 @dataclass
@@ -318,8 +317,8 @@ class ParsedStoreWord:
     fields: List[Token]
 
 @dataclass
-class ParsedInitWord:
-    token: Token
+class InitWord:
+    name: Token
 
 @dataclass
 class ParsedForeignCallWord:
@@ -343,7 +342,7 @@ class ParsedIfWord:
     else_words: List['ParsedWord']
 
 @dataclass
-class ParsedLoadWord:
+class LoadWord:
     token: Token
 
 @dataclass
@@ -357,7 +356,7 @@ class ParsedBlockWord:
     words: List['ParsedWord']
 
 @dataclass
-class ParsedBreakWord:
+class BreakWord:
     token: Token
 
 @dataclass
@@ -371,15 +370,15 @@ class ParsedSizeofWord:
     taip: ParsedType
 
 @dataclass
-class ParsedGetFieldWord:
+class GetFieldWord:
     token: Token
     fields: List[Token]
 
 @dataclass
-class ParsedIndirectCallWord:
+class IndirectCallWord:
     token: Token
 
-ParsedWord = ParsedNumberWord | ParsedStringWord | ParsedCallWord | ParsedDerefWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | ParsedBreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord
+ParsedWord = NumberWord | StringWord | ParsedCallWord | DerefWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | InitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | LoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | GetFieldWord | IndirectCallWord
 
 @dataclass
 class ParsedNamedType:
@@ -425,6 +424,7 @@ class ParsedStruct:
 
 @dataclass
 class ParsedModule:
+    path: str
     imports: List[ParsedImport]
     structs: List[ParsedStruct]
     memories: List[ParsedMemory]
@@ -442,10 +442,10 @@ T = TypeVar('T')
 class Parser:
     file_path: str
     tokens: List[Token]
-    last_processed_token: Token | None = None
+    cursor: int = 0
 
     def peek(self, skip_ws: bool = False) -> Token | None:
-        i = 0
+        i = self.cursor
         while True:
             if i >= len(self.tokens):
                 return None
@@ -453,25 +453,24 @@ class Parser:
             if skip_ws and token.ty == TokenType.SPACE:
                 i += 1
                 continue
-            self.last_processed_token = token
             return token
 
     def advance(self, skip_ws: bool = False):
         while True:
-            if len(self.tokens) == 0:
+            if self.cursor >= len(self.tokens):
                 return None
-            token = self.tokens[0]
-            self.tokens = self.tokens[1:]
+            token = self.tokens[self.cursor]
+            self.cursor += 1
             if skip_ws and token.ty == TokenType.SPACE:
                 continue
-            self.last_processed_token = token
             return token
 
     def retreat(self, token: Token):
-        self.tokens.insert(0, token)
+        assert(self.cursor > 0)
+        self.cursor -= 1
 
     def abort(self, message: str) -> NoReturn:
-        raise ParserException(self.last_processed_token, message)
+        raise ParserException(self.tokens[self.cursor - 1], message)
 
     def parse(self) -> ParsedModule:
         imports: List[ParsedImport] = []
@@ -544,11 +543,10 @@ class Parser:
             if token.ty == TokenType.MEMORY:
                 self.retreat(token)
                 memories.append(self.parse_memory([]))
-                print(len(memories))
                 continue
 
             self.abort("Expected function import or struct definition")
-        return ParsedModule(imports, structs, memories, functions, externs)
+        return ParsedModule(self.file_path, imports, structs, memories, functions, externs)
 
     def parse_function(self) -> ParsedFunction:
         signature = self.parse_function_signature()
@@ -596,9 +594,9 @@ class Parser:
         if token is None:
             self.abort("Expected a word")
         if token.ty == TokenType.NUMBER:
-            return ParsedNumberWord(token)
+            return NumberWord(token)
         if token.ty == TokenType.STRING:
-            return ParsedStringWord(token)
+            return StringWord(token)
         if token.ty in [TokenType.DOLLAR, TokenType.AMPERSAND, TokenType.HASH, TokenType.DOUBLE_ARROW]:
             indicator_token = token
             name = self.advance(skip_ws=True)
@@ -625,10 +623,11 @@ class Parser:
             token = self.advance(skip_ws=False)
             if token is None or token.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as variable name")
-            return ParsedInitWord(token)
+            return InitWord(token)
         if token.ty == TokenType.IDENT:
             return self.parse_call_word(generic_parameters, token)
         if token.ty == TokenType.BACKSLASH:
+            token = self.advance(skip_ws=True) # skip `\`
             return ParsedFunRefWord(self.parse_call_word(generic_parameters, token))
         if token.ty == TokenType.IF:
             brace = self.advance(skip_ws=True)
@@ -651,7 +650,7 @@ class Parser:
                 self.abort("Expected `}`")
             return ParsedIfWord(token, if_words, else_words)
         if token.ty == TokenType.TILDE:
-            return ParsedLoadWord(token)
+            return LoadWord(token)
         if token.ty == TokenType.LOOP or token.ty == TokenType.BLOCK:
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
@@ -665,7 +664,7 @@ class Parser:
             if token.ty == TokenType.BLOCK:
                 return ParsedBlockWord(token, words)
         if token.ty == TokenType.BREAK:
-            return ParsedBreakWord(token)
+            return BreakWord(token)
         if token.ty == TokenType.BANG:
             return ParsedCastWord(token, self.parse_type(generic_parameters))
         if token.ty == TokenType.SIZEOF:
@@ -679,9 +678,9 @@ class Parser:
             return ParsedSizeofWord(token, taip)
         if token.ty == TokenType.DOT:
             self.retreat(token)
-            return ParsedGetFieldWord(token, self.parse_field_accesses())
+            return GetFieldWord(token, self.parse_field_accesses())
         if token.ty == TokenType.ARROW:
-            return ParsedIndirectCallWord(token)
+            return IndirectCallWord(token)
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: List[Token], token: Token) -> ParsedCallWord | ParsedForeignCallWord:
@@ -835,7 +834,7 @@ class Parser:
         if token.ty == TokenType.IDENT:
             for generic_index, lexeme in enumerate(map(lambda t: t.lexeme, generic_parameters)):
                 if lexeme == token.lexeme:
-                    return ParsedGenericType(token, generic_index)
+                    return GenericType(token, generic_index)
             next = self.peek(skip_ws=True)
             if next is not None and next.ty == TokenType.COLON:
                 self.advance(skip_ws=True) # skip the `:`
@@ -880,6 +879,498 @@ class Parser:
                     self.abort("Expected `,` in return list of function type.")
             return ParsedFunctionType(token, args, rets)
         self.abort("Expected type")
+
+@dataclass
+class ResolvedImport:
+    file_path: Token
+    qualifier: Token
+    module: 'ResolvedModule'
+
+@dataclass
+class ResolvedPtrType:
+    child: 'ResolvedType'
+
+@dataclass
+class ResolvedForeignType:
+    module_token: Token
+    name: Token
+    module: 'ResolvedModule'
+    taip: 'ResolvedStruct'
+    generic_arguments: List['ResolvedType']
+
+@dataclass
+class ResolvedStructType:
+    name: Token
+    struct: 'ResolvedStructHandle'
+    generic_arguments: List['ResolvedType']
+
+@dataclass
+class ResolvedFunctionType:
+    token: Token
+    args: List['ResolvedType']
+    rets: List['ResolvedType']
+
+@dataclass
+class ResolvedStruct:
+    name: Token
+    fields: List['ResolvedNamedType']
+
+@dataclass
+class ResolvedStructHandle:
+    index: int
+
+ResolvedType = PrimitiveType | ResolvedPtrType | GenericType | ResolvedForeignType | ResolvedStructType | ResolvedFunctionType
+
+@dataclass
+class ResolvedNamedType:
+    name: Token
+    taip: ResolvedType
+
+@dataclass
+class ResolvedFunctionSignature:
+    export_name: Optional[Token]
+    name: Token
+    generic_parameters: List[Token]
+    parameters: List[ResolvedNamedType]
+    returns: List[ResolvedType]
+
+@dataclass
+class ResolvedMemory:
+    taip: ResolvedNamedType
+    size: Token | None
+
+@dataclass
+class ResolvedGetWord:
+    token: Token
+    local: ResolvedNamedType | InitWord | ResolvedMemory
+    fields: List[Token]
+
+@dataclass
+class ResolvedRefWord:
+    token: Token
+    local: ResolvedNamedType | InitWord | ResolvedMemory
+    fields: List[Token]
+
+@dataclass
+class ResolvedSetWord:
+    token: Token
+    local: ResolvedNamedType | InitWord | ResolvedMemory
+    fields: List[Token]
+
+@dataclass
+class ResolvedStoreWord:
+    token: Token
+    local: ResolvedNamedType | InitWord | ResolvedMemory
+    fields: List[Token]
+
+@dataclass
+class ResolvedForeignCallWord:
+    module_token: Token
+    module: 'ResolvedModule'
+    name: Token
+    function: 'ResolvedFunction | ResolvedExtern'
+    generic_arguments: List[ResolvedType]
+
+@dataclass
+class ResolvedCallWord:
+    name: Token
+    function: 'ResolvedFunctionHandle'
+    generic_arguments: List[ResolvedType]
+
+@dataclass
+class ResolvedFunctionHandle:
+    index: int
+
+@dataclass
+class ResolvedFunRefWord:
+    call: ResolvedCallWord | ResolvedForeignCallWord
+
+@dataclass
+class ResolvedIfWord:
+    token: Token
+    if_words: List['ResolvedWord']
+    else_words: List['ResolvedWord']
+
+@dataclass
+class ResolvedLoopWord:
+    token: Token
+    words: List['ResolvedWord']
+
+@dataclass
+class ResolvedBlockWord:
+    token: Token
+    words: List['ResolvedWord']
+
+@dataclass
+class ResolvedCastWord:
+    token: Token
+    taip: ResolvedType
+
+@dataclass
+class ResolvedSizeofWord:
+    token: Token
+    taip: ResolvedType
+
+class IntrinsicType(str, Enum):
+    ADD = "ADD"
+    STORE = "STORE"
+    STORE8 = "STORE8"
+    LOAD8 = "LOAD8"
+    DROP = "DROP"
+    SUB = "SUB"
+    EQ = "EQ"
+    NOT_EQ = "NOT_EQ"
+    MOD = "MOD"
+    DIV = "DIV"
+    AND = "AND"
+    NOT = "NOT"
+    OR = "OR"
+    LESS = "LESS"
+    GREATER = "GREATER"
+    LESS_EQ = "LESS_EQ"
+    GREATER_EQ = "GREATER_EQ"
+    MUL = "MUL"
+    ROTR = "ROTR"
+    ROTL = "ROTL"
+    MEM_GROW = "MEM_GROW"
+    MEM_COPY = "MEM_COPY"
+    FLIP = "FLIP"
+
+@dataclass
+class IntrinsicWord:
+    ty: IntrinsicType
+    token: Token
+
+INTRINSICS: dict[str, IntrinsicType] = {
+    "drop": IntrinsicType.DROP,
+    "flip": IntrinsicType.FLIP,
+    "+": IntrinsicType.ADD,
+    "lt": IntrinsicType.LESS,
+    "gt": IntrinsicType.GREATER,
+    "=": IntrinsicType.EQ,
+    "le": IntrinsicType.LESS_EQ,
+    "ge": IntrinsicType.GREATER_EQ,
+    "not": IntrinsicType.NOT,
+    "mem-grow": IntrinsicType.MEM_GROW,
+    "-": IntrinsicType.SUB,
+    "and": IntrinsicType.AND,
+    "store8": IntrinsicType.STORE8,
+    "load8": IntrinsicType.LOAD8,
+    "%": IntrinsicType.MOD,
+    "/": IntrinsicType.DIV,
+    "/=": IntrinsicType.NOT_EQ,
+    "*": IntrinsicType.MUL,
+    "mem-copy": IntrinsicType.MEM_COPY,
+    "rotl": IntrinsicType.ROTL,
+    "rotr": IntrinsicType.ROTR,
+    "or": IntrinsicType.OR,
+    "store": IntrinsicType.STORE,
+}
+
+ResolvedWord = NumberWord | StringWord | ResolvedCallWord | DerefWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedForeignCallWord | ResolvedFunRefWord | ResolvedIfWord | LoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | GetFieldWord | IndirectCallWord | IntrinsicWord
+
+@dataclass
+class ResolvedFunction:
+    signature: ResolvedFunctionSignature
+    memories: List[ResolvedMemory]
+    locals: List[ResolvedNamedType]
+    body: List[ResolvedWord]
+
+@dataclass
+class ResolvedExtern:
+    module: Token
+    name: Token
+    signature: ResolvedFunctionSignature
+
+@dataclass
+class ResolvedModule:
+    id: int
+    imports: List[ResolvedImport]
+    structs: List[ResolvedStruct]
+    externs: List[ResolvedExtern]
+    functions: List[ResolvedFunction]
+
+def load_recursive(modules: Dict[str, ParsedModule], path: str, import_stack: List[str]=[]):
+    with open(path, 'r') as reader:
+        file = reader.read()
+        tokens = Lexer(file).lex()
+        module = Parser(path, tokens).parse()
+        modules[path] = module
+        for imp in module.imports:
+            p = os.path.normpath(os.path.dirname(path) + "/" + imp.file_path.lexeme[1:-1])
+            if p in import_stack:
+                print("Module import cycle detected: ", end="")
+                for a in import_stack:
+                    print(f"{a} -> ", end="")
+                print(p)
+                exit(1)
+            if p in modules:
+                continue
+            import_stack.append(p)
+            load_recursive(modules, p, import_stack)
+            import_stack.pop()
+
+def determine_compilation_order(unprocessed: List[ParsedModule]) -> List[ParsedModule]:
+    ordered: List[ParsedModule] = []
+    while len(unprocessed) > 0:
+        i = 0
+        while i < len(unprocessed):
+            module = unprocessed[i]
+            postpone = False
+            for imp in module.imports:
+                path = os.path.normpath(os.path.dirname(module.path) + "/" + imp.file_path.lexeme[1:-1])
+                if path not in map(lambda m: m.path, ordered):
+                    postpone = True
+                    break
+            if postpone:
+                i += 1
+                continue
+            ordered.append(unprocessed.pop(i))
+    return ordered
+
+@dataclass
+class ResolverException(Exception):
+    token: Token
+    message: str
+
+@dataclass
+class Env:
+    vars: Dict[str, List[ResolvedNamedType | InitWord]] = field(default_factory=dict)
+
+    def lookup(self, name: Token) -> ResolvedNamedType | InitWord | None:
+        if name.lexeme not in self.vars:
+            return None
+        vars = self.vars[name.lexeme]
+        if len(vars) == 0:
+            return None
+        return vars[0]
+
+    def insert(self, var: ResolvedNamedType | InitWord):
+        if var.name.lexeme in self.vars:
+            self.vars[var.name.lexeme].insert(0, var)
+            return
+        self.vars[var.name.lexeme] = [var]
+
+@dataclass
+class FunctionResolver:
+    module_resolver: 'ModuleResolver'
+    signatures: List[ResolvedFunctionSignature]
+    structs: List[ResolvedStruct]
+    function: ParsedFunction
+    signature: ResolvedFunctionSignature
+
+    def resolve(self) -> ResolvedFunction:
+        memories = list(map(self.module_resolver.resolve_memory, self.function.memories))
+        locals = list(map(self.module_resolver.resolve_named_type, self.function.locals))
+        env = Env()
+        for param in self.signature.parameters:
+            env.insert(param)
+        for local in locals:
+            env.insert(local)
+        for memory in memories:
+            env.insert(memory.taip)
+        body = list(map(lambda w: self.resolve_word(env, w), self.function.body))
+        return ResolvedFunction(self.signature, memories, locals, body)
+
+    def resolve_word(self, env: Env, word: ParsedWord) -> ResolvedWord:
+        def resolve_word(word: ParsedWord):
+            return self.resolve_word(env, word)
+        if isinstance(word, NumberWord):
+            return word
+        if isinstance(word, StringWord):
+            return word
+        if isinstance(word, ParsedCastWord):
+            return ResolvedCastWord(word.token, self.module_resolver.resolve_type(word.taip))
+        if isinstance(word, ParsedIfWord):
+            if_words = list(map(resolve_word, word.if_words))
+            else_words = list(map(resolve_word, word.else_words))
+            return ResolvedIfWord(word.token, if_words, else_words)
+        if isinstance(word, ParsedLoopWord):
+            words = list(map(resolve_word, word.words))
+            return ResolvedLoopWord(word.token, words)
+        if isinstance(word, ParsedBlockWord):
+            words = list(map(resolve_word, word.words))
+            return ResolvedBlockWord(word.token, words)
+        if isinstance(word, ParsedCallWord):
+            if word.name.lexeme in INTRINSICS:
+                return IntrinsicWord(INTRINSICS[word.name.lexeme], word.name)
+            return self.resolve_call_word(env, word)
+        if isinstance(word, ParsedForeignCallWord):
+            return self.resolve_foreign_call_word(env, word)
+        if isinstance(word, DerefWord):
+            return word
+        if isinstance(word, ParsedGetWord):
+            var = self.resolve_var_name(env, word.token)
+            return ResolvedGetWord(word.token, var, word.fields)
+        if isinstance(word, InitWord):
+            env.insert(word)
+            return word
+        if isinstance(word, ParsedRefWord):
+            var = self.resolve_var_name(env, word.token)
+            return ResolvedRefWord(word.token, var, word.fields)
+        if isinstance(word, ParsedSetWord):
+            var = self.resolve_var_name(env, word.token)
+            return ResolvedSetWord(word.token, var, word.fields)
+        if isinstance(word, ParsedStoreWord):
+            var = self.resolve_var_name(env, word.token)
+            return ResolvedStoreWord(word.token, var, word.fields)
+        if isinstance(word, ParsedFunRefWord):
+            if isinstance(word.call, ParsedCallWord):
+                return ResolvedFunRefWord(self.resolve_call_word(env, word.call))
+            if isinstance(word.call, ParsedForeignCallWord):
+                return ResolvedFunRefWord(self.resolve_foreign_call_word(env, word.call))
+            assert_never(word.call)
+        if isinstance(word, LoadWord):
+            return word
+        if isinstance(word, BreakWord):
+            return word
+        if isinstance(word, ParsedSizeofWord):
+            return ResolvedSizeofWord(word.token, self.module_resolver.resolve_type(word.taip))
+        if isinstance(word, GetFieldWord):
+            return word
+        if isinstance(word, IndirectCallWord):
+            return word
+        assert_never(word)
+
+    def resolve_call_word(self, env: Env, word: ParsedCallWord) -> ResolvedCallWord:
+        resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
+        function = self.module_resolver.resolve_function_name(word.name)
+        return ResolvedCallWord(word.name, function, resolved_generic_arguments)
+
+    def resolve_foreign_call_word(self, env: Env, word: ParsedForeignCallWord) -> ResolvedForeignCallWord:
+        resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
+        for imp in self.module_resolver.imports:
+            if imp.qualifier.lexeme == word.module.lexeme:
+                module = imp.module
+                for f in module.functions:
+                    if f.signature.name.lexeme == word.name.lexeme:
+                        return ResolvedForeignCallWord(word.module, module, word.name, f, resolved_generic_arguments)
+                for extern in module.externs:
+                    if extern.signature.name.lexeme == word.name.lexeme:
+                        return ResolvedForeignCallWord(word.module, module, word.name, extern, resolved_generic_arguments)
+                self.module_resolver.abort(word.name, f"function {word.name.lexeme} not found")
+        self.module_resolver.abort(word.name, f"module {word.module.lexeme} not found")
+        return ResolvedCallWord(word.name, function, resolved_generic_arguments)
+
+    def resolve_var_name(self, env: Env, name: Token) -> ResolvedNamedType | InitWord | ResolvedMemory:
+        var = env.lookup(name)
+        if var is None:
+            for memory in self.module_resolver.memories:
+                if memory.taip.name.lexeme == name.lexeme:
+                    return memory
+            self.module_resolver.abort(name, f"local {name.lexeme} not found")
+        return var
+
+    def resolve_fields(self, taip: ResolvedType, fields: List[Token]) -> List[Tuple[ResolvedStruct, Token]]:
+        resolved_fields = []
+        for field_name in fields:
+            if isinstance(taip, ResolvedStructType):
+                struct = self.structs[taip.struct.index]
+                for field in struct.fields:
+                    if field.name.lexeme == field_name.lexeme:
+                        resolved_fields.append((struct, field_name))
+                self.module_resolver.abort(field_name, f"field not found {field_name.lexeme}")
+        return resolved_fields
+
+
+@dataclass
+class ModuleResolver:
+    resolved_modules: Dict[str, ResolvedModule]
+    module: ParsedModule
+    imports: List[ResolvedImport] = field(default_factory=list)
+    structs: List[ResolvedStruct] = field(default_factory=list)
+    externs: List[ResolvedExtern] = field(default_factory=list)
+    memories: List[ResolvedMemory] = field(default_factory=list)
+
+    def abort(self, token: Token, message: str) -> NoReturn:
+        raise ResolverException(token, self.module.path + " " + message)
+
+    def resolve(self, id: int) -> ResolvedModule:
+        resolved_imports = list(map(self.resolve_import, self.module.imports))
+        self.imports = resolved_imports
+        resolved_structs = list(map(self.resolve_struct, self.module.structs))
+        self.structs = resolved_structs
+        self.memories = list(map(self.resolve_memory, self.module.memories))
+        resolved_externs = list(map(self.resolve_extern, self.module.externs))
+        self.externs = resolved_externs
+        resolved_signatures = list(map(lambda f: self.resolve_function_signature(f.signature), self.module.functions))
+        self.signatures = resolved_signatures
+        resolved_functions = list(map(lambda f: self.resolve_function(f[0], f[1]), zip(resolved_signatures, self.module.functions)))
+        return ResolvedModule(id, resolved_imports, resolved_structs, resolved_externs, resolved_functions)
+
+    def resolve_function(self, signature: ResolvedFunctionSignature, function: ParsedFunction) -> ResolvedFunction:
+        return FunctionResolver(self, self.signatures, self.structs, function, signature).resolve()
+
+    def resolve_function_name(self, name: Token) -> ResolvedFunctionHandle:
+        function_names = list(map(lambda s: s.name.lexeme, self.signatures)) + list(map(lambda s: s.signature.name.lexeme, self.externs))
+        for index, signature in enumerate(function_names):
+            if signature == name.lexeme:
+                return ResolvedFunctionHandle(index)
+        self.abort(name, f"function {name.lexeme} not found")
+
+    def resolve_memory(self, memory: ParsedMemory) -> ResolvedMemory:
+        return ResolvedMemory(ResolvedNamedType(memory.name, self.resolve_type(memory.taip)), memory.size)
+
+    def resolve_extern(self, extern: ParsedExtern) -> ResolvedExtern:
+        return ResolvedExtern(extern.module, extern.name, self.resolve_function_signature(extern.signature))
+
+    def resolve_import(self, imp: ParsedImport) -> ResolvedImport:
+        path = os.path.normpath(os.path.dirname(self.module.path) + "/" + imp.file_path.lexeme[1:-1])
+        imported_module = self.resolved_modules[path]
+        return ResolvedImport(imp.file_path, imp.module_qualifier, imported_module)
+
+    def resolve_named_type(self, named_type: ParsedNamedType) -> ResolvedNamedType:
+        return ResolvedNamedType(named_type.name, self.resolve_type(named_type.taip))
+
+    def resolve_type(self, taip: ParsedType) -> ResolvedType:
+        if isinstance(taip, PrimitiveType):
+            return taip
+        if isinstance(taip, ParsedPtrType):
+            return ResolvedPtrType(self.resolve_type(taip.child))
+        if isinstance(taip, ParsedStructType):
+            resolved_generic_arguments = list(map(self.resolve_type, taip.generic_arguments))
+            return ResolvedStructType(taip.name, self.resolve_struct_name(taip.name), resolved_generic_arguments)
+        if isinstance(taip, GenericType):
+            return taip
+        if isinstance(taip, ParsedForeignType):
+            resolved_generic_arguments = list(map(self.resolve_type, taip.generic_arguments))
+            for imp in self.imports:
+                if imp.qualifier.lexeme == taip.module.lexeme:
+                    for struct in imp.module.structs:
+                        if struct.name.lexeme == taip.name.lexeme:
+                            return ResolvedForeignType(taip.module, taip.name, imp.module, struct, resolved_generic_arguments)
+            self.abort(taip.module, f"struct {taip.module.lexeme}:{taip.name.lexeme} not found")
+        if isinstance(taip, ParsedFunctionType):
+            args = list(map(self.resolve_type, taip.args))
+            rets = list(map(self.resolve_type, taip.rets))
+            return ResolvedFunctionType(taip.token, args, rets)
+        return assert_never(taip)
+
+    def resolve_struct_name(self, name: Token) -> ResolvedStructHandle:
+        for index, struct in enumerate(self.module.structs):
+            if struct.name.lexeme == name.lexeme:
+                return ResolvedStructHandle(index)
+        self.abort(name, f"struct {name.lexeme} not found")
+
+    def resolve_struct(self, struct: ParsedStruct) -> ResolvedStruct:
+        return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)))
+
+    def resolve_function_signature(self, signature: ParsedFunctionSignature) -> ResolvedFunctionSignature:
+        parameters = list(map(self.resolve_named_type, signature.parameters))
+        rets = list(map(self.resolve_type, signature.returns))
+        return ResolvedFunctionSignature(signature.export_name, signature.name, signature.generic_parameters, parameters, rets)
+
+def main() -> None:
+    modules: Dict[str, ParsedModule] = {}
+    load_recursive(modules, os.path.normpath(sys.argv[1]))
+
+    resolved_modules: Dict[str, ResolvedModule] = {}
+    for id, module in enumerate(determine_compilation_order(list(modules.values()))):
+        resolved_modules[module.path] = ModuleResolver(resolved_modules, module).resolve(id)
+
+main()
+
+exit(0)
 
 for path in sys.argv[1:]:
     with open(path, 'r') as reader:
