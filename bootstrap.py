@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, asdict, field
 from enum import Enum
-from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, assert_never
+from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, assert_never
 from abc import ABC, abstractmethod
 from shutil import copyfile
 from functools import reduce
@@ -74,6 +74,9 @@ class Token:
     @staticmethod
     def keyword_lexeme(ty: TokenType) -> str:
         return TYPE_LEXEME_DICT[ty]
+
+    def __str__(self) -> str:
+        return f"\"{self.lexeme}:{str(self.line)}:{str(self.column)}\""
 
 @dataclass
 class LexerException(Exception):
@@ -889,6 +892,9 @@ class ResolvedImport:
 class ResolvedPtrType:
     child: 'ResolvedType'
 
+    def __str__(self) -> str:
+        return f"ResolvedPtrType(child={str(self.child)})"
+
 @dataclass
 class ResolvedForeignType:
     module_token: Token
@@ -896,12 +902,26 @@ class ResolvedForeignType:
     struct: 'ResolvedStruct'
     generic_arguments: List['ResolvedType']
 
+    def __str__(self) -> str:
+        return f"ResolvedForeignType(module_token={str(self.module_token)}, name={str(self.name)}, struct={str(self.struct)}, generic_arguments={listtostr(self.generic_arguments)})"
+
+def listtostr(l: Sequence[object]) -> str:
+    if len(l) == 0:
+        return "[]"
+    s = "["
+    for e in l:
+        s += str(e) + ", "
+    return s[0:-2] + "]"
+
 @dataclass
 class ResolvedStructType:
     module: int
     name: Token
     struct: 'Callable[[], ResolvedStruct]'
     generic_arguments: List['ResolvedType']
+
+    def __str__(self) -> str:
+        return f"ResolvedStructType(module={str(self.module)}, name={str(self.name)}, generic_arguments={listtostr(self.generic_arguments)})"
 
 @dataclass
 class ResolvedFunctionType:
@@ -913,6 +933,9 @@ class ResolvedFunctionType:
 class ResolvedStruct:
     name: Token
     fields: List['ResolvedNamedType']
+
+    def __str__(self) -> str:
+        return f"ResolvedStruct(name={str(self.name)})"
 
 @dataclass
 class ResolvedStructHandle:
@@ -948,6 +971,14 @@ def resolved_type_eq(a: ResolvedType, b: ResolvedType):
         return a.generic_index == b.generic_index
     return False
 
+def resolved_types_eq(a: List[ResolvedType], b: List[ResolvedType]) -> bool:
+    if len(a) != len(b):
+        return False
+    for i in range(len(a)):
+        if not resolved_type_eq(a[i], b[i]):
+            return False
+    return True
+
 def format_type(a: ResolvedType) -> str:
     if isinstance(a, PrimitiveType):
         return str(a)
@@ -980,6 +1011,9 @@ def format_type(a: ResolvedType) -> str:
 class ResolvedNamedType:
     name: Token
     taip: ResolvedType
+
+    def __str__(self) -> str:
+        return f"ResolvedNamedType(name={str(self.name)}, taip={str(self.taip)})"
 
 @dataclass
 class ResolvedFunctionSignature:
@@ -1253,17 +1287,15 @@ class Env:
 class Stack:
     parent: 'Stack | None'
     stack: List[ResolvedType]
-    negative_depth: int
     negative: List[ResolvedType]
+    drained: bool = False # True in case of non-termination because of break
 
     @staticmethod
     def empty() -> 'Stack':
-        return Stack(None, [], 0, [])
+        return Stack(None, [], [])
 
     def append(self, taip: ResolvedType):
         self.stack.append(taip)
-        if self.negative_depth > 0:
-            self.negative_depth -= 1
 
     def extend(self, taips: List[ResolvedType]):
         for taip in taips:
@@ -1277,15 +1309,25 @@ class Stack:
         taip = self.parent.pop()
         if taip is None:
             return None
-        if self.negative_depth == len(self.negative):
-            self.negative.append(taip)
+        self.negative.append(taip)
         return taip
 
     def clone(self) -> 'Stack':
-        return Stack(self.parent.clone() if self.parent is not None else None, list(self.stack), self.negative_depth, list(self.negative))
+        return Stack(self.parent.clone() if self.parent is not None else None, list(self.stack), list(self.negative))
+
+    def dump(self) -> List[ResolvedType]:
+        parent_dump = self.parent.dump() if self.parent is not None else []
+        return parent_dump + self.stack
+
+    def drain(self):
+        self.drained = True
+        self.stack = []
+        self.negative = []
+        if self.parent is not None:
+            self.parent.drain()
 
     def make_child(self) -> 'Stack':
-        return Stack(self.clone(), [], 0, [])
+        return Stack(self.clone(), [], [])
 
     def apply(self, other: 'Stack'):
         for removed in other.negative:
@@ -1298,6 +1340,24 @@ class Stack:
 
     def __getitem__(self, index: int) -> ResolvedType:
         return self.stack[index]
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Stack):
+            return False
+        if len(self.stack) != len(other.stack):
+            return False
+        if len(self.negative) != len(other.negative):
+            return False
+        for i in range(len(self.stack)):
+            if not resolved_type_eq(self.stack[i], other.stack[i]):
+                return False
+        for i in range(len(self.negative)):
+            if not resolved_type_eq(self.negative[i], other.negative[i]):
+                return False
+        return True
+
+    def __str__(self) -> str:
+        return f"Stack(drained={str(self.drained)}, parent={self.parent}, stack={listtostr(self.stack)}, negative={listtostr(self.negative)})"
 
 
 @dataclass
@@ -1320,9 +1380,12 @@ class FunctionResolver:
             env.insert(memory.taip)
         stack: Stack = Stack.empty()
         body = list(map(lambda w: self.resolve_word(env, stack, [], w), self.function.body))
+        self.expect_stack(self.signature.name, stack, self.signature.returns)
+        if len(stack) != 0:
+            self.module_resolver.abort(self.signature.name, "items left on stack at end of function")
         return ResolvedFunction(self.signature, memories, locals, body)
 
-    def resolve_word(self, env: Env, stack: Stack, break_stacks: List[Stack], word: ParsedWord) -> ResolvedWord:
+    def resolve_word(self, env: Env, stack: Stack, break_stacks: List[List[ResolvedType]], word: ParsedWord) -> ResolvedWord:
         if isinstance(word, NumberWord):
             stack.append(PrimitiveType.I32)
             return word
@@ -1339,7 +1402,6 @@ class FunctionResolver:
             return ResolvedCastWord(word.token, resolved_type)
         if isinstance(word, ParsedIfWord):
             if len(stack) == 0 or stack[-1] != PrimitiveType.BOOL:
-                print(stack)
                 self.module_resolver.abort(word.token, "expected a boolean on stack")
             stack.pop()
             if_env = Env(env)
@@ -1352,26 +1414,44 @@ class FunctionResolver:
                 return self.resolve_word(else_env, else_stack, break_stacks, word)
             if_words = list(map(resolve_if_word, word.if_words))
             else_words = list(map(resolve_else_word, word.else_words))
-            stack.apply(if_stack)
+            if not if_stack.drained and not else_stack.drained:
+                if if_stack != else_stack:
+                    self.module_resolver.abort(word.token, "Type mismatch in if branches")
+                stack.apply(if_stack)
+            elif if_stack.drained and else_stack.drained:
+                stack.drain()
+            elif not if_stack.drained:
+                stack.apply(if_stack)
+            else:
+                assert(not else_stack.drained)
+                stack.apply(else_stack)
             return ResolvedIfWord(word.token, if_words, else_words)
         if isinstance(word, ParsedLoopWord):
             loop_stack = stack.make_child()
             loop_env = Env(env)
-            loop_break_stacks: List[Stack] = []
+            loop_break_stacks: List[List[ResolvedType]] = []
             def resolve_loop_word(word: ParsedWord):
                 return self.resolve_word(loop_env, loop_stack, loop_break_stacks, word)
             words = list(map(resolve_loop_word, word.words))
-            stack.apply(loop_break_stacks[0] if len(loop_break_stacks) != 0 else loop_stack)
+            if len(loop_break_stacks) != 0:
+                stack.extend(loop_break_stacks[0])
+            else:
+                stack.apply(loop_stack)
             return ResolvedLoopWord(word.token, words)
         if isinstance(word, ParsedBlockWord):
             block_stack = stack.make_child()
             block_env = Env(env)
-            block_break_stacks: List[Stack] = []
+            block_break_stacks: List[List[ResolvedType]] = []
             def resolve_block_word(word: ParsedWord):
                 return self.resolve_word(block_env, block_stack, block_break_stacks, word)
             words = list(map(resolve_block_word, word.words))
             if len(block_break_stacks) != 0:
-                stack.apply(block_break_stacks[0])
+                for i in range(1, len(block_break_stacks)):
+                    if not resolved_types_eq(block_break_stacks[0], block_break_stacks[i]):
+                        self.module_resolver.abort(word.token, "break stack mismatch")
+                if not block_stack.drained and not resolved_types_eq(block_break_stacks[0], block_stack.stack):
+                    self.module_resolver.abort(word.token, "the items remaining on the stack at the end of the block don't match the break statements")
+                stack.extend(block_break_stacks[0])
             else:
                 stack.apply(block_stack)
             return ResolvedBlockWord(word.token, words)
@@ -1420,7 +1500,10 @@ class FunctionResolver:
         if isinstance(word, ParsedStoreWord):
             var = self.resolve_var_name(env, word.token)
             resolved_fields = self.resolve_fields(var.taip, word.fields)
-            stack.append(var.taip if len(resolved_fields) == 0 else resolved_fields[-1].taip)
+            expected_taip = var.taip if len(resolved_fields) == 0 else resolved_fields[-1].taip
+            if not isinstance(expected_taip, ResolvedPtrType):
+                self.module_resolver.abort(word.token, "`=>` can only store into ptr types")
+            self.expect_stack(word.token, stack, [expected_taip.child])
             return ResolvedStoreWord(word.token, var, resolved_fields)
         if isinstance(word, ParsedFunRefWord):
             if isinstance(word.call, ParsedCallWord):
@@ -1439,11 +1522,12 @@ class FunctionResolver:
                 self.module_resolver.abort(word.token, "expected a non-empty stack")
             top = stack.pop()
             if not isinstance(top, ResolvedPtrType):
-                print(stack)
                 self.module_resolver.abort(word.token, "expected a pointer on the stack")
             stack.append(top.child)
             return word
         if isinstance(word, BreakWord):
+            break_stacks.append(stack.dump())
+            stack.drain()
             return word
         if isinstance(word, ParsedSizeofWord):
             stack.append(PrimitiveType.I32)
@@ -1482,7 +1566,6 @@ class FunctionResolver:
                     stack.append(PrimitiveType.I64)
             case IntrinsicType.DROP:
                 if len(stack) == 0:
-                    print(stack)
                     self.module_resolver.abort(token, "`drop` expected non empty stack")
                 stack.pop()
             case IntrinsicType.MOD | IntrinsicType.MUL | IntrinsicType.DIV:
@@ -1752,6 +1835,7 @@ def main() -> None:
     resolved_modules_by_path: Dict[str, ResolvedModule] = {}
     try:
         for id, module in enumerate(determine_compilation_order(list(modules.values()))):
+            print(module.path)
             resolved_module = ModuleResolver(resolved_modules, resolved_modules_by_path, module, id).resolve()
             resolved_modules[id] = resolved_module
             resolved_modules_by_path[module.path] = resolved_module
