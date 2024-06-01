@@ -291,8 +291,9 @@ class NumberWord:
     token: Token
 
 @dataclass
-class StringWord:
+class ParsedStringWord:
     token: Token
+    string: bytearray
 
 @dataclass
 class DerefWord:
@@ -380,7 +381,7 @@ class ParsedGetFieldWord:
 class IndirectCallWord:
     token: Token
 
-ParsedWord = NumberWord | StringWord | ParsedCallWord | DerefWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | InitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | LoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | IndirectCallWord
+ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | DerefWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | InitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | LoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | IndirectCallWord
 
 @dataclass
 class ParsedNamedType:
@@ -598,7 +599,27 @@ class Parser:
         if token.ty == TokenType.NUMBER:
             return NumberWord(token)
         if token.ty == TokenType.STRING:
-            return StringWord(token)
+            string = bytearray()
+            i = 1
+            while i < len(token.lexeme) - 1:
+                if token.lexeme[i] != "\\":
+                    string.extend(token.lexeme[i].encode('utf-8'))
+                    i += 1
+                    continue
+                if token.lexeme[i + 1] == "\"":
+                    string.extend(b"\"")
+                elif token.lexeme[i + 1] == "n":
+                    string.extend(b"\n")
+                elif token.lexeme[i + 1] == "t":
+                    string.extend(b"\t")
+                elif token.lexeme[i + 1] == "r":
+                    string.extend(b"\r")
+                elif token.lexeme[i + 1] == "\\":
+                    string.extend(b"\\")
+                else:
+                    assert(False)
+                i += 2
+            return ParsedStringWord(token, string)
         if token.ty in [TokenType.DOLLAR, TokenType.AMPERSAND, TokenType.HASH, TokenType.DOUBLE_ARROW]:
             indicator_token = token
             name = self.advance(skip_ws=True)
@@ -889,21 +910,11 @@ class ResolvedImport:
     module: 'ResolvedModule'
 
 @dataclass
-class ResolvedPtrType:
+class PtrType:
     child: 'ResolvedType'
 
     def __str__(self) -> str:
-        return f"ResolvedPtrType(child={str(self.child)})"
-
-@dataclass
-class ResolvedForeignType:
-    module_token: Token
-    name: Token
-    struct: 'ResolvedStruct'
-    generic_arguments: List['ResolvedType']
-
-    def __str__(self) -> str:
-        return f"ResolvedForeignType(module_token={str(self.module_token)}, name={str(self.name)}, struct={str(self.struct)}, generic_arguments={listtostr(self.generic_arguments)})"
+        return f"PtrType(child={str(self.child)})"
 
 def listtostr(l: Sequence[object]) -> str:
     if len(l) == 0:
@@ -942,12 +953,54 @@ class ResolvedStructHandle:
     module: int
     index: int
 
-ResolvedType = PrimitiveType | ResolvedPtrType | GenericType | ResolvedForeignType | ResolvedStructType | ResolvedFunctionType
+ResolvedType = PrimitiveType | PtrType | GenericType | ResolvedStructType | ResolvedFunctionType
+
+@dataclass
+class NamedType:
+    name: Token
+    taip: 'Type'
+
+    def __str__(self) -> str:
+        return f"NamedType(name={str(self.name)}, taip={str(self.taip)})"
+
+@dataclass
+class FunctionType:
+    token: Token
+    parameters: List['Type']
+    returns: List['Type']
+
+@dataclass
+class ForeignType:
+    module_token: Token
+    name: Token
+    struct: 'Struct'
+
+    def __str__(self) -> str:
+        return f"ForeignType(module_token={str(self.module_token)}, name={str(self.name)}, struct={str(self.struct)})"
+
+@dataclass
+class Struct:
+    name: Token
+    fields: List['NamedType']
+
+    def __str__(self) -> str:
+        return f"Struct(name={str(self.name)})"
+
+@dataclass
+class StructType:
+    module: int
+    name: Token
+    struct: 'Callable[[], Struct]'
+
+    def __str__(self) -> str:
+        return f"StructType(module={str(self.module)}, name={str(self.name)})"
+
+Type = PrimitiveType | PtrType | ForeignType | StructType | FunctionType
 
 def resolved_type_eq(a: ResolvedType, b: ResolvedType):
     if isinstance(a, PrimitiveType):
         return a == b
-    if isinstance(a, ResolvedPtrType) and isinstance(b, ResolvedPtrType):
+    if isinstance(a, PtrType) and isinstance(b, PtrType):
         return resolved_type_eq(a.child, b.child)
     if isinstance(a, ResolvedStructType) and isinstance(b, ResolvedStructType):
         return a.struct() == b.struct()
@@ -961,12 +1014,6 @@ def resolved_type_eq(a: ResolvedType, b: ResolvedType):
             if not resolved_type_eq(c, d):
                 return False
         return True
-    if isinstance(a, ResolvedForeignType) and isinstance(b, ResolvedForeignType):
-        return a.struct == b.struct
-    if isinstance(a, ResolvedStructType) and isinstance(b, ResolvedForeignType):
-        return a.struct() == b.struct
-    if isinstance(a, ResolvedForeignType) and isinstance(b, ResolvedStructType):
-        return resolved_type_eq(b, a)
     if isinstance(a, GenericType) and isinstance(b, GenericType):
         return a.generic_index == b.generic_index
     return False
@@ -982,7 +1029,7 @@ def resolved_types_eq(a: List[ResolvedType], b: List[ResolvedType]) -> bool:
 def format_type(a: ResolvedType) -> str:
     if isinstance(a, PrimitiveType):
         return str(a)
-    if isinstance(a, ResolvedPtrType):
+    if isinstance(a, PtrType):
         return f".{format_type(a.child)}"
     if isinstance(a, ResolvedStructType):
         if len(a.generic_arguments) == 0:
@@ -1003,8 +1050,6 @@ def format_type(a: ResolvedType) -> str:
         return s[:-2] + ")"
     if isinstance(a, GenericType):
         return a.token.lexeme
-    if isinstance(a, ResolvedForeignType):
-        return a.name.lexeme
     assert_never(a)
 
 @dataclass
@@ -1033,6 +1078,11 @@ class ResolvedFieldAccess:
     name: Token
     struct: ResolvedStruct
     taip: ResolvedType
+
+@dataclass
+class StringWord:
+    token: Token
+    offset: int
 
 @dataclass
 class ResolvedGetWord:
@@ -1216,6 +1266,7 @@ class ResolvedModule:
     externs: List[ResolvedExtern]
     memories: List[ResolvedMemory]
     functions: List[ResolvedFunction]
+    data: bytes
 
 def load_recursive(modules: Dict[str, ParsedModule], path: str, import_stack: List[str]=[]):
     with open(path, 'r') as reader:
@@ -1368,6 +1419,9 @@ class FunctionResolver:
     function: ParsedFunction
     signature: ResolvedFunctionSignature
 
+    def abort(self, token: Token, message: str) -> NoReturn:
+        self.abort(token, message)
+
     def resolve(self) -> ResolvedFunction:
         memories = list(map(self.module_resolver.resolve_memory, self.function.memories))
         locals = list(map(self.module_resolver.resolve_named_type, self.function.locals))
@@ -1382,27 +1436,30 @@ class FunctionResolver:
         body = list(map(lambda w: self.resolve_word(env, stack, [], w), self.function.body))
         self.expect_stack(self.signature.name, stack, self.signature.returns)
         if len(stack) != 0:
-            self.module_resolver.abort(self.signature.name, "items left on stack at end of function")
+            self.abort(self.signature.name, "items left on stack at end of function")
         return ResolvedFunction(self.signature, memories, locals, body)
 
     def resolve_word(self, env: Env, stack: Stack, break_stacks: List[List[ResolvedType]], word: ParsedWord) -> ResolvedWord:
         if isinstance(word, NumberWord):
             stack.append(PrimitiveType.I32)
             return word
-        if isinstance(word, StringWord):
-            stack.append(ResolvedPtrType(PrimitiveType.I32))
+        if isinstance(word, ParsedStringWord):
+            word.token
+            stack.append(PtrType(PrimitiveType.I32))
             stack.append(PrimitiveType.I32)
-            return word
+            offset = len(self.module_resolver.data)
+            self.module_resolver.data.extend(word.string)
+            return StringWord(word.token, offset)
         if isinstance(word, ParsedCastWord):
             if len(stack) == 0:
-                self.module_resolver.abort(word.token, "expected a non-empty stack")
+                self.abort(word.token, "expected a non-empty stack")
             stack.pop()
             resolved_type = self.module_resolver.resolve_type(word.taip)
             stack.append(resolved_type)
             return ResolvedCastWord(word.token, resolved_type)
         if isinstance(word, ParsedIfWord):
             if len(stack) == 0 or stack[-1] != PrimitiveType.BOOL:
-                self.module_resolver.abort(word.token, "expected a boolean on stack")
+                self.abort(word.token, "expected a boolean on stack")
             stack.pop()
             if_env = Env(env)
             if_stack = stack.make_child()
@@ -1416,7 +1473,7 @@ class FunctionResolver:
             else_words = list(map(resolve_else_word, word.else_words))
             if not if_stack.drained and not else_stack.drained:
                 if if_stack != else_stack:
-                    self.module_resolver.abort(word.token, "Type mismatch in if branches")
+                    self.abort(word.token, "Type mismatch in if branches")
                 stack.apply(if_stack)
             elif if_stack.drained and else_stack.drained:
                 stack.drain()
@@ -1448,9 +1505,9 @@ class FunctionResolver:
             if len(block_break_stacks) != 0:
                 for i in range(1, len(block_break_stacks)):
                     if not resolved_types_eq(block_break_stacks[0], block_break_stacks[i]):
-                        self.module_resolver.abort(word.token, "break stack mismatch")
+                        self.abort(word.token, "break stack mismatch")
                 if not block_stack.drained and not resolved_types_eq(block_break_stacks[0], block_stack.stack):
-                    self.module_resolver.abort(word.token, "the items remaining on the stack at the end of the block don't match the break statements")
+                    self.abort(word.token, "the items remaining on the stack at the end of the block don't match the break statements")
                 stack.extend(block_break_stacks[0])
             else:
                 stack.apply(block_stack)
@@ -1482,14 +1539,14 @@ class FunctionResolver:
         if isinstance(word, InitWord):
             taip = stack.pop()
             if taip is None:
-                self.module_resolver.abort(word.name, "expected a non-empty stack")
+                self.abort(word.name, "expected a non-empty stack")
             named_taip = ResolvedNamedType(word.name, taip)
             env.insert(named_taip)
             return ResolvedInitWord(word.name, named_taip)
         if isinstance(word, ParsedRefWord):
             var = self.resolve_var_name(env, word.token)
             resolved_fields = self.resolve_fields(var.taip, word.fields)
-            stack.append(ResolvedPtrType(var.taip if len(resolved_fields) == 0 else resolved_fields[-1].taip))
+            stack.append(PtrType(var.taip if len(resolved_fields) == 0 else resolved_fields[-1].taip))
             return ResolvedRefWord(word.token, var, resolved_fields)
         if isinstance(word, ParsedSetWord):
             var = self.resolve_var_name(env, word.token)
@@ -1501,8 +1558,8 @@ class FunctionResolver:
             var = self.resolve_var_name(env, word.token)
             resolved_fields = self.resolve_fields(var.taip, word.fields)
             expected_taip = var.taip if len(resolved_fields) == 0 else resolved_fields[-1].taip
-            if not isinstance(expected_taip, ResolvedPtrType):
-                self.module_resolver.abort(word.token, "`=>` can only store into ptr types")
+            if not isinstance(expected_taip, PtrType):
+                self.abort(word.token, "`=>` can only store into ptr types")
             self.expect_stack(word.token, stack, [expected_taip.child])
             return ResolvedStoreWord(word.token, var, resolved_fields)
         if isinstance(word, ParsedFunRefWord):
@@ -1519,10 +1576,10 @@ class FunctionResolver:
             assert_never(word.call)
         if isinstance(word, LoadWord):
             if len(stack) == 0:
-                self.module_resolver.abort(word.token, "expected a non-empty stack")
+                self.abort(word.token, "expected a non-empty stack")
             top = stack.pop()
-            if not isinstance(top, ResolvedPtrType):
-                self.module_resolver.abort(word.token, "expected a pointer on the stack")
+            if not isinstance(top, PtrType):
+                self.abort(word.token, "expected a pointer on the stack")
             stack.append(top.child)
             return word
         if isinstance(word, BreakWord):
@@ -1535,16 +1592,16 @@ class FunctionResolver:
         if isinstance(word, ParsedGetFieldWord):
             taip = stack.pop()
             if taip is None:
-                self.module_resolver.abort(word.token, "GetField expected a struct on the stack")
+                self.abort(word.token, "GetField expected a struct on the stack")
             resolved_fields = self.resolve_fields(taip, word.fields)
-            stack.append(ResolvedPtrType(resolved_fields[-1].taip))
+            stack.append(PtrType(resolved_fields[-1].taip))
             return ResolvedGetFieldWord(word.token, taip, resolved_fields)
         if isinstance(word, IndirectCallWord):
             if len(stack) == 0:
-                self.module_resolver.abort(word.token, "`->` expected a function on the stack")
+                self.abort(word.token, "`->` expected a function on the stack")
             function_type = stack.pop()
             if not isinstance(function_type, ResolvedFunctionType):
-                self.module_resolver.abort(word.token, "`->` expected a function on the stack")
+                self.abort(word.token, "`->` expected a function on the stack")
             self.type_check_call(stack, word.token, None, function_type.parameters, function_type.returns)
             return word
         assert_never(word)
@@ -1553,10 +1610,10 @@ class FunctionResolver:
         match intrinsic:
             case IntrinsicType.ADD | IntrinsicType.SUB:
                 if len(stack) < 2:
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
-                if isinstance(stack[-2], ResolvedPtrType):
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                if isinstance(stack[-2], PtrType):
                     if stack[-1] != PrimitiveType.I32:
-                        self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, i32]")
+                        self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, i32]")
                     stack.pop()
                 if stack[-1] == PrimitiveType.I32:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
@@ -1566,11 +1623,11 @@ class FunctionResolver:
                     stack.append(PrimitiveType.I64)
             case IntrinsicType.DROP:
                 if len(stack) == 0:
-                    self.module_resolver.abort(token, "`drop` expected non empty stack")
+                    self.abort(token, "`drop` expected non empty stack")
                 stack.pop()
             case IntrinsicType.MOD | IntrinsicType.MUL | IntrinsicType.DIV:
-                if isinstance(stack[-2], ResolvedPtrType):
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                if isinstance(stack[-2], PtrType):
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 if stack[-1] == PrimitiveType.I32:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 else:
@@ -1578,7 +1635,7 @@ class FunctionResolver:
                 stack.append(popped[0])
             case IntrinsicType.AND | IntrinsicType.OR:
                 if len(stack) < 2:
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 match stack[-1]:
                     case PrimitiveType.I32:
                         popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
@@ -1588,33 +1645,33 @@ class FunctionResolver:
                         popped = self.expect_stack(token, stack, [PrimitiveType.BOOL, PrimitiveType.BOOL])
                 stack.append(popped[0])
             case IntrinsicType.ROTR | IntrinsicType.ROTL:
-                if isinstance(stack[-2], ResolvedPtrType):
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                if isinstance(stack[-2], PtrType):
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 if stack[-2] == PrimitiveType.I32:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 else:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I32])
                 stack.append(popped[0])
             case IntrinsicType.GREATER | IntrinsicType.LESS | IntrinsicType.GREATER_EQ | IntrinsicType.LESS_EQ:
-                if isinstance(stack[-2], ResolvedPtrType):
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                if isinstance(stack[-2], PtrType):
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 if stack[-1] == PrimitiveType.I32:
                     self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 else:
                     self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                 stack.append(PrimitiveType.BOOL)
             case IntrinsicType.LOAD8:
-                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32)])
+                self.expect_stack(token, stack, [PtrType(PrimitiveType.I32)])
                 stack.append(PrimitiveType.I32)
             case IntrinsicType.STORE8:
-                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32])
+                self.expect_stack(token, stack, [PtrType(PrimitiveType.I32), PrimitiveType.I32])
             case IntrinsicType.MEM_COPY:
-                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32])
+                self.expect_stack(token, stack, [PtrType(PrimitiveType.I32), PtrType(PrimitiveType.I32), PrimitiveType.I32])
             case IntrinsicType.NOT_EQ | IntrinsicType.EQ:
                 if len(stack) < 2:
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 if not resolved_type_eq(stack[-1], stack[-2]):
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [a, a] for any a")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [a, a] for any a")
                 stack.pop()
                 stack.pop()
                 stack.append(PrimitiveType.BOOL)
@@ -1622,23 +1679,23 @@ class FunctionResolver:
                 a = stack.pop()
                 b = stack.pop()
                 if a is None or b is None:
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 stack.extend([a, b])
             case IntrinsicType.MEM_GROW:
                 self.expect_stack(token, stack, [PrimitiveType.I32])
                 stack.append(PrimitiveType.I32)
             case IntrinsicType.STORE:
                 if len(stack) < 2:
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
-                if not isinstance(stack[-2], ResolvedPtrType) or not resolved_type_eq(stack[-2].child, stack[-1]):
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, a]")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
+                if not isinstance(stack[-2], PtrType) or not resolved_type_eq(stack[-2].child, stack[-1]):
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, a]")
                 stack.pop()
                 stack.pop()
             case IntrinsicType.NOT:
                 if len(stack) == 0 or (stack[-1] != PrimitiveType.I32 and stack[-1] != PrimitiveType.BOOL):
-                    self.module_resolver.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected a i32 or bool on the stack")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected a i32 or bool on the stack")
             case _:
-                self.module_resolver.abort(token, "TODO")
+                self.abort(token, "TODO")
 
 
     def expect_stack(self, token: Token, stack: Stack, expected: List[ResolvedType]) -> List[ResolvedType]:
@@ -1646,10 +1703,10 @@ class FunctionResolver:
         for expected_type in reversed(expected):
             top = stack.pop()
             if top is None:
-                self.module_resolver.abort(token, "expected: " + format_type(expected_type))
+                self.abort(token, "expected: " + format_type(expected_type))
             popped.append(top)
             if not resolved_type_eq(expected_type, top):
-                self.module_resolver.abort(token, "expected: " + format_type(expected_type) + "\ngot: " + format_type(top))
+                self.abort(token, "expected: " + format_type(expected_type) + "\ngot: " + format_type(top))
         return list(reversed(popped))
 
 
@@ -1671,8 +1728,8 @@ class FunctionResolver:
                 return taip
             if isinstance(taip, GenericType):
                 return generic_arguments[taip.generic_index]
-            if isinstance(taip, ResolvedPtrType):
-                return ResolvedPtrType(inner(taip.child))
+            if isinstance(taip, PtrType):
+                return PtrType(inner(taip.child))
             if isinstance(taip, ResolvedStructType):
                 if isinstance(taip.struct, ResolvedStruct):
                     struct = taip.struct
@@ -1697,8 +1754,8 @@ class FunctionResolver:
                 for extern in module.externs:
                     if extern.signature.name.lexeme == word.name.lexeme:
                         return ResolvedForeignCallWord(word.module, module, word.name, extern, resolved_generic_arguments)
-                self.module_resolver.abort(word.name, f"function {word.name.lexeme} not found")
-        self.module_resolver.abort(word.name, f"module {word.module.lexeme} not found")
+                self.abort(word.name, f"function {word.name.lexeme} not found")
+        self.abort(word.name, f"module {word.module.lexeme} not found")
 
     def resolve_var_name(self, env: Env, name: Token) -> ResolvedNamedType:
         var = env.lookup(name)
@@ -1706,7 +1763,7 @@ class FunctionResolver:
             for memory in self.module_resolver.memories:
                 if memory.taip.name.lexeme == name.lexeme:
                     return memory.taip
-            self.module_resolver.abort(name, f"local {name.lexeme} not found")
+            self.abort(name, f"local {name.lexeme} not found")
         return var
 
     def resolve_fields(self, taip: ResolvedType, fields: List[Token]) -> List[ResolvedFieldAccess]:
@@ -1720,19 +1777,16 @@ class FunctionResolver:
                         resolved_fields.append(ResolvedFieldAccess(field_name, struct, taip))
                         fields.pop(0)
                         return taip
-                self.module_resolver.abort(field_name, f"field not found {field_name.lexeme}")
+                self.abort(field_name, f"field not found {field_name.lexeme}")
             if isinstance(taip, ResolvedStructType):
                 struct = taip.struct()
                 taip = inner(taip.struct(), taip.generic_arguments, fields)
                 continue
-            if isinstance(taip, ResolvedForeignType):
-                taip = inner(taip.struct, taip.generic_arguments, fields)
-                continue
-            if isinstance(taip, ResolvedPtrType) and not isinstance(taip.child, ResolvedPtrType):
+            if isinstance(taip, PtrType) and not isinstance(taip.child, PtrType):
                 taip = taip.child
                 continue
             else:
-                self.module_resolver.abort(field_name, f"field not found {field_name.lexeme} WTF?")
+                self.abort(field_name, f"field not found {field_name.lexeme} WTF?")
         return resolved_fields
 
 
@@ -1746,6 +1800,7 @@ class ModuleResolver:
     structs: List[ResolvedStruct] = field(default_factory=list)
     externs: List[ResolvedExtern] = field(default_factory=list)
     memories: List[ResolvedMemory] = field(default_factory=list)
+    data: bytearray = field(default_factory=bytearray)
 
     def abort(self, token: Token, message: str) -> NoReturn:
         raise ResolverException(token, self.module.path + " " + message)
@@ -1761,7 +1816,7 @@ class ModuleResolver:
         resolved_signatures = list(map(lambda f: self.resolve_function_signature(f.signature), self.module.functions))
         self.signatures = resolved_signatures
         resolved_functions = list(map(lambda f: self.resolve_function(f[0], f[1]), zip(resolved_signatures, self.module.functions)))
-        return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_structs, resolved_externs, self.memories, resolved_functions)
+        return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_structs, resolved_externs, self.memories, resolved_functions, self.data)
 
     def resolve_function(self, signature: ResolvedFunctionSignature, function: ParsedFunction) -> ResolvedFunction:
         return FunctionResolver(self, self.signatures, self.structs, function, signature).resolve()
@@ -1776,7 +1831,7 @@ class ModuleResolver:
         self.abort(name, f"function {name.lexeme} not found")
 
     def resolve_memory(self, memory: ParsedMemory) -> ResolvedMemory:
-        return ResolvedMemory(ResolvedNamedType(memory.name, ResolvedPtrType(self.resolve_type(memory.taip))), memory.size)
+        return ResolvedMemory(ResolvedNamedType(memory.name, PtrType(self.resolve_type(memory.taip))), memory.size)
 
     def resolve_extern(self, extern: ParsedExtern) -> ResolvedExtern:
         return ResolvedExtern(extern.module, extern.name, self.resolve_function_signature(extern.signature))
@@ -1793,7 +1848,7 @@ class ModuleResolver:
         if isinstance(taip, PrimitiveType):
             return taip
         if isinstance(taip, ParsedPtrType):
-            return ResolvedPtrType(self.resolve_type(taip.child))
+            return PtrType(self.resolve_type(taip.child))
         if isinstance(taip, ParsedStructType):
             resolved_generic_arguments = list(map(self.resolve_type, taip.generic_arguments))
             return ResolvedStructType(self.id, taip.name, self.resolve_struct_name(taip.name), resolved_generic_arguments)
@@ -1805,7 +1860,7 @@ class ModuleResolver:
                 if imp.qualifier.lexeme == taip.module.lexeme:
                     for struct in imp.module.structs:
                         if struct.name.lexeme == taip.name.lexeme:
-                            return ResolvedForeignType(taip.module, taip.name, struct, resolved_generic_arguments)
+                            return ResolvedStructType(imp.module.id, taip.name, lambda: struct, resolved_generic_arguments)
             self.abort(taip.module, f"struct {taip.module.lexeme}:{taip.name.lexeme} not found")
         if isinstance(taip, ParsedFunctionType):
             args = list(map(self.resolve_type, taip.args))
@@ -1827,6 +1882,131 @@ class ModuleResolver:
         rets = list(map(self.resolve_type, signature.returns))
         return ResolvedFunctionSignature(signature.export_name, signature.name, signature.generic_parameters, parameters, rets)
 
+@dataclass
+class WatGenerator:
+    chunks: List[str] = field(default_factory=list)
+    indentation: int = 0
+
+    def write(self, s: str) -> None:
+        self.chunks.append(s)
+
+    def write_indent(self) -> None:
+        self.chunks.append("\t" * self.indentation)
+
+    def write_line(self, line: str) -> None:
+        self.write_indent()
+        self.write(line)
+        self.write("\n")
+
+    def indent(self) -> None:
+        self.indentation += 1
+
+    def dedent(self) -> None:
+        self.indentation -= 1
+
+    def generate(self, modules: Dict[int, ResolvedModule]) -> str:
+        assert(len(self.chunks) == 0)
+        self.write_line("(module")
+        self.indent()
+        for module in modules.values():
+            for extern in module.externs:
+                self.generate_extern(module.id, extern)
+                self.write("\n")
+
+        self.write_line("(memory 1 65536)\n")
+        self.write_line("(export \"memory\" (memory 0))\n")
+
+        stack_start = 4269
+        self.write_line(f"(global $stac:k (mut i32) (i32.const {stack_start}))\n")
+
+        self.write_intrinsics()
+
+        self.write_function_table()
+
+        self.write_globals()
+
+        module_data_offsets: Dict[int, int] = {}
+        all_data: bytes = b""
+        for id in sorted(modules):
+            module_data_offsets[id] = len(all_data)
+            all_data += modules[id].data
+        self.write_data(all_data)
+
+        self.dedent()
+        self.write(")")
+        return ''.join(self.chunks)
+
+    def generate_module(self, module: ResolvedModule) -> None:
+        pass
+
+    def write_intrinsics(self) -> None:
+        self.write_line("(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)")
+        self.write_line("(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)")
+        self.write_line("(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)")
+        self.write_line("(func $intrinsic:rotate-right (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $c local.get $a local.get $b)")
+
+    def write_function_table(self) -> None:
+        self.write_line("(table funcref (elem")
+        self.indent()
+        self.dedent()
+        self.write_line("))")
+
+    def write_globals(self) -> None:
+        pass
+
+    def write_data(self, data: bytes) -> None:
+        self.write_indent()
+        self.write("(data (i32.const 0) \"")
+        def escape_char(char: int) -> str:
+            if char == b"\\"[0]:
+               return "\\\\"
+            if char == b"\""[0]:
+                return "\\\""
+            if char >= 32 and char <= 126:
+               return chr(char)
+            if char == b"\t"[0]:
+               return "\\t"
+            if char == "\r"[0]:
+               return "\\r"
+            if char == b"\n"[0]:
+               return "\\n"
+            hex_digits = "0123456789abcdef"
+            return f"\\{hex_digits[char >> 4]}{hex_digits[char & 15]}"
+        for char in data:
+            self.write(escape_char(char))
+        self.write("\")\n")
+
+    def generate_extern(self, module_id: int, extern: ResolvedExtern) -> None:
+        self.write_indent()
+        self.write("(import ")
+        self.write(extern.module.lexeme)
+        self.write(" ")
+        self.write(extern.name.lexeme)
+        self.write(" ")
+        self.generate_signature(module_id, extern.signature)
+        self.write(")")
+
+    def generate_signature(self, module_id: int, signature: ResolvedFunctionSignature) -> None:
+        self.write(f"(func ${module_id}:{signature.name.lexeme}")
+        for parameter in signature.parameters:
+            self.write(f" (param ${parameter.name.lexeme} ")
+            self.generate_taip(parameter.taip)
+            self.write(")")
+        for ret in signature.returns:
+            self.write(f" (result ")
+            self.generate_taip(parameter.taip)
+            self.write(")")
+        self.write(")")
+
+    def generate_taip(self, taip: ResolvedType) -> None:
+        if taip == PrimitiveType.I64:
+            self.write("i64")
+        else:
+            self.write("i32")
+
+    # def generate_function(self, module_id: int, function: ResolvedFunction) -> None:
+
+
 def main() -> None:
     modules: Dict[str, ParsedModule] = {}
     load_recursive(modules, os.path.normpath(sys.argv[1]))
@@ -1835,11 +2015,10 @@ def main() -> None:
     resolved_modules_by_path: Dict[str, ResolvedModule] = {}
     try:
         for id, module in enumerate(determine_compilation_order(list(modules.values()))):
-            print(module.path)
             resolved_module = ModuleResolver(resolved_modules, resolved_modules_by_path, module, id).resolve()
             resolved_modules[id] = resolved_module
             resolved_modules_by_path[module.path] = resolved_module
-        print(len(resolved_modules))
+        print(WatGenerator().generate(resolved_modules))
     except ResolverException as e:
         print(e.token)
         print(e.message)
