@@ -1,6 +1,6 @@
 {
     inputs = {
-        nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
         flake-utils.url = "github:numtide/flake-utils";
     };
     outputs = { self, nixpkgs, flake-utils }:
@@ -10,6 +10,7 @@
             };
             pythonPackages = ps: with ps; [
                 termcolor
+                mypy
             ];
             python = pkgs.python3.withPackages pythonPackages;
             nativeBuildInputs = [
@@ -18,7 +19,6 @@
                 pkgs.gnuplot
                 pkgs.hyperfine
                 python
-                pkgs.mypy
             ];
             buildInputs = [ pkgs.wasmtime ];
 
