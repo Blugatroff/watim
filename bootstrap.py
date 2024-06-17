@@ -2,17 +2,10 @@
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, assert_never
-from abc import ABC, abstractmethod
-from shutil import copyfile
-from functools import reduce
 import subprocess
 import glob
-import json
-import pathlib
 import sys
 import os
-
-from termcolor import colored
 
 class TokenType(str, Enum):
     NUMBER = "NUMBER"
@@ -1539,8 +1532,6 @@ class Stack:
                 dump.reverse()
                 return dump
             dump.append(t)
-        # parent_dump = self.parent.dump() if self.parent is not None else []
-        # return parent_dump + self.stack
 
     def drain(self):
         self.drained = True
@@ -3545,18 +3536,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    exit(0)
-    for path in sys.argv[1:]:
-        with open(path, 'r') as reader:
-            input = reader.read()
-            tokens = Lexer(input).lex()
-            module = Parser(path, tokens).parse()
-            for function in module.functions:
-                print(function.signature)
-                for word in function.body:
-                    print(word)
-            for struct in module.structs:
-                print(struct)
-            for memory in module.memories:
-                print(memory)
 
