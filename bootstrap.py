@@ -1001,30 +1001,32 @@ def resolved_types_eq(a: List[ResolvedType], b: List[ResolvedType]) -> bool:
     return True
 
 def format_resolved_type(a: ResolvedType) -> str:
-    if isinstance(a, PrimitiveType):
-        return str(a)
-    if isinstance(a, ResolvedPtrType):
-        return f".{format_resolved_type(a.child)}"
-    if isinstance(a, ResolvedStructType):
-        if len(a.generic_arguments) == 0:
-            return a.name.lexeme
-        s = a.name.lexeme + "<"
-        for arg in a.generic_arguments:
-            s += format_resolved_type(arg) + ", "
-        return s + ">"
-    if isinstance(a, ResolvedFunctionType):
-        s = "("
-        for param in a.parameters:
-            s += format_resolved_type(param) + ", "
-        s = s[:-2] + " -> "
-        if len(a.returns) == 0:
-            return s[:-1] + ")"
-        for ret in a.returns:
-            s += format_resolved_type(ret) + ", "
-        return s[:-2] + ")"
-    if isinstance(a, GenericType):
-        return a.token.lexeme
-    assert_never(a)
+    match a:
+        case PrimitiveType():
+            return str(a)
+        case ResolvedPtrType(child):
+            return f".{format_resolved_type(a.child)}"
+        case ResolvedStructType(name, _, generic_arguments):
+            if len(generic_arguments) == 0:
+                return name.lexeme
+            s = name.lexeme + "<"
+            for arg in generic_arguments:
+                s += format_resolved_type(arg) + ", "
+            return s + ">"
+        case ResolvedFunctionType(_, parameters, returns):
+            s = "("
+            for param in parameters:
+                s += format_resolved_type(param) + ", "
+            s = s[:-2] + " -> "
+            if len(returns) == 0:
+                return s[:-1] + ")"
+            for ret in returns:
+                s += format_resolved_type(ret) + ", "
+            return s[:-2] + ")"
+        case GenericType(token, _):
+            return token.lexeme
+        case other:
+            assert_never(other)
 
 @dataclass
 class ResolvedNamedType:
@@ -1601,182 +1603,185 @@ class FunctionResolver:
         return ResolvedFunction(self.signature, memories, locals, body)
 
     def resolve_word(self, env: Env, stack: Stack, break_stacks: List[List[ResolvedType]], word: ParsedWord) -> ResolvedWord:
-        if isinstance(word, NumberWord):
-            stack.append(PrimitiveType.I32)
-            return word
-        if isinstance(word, ParsedStringWord):
-            word.token
-            stack.append(ResolvedPtrType(PrimitiveType.I32))
-            stack.append(PrimitiveType.I32)
-            offset = len(self.module_resolver.data)
-            self.module_resolver.data.extend(word.string)
-            return StringWord(word.token, offset, len(word.string))
-        if isinstance(word, ParsedCastWord):
-            source_type = stack.pop()
-            if source_type is None:
-                self.abort(word.token, "expected a non-empty stack")
-            resolved_type = self.module_resolver.resolve_type(word.taip)
-            stack.append(resolved_type)
-            return ResolvedCastWord(word.token, source_type, resolved_type)
-        if isinstance(word, ParsedIfWord):
-            if len(stack) == 0 or stack[-1] != PrimitiveType.BOOL:
-                self.abort(word.token, "expected a boolean on stack")
-            stack.pop()
-            if_env = Env(env)
-            if_stack = stack.make_child()
-            def resolve_if_word(word: ParsedWord):
-                return self.resolve_word(if_env, if_stack, break_stacks, word)
-            else_env = Env(env)
-            else_stack = stack.make_child()
-            def resolve_else_word(word: ParsedWord):
-                return self.resolve_word(else_env, else_stack, break_stacks, word)
-            if_words = list(map(resolve_if_word, word.if_words))
-            else_words = list(map(resolve_else_word, word.else_words))
-            parameters = if_stack.negative
-            if not if_stack.drained:
-                returns = if_stack.stack
-            elif not else_stack.drained:
-                returns = else_stack.stack
-            else:
-                returns = []
-            if not if_stack.drained and not else_stack.drained:
-                if if_stack != else_stack:
-                    self.abort(word.token, "Type mismatch in if branches")
-                stack.apply(if_stack)
-            elif if_stack.drained and else_stack.drained:
-                stack.drain()
-            elif not if_stack.drained:
-                stack.apply(if_stack)
-            else:
-                assert(not else_stack.drained)
-                stack.apply(else_stack)
-            return ResolvedIfWord(word.token, parameters, returns, if_words, else_words)
-        if isinstance(word, ParsedLoopWord):
-            loop_stack = stack.make_child()
-            loop_env = Env(env)
-            loop_break_stacks: List[List[ResolvedType]] = []
-            def resolve_loop_word(word: ParsedWord):
-                return self.resolve_word(loop_env, loop_stack, loop_break_stacks, word)
-            words = list(map(resolve_loop_word, word.words))
-            parameters = loop_stack.negative
-            if len(loop_break_stacks) != 0:
-                returns = loop_break_stacks[0]
-                stack.extend(loop_break_stacks[0])
-            else:
-                returns = loop_stack.stack
-                stack.apply(loop_stack)
-            return ResolvedLoopWord(word.token, words, parameters, returns)
-        if isinstance(word, ParsedBlockWord):
-            block_stack = stack.make_child()
-            block_env = Env(env)
-            block_break_stacks: List[List[ResolvedType]] = []
-            def resolve_block_word(word: ParsedWord):
-                return self.resolve_word(block_env, block_stack, block_break_stacks, word)
-            words = list(map(resolve_block_word, word.words))
-            parameters = block_stack.negative
-            if len(block_break_stacks) != 0:
-                for i in range(1, len(block_break_stacks)):
-                    if not resolved_types_eq(block_break_stacks[0], block_break_stacks[i]):
-                        self.abort(word.token, "break stack mismatch")
-                if not block_stack.drained and not resolved_types_eq(block_break_stacks[0], block_stack.stack):
-                    self.abort(word.token, "the items remaining on the stack at the end of the block don't match the break statements")
-                returns = block_break_stacks[0]
-                stack.extend(block_break_stacks[0])
-            else:
-                returns = block_stack.stack
-                stack.apply(block_stack)
-            return ResolvedBlockWord(word.token, words, parameters, returns)
-        if isinstance(word, ParsedCallWord):
-            if word.name.lexeme in INTRINSICS:
-                intrinsic = INTRINSICS[word.name.lexeme]
-                return self.resolve_intrinsic(word.name, stack, intrinsic)
-            resolved_call_word = self.resolve_call_word(env, word)
-            signature = self.module_resolver.get_signature(resolved_call_word.function)
-            self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
-            return resolved_call_word
-        if isinstance(word, ParsedForeignCallWord):
-            resolved_word = self.resolve_foreign_call_word(env, word)
-            signature = self.module_resolver.get_signature(resolved_word.function)
-            self.type_check_call(stack, word.name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
-            return resolved_word
-        if isinstance(word, DerefWord):
-            assert(False)
-            return word
-        if isinstance(word, ParsedGetWord):
-            (var_type, local) = self.resolve_var_name(env, word.token)
-            resolved_fields = self.resolve_fields(var_type, word.fields)
-            stack.append(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip)
-            return ResolvedGetWord(word.token, local, resolved_fields)
-        if isinstance(word, ParsedInitWord):
-            taip = stack.pop()
-            if taip is None:
-                self.abort(word.name, "expected a non-empty stack")
-            named_taip = ResolvedNamedType(word.name, taip)
-            local_id = env.insert(ResolvedLocal.local(named_taip))
-            return InitWord(word.name, local_id)
-        if isinstance(word, ParsedRefWord):
-            (var_type, local) = self.resolve_var_name(env, word.token)
-            resolved_fields = self.resolve_fields(var_type, word.fields)
-            stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
-            return ResolvedRefWord(word.token, local, resolved_fields)
-        if isinstance(word, ParsedSetWord):
-            (var_type, local) = self.resolve_var_name(env, word.token)
-            resolved_fields = self.resolve_fields(var_type, word.fields)
-            expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
-            self.expect_stack(word.token, stack, [expected_taip])
-            return ResolvedSetWord(word.token, local, resolved_fields)
-        if isinstance(word, ParsedStoreWord):
-            (var_type, local) = self.resolve_var_name(env, word.token)
-            resolved_fields = self.resolve_fields(var_type, word.fields)
-            expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
-            if not isinstance(expected_taip, ResolvedPtrType):
-                self.abort(word.token, "`=>` can only store into ptr types")
-            self.expect_stack(word.token, stack, [expected_taip.child])
-            return ResolvedStoreWord(word.token, local, resolved_fields)
-        if isinstance(word, ParsedFunRefWord):
-            if isinstance(word.call, ParsedCallWord):
-                resolved_call_word = self.resolve_call_word(env, word.call)
+        match word:
+            case NumberWord():
+                stack.append(PrimitiveType.I32)
+                return word
+            case ParsedStringWord(token, string):
+                stack.append(ResolvedPtrType(PrimitiveType.I32))
+                stack.append(PrimitiveType.I32)
+                offset = len(self.module_resolver.data)
+                self.module_resolver.data.extend(string)
+                return StringWord(token, offset, len(string))
+            case ParsedCastWord(token, parsed_taip):
+                source_type = stack.pop()
+                if source_type is None:
+                    self.abort(token, "expected a non-empty stack")
+                resolved_type = self.module_resolver.resolve_type(parsed_taip)
+                stack.append(resolved_type)
+                return ResolvedCastWord(token, source_type, resolved_type)
+            case ParsedIfWord(token, parsed_if_words, parsed_else_words):
+                if len(stack) == 0 or stack[-1] != PrimitiveType.BOOL:
+                    self.abort(token, "expected a boolean on stack")
+                stack.pop()
+                if_env = Env(env)
+                if_stack = stack.make_child()
+                def resolve_if_word(word: ParsedWord):
+                    return self.resolve_word(if_env, if_stack, break_stacks, word)
+                else_env = Env(env)
+                else_stack = stack.make_child()
+                def resolve_else_word(word: ParsedWord):
+                    return self.resolve_word(else_env, else_stack, break_stacks, word)
+                if_words = list(map(resolve_if_word, parsed_if_words))
+                else_words = list(map(resolve_else_word, parsed_else_words))
+                parameters = if_stack.negative
+                if not if_stack.drained:
+                    returns = if_stack.stack
+                elif not else_stack.drained:
+                    returns = else_stack.stack
+                else:
+                    returns = []
+                if not if_stack.drained and not else_stack.drained:
+                    if if_stack != else_stack:
+                        self.abort(word.token, "Type mismatch in if branches")
+                    stack.apply(if_stack)
+                elif if_stack.drained and else_stack.drained:
+                    stack.drain()
+                elif not if_stack.drained:
+                    stack.apply(if_stack)
+                else:
+                    assert(not else_stack.drained)
+                    stack.apply(else_stack)
+                return ResolvedIfWord(token, parameters, returns, if_words, else_words)
+            case ParsedLoopWord(token, parsed_words):
+                loop_stack = stack.make_child()
+                loop_env = Env(env)
+                loop_break_stacks: List[List[ResolvedType]] = []
+                def resolve_loop_word(word: ParsedWord):
+                    return self.resolve_word(loop_env, loop_stack, loop_break_stacks, word)
+                words = list(map(resolve_loop_word, parsed_words))
+                parameters = loop_stack.negative
+                if len(loop_break_stacks) != 0:
+                    returns = loop_break_stacks[0]
+                    stack.extend(loop_break_stacks[0])
+                else:
+                    returns = loop_stack.stack
+                    stack.apply(loop_stack)
+                return ResolvedLoopWord(token, words, parameters, returns)
+            case ParsedBlockWord(token, parsed_words):
+                block_stack = stack.make_child()
+                block_env = Env(env)
+                block_break_stacks: List[List[ResolvedType]] = []
+                def resolve_block_word(word: ParsedWord):
+                    return self.resolve_word(block_env, block_stack, block_break_stacks, word)
+                words = list(map(resolve_block_word, parsed_words))
+                parameters = block_stack.negative
+                if len(block_break_stacks) != 0:
+                    for i in range(1, len(block_break_stacks)):
+                        if not resolved_types_eq(block_break_stacks[0], block_break_stacks[i]):
+                            self.abort(word.token, "break stack mismatch")
+                    if not block_stack.drained and not resolved_types_eq(block_break_stacks[0], block_stack.stack):
+                        self.abort(word.token, "the items remaining on the stack at the end of the block don't match the break statements")
+                    returns = block_break_stacks[0]
+                    stack.extend(block_break_stacks[0])
+                else:
+                    returns = block_stack.stack
+                    stack.apply(block_stack)
+                return ResolvedBlockWord(token, words, parameters, returns)
+            case ParsedCallWord(name, generic_arguments):
+                if name.lexeme in INTRINSICS:
+                    intrinsic = INTRINSICS[name.lexeme]
+                    return self.resolve_intrinsic(name, stack, intrinsic)
+                resolved_call_word = self.resolve_call_word(env, word)
                 signature = self.module_resolver.get_signature(resolved_call_word.function)
-                stack.append(ResolvedFunctionType(word.call.name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
-                return ResolvedFunRefWord(resolved_call_word)
-            if isinstance(word.call, ParsedForeignCallWord):
-                resolved_foreign_call_word = self.resolve_foreign_call_word(env, word.call)
-                signature = self.module_resolver.get_signature(resolved_foreign_call_word.function)
-                stack.append(ResolvedFunctionType(word.call.name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
-                return ResolvedFunRefWord(resolved_foreign_call_word)
-            assert_never(word.call)
-        if isinstance(word, ParsedLoadWord):
-            if len(stack) == 0:
-                self.abort(word.token, "expected a non-empty stack")
-            top = stack.pop()
-            if not isinstance(top, ResolvedPtrType):
-                self.abort(word.token, "expected a pointer on the stack")
-            stack.append(top.child)
-            return ResolvedLoadWord(word.token, top.child)
-        if isinstance(word, BreakWord):
-            dump = stack.dump()
-            break_stacks.append(dump)
-            stack.drain()
-            return word
-        if isinstance(word, ParsedSizeofWord):
-            stack.append(PrimitiveType.I32)
-            return ResolvedSizeofWord(word.token, self.module_resolver.resolve_type(word.taip))
-        if isinstance(word, ParsedGetFieldWord):
-            taip = stack.pop()
-            if taip is None:
-                self.abort(word.token, "GetField expected a struct on the stack")
-            resolved_fields = self.resolve_fields(taip, word.fields)
-            stack.append(ResolvedPtrType(resolved_fields[-1].target_taip))
-            return ResolvedGetFieldWord(word.token, taip, resolved_fields)
-        if isinstance(word, ParsedIndirectCallWord):
-            if len(stack) == 0:
-                self.abort(word.token, "`->` expected a function on the stack")
-            function_type = stack.pop()
-            if not isinstance(function_type, ResolvedFunctionType):
-                self.abort(word.token, "`->` expected a function on the stack")
-            self.type_check_call(stack, word.token, None, function_type.parameters, function_type.returns)
-            return ResolvedIndirectCallWord(word.token, function_type)
-        assert_never(word)
+                self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
+                return resolved_call_word
+            case ParsedForeignCallWord(module, name, generic_arguments):
+                resolved_word = self.resolve_foreign_call_word(env, word)
+                signature = self.module_resolver.get_signature(resolved_word.function)
+                self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
+                return resolved_word
+            case DerefWord(token):
+                assert(False)
+                return word
+            case ParsedGetWord(token, fields):
+                (var_type, local) = self.resolve_var_name(env, token)
+                resolved_fields = self.resolve_fields(var_type, fields)
+                stack.append(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip)
+                return ResolvedGetWord(token, local, resolved_fields)
+            case ParsedInitWord(name):
+                taip = stack.pop()
+                if taip is None:
+                    self.abort(name, "expected a non-empty stack")
+                named_taip = ResolvedNamedType(name, taip)
+                local_id = env.insert(ResolvedLocal.local(named_taip))
+                return InitWord(name, local_id)
+            case ParsedRefWord(token, fields):
+                (var_type, local) = self.resolve_var_name(env, token)
+                resolved_fields = self.resolve_fields(var_type, fields)
+                stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
+                return ResolvedRefWord(token, local, resolved_fields)
+            case ParsedSetWord(token, fields):
+                (var_type, local) = self.resolve_var_name(env, token)
+                resolved_fields = self.resolve_fields(var_type, fields)
+                expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
+                self.expect_stack(token, stack, [expected_taip])
+                return ResolvedSetWord(token, local, resolved_fields)
+            case ParsedStoreWord(token, fields):
+                (var_type, local) = self.resolve_var_name(env, token)
+                resolved_fields = self.resolve_fields(var_type, fields)
+                expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
+                if not isinstance(expected_taip, ResolvedPtrType):
+                    self.abort(word.token, "`=>` can only store into ptr types")
+                self.expect_stack(token, stack, [expected_taip.child])
+                return ResolvedStoreWord(token, local, resolved_fields)
+            case ParsedFunRefWord(call):
+                match call:
+                    case ParsedCallWord(name, _):
+                        resolved_call_word = self.resolve_call_word(env, call)
+                        signature = self.module_resolver.get_signature(resolved_call_word.function)
+                        stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
+                        return ResolvedFunRefWord(resolved_call_word)
+                    case ParsedForeignCallWord(name):
+                        resolved_foreign_call_word = self.resolve_foreign_call_word(env, call)
+                        signature = self.module_resolver.get_signature(resolved_foreign_call_word.function)
+                        stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
+                        return ResolvedFunRefWord(resolved_foreign_call_word)
+                    case other:
+                        assert_never(other)
+            case ParsedLoadWord(token):
+                if len(stack) == 0:
+                    self.abort(token, "expected a non-empty stack")
+                top = stack.pop()
+                if not isinstance(top, ResolvedPtrType):
+                    self.abort(token, "expected a pointer on the stack")
+                stack.append(top.child)
+                return ResolvedLoadWord(token, top.child)
+            case BreakWord():
+                dump = stack.dump()
+                break_stacks.append(dump)
+                stack.drain()
+                return word
+            case ParsedSizeofWord(token, parsed_taip):
+                stack.append(PrimitiveType.I32)
+                return ResolvedSizeofWord(token, self.module_resolver.resolve_type(parsed_taip))
+            case ParsedGetFieldWord(token, fields):
+                taip = stack.pop()
+                if taip is None:
+                    self.abort(word.token, "GetField expected a struct on the stack")
+                resolved_fields = self.resolve_fields(taip, fields)
+                stack.append(ResolvedPtrType(resolved_fields[-1].target_taip))
+                return ResolvedGetFieldWord(token, taip, resolved_fields)
+            case ParsedIndirectCallWord(token):
+                if len(stack) == 0:
+                    self.abort(token, "`->` expected a function on the stack")
+                function_type = stack.pop()
+                if not isinstance(function_type, ResolvedFunctionType):
+                    self.abort(token, "`->` expected a function on the stack")
+                self.type_check_call(stack, token, None, function_type.parameters, function_type.returns)
+                return ResolvedIndirectCallWord(token, function_type)
+            case other:
+                assert_never(other)
 
     def resolve_intrinsic(self, token: Token, stack: Stack, intrinsic: IntrinsicType) -> ResolvedIntrinsicWord:
         match intrinsic:
