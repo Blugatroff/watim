@@ -2430,7 +2430,7 @@ class RefWord:
 @dataclass
 class IntrinsicAdd:
     token: Token
-    taip: Type
+    taip: PtrType | PrimitiveType
 
 @dataclass
 class IntrinsicSub:
@@ -2903,8 +2903,8 @@ class WatGenerator:
             for i, memory in enumerate(module.memories):
                 self.globals[GlobalId(module.id, i)] = memory
 
-        self.write_line("(memory 1 65536)\n")
-        self.write_line("(export \"memory\" (memory 0))\n")
+        self.write_line("(memory 1 65536)")
+        self.write_line("(export \"memory\" (memory 0))")
 
         all_data: bytes = b""
         for id in sorted(self.modules):
@@ -2918,7 +2918,7 @@ class WatGenerator:
         data_end = align_to(len(all_data), 4)
         global_mem = self.write_globals(data_end)
         stack_start = align_to(data_end + global_mem, 4)
-        self.write_line(f"(global $stac:k (mut i32) (i32.const {stack_start}))\n")
+        self.write_line(f"(global $stac:k (mut i32) (i32.const {stack_start}))")
 
         self.write_data(all_data)
 
@@ -2939,11 +2939,11 @@ class WatGenerator:
         self.write("(")
         self.write_signature(module, function.signature, instance_id)
         if len(function.signature.generic_arguments) > 0:
-            self.write(" ;; ")
-        for taip in function.signature.generic_arguments:
-            self.write_type_human(taip)
-            self.write(" ")
-        self.write_line("")
+            self.write(" ;;")
+            for taip in function.signature.generic_arguments:
+                self.write(" ")
+                self.write_type_human(taip)
+        self.write("\n")
         self.indent()
         self.write_locals(function.body.get())
         struct_return_space, max_struct_arg_count = self.measure_struct_return_space(function.body.get().words)
@@ -3073,39 +3073,42 @@ class WatGenerator:
 
     def write_words(self, module: int, locals: Dict[LocalId, Local], copy_space_offset: Ref[int], struct_return_space: Ref[int], words: List[Word]) -> None:
         for word in words:
-            self.write_indent()
             self.write_word(module, locals, copy_space_offset, struct_return_space, word)
-            self.write("\n")
+
+    def write_local_ident(self, name: str, local: LocalId) -> None:
+        if local.scope != 0 or local.shadow != 0:
+            self.write(f"${name}:{local.scope}:{local.shadow}")
+        else:
+            self.write(f"${name}")
 
     def write_word(self, module: int, locals: Dict[LocalId, Local], copy_space_offset: Ref[int], struct_return_space: Ref[int], word: Word) -> None:
         if isinstance(word, NumberWord):
-            self.write(f"i32.const {word.token.lexeme}")
+            self.write_line(f"i32.const {word.token.lexeme}")
             return
         if isinstance(word, GetWord):
+            self.write_indent()
             if isinstance(word.local_id, GlobalId):
                 target_taip = word.fields[-1].target_taip if len(word.fields) > 0 else self.globals[word.local_id].taip.taip
             if isinstance(word.local_id, LocalId):
                 local = locals[word.local_id]
                 target_taip = word.fields[-1].target_taip if len(word.fields) > 0 else local.taip
             if isinstance(target_taip, StructType):
-                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset.value} i32.add call $intrinsic:dupi32\n")
-                self.write_indent()
+                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset.value} i32.add call $intrinsic:dupi32 ")
                 copy_space_offset.value += target_taip.size()
             if isinstance(word.local_id, GlobalId):
                 self.write(f"global.get ${word.token.lexeme}:{word.local_id.module}")
             else:
-                self.write(f"local.get ${word.token.lexeme}")
-                if word.local_id.scope != 0 or word.local_id.shadow != 0:
-                    self.write(f":{word.local_id.scope}:{word.local_id.shadow}")
+                self.write("local.get ")
+                self.write_local_ident(word.token.lexeme, word.local_id)
             loads = self.determine_loads(word.fields)
             if len(loads) == 0 and isinstance(target_taip, StructType):
                 self.write(f" i32.const {target_taip.size()} memory.copy")
-
             for i, load in enumerate(loads):
                 if i + 1 < len(loads) or not isinstance(target_taip, StructType):
                     self.write(f" i32.load offset={load} ")
                 else:
                     self.write(f" i32.const {load} i32.add i32.const {target_taip.size()} memory.copy")
+            self.write("\n")
             return
             assert_never(word.local_id)
         if isinstance(word, GetFieldWord):
@@ -3116,25 +3119,28 @@ class WatGenerator:
                     self.write(f" i32.const {load} i32.add")
                 else:
                     self.write(f" i32.load offset={load}")
+            self.write("\n")
             return
         if isinstance(word, RefWord):
+            self.write_indent()
             if isinstance(word.local_id, GlobalId):
                 self.write(f"global.get ${word.token.lexeme}:{word.local_id.module}")
             if isinstance(word.local_id, LocalId):
-                self.write(f"local.get ${word.token.lexeme}")
-                if word.local_id.scope != 0 or word.local_id.shadow != 0:
-                    self.write(f":{word.local_id.scope}:{word.local_id.shadow}")
+                self.write(f"local.get ")
+                self.write_local_ident(word.token.lexeme, word.local_id)
             loads = self.determine_loads(word.fields)
             for i, load in enumerate(loads):
                 if i + 1 == len(loads):
                     self.write(f" i32.const {load} i32.add")
                 else:
                     self.write(f" i32.load offset={load}")
+            self.write("\n")
             return
             assert_never(word.local_id)
         if isinstance(word, SetWord):
             if isinstance(word.local_id, GlobalId):
-                self.write(str(word.__class__))
+                print("SetWord on Global: TODO", file=sys.stderr)
+                assert(False)
                 return
             self.write_set(word.local_id, locals, word.fields)
             return
@@ -3142,179 +3148,181 @@ class WatGenerator:
             self.write_set(word.local_id, locals, [])
             return
         if isinstance(word, CallWord):
+            self.write_indent()
             if isinstance(word.function, ExternHandle):
                 extern = self.lookup_extern(word.function)
+                signature = extern.signature
                 self.write(f"call ${word.function.module}:{word.name.lexeme}")
-                if extern.signature.returns_any_struct():
-                    self.write("CallWord which returns Struct TODO")
-                    return
-                return
             if isinstance(word.function, FunctionHandle):
                 function = self.lookup_function(word.function)
                 if isinstance(function, GenericFunction):
                     assert(word.function.instance is not None)
                     function = function.instances[word.function.instance][1]
+                signature = function.signature
                 self.write(f"call ${word.function.module}:{function.signature.name.lexeme}")
                 if word.function.instance is not None:
                     self.write(f":{word.function.instance}")
-                self.write_return_struct_receiving(struct_return_space, function.signature.returns)
-                return
+            self.write_return_struct_receiving(struct_return_space, signature.returns)
+            return
         if isinstance(word, IndirectCallWord):
-            self.write("(call_indirect ")
+            self.write_indent()
+            self.write("(call_indirect")
             self.write_parameters(word.taip.parameters)
             self.write_returns(word.taip.returns)
-            self.write(")\n")
+            self.write(")")
             self.write_return_struct_receiving(struct_return_space, word.taip.returns)
             return
         if isinstance(word, IntrinsicStore):
             if isinstance(word.taip, StructType):
-                self.write(f"i32.const {word.taip.size()} memory.copy")
+                self.write_line(f"i32.const {word.taip.size()} memory.copy")
             else:
-                self.write("i32.store")
+                self.write_line("i32.store")
             return
         if isinstance(word, IntrinsicAdd):
             if isinstance(word.taip, PtrType) or word.taip == PrimitiveType.I32:
-                self.write(f"i32.add")
+                self.write_line(f"i32.add")
                 return
             if word.taip == PrimitiveType.I64:
-                self.write(f"i64.add")
+                self.write_line(f"i64.add")
                 return
-            self.write(str(word))
+            assert(word.taip != PrimitiveType.BOOL)
+            assert_never(word.taip)
             return
         if isinstance(word, IntrinsicSub):
-            self.write(f"{str(word.taip)}.sub")
+            self.write_line(f"{str(word.taip)}.sub")
             return
         if isinstance(word, IntrinsicMul):
-            self.write(f"{str(word.taip)}.mul")
+            self.write_line(f"{str(word.taip)}.mul")
             return
         if isinstance(word, IntrinsicDrop):
-            self.write("drop")
+            self.write_line("drop")
             return
         if isinstance(word, IntrinsicOr):
+            self.write_indent()
             self.write_type(word.taip)
-            self.write(".or")
+            self.write(".or\n")
             return
         if isinstance(word, IntrinsicEqual):
             if isinstance(word.taip, StructType):
-                self.write("IntrinsicEqual for struct type TODO")
-                return
+                print("IntrinsicEqual for struct type TODO", file=sys.stderr)
+                assert(False)
             if word.taip == PrimitiveType.I64:
-                self.write("i64.eq")
+                self.write_line("i64.eq")
                 return
-            self.write("i32.eq")
+            self.write_line("i32.eq")
             return
         if isinstance(word, IntrinsicNotEqual):
             if isinstance(word.taip, StructType):
-                self.write("IntrinsicNotEqual for struct type TODO")
-                return
+                print("IntrinsicNotEqual for struct type TODO", file=sys.stderr)
+                assert(False)
             if word.taip == PrimitiveType.I64:
-                self.write("i64.eq")
+                self.write_line("i64.eq")
                 return
-            self.write("i32.ne")
+            self.write_line("i32.ne")
             return
         if isinstance(word, IntrinsicGreaterEq):
             if word.taip == PrimitiveType.I32:
-                self.write("i32.ge_u")
+                self.write_line("i32.ge_u")
                 return
-            self.write(str(word.__class__))
-            return
+            print("IntrinsicGreaterEq for type other than i32 TODO", file=sys.stderr)
+            assert(False)
         if isinstance(word, IntrinsicGreater):
             if word.taip == PrimitiveType.I32:
-                self.write("i32.gt_u")
+                self.write_line("i32.gt_u")
                 return
-            self.write(str(word.__class__))
-            return
+            print("IntrinsicGreater for type other than i32 TODO", file=sys.stderr)
+            assert(False)
         if isinstance(word, IntrinsicLessEq):
             if word.taip == PrimitiveType.I32:
-                self.write("i32.le_u")
+                self.write_line("i32.le_u")
                 return
-            self.write(str(word.__class__))
-            return
+            print("IntrinsicLessEq for type other than i32 TODO", file=sys.stderr)
+            assert(False)
         if isinstance(word, IntrinsicLess):
             if word.taip == PrimitiveType.I32:
-                self.write("i32.lt_u")
+                self.write_line("i32.lt_u")
                 return
-            self.write(str(word.__class__))
-            return
+            print("IntrinsicLess for type other than i32 TODO", file=sys.stderr)
+            assert(False)
         if isinstance(word, IntrinsicFlip):
-            self.write("call $intrinsic:flip")
+            self.write_line("call $intrinsic:flip")
             return
         if isinstance(word, IntrinsicRotl):
             if word.taip == PrimitiveType.I64:
-                self.write("i64.extend_i32_s i64.rotl")
+                self.write_line("i64.extend_i32_s i64.rotl")
             else:
-                self.write("i32.rotl")
+                self.write_line("i32.rotl")
             return
         if isinstance(word, IntrinsicRotr):
             if word.taip == PrimitiveType.I64:
-                self.write("i64.extend_i32_s i64.rotr")
+                self.write_line("i64.extend_i32_s i64.rotr")
             else:
-                self.write("i32.rotr")
+                self.write_line("i32.rotr")
             return
         if isinstance(word, IntrinsicAnd):
             if word.taip == PrimitiveType.I32 or word.taip == PrimitiveType.BOOL:
-                self.write("i32.and")
+                self.write_line("i32.and")
                 return
             if word.taip == PrimitiveType.I64:
-                self.write("i64.and")
+                self.write_line("i64.and")
                 return
-            self.write("IntrinsicAnd for non i64 or i32 type TODO")
-            return
+            print("IntrinsicAnd for non i64 or i32 type TODO", file=sys.stderr)
+            assert(False)
         if isinstance(word, IntrinsicNot):
             if word.taip == PrimitiveType.BOOL:
-                self.write("i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and")
+                self.write_line("i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and")
                 return
             if word.taip == PrimitiveType.I32:
-                self.write("i32.const -1 i32.xor")
+                self.write_line("i32.const -1 i32.xor")
                 return
             if word.taip == PrimitiveType.I64:
-                self.write("i64.const -1 i64.xor")
+                self.write_line("i64.const -1 i64.xor")
                 return
             assert(False)
         if isinstance(word, IntrinsicLoad8):
-            self.write("i32.load8_u")
+            self.write_line("i32.load8_u")
             return
         if isinstance(word, IntrinsicStore8):
-            self.write("i32.store8")
+            self.write_line("i32.store8")
             return
         if isinstance(word, IntrinsicMod):
-            self.write("i32.rem_u")
+            self.write_line("i32.rem_u")
             return
         if isinstance(word, IntrinsicDiv):
-            self.write("i32.div_u")
+            self.write_line("i32.div_u")
             return
         if isinstance(word, IntrinsicMemCopy):
-            self.write("memory.copy")
+            self.write_line("memory.copy")
             return
         if isinstance(word, IntrinsicMemGrow):
-            self.write("memory.grow")
+            self.write_line("memory.grow")
             return
         if isinstance(word, CastWord):
             if (word.source == PrimitiveType.BOOL or word.source == PrimitiveType.I32) and word.taip == PrimitiveType.I64:
-                self.write(f"i64.extend_i32_s ;; cast to {format_type(word.taip)}")
+                self.write_line(f"i64.extend_i32_s ;; cast to {format_type(word.taip)}")
                 return
             if word.source == PrimitiveType.I64 and word.taip != PrimitiveType.I64:
-                self.write(f"i32.wrap_i64 ;; cast to {format_type(word.taip)}")
+                self.write_line(f"i32.wrap_i64 ;; cast to {format_type(word.taip)}")
                 return
-            self.write(f";; cast to {format_type(word.taip)}")
+            self.write_line(f";; cast to {format_type(word.taip)}")
             return
         if isinstance(word, StringWord):
-            self.write(f"i32.const {self.module_data_offsets[module] + word.offset} i32.const {word.len}")
+            self.write_line(f"i32.const {self.module_data_offsets[module] + word.offset} i32.const {word.len}")
             return
         if isinstance(word, SizeofWord):
-            self.write(f"i32.const {word.taip.size()}")
+            self.write_line(f"i32.const {word.taip.size()}")
             return
         if isinstance(word, FunRefWord):
-            self.write(f"i32.const {word.table_index}")
+            self.write_line(f"i32.const {word.table_index}")
             return
         if isinstance(word, StoreWord):
+            self.write_indent()
             if isinstance(word.local, GlobalId):
                 self.write(f"global.get ${word.token.lexeme}:{word.local.module}")
                 target_type = word.fields[-1].target_taip if len(word.fields) > 0 else self.globals[word.local].taip.taip
             else:
-                self.write(f"local.get ${word.token.lexeme}")
-                if word.local.scope != 0 or word.local.shadow != 0:
-                    self.write(f":{word.local.scope}:{word.local.shadow}")
+                self.write(f"local.get ")
+                self.write_local_ident(word.token.lexeme, word.local)
                 target_type = locals[word.local].taip
                 assert(isinstance(target_type, PtrType))
                 target_type = word.fields[-1].target_taip if len(word.fields) > 0 else target_type.child
@@ -3323,24 +3331,27 @@ class WatGenerator:
                 self.write(f" i32.load offset={offset}")
             self.write(" call $intrinsic:flip ")
             if isinstance(target_type, StructType):
-                self.write(f" i32.const {target_type.size()} memory.copy")
+                self.write(f" i32.const {target_type.size()} memory.copy\n")
             else:
                 self.write_type(target_type)
-                self.write(".store")
+                self.write(".store\n")
             return
         if isinstance(word, LoadWord):
             if isinstance(word.taip, StructType):
+                self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset.value}")
                 copy_space_offset.value += word.taip.size()
-                self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy")
+                self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy\n")
             else:
+                self.write_indent()
                 self.write_type(word.taip)
-                self.write(".load")
+                self.write(".load\n")
             return
         if isinstance(word, BreakWord):
-            self.write("br $block\n")
+            self.write_line("br $block")
             return
         if isinstance(word, BlockWord):
+            self.write_indent()
             self.write("(block $block ")
             self.write_returns(word.returns)
             self.write("\n")
@@ -3351,6 +3362,7 @@ class WatGenerator:
             self.write(")\n")
             return
         if isinstance(word, LoopWord):
+            self.write_indent()
             self.write("(block $block ")
             self.write_returns(word.returns)
             self.write("\n")
@@ -3361,40 +3373,32 @@ class WatGenerator:
             self.write("\n")
             self.indent()
             self.write_words(module, locals, copy_space_offset, struct_return_space, word.words)
-            self.write_indent()
-            self.write("br $loop\n")
+            self.write_line("br $loop")
             self.dedent()
-            self.write_indent()
-            self.write(")\n")
+            self.write_line(")")
             self.dedent()
-            self.write_indent()
-            self.write(")\n")
+            self.write_line(")")
             return
         if isinstance(word, IfWord):
+            self.write_indent()
             self.write("(if ")
             self.write_parameters(word.parameters)
             self.write_returns(word.returns)
             self.write("\n")
             self.indent()
-            self.write_indent()
-            self.write("(then\n")
+            self.write_line("(then")
             self.indent()
             self.write_words(module, locals, copy_space_offset, struct_return_space, word.if_words)
             self.dedent()
-            self.write_indent()
-            self.write(")\n")
+            self.write_line(")")
             if len(word.else_words) > 0:
-                self.write_indent()
-                self.write("(else\n")
+                self.write_line("(else")
                 self.indent()
                 self.write_words(module, locals, copy_space_offset, struct_return_space, word.else_words)
                 self.dedent()
-                self.write_indent()
-                self.write(")")
-            self.write("\n")
+                self.write_line(")")
             self.dedent()
-            self.write_indent()
-            self.write(")\n")
+            self.write_line(")")
             return
         assert_never(word)
 
@@ -3402,54 +3406,51 @@ class WatGenerator:
         local = locals[local_id]
         loads = self.determine_loads(fields)
         target_taip = fields[-1].target_taip if len(fields) != 0 else local.taip
+        self.write_indent()
         if not isinstance(target_taip, StructType) and len(loads) == 0:
-            self.write(f"local.set ${local.name.lexeme}")
-            if local_id.scope != 0 or local_id.shadow != 0:
-                self.write(f":{local_id.scope}:{local_id.shadow}")
-                return
+            self.write(f"local.set ")
+            self.write_local_ident(local.name.lexeme, local_id)
+            self.write("\n")
             return
+        self.write(f"local.get ")
+        self.write_local_ident(local.name.lexeme, local_id)
         if isinstance(target_taip, StructType) and len(loads) == 0:
-            self.write(f"local.get ${local.name.lexeme}")
-            if local_id.scope != 0 or local_id.shadow != 0:
-                self.write(f":{local_id.scope}:{local_id.shadow}")
-            self.write(f" call $intrinsic:flip i32.const {target_taip.size()} memory.copy")
+            self.write(f" call $intrinsic:flip i32.const {target_taip.size()} memory.copy\n")
             return
-        self.write(f"local.get ${local.name.lexeme}")
-        if local_id.scope != 0 or local_id.shadow != 0:
-            self.write(f":{local_id.scope}:{local_id.shadow}")
         if not isinstance(target_taip, StructType):
             for i, load in enumerate(loads):
                 self.write(f" i32.const {load} i32.add ")
                 if i + 1 == len(loads):
-                    self.write(" call $intrinsic:flip ")
+                    self.write("call $intrinsic:flip ")
                     self.write_type(local.taip)
                     self.write(".store")
                 else:
                     self.write("i32.load")
+            self.write("\n")
             return
         for i, load in enumerate(loads):
             self.write(f" i32.const {load} i32.add ")
             if i + 1 == len(loads):
-                self.write(f" call $intrinsic:flip i32.const {target_taip.size()} memory.copy")
+                self.write(f"call $intrinsic:flip i32.const {target_taip.size()} memory.copy")
             else:
                 self.write("i32.load")
+        self.write("\n")
         return
 
 
     def write_return_struct_receiving(self, struct_return_space: Ref[int], returns: List[Type]) -> None:
         if not any(isinstance(t, StructType) for t in returns):
+            self.write("\n")
             return
         for i in range(0, len(returns)):
-            self.write_indent()
-            self.write(f"local.set $s{i}:a\n")
-        self.write_indent()
+            self.write_line(f"local.set $s{i}:a")
         for i in range(len(returns), 0, -1):
             ret = returns[len(returns) - i]
             if isinstance(ret, StructType):
-                self.write(f"local.get $struc-return-spac:e i32.const {struct_return_space.value} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy\n")
+                self.write_line(f"local.get $struc-return-spac:e i32.const {struct_return_space.value} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy")
                 struct_return_space.value += ret.size()
             else:
-                self.write(f"local.get $s{i - 1}:a\n")
+                self.write_line(f"local.get $s{i - 1}:a")
 
     def determine_loads(self, fields: List[FieldAccess]) -> List[int]:
         loads: List[int] = []
@@ -3474,9 +3475,7 @@ class WatGenerator:
             self.write(f":{instance_id}")
         if signature.export_name is not None:
             self.write(f" (export {signature.export_name.lexeme})")
-        self.write(" ")
         self.write_parameters(signature.parameters)
-        self.write(" ")
         self.write_returns(signature.returns)
 
     def write_type_human(self, taip: Type) -> None:
@@ -3485,19 +3484,19 @@ class WatGenerator:
     def write_parameters(self, parameters: Sequence[NamedType | Type]) -> None:
         for parameter in parameters:
             if isinstance(parameter, NamedType):
-                self.write(f"(param ${parameter.name.lexeme} ")
+                self.write(f" (param ${parameter.name.lexeme} ")
                 self.write_type(parameter.taip)
-                self.write(") ")
+                self.write(")")
                 continue
-            self.write(f"(param ")
+            self.write(f" (param ")
             self.write_type(parameter)
-            self.write(") ")
+            self.write(")")
 
     def write_returns(self, returns: List[Type]) -> None:
         for taip in returns:
-            self.write(f"(result ")
+            self.write(f" (result ")
             self.write_type(taip)
-            self.write(") ")
+            self.write(")")
 
     def write_intrinsics(self) -> None:
         self.write_line("(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)")
@@ -3506,6 +3505,9 @@ class WatGenerator:
         self.write_line("(func $intrinsic:rotate-right (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $c local.get $a local.get $b)")
 
     def write_function_table(self) -> None:
+        if len(self.function_table) == 0:
+            self.write_line("(table funcref (elem))")
+            return
         self.write_line("(table funcref (elem")
         self.indent()
         functions = list(self.function_table.items())
