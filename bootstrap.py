@@ -305,10 +305,6 @@ class ParsedStringWord:
     string: bytearray
 
 @dataclass
-class DerefWord:
-    token: Token
-
-@dataclass
 class ParsedGetWord:
     token: Token
     fields: List[Token]
@@ -390,7 +386,7 @@ class ParsedGetFieldWord:
 class ParsedIndirectCallWord:
     token: Token
 
-ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | DerefWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord
+ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord
 
 @dataclass
 class ParsedNamedType:
@@ -1344,7 +1340,7 @@ class ResolvedIntrinsicNot:
 
 ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot
 
-ResolvedWord = NumberWord | StringWord | ResolvedCallWord | DerefWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord
+ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord
 
 @dataclass
 class ResolvedFunction:
@@ -1425,23 +1421,39 @@ class LocalType(str, Enum):
     LOCAL = "LOCAL"
 
 @dataclass
-class ResolvedLocal:
+class ResolvedParameterLocal:
     name: Token
     taip: ResolvedType
-    ty: LocalType
-    size: int | None = None # only used in case of self.ty == LocalType.MEMORY
 
     @staticmethod
-    def param(param: ResolvedNamedType) -> 'ResolvedLocal':
-        return ResolvedLocal(param.name, param.taip, LocalType.PARAMETER)
+    def make(taip: ResolvedNamedType) -> 'ResolvedParameterLocal':
+        return ResolvedParameterLocal(taip.name, taip.taip)
+
+@dataclass
+class ResolvedMemoryLocal:
+    name: Token
+    taip: ResolvedType
+    size: int | None
+
+@dataclass
+class ResolvedDeclaredLocal:
+    name: Token
+    taip: ResolvedType
 
     @staticmethod
-    def memory(param: ResolvedNamedType, size: int | None) -> 'ResolvedLocal':
-        return ResolvedLocal(param.name, param.taip, LocalType.MEMORY, size)
+    def make(taip: ResolvedNamedType) -> 'ResolvedDeclaredLocal':
+        return ResolvedDeclaredLocal(taip.name, taip.taip)
+
+@dataclass
+class ResolvedInitLocal:
+    name: Token
+    taip: ResolvedType
 
     @staticmethod
-    def local(param: ResolvedNamedType) -> 'ResolvedLocal':
-        return ResolvedLocal(param.name, param.taip, LocalType.LOCAL)
+    def make(taip: ResolvedNamedType) -> 'ResolvedInitLocal':
+        return ResolvedInitLocal(taip.name, taip.taip)
+
+ResolvedLocal = ResolvedParameterLocal | ResolvedMemoryLocal | ResolvedDeclaredLocal | ResolvedInitLocal
 
 @dataclass
 class Ref(Generic[T]):
@@ -1589,11 +1601,11 @@ class FunctionResolver:
     def resolve(self) -> ResolvedFunction:
         memories = list(map(self.module_resolver.resolve_memory, self.function.memories))
         locals = list(map(self.module_resolver.resolve_named_type, self.function.locals))
-        env = Env(list(map(ResolvedLocal.param, self.signature.parameters)))
+        env = Env(list(map(ResolvedParameterLocal.make, self.signature.parameters)))
         for memory in memories:
-            env.insert(ResolvedLocal.memory(memory.taip, int(memory.size.lexeme) if memory.size is not None else None))
+            env.insert(ResolvedMemoryLocal(memory.taip.name, memory.taip.taip, int(memory.size.lexeme) if memory.size is not None else None))
         for local in locals:
-            env.insert(ResolvedLocal.local(local))
+            env.insert(ResolvedInitLocal(local.name, local.taip))
         stack: Stack = Stack.empty()
         words = list(map(lambda w: self.resolve_word(env, stack, [], w), self.function.body))
         self.expect_stack(self.signature.name, stack, self.signature.returns)
@@ -1701,9 +1713,6 @@ class FunctionResolver:
                 signature = self.module_resolver.get_signature(resolved_word.function)
                 self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return resolved_word
-            case DerefWord(token):
-                assert(False)
-                return word
             case ParsedGetWord(token, fields):
                 (var_type, local) = self.resolve_var_name(env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
@@ -1714,7 +1723,7 @@ class FunctionResolver:
                 if taip is None:
                     self.abort(name, "expected a non-empty stack")
                 named_taip = ResolvedNamedType(name, taip)
-                local_id = env.insert(ResolvedLocal.local(named_taip))
+                local_id = env.insert(ResolvedInitLocal(named_taip.name, named_taip.taip))
                 return InitWord(name, local_id)
             case ParsedRefWord(token, fields):
                 (var_type, local) = self.resolve_var_name(env, token)
@@ -1943,18 +1952,20 @@ class FunctionResolver:
 
     @staticmethod
     def resolve_generic(generic_arguments: None | List[ResolvedType]) -> Callable[[ResolvedType], ResolvedType]:
-        def inner(taip: ResolvedType):
+        def inner(taip: ResolvedType) -> ResolvedType:
             if generic_arguments is None:
                 return taip
-            if isinstance(taip, GenericType):
-                return generic_arguments[taip.generic_index]
-            if isinstance(taip, ResolvedPtrType):
-                return ResolvedPtrType(inner(taip.child))
-            if isinstance(taip, ResolvedStructType):
-                return ResolvedStructType(taip.name, taip.struct, list(map(inner, taip.generic_arguments)))
-            if isinstance(taip, ResolvedFunctionType):
-                return ResolvedFunctionType(taip.token, list(map(inner, taip.parameters)), list(map(inner, taip.returns)))
-            return taip
+            match taip:
+                case GenericType():
+                    return generic_arguments[taip.generic_index]
+                case ResolvedPtrType(child):
+                    return ResolvedPtrType(inner(child))
+                case ResolvedStructType(name, struct, gen_args):
+                    return ResolvedStructType(name, struct, list(map(inner, gen_args)))
+                case ResolvedFunctionType(token, parameters, returns):
+                    return ResolvedFunctionType(token, list(map(inner, parameters)), list(map(inner, returns)))
+                case other:
+                    return other
         return inner
 
     def resolve_foreign_call_word(self, env: Env, word: ParsedForeignCallWord) -> ResolvedCallWord:
@@ -2079,28 +2090,30 @@ class ModuleResolver:
         return ResolvedNamedType(named_type.name, self.resolve_type(named_type.taip))
 
     def resolve_type(self, taip: ParsedType) -> ResolvedType:
-        if isinstance(taip, PrimitiveType):
-            return taip
-        if isinstance(taip, ParsedPtrType):
-            return ResolvedPtrType(self.resolve_type(taip.child))
-        if isinstance(taip, ParsedStructType):
-            resolved_generic_arguments = list(map(self.resolve_type, taip.generic_arguments))
-            return ResolvedStructType(taip.name, self.resolve_struct_name(taip.name), resolved_generic_arguments)
-        if isinstance(taip, GenericType):
-            return taip
-        if isinstance(taip, ParsedForeignType):
-            resolved_generic_arguments = list(map(self.resolve_type, taip.generic_arguments))
-            for imp in self.imports:
-                if imp.qualifier.lexeme == taip.module.lexeme:
-                    for index, struct in enumerate(self.resolved_modules[imp.module].structs):
-                        if struct.name.lexeme == taip.name.lexeme:
-                            return ResolvedStructType(taip.name, ResolvedStructHandle(imp.module, index), resolved_generic_arguments)
-            self.abort(taip.module, f"struct {taip.module.lexeme}:{taip.name.lexeme} not found")
-        if isinstance(taip, ParsedFunctionType):
-            args = list(map(self.resolve_type, taip.args))
-            rets = list(map(self.resolve_type, taip.rets))
-            return ResolvedFunctionType(taip.token, args, rets)
-        return assert_never(taip)
+        match taip:
+            case PrimitiveType():
+                return taip
+            case ParsedPtrType(child):
+                return ResolvedPtrType(self.resolve_type(child))
+            case ParsedStructType(name, generic_arguments):
+                resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
+                return ResolvedStructType(name, self.resolve_struct_name(name), resolved_generic_arguments)
+            case GenericType():
+                return taip
+            case ParsedForeignType(module, name, generic_arguments):
+                resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
+                for imp in self.imports:
+                    if imp.qualifier.lexeme == taip.module.lexeme:
+                        for index, struct in enumerate(self.resolved_modules[imp.module].structs):
+                            if struct.name.lexeme == name.lexeme:
+                                return ResolvedStructType(taip.name, ResolvedStructHandle(imp.module, index), resolved_generic_arguments)
+                self.abort(taip.module, f"struct {module.lexeme}:{name.lexeme} not found")
+            case ParsedFunctionType(token, parsed_args, parsed_rets):
+                args = list(map(self.resolve_type, parsed_args))
+                rets = list(map(self.resolve_type, parsed_rets))
+                return ResolvedFunctionType(token, args, rets)
+            case other:
+                assert_never(other)
 
     def resolve_struct_name(self, name: Token) -> ResolvedStructHandle:
         for index, struct in enumerate(self.module.structs):
@@ -2204,23 +2217,25 @@ def types_eq(a: List[Type], b: List[Type]) -> bool:
     return True
 
 def format_type(a: Type) -> str:
-    if isinstance(a, PrimitiveType):
-        return str(a)
-    if isinstance(a, PtrType):
-        return f".{format_type(a.child)}"
-    if isinstance(a, StructType):
-        return a.name.lexeme 
-    if isinstance(a, FunctionType):
-        s = "("
-        for param in a.parameters:
-            s += format_type(param) + ", "
-        s = s[:-2] + " -> "
-        if len(a.returns) == 0:
-            return s[:-1] + ")"
-        for ret in a.returns:
-            s += format_type(ret) + ", "
-        return s[:-2] + ")"
-    assert_never(a)
+    match a:
+        case PrimitiveType():
+            return str(a)
+        case PtrType(child):
+            return f".{format_type(child)}"
+        case StructType(name):
+            return name.lexeme 
+        case FunctionType(_, parameters, returns):
+            s = "("
+            for param in parameters:
+                s += format_type(param) + ", "
+            s = s[:-2] + " -> "
+            if len(a.returns) == 0:
+                return s[:-1] + ")"
+            for ret in returns:
+                s += format_type(ret) + ", "
+            return s[:-2] + ")"
+        case other:
+            assert_never(other)
 
 @dataclass
 class Lazy(Generic[T]):
@@ -2239,16 +2254,39 @@ class Lazy(Generic[T]):
         return self.inner is not None
 
 @dataclass
-class Local:
+class ParameterLocal:
     name: Token
     taip: Type
-    ty: LocalType
-    _size: int = 0 # only used in case of self.ty == LocalType.MEMORY
 
     def size(self) -> int:
-        if self.ty != LocalType.MEMORY:
-            return self.taip.size()
-        return self._size
+        return self.taip.size()
+
+@dataclass
+class MemoryLocal:
+    name: Token
+    taip: Type
+    annotated_size: int | None = None
+
+    def size(self) -> int:
+        return self.annotated_size if self.annotated_size is not None else self.taip.size()
+
+@dataclass
+class DeclaredLocal:
+    name: Token
+    taip: Type
+
+    def size(self) -> int:
+        return self.taip.size()
+
+@dataclass
+class InitLocal:
+    name: Token
+    taip: Type
+
+    def size(self) -> int:
+        return self.taip.size()
+
+Local = ParameterLocal | MemoryLocal | DeclaredLocal | InitLocal
 
 @dataclass
 class Body:
@@ -2487,7 +2525,6 @@ Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetW
 @dataclass
 class Module:
     id: int
-    # imports: List[Import]
     structs: Dict[int, List[Struct]]
     externs: List[Extern]
     memories: List[Memory]
@@ -2554,10 +2591,24 @@ class Monomizer:
         return self.function_table, mono_modules
 
     def monomize_locals(self, locals: Dict[LocalId, ResolvedLocal], generics: List[Type]) -> Dict[LocalId, Local]:
-        res = {}
+        res: Dict[LocalId, Local] = {}
         for id, local in locals.items():
             taip = self.monomize_type(local.taip, generics)
-            res[id] = Local(local.name, taip, local.ty, local.size or taip.size())
+            match local:
+                case ResolvedParameterLocal(name):
+                    res[id] = ParameterLocal(local.name, taip)
+                    continue
+                case ResolvedMemoryLocal(name):
+                    res[id] = MemoryLocal(local.name, taip, local.size)
+                    continue
+                case ResolvedInitLocal(name):
+                    res[id] = InitLocal(local.name, taip)
+                    continue
+                case ResolvedDeclaredLocal(name):
+                    res[id] = DeclaredLocal(local.name, taip)
+                    continue
+                case other:
+                    assert_never(other)
         return res
 
     def monomize_concrete_signature(self, signature: ResolvedFunctionSignature) -> FunctionSignature:
@@ -2599,108 +2650,108 @@ class Monomizer:
         return list(map(lambda w: self.monomize_word(w, generics), words))
 
     def monomize_word(self, word: ResolvedWord, generics: List[Type]) -> Word:
-        if isinstance(word, NumberWord):
-            return word
-        if isinstance(word, StringWord):
-            return word
-        if isinstance(word, ResolvedCallWord):
-            return self.monomize_call_word(word, generics)
-        if isinstance(word, ResolvedGetWord):
-            fields = self.monomize_field_accesses(word.fields, generics)
-            return GetWord(word.token, word.local_id, fields)
-        if isinstance(word, InitWord):
-            return word
-        if isinstance(word, ResolvedSetWord):
-            fields = self.monomize_field_accesses(word.fields, generics)
-            return SetWord(word.token, word.local_id, fields)
-        if isinstance(word, ResolvedRefWord):
-            fields = self.monomize_field_accesses(word.fields, generics)
-            return RefWord(word.token, word.local_id, fields)
-        if isinstance(word, ResolvedStoreWord):
-            fields = self.monomize_field_accesses(word.fields, generics)
-            return StoreWord(word.token, word.local, fields)
-        if isinstance(word, ResolvedIntrinsicAdd):
-            return IntrinsicAdd(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicSub):
-            return IntrinsicSub(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicMul):
-            return IntrinsicMul(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicMod):
-            return IntrinsicMod(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicDiv):
-            return IntrinsicDiv(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicEqual):
-            return IntrinsicEqual(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicNotEqual):
-            return IntrinsicNotEqual(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicGreaterEq):
-            return IntrinsicGreaterEq(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicGreater):
-            return IntrinsicGreater(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicLess):
-            return IntrinsicLess(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicLessEq):
-            return IntrinsicLessEq(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicAnd):
-            return IntrinsicAnd(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicNot):
-            return IntrinsicNot(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, IntrinsicDrop):
-            return word
-        if isinstance(word, BreakWord):
-            return word
-        if isinstance(word, IntrinsicFlip):
-            return word
-        if isinstance(word, IntrinsicLoad8):
-            return word
-        if isinstance(word, IntrinsicStore8):
-            return word
-        if isinstance(word, ResolvedIntrinsicRotl):
-            return IntrinsicRotl(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicRotr):
-            return IntrinsicRotr(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicOr):
-            return IntrinsicOr(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIntrinsicStore):
-            return IntrinsicStore(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, IntrinsicMemCopy):
-            return word
-        if isinstance(word, IntrinsicMemGrow):
-            return word
-        if isinstance(word, ResolvedLoadWord):
-            return LoadWord(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedCastWord):
-            return CastWord(word.token, self.monomize_type(word.source, generics), self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedIfWord):
-            if_words = self.monomize_words(word.if_words, generics)
-            else_words = self.monomize_words(word.else_words, generics)
-            parameters = list(map(lambda t: self.monomize_type(t, generics), word.parameters))
-            returns = list(map(lambda t: self.monomize_type(t, generics), word.returns))
-            return IfWord(word.token, parameters, returns, if_words, else_words)
-        if isinstance(word, ResolvedIndirectCallWord):
-            return IndirectCallWord(word.token, self.monomize_function_type(word.taip, generics))
-        if isinstance(word, ResolvedFunRefWord):
-            call_word = self.monomize_call_word(word.call, generics)
-            table_index = self.insert_function_into_table(call_word.function)
-            return FunRefWord(call_word, table_index)
-        if isinstance(word, ResolvedLoopWord):
-            words = self.monomize_words(word.words, generics)
-            parameters = list(map(lambda t: self.monomize_type(t, generics), word.parameters))
-            returns = list(map(lambda t: self.monomize_type(t, generics), word.returns))
-            return LoopWord(word.token, words, parameters, returns)
-        if isinstance(word, ResolvedSizeofWord):
-            return SizeofWord(word.token, self.monomize_type(word.taip, generics))
-        if isinstance(word, ResolvedBlockWord):
-            words = self.monomize_words(word.words, generics)
-            parameters = list(map(lambda t: self.monomize_type(t, generics), word.parameters))
-            returns = list(map(lambda t: self.monomize_type(t, generics), word.returns))
-            return BlockWord(word.token, words, parameters, returns)
-        if isinstance(word, ResolvedGetFieldWord):
-            fields = self.monomize_field_accesses(word.fields, generics)
-            return GetFieldWord(word.token, self.monomize_type(word.base_taip, generics), fields)
-        # assert_never(word)
-        print(word, file=sys.stderr)
-        assert(False)
+        match word:
+            case NumberWord():
+                return word
+            case StringWord():
+                return word
+            case ResolvedCallWord():
+                return self.monomize_call_word(word, generics)
+            case ResolvedGetWord(token, local_id, resolved_fields):
+                fields = self.monomize_field_accesses(resolved_fields, generics)
+                return GetWord(token, local_id, fields)
+            case InitWord():
+                return word
+            case ResolvedSetWord(token, local_id, resolved_fields):
+                fields = self.monomize_field_accesses(resolved_fields, generics)
+                return SetWord(token, local_id, fields)
+            case ResolvedRefWord(token, local_id, resolved_fields):
+                fields = self.monomize_field_accesses(resolved_fields, generics)
+                return RefWord(token, local_id, fields)
+            case ResolvedStoreWord(token, local_id, resolved_fields):
+                fields = self.monomize_field_accesses(resolved_fields, generics)
+                return StoreWord(token, local_id, fields)
+            case ResolvedIntrinsicAdd(token, taip):
+                return IntrinsicAdd(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicSub(token, taip):
+                return IntrinsicSub(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicMul(token, taip):
+                return IntrinsicMul(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicMod(token, taip):
+                return IntrinsicMod(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicDiv(token, taip):
+                return IntrinsicDiv(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicEqual(token, taip):
+                return IntrinsicEqual(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicNotEqual(token, taip):
+                return IntrinsicNotEqual(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicGreaterEq(token, taip):
+                return IntrinsicGreaterEq(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicGreater(token, taip):
+                return IntrinsicGreater(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicLess(token, taip):
+                return IntrinsicLess(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicLessEq(token, taip):
+                return IntrinsicLessEq(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicAnd(token, taip):
+                return IntrinsicAnd(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicNot(token, taip):
+                return IntrinsicNot(token, self.monomize_type(taip, generics))
+            case IntrinsicDrop():
+                return word
+            case BreakWord():
+                return word
+            case IntrinsicFlip():
+                return word
+            case IntrinsicLoad8():
+                return word
+            case IntrinsicStore8():
+                return word
+            case ResolvedIntrinsicRotl(token, taip):
+                return IntrinsicRotl(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicRotr(token, taip):
+                return IntrinsicRotr(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicOr(token, taip):
+                return IntrinsicOr(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicStore(token, taip):
+                return IntrinsicStore(token, self.monomize_type(taip, generics))
+            case IntrinsicMemCopy():
+                return word
+            case IntrinsicMemGrow():
+                return word
+            case ResolvedLoadWord(token, taip):
+                return LoadWord(token, self.monomize_type(taip, generics))
+            case ResolvedCastWord(token, source, taip):
+                return CastWord(token, self.monomize_type(source, generics), self.monomize_type(taip, generics))
+            case ResolvedIfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words):
+                if_words = self.monomize_words(resolved_if_words, generics)
+                else_words = self.monomize_words(resolved_else_words, generics)
+                parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
+                returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
+                return IfWord(token, parameters, returns, if_words, else_words)
+            case ResolvedIndirectCallWord(token, taip):
+                return IndirectCallWord(token, self.monomize_function_type(taip, generics))
+            case ResolvedFunRefWord(call):
+                call_word = self.monomize_call_word(call, generics)
+                table_index = self.insert_function_into_table(call_word.function)
+                return FunRefWord(call_word, table_index)
+            case ResolvedLoopWord(token, resolved_words, parameters, returns):
+                words = self.monomize_words(resolved_words, generics)
+                parameters = list(map(lambda t: self.monomize_type(t, generics), parameters))
+                returns = list(map(lambda t: self.monomize_type(t, generics), returns))
+                return LoopWord(token, words, parameters, returns)
+            case ResolvedSizeofWord(token, taip):
+                return SizeofWord(token, self.monomize_type(taip, generics))
+            case ResolvedBlockWord(token, resolved_words, resolved_parameters, resolved_returns):
+                words = self.monomize_words(resolved_words, generics)
+                parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
+                returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
+                return BlockWord(token, words, parameters, returns)
+            case ResolvedGetFieldWord(token, base_taip, resolved_fields):
+                fields = self.monomize_field_accesses(resolved_fields, generics)
+                return GetFieldWord(token, self.monomize_type(base_taip, generics), fields)
+            case other:
+                assert_never(other)
 
     def insert_function_into_table(self, function: FunctionHandle | ExternHandle) -> int:
         if function not in self.function_table:
@@ -2905,7 +2956,7 @@ class WatGenerator:
             self.write_indent()
             self.write("(local $locl-copy-spac:e i32)\n")
 
-        uses_stack = struct_return_space != 0 or locals_copy_space != 0 or any(isinstance(local.taip, StructType) or local.ty == LocalType.MEMORY for local in function.body.get().locals.values())
+        uses_stack = struct_return_space != 0 or locals_copy_space != 0 or any(isinstance(local.taip, StructType) or isinstance(local, MemoryLocal) for local in function.body.get().locals.values())
         if uses_stack:
             self.write_indent()
             self.write("(local $stac:k i32)\n")
@@ -2920,7 +2971,7 @@ class WatGenerator:
                 self.write("global.get $stac:k local.set $stac:k\n")
 
         for local_id, local in function.body.get().locals.items():
-            if local.ty == LocalType.MEMORY:
+            if isinstance(local, MemoryLocal):
                 self.write_mem(local.name.lexeme, local.size(), local_id.scope, local_id.shadow)
         if locals_copy_space != 0:
             self.write_mem("locl-copy-spac:e", locals_copy_space, 0, 0)
@@ -2941,7 +2992,7 @@ class WatGenerator:
 
     def write_structs(self, locals: Dict[LocalId, Local]) -> None:
         for local_id, local in locals.items():
-            if local.ty != LocalType.PARAMETER and isinstance(local.taip, StructType):
+            if not isinstance(local, ParameterLocal) and isinstance(local.taip, StructType):
                 self.write_mem(local.name.lexeme, local.taip.size(), local_id.scope, local_id.shadow)
 
     def measure_struct_return_space(self, words: List[Word]) -> Tuple[int, int]:
@@ -3004,7 +3055,7 @@ class WatGenerator:
 
     def write_locals(self, body: Body) -> None:
         for local_id, local in body.locals.items():
-            if local.ty == LocalType.PARAMETER: # is a parameter
+            if isinstance(local, ParameterLocal):
                 continue
             local = body.locals[local_id]
             self.write_indent()
