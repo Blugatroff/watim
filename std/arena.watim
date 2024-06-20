@@ -118,8 +118,9 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
     $size 0 = if {
         $self.used-pages 0 !.Page = if {
             // Cannot request the current cursor when no page has been allocated yet.
-            // Perhaps the arena should allocate a page? For now just crash!
-            0 0 / drop 
+            // Perhaps the arena should allocate a page?
+            $self 1 alloc-bytes break
+            // Is there a better solution? Can allocating an entire page for otherwise empty Arenas be avoided here?
         }
         $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i32 break
     }
