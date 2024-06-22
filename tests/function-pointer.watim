@@ -1,12 +1,15 @@
+[== Stdin Compiler ==]
 extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 
 fn mul2(a: i32) -> i32 { $a $a + }
 
 fn apply(f: (i32 -> i32), a: i32) -> i32 {
-    $a $f ->
+	$a $f ->
 }
 
 fn main "_start" () {
-    \mul2 4 apply proc_exit
+	\mul2 4 apply proc_exit
 }
+[== Status ==]
+8
 

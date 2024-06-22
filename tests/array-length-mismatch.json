@@ -1,8 +1,0 @@
-{
-    "compilation": {
-        "code": 1,
-        "stdout": null,
-        "stderr": "./tests/array-length-mismatch.watim:3:10\n\texpected: [[i32: 3]]\n\tgot:      [[i32: 4]]\n",
-        "stdin": null
-    }
-}

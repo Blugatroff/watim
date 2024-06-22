@@ -1,0 +1,13 @@
+[== Stdin Compiler ==]
+fn main() -> i32 {
+	block {
+		random if { break }
+		loop { }
+	}
+}
+fn random() -> bool { 1 1 = }
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:1:4 expected: i32
+

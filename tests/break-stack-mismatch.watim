@@ -1,6 +1,15 @@
-fn main() {
-    loop {
-        0 break
-        0 1 = break
-    } drop
+[== Stdin Compiler ==]
+fn foo() -> i32 {
+	block {
+		break
+		0 break
+		0 1 =
+	}
 }
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:2:2 break stack mismatch:
+	3:3 []
+	4:5 [i32]
+	6:2 [bool]

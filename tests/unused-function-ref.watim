@@ -1,16 +1,10 @@
+[== Stdin Compiler ==]
 extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
-
 fn foo(a: i32) { }
-
-fn unused() {
-    \foo drop
-}
-
+fn unused() { \foo drop }
 fn bar() -> i32 { 7 }
-
-fn used() -> i32 {
-    \bar ->
-}
-
+fn used() -> i32 { \bar -> }
 fn main "_start" () { used proc_exit }
+[== Status ==]
+7
 

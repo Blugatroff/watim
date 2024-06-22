@@ -1,10 +1,11 @@
-import "../std/core.watim" as CORE
-import "../std/io.watim" as IO
-import "../std/arena.watim" as Arena
-import "../std/array.watim" as Array
-import "../std/bytes.watim" as Bytes
-import "../std/byte-slice.watim" as ByteSlice
-import "../std/byte-array.watim" as ByteArray
+import "./core.watim" as CORE
+import "./io.watim" as IO
+import "./arena.watim" as Arena
+import "./array.watim" as Array
+import "./bytes.watim" as Bytes
+import "./byte-slice.watim" as ByteSlice
+import "./byte-array.watim" as ByteArray
+import "./util.watim" as Util
 
 extern "wasi_snapshot_preview1" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
 extern "wasi_snapshot_preview1" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
@@ -135,23 +136,6 @@ fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, targe
         drop $ptr $len ByteArray:init
     }
 }
-fn str-split(arena: .Arena:Arena, str-ptr: .i32, str-len: i32, del: i32) -> Array:Array<ByteSlice:T> {
-    Array:new<ByteSlice:T> @splits
-    loop {
-        $str-len 0 = if { break }
-        $str-ptr $str-len $del Bytes:find if {
-            @index
-            $arena &splits $str-ptr $index ByteSlice:new Array:push<ByteSlice:T>
-            $str-ptr $index + 1 + #str-ptr
-            $str-len $index - 1 - #str-len
-        } else {
-            drop
-            $arena &splits $str-ptr $str-len ByteSlice:new Array:push<ByteSlice:T>
-            break
-        }
-    }
-    $splits
-}
 
 fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $arena Arena:temp @temp @temp-save
@@ -166,7 +150,7 @@ fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $temp &out ByteArray:unpack "/./" "/" str-replace #out
     $temp &out ByteArray:unpack "./." "." str-replace #out
 
-    $temp &out ByteArray:unpack "/" drop load8 str-split @splits
+    $temp &out ByteArray:to-slice "/" drop load8 Util:split-bytes @splits
     Array:new<ByteSlice:T> @outsplits
     0 @i
     loop {

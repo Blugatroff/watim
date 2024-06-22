@@ -1,6 +1,9 @@
 [== Stdin Compiler ==]
-struct List {
-    next: .List
+fn foo() -> i32 {
+	block {
+		loop { }
+	}
 }
 [== Status Compiler ==]
 0
+

@@ -1,3 +1,0 @@
-fn main "_start" () {
-    0 ::.i32 @x
-}

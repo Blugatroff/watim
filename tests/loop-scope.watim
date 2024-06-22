@@ -1,10 +1,14 @@
+[== Stdin Compiler ==]
 extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 
 fn main "_start" () {
-    1 @x
-    loop {
-        2 @x
-        break
-    }
-    $x proc_exit
+	1 @x
+	loop {
+		2 @x
+		break
+	}
+	$x proc_exit
 }
+[== Status ==]
+1
+

@@ -26,7 +26,7 @@ fn print-usage-and-exit() {
 
 fn find-flag(args: .Array:Array<ByteSlice:T>, ptr: .i32, len: i32) -> bool {
     $ptr $len ByteSlice:new @str
-    $args \ByteSlice:eq &str Array:find<ByteSlice:T, .ByteSlice:T> if {
+    $args \ByteSlice:eq-by-ref &str Array:find<ByteSlice:T, .ByteSlice:T> if {
         $args flip Array:remove<ByteSlice:T> drop
         1 1 =
     } else { 
@@ -103,6 +103,8 @@ fn main "_start" () {
     &arena &fs &modules &imp-stack $file-path ~ load-modules-recursively
 
     &arena &modules DepTree:determine-compilation-order @modules-in-compilation-order
+
+    // &arena &modules-in-compilation-order Resolver:resolve @resolved
 }
 
 fn load-modules-recursively(arena: .A:Arena, fs: .FS:FileSystem, modules: .Array:Array<Parser:ParsedModule>, imp-stack: .Array:Array<ByteSlice:T>, path: ByteSlice:T) {
@@ -152,7 +154,7 @@ fn load-modules-recursively(arena: .A:Arena, fs: .FS:FileSystem, modules: .Array
         $temp &absolute-path $arena &imp.path Lexer:Token-string-content ByteSlice:unpack ByteArray:push
         $temp &absolute-path ByteArray:unpack FS:normalize ByteSlice:new @absolute-path
 
-        $imp-stack \ByteSlice:eq &absolute-path Array:find<ByteSlice:T, .ByteSlice:T> if {
+        $imp-stack \ByteSlice:eq-by-ref &absolute-path Array:find<ByteSlice:T, .ByteSlice:T> if {
             @i
             2 $parsed-module.file-path ByteSlice:unpack &imp.path Lexer:Token-location Lexer:print-location IO:check
             2 ": Module import cycle detected: " IO:write-all IO:check

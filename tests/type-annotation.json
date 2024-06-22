@@ -1,8 +1,0 @@
-{
-    "compilation": {
-        "code": 1,
-        "stdout": null,
-        "stderr": "./tests/type-annotation.watim:2:9 Type mismatch with annotation:\n\ti32\n\t.i32\n",
-        "stdin": null
-    }
-}

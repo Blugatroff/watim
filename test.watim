@@ -1,0 +1,209 @@
+import "./std/args.watim" as Args
+import "./std/byte-slice.watim" as ByteSlice
+import "./std/byte-array.watim" as ByteArray
+import "./std/io.watim" as IO
+import "./std/fs.watim" as FS
+import "./std/core.watim" as Core
+import "./std/arena.watim" as Arena
+import "./std/array.watim" as Array
+import "./std/util.watim" as Util
+
+fn main "_start" () {
+    Arena:init-temp
+
+    "Main" Arena:new @arena
+    &arena Args:get-args @args
+
+    &arena FS:init IO:check @fs
+
+    $args.len 1 le if { 
+        2 "Expected path to a test file!\n" IO:write-all IO:check
+        1 Core:exit
+    }
+
+    block {
+        &fs &args 1 Array:get<ByteSlice:T> ~ ByteSlice:unpack
+        1 1 = 0 1 = FS:create-rights
+        0 1 = 0 1 = FS:create-rights
+        FS:open-file IO:check @fd
+
+        &arena Arena:temp @temp @save
+        $temp $fd FS:read-all IO:check @file
+        &file ByteArray:to-slice @file
+
+        $temp $file parse-test-file2 @test
+        1 &test Test-write-json IO:check
+
+        $temp $save Arena:restore
+
+        $fd FS:close IO:check
+    }
+
+    &arena Arena:clear
+}
+
+fn is-whitespace(char: i32) -> bool {
+    $char " " drop load8 =
+    $char "\n" drop load8 = or
+    $char "\r" drop load8 = or
+}
+
+struct Test {
+    compiler-stdin: .ByteSlice:T
+    compiler-status: .i32
+    compiler-stdout: .ByteSlice:T
+    compiler-stderr: .ByteSlice:T
+    args: .Array:Array<ByteSlice:T>
+    stdin: .ByteSlice:T
+    status: .i32
+    stdout: .ByteSlice:T
+    stderr: .ByteSlice:T
+}
+fn write-nullable-string-json(fd: i32, str: .ByteSlice:T) -> i32 { block {
+    $str 0!.ByteSlice:T = if {
+        $fd "null" IO:write-all break
+    }
+    $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $str ~ ByteSlice:unpack IO:write-escaped Core:dup<i32> 0 /= if { break } else { drop }
+    $fd "\"" IO:write-all
+} }
+fn write-nullable-number-json(fd: i32, n: .i32) -> i32 {
+    $n 0!.i32 = if {
+        $fd "null" IO:write-all
+    } else {
+        $fd $n ~ IO:print
+    }
+}
+fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
+    $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"compiler-status\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.compiler-status write-nullable-number-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"compiler-stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.compiler-stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"compiler-stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.compiler-stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"args\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $self.args 0!.Array:Array<ByteSlice:T> = if {
+        $fd "null" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    } else {
+        0 @i
+        $fd "[" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+        loop {
+            $i $self.args.len = if { break }
+            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+            $fd &self.args ~ $i Array:get<ByteSlice:T> ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+            $i 1 + $self.args.len /= if {
+                $fd ", " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+            }
+            $i 1 + #i
+        }
+        $fd "]" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    }
+    $fd ", \"stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"status\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.status write-nullable-number-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd " }" IO:write-all
+} }
+
+fn parse-test-file2(arena: .Arena:Arena, file: ByteSlice:T) -> Test {
+    local test: Test
+    0 !.ByteSlice:T #test.compiler-stdin
+    0 !.i32 #test.compiler-status
+    0 !.ByteSlice:T #test.compiler-stdout
+    0 !.ByteSlice:T #test.compiler-stderr
+    0 !.Array:Array<ByteSlice:T> #test.args
+    0 !.i32 #test.status
+    0 !.ByteSlice:T #test.stdout
+    0 !.ByteSlice:T #test.stderr
+
+    "[== Stdin Compiler ==]" ByteSlice:new @compiler-stdin-header
+    "[== Status Compiler ==]" ByteSlice:new @compiler-status-header
+    "[== Stdout Compiler ==]" ByteSlice:new @compiler-stdout-header
+    "[== Stderr Compiler ==]" ByteSlice:new @compiler-stderr-header
+    "[== Args ==]" ByteSlice:new @args-header
+    "[== Stdin ==]" ByteSlice:new @stdin-header
+    "[== Status ==]" ByteSlice:new @status-header
+    "[== Stdout ==]" ByteSlice:new @stdout-header
+    "[== Stderr ==]" ByteSlice:new @stderr-header
+
+    Array:new<ByteSlice:T> @headers
+    $arena &headers $compiler-stdin-header Array:push<ByteSlice:T>
+    $arena &headers $compiler-status-header Array:push<ByteSlice:T>
+    $arena &headers $compiler-stdout-header Array:push<ByteSlice:T>
+    $arena &headers $compiler-stderr-header Array:push<ByteSlice:T>
+    $arena &headers $args-header Array:push<ByteSlice:T>
+    $arena &headers $stdin-header Array:push<ByteSlice:T>
+    $arena &headers $status-header Array:push<ByteSlice:T>
+    $arena &headers $stdout-header Array:push<ByteSlice:T>
+    $arena &headers $stderr-header Array:push<ByteSlice:T>
+
+    loop {
+        $file.len 0 = if { break }
+
+        0 !.ByteSlice:T @section-header
+        0 @i
+        loop {
+            $i $headers.len = if { break }
+            &headers $i Array:get<ByteSlice:T> @header
+            $file.len $header.len ge if { 
+                &file 0 $header.len ByteSlice:slice $header ~ ByteSlice:eq if {
+                    $header #section-header
+                    break
+                }
+            }
+            $i 1 + #i
+        }
+        $section-header 0 !.ByteSlice:T = if {
+            2 "unknown section header: " IO:write-all IO:check
+            2 &file 0 28 $file.len Core:min ByteSlice:slice ByteSlice:unpack IO:write-all IO:check
+            2 IO:newline
+            1 Core:exit
+        }
+
+        $section-header ~ @section-header
+        &headers \ByteSlice:eq-by-ref &section-header Array:find-remove<ByteSlice:T, .ByteSlice:T> drop drop drop
+
+        $file $section-header.len ByteSlice:drop #file
+        $file @value
+
+        $value.len @closest-index
+        0 @i
+        loop {
+            $i $headers.len = if { break }
+            &headers $i Array:get<ByteSlice:T> @header
+            $value $header ~ ByteSlice:find-slice if {
+                @index
+                $index $closest-index lt if {
+                    $index #closest-index
+                }
+            } else { drop }
+            $i 1 + #i
+        }
+        $file $closest-index ByteSlice:drop #file
+        &value 0 $closest-index ByteSlice:slice \is-whitespace ByteSlice:trim-with @value
+
+        $section-header $compiler-stdin-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice:T> #test.compiler-stdin }
+        $section-header $compiler-status-header ByteSlice:eq if { $arena $value ByteSlice:unpack Util:parse Arena:push<i32> #test.compiler-status }
+        $section-header $compiler-stdout-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice:T> #test.compiler-stdout }
+        $section-header $compiler-stderr-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice:T> #test.compiler-stderr }
+        $section-header $args-header ByteSlice:eq if {
+            $arena $value 10 Util:split-bytes @args
+            $arena &args \ByteSlice:is-not-empty Array:filter<ByteSlice:T, ByteSlice:T> @args
+            $arena $args Arena:push<Array:Array<ByteSlice:T>> #test.args
+        }
+        $section-header $stdin-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice:T> #test.stdin }
+        $section-header $status-header ByteSlice:eq if { $arena $value ByteSlice:unpack Util:parse Arena:push<i32> #test.status }
+        $section-header $stdout-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice:T> #test.stdout }
+        $section-header $stderr-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice:T> #test.stderr }
+    }
+
+    $test
+}
+

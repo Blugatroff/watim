@@ -201,10 +201,21 @@ fn ParsedModule-write(fd: i32, self: .ParsedModule) -> i32 { block {
     $fd " }" IO:write-all
 } }
 fn ParsedModule-path-eq(self: .ParsedModule, path: .ByteSlice:T) -> bool {
-    &self.file-path $path ByteSlice:eq
+    &self.file-path $path ByteSlice:eq-by-ref
 }
 fn ParsedModule-write-path(fd: i32, self: .ParsedModule) -> i32 {
     $fd $self.file-path ByteSlice:unpack IO:write-all
+}
+fn ParsedModule-lookup-function(self: .ParsedModule, name: .L:Token) -> i32, .ParsedFunction {
+    0 @i
+    loop {
+        $self.functions.len $i = if { 0 0 !.ParsedFunction break }
+        &self.functions $i Array:get<ParsedFunction> @f
+        &f.name $name L:Token-eq-by-lexeme if {
+            $i $f break
+        }
+        $i 1 + #i
+    }
 }
 
 fn TYPE_I32() -> i32 { 1 }
@@ -1435,21 +1446,21 @@ fn parse-word(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
     $cursor
 }
 fn parse-memory(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Array:Array<L:Token>, generic-parameters: .Array:Array<L:Token>, types: .ParsedTypes) -> ParsedMemory, i32 {
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_MEMORY /= if {
         $file-path $token "Expected `memory`." abort
     }
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_IDENT /= if {
         $file-path $token "Expected an identifier for memory." abort
     }
     $token @name-token
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_COLON /= if {
         $file-path $token "Expected `:` after for memory identifier." abort
     }
     $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor @type
-    $cursor $file-path $tokens next #cursor @token
+    $cursor $file-path $tokens next-non-space #cursor @token
     $token L:Token-ty L:TOKEN_NUMBER /= if {
         $file-path $token "Expected number after memory type." abort
     }
@@ -1530,7 +1541,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             }
             $arena $cursor $file-path $tokens $generic-parameters $types parse-type #cursor drop
             $parameter-count 1 + #parameter-count
-            $cursor $file-path $tokens peek L:Token-ty L:TOKEN_ARROW = if {
+            $cursor $file-path $tokens peek-non-space L:Token-ty L:TOKEN_ARROW = if {
                 $cursor $file-path $tokens next-non-space #cursor drop // skip the `->`
                 break
             }
@@ -1557,7 +1568,7 @@ fn parse-type(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:T, tokens: .Ar
             }
             $cursor $file-path $tokens next-non-space #cursor @token
             $token L:Token-ty L:TOKEN_COMMA /= if {
-                $file-path $token "Expected `,` in argument list of function type." abort
+                $file-path $token "Expected `,` in return list of function type." abort
             }
         }
         $types.buf.ptr $return-count-patch + $return-count store
@@ -1594,14 +1605,14 @@ fn parse-generic-parameters(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
         $file-path $token "Expected `<`." abort
     }
     loop {
-        $cursor $file-path $tokens peek @token
+        $cursor $file-path $tokens peek-non-space @token
         $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { 
-            $cursor $file-path $tokens next #cursor drop // consume the `>`
+            $cursor $file-path $tokens next-non-space #cursor drop // consume the `>`
             break
         }
-        $cursor $file-path $tokens next #cursor @token
+        $cursor $file-path $tokens next-non-space #cursor @token
         $arena &generic-parameters $token ~ Array:push<L:Token>
-        $cursor $file-path $tokens next #cursor @token
+        $cursor $file-path $tokens next-non-space #cursor @token
         $token L:Token-ty L:TOKEN_RIGHT_TRIANGLE = if { break }
         $token L:Token-ty L:TOKEN_COMMA /= if {
             $file-path $token "Expected `,`." abort

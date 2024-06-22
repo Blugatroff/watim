@@ -1,6 +1,0 @@
-{
-    "compilation": {
-        "code": 1,
-        "stderr": "./tests/type-mismatch.watim:5:7\n\texpected: [bool]\n\tgot:      [i32]\n"
-    }
-}

@@ -1,4 +1,7 @@
-
-fn main () -> i32 {
-    loop { }
+[== Stdin Compiler ==]
+fn main() -> i32 {
+	loop { }
 }
+[== Status Compiler ==]
+0
+

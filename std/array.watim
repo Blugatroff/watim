@@ -204,14 +204,27 @@ fn join-with(arena: .A:Arena, self: .Array<ByteSlice:T>, del-ptr: .i32, del-len:
     }
     $out
 }
-// fn map<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> O)) -> Array<O> {
-//     Array:new<O> @new // TODO: Optimize this by creating an array with the already known minimum capacity to avoid resizing.
-//     0 @i
-//    loop {
-//        $i $self.len = if { break }
-//        $arena &new $self $i Array:get<T> $f -> Array:push<O>
-//        $i 1 + #i
-//    }
-//    $new
-// }
+fn map<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> O)) -> Array<O> {
+    $arena $self.len new-with-capacity<O> @new
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        &new $self $i get<T> $f -> push-assert-no-alloc<O>
+        $i 1 + #i
+    }
+    $new
+}
+fn filter<T>(arena: .A:Arena, self: .Array<T>, f: (.T -> bool)) -> Array<T> {
+    new<T> @new
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $self $i get<T> @v
+        $v $f -> if {
+            $arena &new $v ~ push<T>
+        }
+        $i 1 + #i
+    }
+    $new
+}
 
