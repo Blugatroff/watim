@@ -84,13 +84,16 @@ fn init(arena: .Arena:Arena) -> FileSystem, i32 {
 // returns 0, 0 if not found
 // returns 0, e if error
 fn find-current-dir(fs: .FileSystem) -> i32, i32 {
+    $fs.preopened-fds.len 0 = if {
+        2 "failed to find preopened current directory\n" IO:write-all IO:check
+        1 CORE:exit
+    }
     0 @i
     loop {
         $i $fs.preopened-fds.len = if { 
-            // not found
-            2 "failed to find preopened current directory\n" IO:write-all IO:check
-            1 CORE:exit
-            0 0 break
+            // no preopend directory named "." found, using
+            // the first preopened directory as a fallback.
+            &fs.preopened-fds 0 Array:get<PreopenedFd> .fd ~ 0 break
         }
         &fs.preopened-fds $i Array:get<PreopenedFd> @preopened-fd
         $preopened-fd.path ByteSlice:unpack "." Bytes:is-prefix
