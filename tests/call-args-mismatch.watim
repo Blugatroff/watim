@@ -1,0 +1,14 @@
+[== Stdin Compiler ==]
+struct Foo { }
+fn foo(a: i32, b: Foo, c: bool) { }
+fn bar(b: Foo) {
+	43 $b 3 2 1 = foo
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:4:16 expected:
+	[i32, Foo, bool]
+got:
+	[i32, Foo, i32, bool]
+

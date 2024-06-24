@@ -1,0 +1,10 @@
+[== Stdin Compiler ==]
+fn foo<A, B>() {}
+fn main() {
+	foo<i32>
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:3:2 expected 2 generic arguments, not 1
+

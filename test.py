@@ -11,6 +11,9 @@ import os
 
 from termcolor import colored
 
+if subprocess.run(f"python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
+    exit(1)
+
 def parse_test_file(path: str):
     output = subprocess.run(f"wasmtime --dir=. -- test.wat {path}", shell=True, stdout=subprocess.PIPE)
     if output.returncode != 0:

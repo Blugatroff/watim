@@ -941,12 +941,15 @@ class ResolvedPtrType:
     def __str__(self) -> str:
         return f"ResolvedPtrType(child={str(self.child)})"
 
-def listtostr(l: Sequence[object]) -> str:
+def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None) -> str:
     if len(l) == 0:
         return "[]"
     s = "["
     for e in l:
-        s += str(e) + ", "
+        if tostr is None:
+            s += str(e) + ", "
+        else:
+            s += tostr(e) + ", "
     return s[0:-2] + "]"
 
 @dataclass
@@ -2004,18 +2007,24 @@ class FunctionResolver:
 
     def expect_stack(self, token: Token, stack: Stack, expected: List[ResolvedType]) -> List[ResolvedType]:
         popped: List[ResolvedType] = []
+        def abort():
+            stackdump = stack.dump() + list(reversed(popped))
+            self.abort(token, f"expected:\n\t{listtostr(expected, format_resolved_type)}\ngot:\n\t{listtostr(stackdump, format_resolved_type)}")
         for expected_type in reversed(expected):
             top = stack.pop()
             if top is None:
-                self.abort(token, "expected: " + format_resolved_type(expected_type))
+                abort()
             popped.append(top)
             if not resolved_type_eq(expected_type, top):
-                self.abort(token, "expected: " + format_resolved_type(expected_type) + "\ngot: " + format_resolved_type(top))
+                abort()
         return list(reversed(popped))
 
     def resolve_call_word(self, env: Env, word: ParsedCallWord) -> ResolvedCallWord:
         resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
         function = self.module_resolver.resolve_function_name(word.name)
+        signature = self.module_resolver.get_signature(function)
+        if len(resolved_generic_arguments) != len(signature.generic_parameters):
+            self.module_resolver.abort(word.name, f"expected {len(signature.generic_parameters)} generic arguments, not {len(resolved_generic_arguments)}")
         return ResolvedCallWord(word.name, function, resolved_generic_arguments)
 
     def type_check_call(self, stack: Stack, token: Token, generic_arguments: None | List[ResolvedType], parameters: List[ResolvedType], returns: List[ResolvedType]):
