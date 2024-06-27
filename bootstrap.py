@@ -387,7 +387,12 @@ class ParsedGetFieldWord:
 class ParsedIndirectCallWord:
     token: Token
 
-ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord
+@dataclass
+class ParsedStructWord:
+    token: Token
+    words: List['ParsedWord']
+
+ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord
 
 @dataclass
 class ParsedNamedType:
@@ -1399,11 +1404,11 @@ class Lazy(Generic[T]):
     def has_value(self) -> bool:
         return self.inner is not None
 
-stdin = Lazy(lambda: sys.stdin.read())
+sys_stdin = Lazy(lambda: sys.stdin.read())
 
-def load_recursive(modules: Dict[str, ParsedModule], path: str, import_stack: List[str]=[]):
+def load_recursive(modules: Dict[str, ParsedModule], path: str, stdin: str | None = None, import_stack: List[str]=[]):
     if path == "-":
-        file = stdin.get()
+        file = stdin if stdin is not None else sys_stdin.get()
     else:
         with open(path, 'r') as reader:
             file = reader.read()
@@ -1416,15 +1421,14 @@ def load_recursive(modules: Dict[str, ParsedModule], path: str, import_stack: Li
         else:
             p = os.path.normpath(imp.file_path.lexeme[1:-1])
         if p in import_stack:
-            print("Module import cycle detected: ", end="")
+            error_message = "Module import cycle detected: "
             for a in import_stack:
-                print(f"{a} -> ", end="")
-            print(p)
-            exit(1)
+                error_message += f"{a} -> "
+            raise ParserException(path, file, imp.file_path, error_message)
         if p in modules:
             continue
         import_stack.append(p)
-        load_recursive(modules, p, import_stack)
+        load_recursive(modules, p, stdin, import_stack)
         import_stack.pop()
 
 def determine_compilation_order(unprocessed: List[ParsedModule]) -> List[ParsedModule]:
@@ -2007,7 +2011,7 @@ class FunctionResolver:
 
     def expect_stack(self, token: Token, stack: Stack, expected: List[ResolvedType]) -> List[ResolvedType]:
         popped: List[ResolvedType] = []
-        def abort():
+        def abort() -> NoReturn:
             stackdump = stack.dump() + list(reversed(popped))
             self.abort(token, f"expected:\n\t{listtostr(expected, format_resolved_type)}\ngot:\n\t{listtostr(stackdump, format_resolved_type)}")
         for expected_type in reversed(expected):
@@ -2367,10 +2371,7 @@ class FunctionSignature:
     returns: List[Type]
 
     def returns_any_struct(self) -> bool:
-        for ret in self.returns:
-            if isinstance(ret, StructType):
-                return True
-        return False
+        return any(isinstance(ret, StructType) for ret in self.returns)
 
 @dataclass
 class Memory:
@@ -3638,27 +3639,26 @@ class WatGenerator:
             self.write("i32")
 
 
-def main() -> None:
-    try:
-        modules: Dict[str, ParsedModule] = {}
-        load_recursive(modules, os.path.normpath(sys.argv[1]))
+def main(path: str, stdin: str | None = None) -> str:
+    modules: Dict[str, ParsedModule] = {}
+    load_recursive(modules, os.path.normpath(path), stdin)
 
-        resolved_modules: Dict[int, ResolvedModule] = {}
-        resolved_modules_by_path: Dict[str, ResolvedModule] = {}
-        for id, module in enumerate(determine_compilation_order(list(modules.values()))):
-            resolved_module = ModuleResolver(resolved_modules, resolved_modules_by_path, module, id).resolve()
-            resolved_modules[id] = resolved_module
-            resolved_modules_by_path[module.path] = resolved_module
-        function_table, mono_modules = Monomizer(resolved_modules).monomize()
-        print(WatGenerator(mono_modules, function_table).write_wat_module())
+    resolved_modules: Dict[int, ResolvedModule] = {}
+    resolved_modules_by_path: Dict[str, ResolvedModule] = {}
+    for id, module in enumerate(determine_compilation_order(list(modules.values()))):
+        resolved_module = ModuleResolver(resolved_modules, resolved_modules_by_path, module, id).resolve()
+        resolved_modules[id] = resolved_module
+        resolved_modules_by_path[module.path] = resolved_module
+    function_table, mono_modules = Monomizer(resolved_modules).monomize()
+    return WatGenerator(mono_modules, function_table).write_wat_module()
+
+if __name__ == "__main__":
+    try:
+        print(main(sys.argv[1]))
     except ParserException as e:
         print(e.display(), file=sys.stderr)
         exit(1)
     except ResolverException as e:
         print(e.display(), file=sys.stderr)
         exit(1)
-
-
-if __name__ == "__main__":
-    main()
 

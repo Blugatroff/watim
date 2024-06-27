@@ -1,0 +1,19 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+struct Foo {
+    baz: bool
+    bar: i32
+}
+
+fn main "_start" () {
+    Foo { 1 0 = @bar 42 @baz } @foo // could desugar to: uninit<Foo> @anon 31 #anon.bar 42 #anon.baz $anon @foo
+
+    31 42 Foo
+
+    $foo.bar proc_exit
+}
+[== Status Compiler ==]
+0
+[== Status ==]
+42

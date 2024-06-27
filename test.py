@@ -11,6 +11,8 @@ import os
 
 from termcolor import colored
 
+from bootstrap import main, ParserException, ResolverException
+
 if subprocess.run(f"python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
     exit(1)
 
@@ -20,7 +22,24 @@ def parse_test_file(path: str):
         return None
     return json.loads(output.stdout)
 
-tests = glob.glob('./tests/*.watim')
+@dataclass
+class CompilerOutput:
+    returncode: int
+    stdout: str
+    stderr: str
+
+def run_compiler(stdin: str):
+    # compiler = subprocess.run(["python", "./bootstrap.py", "-"], input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
+    try:
+        stdout = main("-", stdin)
+        return CompilerOutput(0, stdout.strip(), "")
+    except ParserException as e:
+        return CompilerOutput(1, "", e.display().strip())
+    except ResolverException as e:
+        return CompilerOutput(1, "", e.display().strip())
+
+tests = glob.glob(sys.argv[1] if len(sys.argv) > 1 else './tests/*.watim')
 failed = False
 for path in tests:
     test = parse_test_file(path)
@@ -32,26 +51,26 @@ for path in tests:
     if test["compiler-stdin"] is None:
         print(f"{path}: compiler-stdin ist missing", file=sys.stderr)
         continue
-    compiler = subprocess.run(["python", "./bootstrap.py", "-"], input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if test['compiler-stderr'] is not None and compiler.stderr.strip() != test['compiler-stderr'].encode('UTF-8').strip():
+    compiler = run_compiler(test['compiler-stdin'])
+    if test['compiler-stderr'] is not None and compiler.stderr != test['compiler-stderr'].strip():
         print(f"{path}: expected different compiler stderr:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-stderr']}", file=sys.stderr)
-        print(f"Actual:\n{compiler.stderr.decode('UTF-8')}", file=sys.stderr)
+        print(f"Actual:\n{compiler.stderr}", file=sys.stderr)
         continue
-    if test['compiler-stdout'] is not None and compiler.stdout.strip() != test['compiler-stdout'].encode('UTF-8').strip():
+    if test['compiler-stdout'] is not None and compiler.stdout != test['compiler-stdout'].strip():
         print(f"{path}: expected different compiler stdout:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-stdout']}", file=sys.stderr)
-        print(f"Actual:\n{compiler.stdout.decode('UTF-8')}", file=sys.stderr)
+        print(f"Actual:\n{compiler.stdout}", file=sys.stderr)
         continue
     if test['compiler-status'] is not None and compiler.returncode != test['compiler-status']:
         print(f"{path}: expected different compiler status:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)
         print(f"Actual:\n{compiler.returncode}", file=sys.stderr)
         if test['compiler-stderr'] is None:
-            print(f"compiler-stderr was: {compiler.stderr.decode('UTF-8')}", file=sys.stderr)
+            print(f"compiler-stderr was: {compiler.stderr}", file=sys.stderr)
         continue
     with open('./out.wat', 'wb') as outwat:
-        outwat.write(compiler.stdout)
+        outwat.write(compiler.stdout.encode("UTF-8"))
         cmd = 'wasmtime ./out.wat'
     if compiler.returncode == 0:
         program = subprocess.run(["wasmtime", "./out.wat"], input=bytes(test["stdin"] or "", 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
