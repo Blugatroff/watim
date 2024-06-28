@@ -47,7 +47,7 @@ class TokenType(str, Enum):
     ARROW = "ARROW"
     DOUBLE_ARROW = "DOUBLE_ARROW"
     SPACE = "SPACE"
-
+    MAKE = "MAKE"
 
 @dataclass(frozen=True)
 class Token:
@@ -69,7 +69,7 @@ class Token:
         return TYPE_LEXEME_DICT[ty]
 
     def __str__(self) -> str:
-        return f"\"{self.lexeme}:{str(self.line)}:{str(self.column)}\""
+        return f"{self.ty.value} \"{self.lexeme}\" {str(self.line)} {str(self.column)}"
 
 @dataclass
 class LexerException(Exception):
@@ -103,7 +103,7 @@ class Lexer:
 
     def add_space(self):
         if len(self.tokens) == 0 or self.tokens[-1].ty != "Foo":
-            self.tokens.append(Token.space(self.cursor, self.column))
+            self.tokens.append(Token.space(self.line, self.column))
         pass
 
     def lex(self) -> List[Token]:
@@ -242,6 +242,7 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "!":      TokenType.BANG,
     "~":      TokenType.TILDE,
     "\\":     TokenType.BACKSLASH,
+    "make":   TokenType.MAKE,
 }
 TYPE_LEXEME_DICT: dict[TokenType, str] = {v: k for k, v in LEXEME_TYPE_DICT.items()}
 
@@ -390,6 +391,7 @@ class ParsedIndirectCallWord:
 @dataclass
 class ParsedStructWord:
     token: Token
+    taip: ParsedStructType | ParsedForeignType
     words: List['ParsedWord']
 
 ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord
@@ -729,6 +731,17 @@ class Parser:
             return ParsedGetFieldWord(token, self.parse_field_accesses())
         if token.ty == TokenType.ARROW:
             return ParsedIndirectCallWord(token)
+        if token.ty == TokenType.MAKE:
+            struct_name_token = self.advance(skip_ws=True)
+            taip = self.parse_struct_type(struct_name_token, generic_parameters)
+            brace = self.advance(skip_ws=True)
+            if brace is not None and brace.ty == TokenType.LEFT_BRACE:
+                words = self.parse_words(generic_parameters)
+                brace = self.advance(skip_ws=True)
+                if brace is None or brace.ty != TokenType.RIGHT_BRACE:
+                    self.abort("Expected `}`")
+                return ParsedStructWord(token, taip, words)
+            self.abort("Expected `{`")
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: List[Token], token: Token) -> ParsedCallWord | ParsedForeignCallWord:
@@ -869,6 +882,23 @@ class Parser:
         next = self.peek(skip_ws=False)
         return self.parse_triangle_listed(parse_ident) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
 
+    def parse_struct_type(self, token: Token | None, generic_parameters: List[Token]) -> ParsedStructType | ParsedForeignType:
+        if token is None or token.ty != TokenType.IDENT:
+            self.abort("Expected an identifer as struct name")
+        next = self.peek(skip_ws=True)
+        if next is not None and next.ty == TokenType.COLON:
+            self.advance(skip_ws=True) # skip the `:`
+            module = token
+            struct_name = self.advance(skip_ws=True)
+            if struct_name is None or struct_name.ty != TokenType.IDENT:
+                self.abort("Expected an identifier as struct name")
+            return ParsedForeignType(module, struct_name, self.parse_generic_arguments(generic_parameters))
+        else:
+            struct_name = token
+            if struct_name is None or struct_name.ty != TokenType.IDENT:
+                self.abort("Expected an identifier as struct name")
+            return ParsedStructType(struct_name, self.parse_generic_arguments(generic_parameters))
+
     def parse_type(self, generic_parameters: List[Token]) -> ParsedType:
         token = self.advance(skip_ws=True)
         if token is None:
@@ -885,19 +915,7 @@ class Parser:
             for generic_index, lexeme in enumerate(map(lambda t: t.lexeme, generic_parameters)):
                 if lexeme == token.lexeme:
                     return GenericType(token, generic_index)
-            next = self.peek(skip_ws=True)
-            if next is not None and next.ty == TokenType.COLON:
-                self.advance(skip_ws=True) # skip the `:`
-                module = token
-                struct_name = self.advance(skip_ws=True)
-                if struct_name is None or struct_name.ty != TokenType.IDENT:
-                    self.abort("Expected an identifier as struct name")
-                return ParsedForeignType(module, struct_name, self.parse_generic_arguments(generic_parameters))
-            else:
-                struct_name = token
-                if struct_name is None or struct_name.ty != TokenType.IDENT:
-                    self.abort("Expected an identifier as struct name")
-                return ParsedStructType(struct_name, self.parse_generic_arguments(generic_parameters))
+            return self.parse_struct_type(token, generic_parameters)
         if token.ty == TokenType.LEFT_PAREN:
             args = []
             while True:
@@ -1112,6 +1130,7 @@ class ResolvedGetWord:
     token: Token
     local_id: LocalId | GlobalId
     fields: List[ResolvedFieldAccess]
+    taip: ResolvedType
 
 @dataclass
 class ResolvedRefWord:
@@ -1193,6 +1212,18 @@ class ResolvedGetFieldWord:
 class ResolvedIndirectCallWord:
     token: Token
     taip: ResolvedFunctionType
+
+@dataclass
+class ResolvedStructFieldInitWord:
+    token: Token
+    struct: ResolvedStructHandle
+    taip: ResolvedType
+
+@dataclass
+class ResolvedStructWord:
+    token: Token
+    taip: ResolvedStructType
+    words: List['ResolvedWord']
 
 class IntrinsicType(str, Enum):
     ADD = "ADD"
@@ -1362,7 +1393,7 @@ class ResolvedIntrinsicNot:
 
 ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot
 
-ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord
+ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord | ResolvedStructFieldInitWord | ResolvedStructWord
 
 @dataclass
 class ResolvedFunction:
@@ -1666,7 +1697,7 @@ class FunctionResolver:
         for local in locals:
             env.insert(ResolvedInitLocal(local.name, local.taip))
         stack: Stack = Stack.empty()
-        (words, diverges) = self.resolve_words(env, stack, [], self.function.body)
+        (words, diverges) = self.resolve_words(env, stack, [], None, self.function.body)
         if not diverges:
             self.expect_stack(self.signature.name, stack, self.signature.returns)
             if len(stack) != 0:
@@ -1675,7 +1706,7 @@ class FunctionResolver:
         body = ResolvedBody(words, env.vars_by_id)
         return ResolvedFunction(self.signature, memories, locals, body)
 
-    def resolve_word(self, env: Env, stack: Stack, break_stacks: List[BreakStack], reachable: bool, word: ParsedWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_word(self, env: Env, stack: Stack, break_stacks: List[BreakStack], reachable: bool, struct_fields: Tuple[ResolvedStructHandle, Dict[str, ResolvedType]] | None, word: ParsedWord) -> Tuple[ResolvedWord, bool]:
         match word:
             case NumberWord():
                 stack.append(PrimitiveType.I32)
@@ -1701,8 +1732,8 @@ class FunctionResolver:
                 if_stack = stack.make_child()
                 else_env = Env(env)
                 else_stack = stack.make_child()
-                (if_words, if_words_diverge) = self.resolve_words(if_env, if_stack, break_stacks, parsed_if_words)
-                (else_words, else_words_diverge) = self.resolve_words(else_env, else_stack, break_stacks, parsed_else_words)
+                (if_words, if_words_diverge) = self.resolve_words(if_env, if_stack, break_stacks, struct_fields, parsed_if_words)
+                (else_words, else_words_diverge) = self.resolve_words(else_env, else_stack, break_stacks, struct_fields, parsed_else_words)
                 parameters = if_stack.negative
                 if not if_stack.drained:
                     returns = if_stack.stack
@@ -1727,7 +1758,7 @@ class FunctionResolver:
                 loop_stack = stack.make_child()
                 loop_env = Env(env)
                 loop_break_stacks: List[BreakStack] = []
-                (words, diverges) = self.resolve_words(loop_env, loop_stack, loop_break_stacks, parsed_words)
+                (words, diverges) = self.resolve_words(loop_env, loop_stack, loop_break_stacks, struct_fields, parsed_words)
                 parameters = loop_stack.negative
                 if len(loop_break_stacks) != 0:
                     returns = loop_break_stacks[0].types
@@ -1742,7 +1773,7 @@ class FunctionResolver:
                 block_stack = stack.make_child()
                 block_env = Env(env)
                 block_break_stacks: List[BreakStack] = []
-                (words, diverges) = self.resolve_words(block_env, block_stack, block_break_stacks, parsed_words)
+                (words, diverges) = self.resolve_words(block_env, block_stack, block_break_stacks, struct_fields, parsed_words)
                 parameters = block_stack.negative
                 if len(block_break_stacks) != 0:
                     diverges = diverges and not block_break_stacks[0].reachable
@@ -1777,9 +1808,14 @@ class FunctionResolver:
             case ParsedGetWord(token, fields):
                 (var_type, local) = self.resolve_var_name(env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
-                stack.append(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip)
-                return (ResolvedGetWord(token, local, resolved_fields), False)
+                resolved_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
+                stack.append(resolved_taip)
+                return (ResolvedGetWord(token, local, resolved_fields, resolved_taip), False)
             case ParsedInitWord(name):
+                if struct_fields is not None and name.lexeme in struct_fields[1]:
+                    field = struct_fields[1][name.lexeme]
+                    self.expect_stack(name, stack, [field])
+                    return (ResolvedStructFieldInitWord(name, struct_fields[0], field), False)
                 taip = stack.pop()
                 if taip is None:
                     self.abort(name, "expected a non-empty stack")
@@ -1850,14 +1886,21 @@ class FunctionResolver:
                     self.abort(token, "`->` expected a function on the stack")
                 self.type_check_call(stack, token, None, function_type.parameters, function_type.returns)
                 return (ResolvedIndirectCallWord(token, function_type), False)
+            case ParsedStructWord(token, taip, parsed_words):
+                resolved_struct_taip = self.module_resolver.resolve_struct_type(taip)
+                struct = self.module_resolver.get_struct(resolved_struct_taip.struct)
+                these_fields = (resolved_struct_taip.struct, { field.name.lexeme: field.taip for field in struct.fields })
+                (words, diverges) = self.resolve_words(env, stack, break_stacks, these_fields, parsed_words)
+                stack.append(resolved_struct_taip)
+                return (ResolvedStructWord(token, resolved_struct_taip, words), diverges)
             case other:
                 assert_never(other)
 
-    def resolve_words(self, env: Env, stack: Stack, break_stacks: List[BreakStack], parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
+    def resolve_words(self, env: Env, stack: Stack, break_stacks: List[BreakStack], struct_fields: Tuple[ResolvedStructHandle, Dict[str, ResolvedType]] | None, parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
         diverges = False
         words: List[ResolvedWord] = []
         for parsed_word in parsed_words:
-            (word, word_diverges) = self.resolve_word(env, stack, break_stacks, not diverges, parsed_word)
+            (word, word_diverges) = self.resolve_word(env, stack, break_stacks, not diverges, struct_fields, parsed_word)
             diverges = diverges or word_diverges
             words.append(word)
         return (words, diverges)
@@ -2180,11 +2223,20 @@ class ModuleResolver:
                 return taip
             case ParsedPtrType(child):
                 return ResolvedPtrType(self.resolve_type(child))
+            case GenericType():
+                return taip
+            case ParsedFunctionType(token, parsed_args, parsed_rets):
+                args = list(map(self.resolve_type, parsed_args))
+                rets = list(map(self.resolve_type, parsed_rets))
+                return ResolvedFunctionType(token, args, rets)
+            case struct_type:
+                return self.resolve_struct_type(struct_type)
+
+    def resolve_struct_type(self, taip: ParsedStructType | ParsedForeignType) -> ResolvedStructType:
+        match taip:
             case ParsedStructType(name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
                 return ResolvedStructType(name, self.resolve_struct_name(name), resolved_generic_arguments)
-            case GenericType():
-                return taip
             case ParsedForeignType(module, name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
                 for imp in self.imports:
@@ -2193,10 +2245,6 @@ class ModuleResolver:
                             if struct.name.lexeme == name.lexeme:
                                 return ResolvedStructType(taip.name, ResolvedStructHandle(imp.module, index), resolved_generic_arguments)
                 self.abort(taip.module, f"struct {module.lexeme}:{name.lexeme} not found")
-            case ParsedFunctionType(token, parsed_args, parsed_rets):
-                args = list(map(self.resolve_type, parsed_args))
-                rets = list(map(self.resolve_type, parsed_rets))
-                return ResolvedFunctionType(token, args, rets)
             case other:
                 assert_never(other)
 
@@ -2361,6 +2409,8 @@ Local = ParameterLocal | MemoryLocal | DeclaredLocal | InitLocal
 class Body:
     words: List['Word']
     locals: Dict[LocalId, Local]
+    locals_copy_space: int
+    max_struct_ret_count: int
 
 @dataclass
 class FunctionSignature:
@@ -2412,6 +2462,7 @@ class ExternHandle:
 class CallWord:
     name: Token
     function: 'FunctionHandle | ExternHandle'
+    return_space_offset: int
 
 @dataclass
 class CastWord:
@@ -2423,6 +2474,7 @@ class CastWord:
 class LoadWord:
     token: Token
     taip: Type
+    copy_space_offset: int | None
 
 @dataclass
 class IfWord:
@@ -2436,6 +2488,7 @@ class IfWord:
 class IndirectCallWord:
     token: Token
     taip: FunctionType
+    return_space_offset: int
 
 @dataclass
 class FunRefWord:
@@ -2484,6 +2537,7 @@ class GetWord:
     token: Token
     local_id: LocalId | GlobalId
     fields: List[FieldAccess]
+    copy_space_offset: int | None
 
 @dataclass
 class RefWord:
@@ -2582,9 +2636,23 @@ class StoreWord:
     local: LocalId | GlobalId
     fields: List[FieldAccess]
 
+@dataclass
+class StructWord:
+    token: Token
+    taip: Type
+    words: List['Word']
+    copy_space_offset: int
+
+@dataclass
+class StructFieldInitWord:
+    token: Token
+    struct: StructHandle
+    taip: Type
+    copy_space_offset: int
+
 IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot
 
-Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord
+Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord
 
 @dataclass
 class Module:
@@ -2599,20 +2667,25 @@ class Module:
 class Monomizer:
     modules: Dict[int, ResolvedModule]
     structs: Dict[int, Dict[int, List[Tuple[List[Type], Struct]]]] = field(default_factory=dict)
+    externs: Dict[int, List[Extern]] = field(default_factory=dict)
     functions: Dict[int, Dict[int, Function]] = field(default_factory=dict)
     function_table: Dict[FunctionHandle | ExternHandle, int] = field(default_factory=dict)
+    struct_word_copy_space_offset: int = 0
 
     def monomize(self) -> Tuple[Dict[FunctionHandle | ExternHandle, int], Dict[int, Module]]:
         for id in sorted(self.modules):
             module = self.modules[id]
             functions: List[Function] = []
+            self.externs[id] = list(map(self.monomize_extern, module.externs))
             for index, function in enumerate(module.functions):
                 if function.signature.export_name is not None:
                     assert(len(function.signature.generic_parameters) == 0)
                     signature = self.monomize_concrete_signature(function.signature)
                     memories = list(map(lambda m: self.monomize_memory(m, []), function.memories))
                     locals = list(map(lambda t: self.monomize_named_type(t, []), function.locals))
-                    body = Lazy(lambda: Body(self.monomize_words(function.body.words, []), self.monomize_locals(function.body.locals, [])))
+                    copy_space_offset = Ref(0)
+                    max_struct_ret_count = Ref(0)
+                    body = Lazy(lambda: Body(self.monomize_words(function.body.words, [], copy_space_offset, max_struct_ret_count), self.monomize_locals(function.body.locals, []), copy_space_offset.value, max_struct_ret_count.value))
                     f = ConcreteFunction(signature, memories, locals, body)
                     if id not in self.functions:
                         self.functions[id] = {}
@@ -2648,7 +2721,7 @@ class Monomizer:
             if module_id not in self.functions:
                 self.functions[module_id] = {}
             module = self.modules[module_id]
-            externs: List[Extern] = list(map(self.monomize_extern, module.externs))
+            externs: List[Extern] = self.externs[module_id]
             structs: Dict[int, List[Struct]] = { k: [t[1] for t in v] for k, v in self.structs[module_id].items() }
             memories = list(map(lambda m: self.monomize_memory(m, []), module.memories))
             mono_modules[module_id] = Module(module_id, structs, externs, memories, self.functions[module_id], self.modules[module_id].data)
@@ -2686,7 +2759,9 @@ class Monomizer:
         signature = self.monomize_signature(f.signature, generics)
         memories = list(map(lambda m: self.monomize_memory(m, generics), f.memories))
         locals = list(map(lambda t: self.monomize_named_type(t, generics), f.locals))
-        body = Lazy(lambda: Body(list(map(lambda w: self.monomize_word(w, generics), f.body.words)), self.monomize_locals(f.body.locals, generics)))
+        copy_space_offset = Ref(0)
+        max_struct_ret_count = Ref(0)
+        body = Lazy(lambda: Body(list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count), f.body.words)), self.monomize_locals(f.body.locals, generics), copy_space_offset.value, max_struct_ret_count.value))
         concrete_function = ConcreteFunction(signature, memories, locals, body)
         if function.module not in self.functions:
             self.functions[function.module] = {}
@@ -2710,20 +2785,32 @@ class Monomizer:
     def monomize_memory(self, memory: ResolvedMemory, generics: List[Type]) -> Memory:
         return Memory(self.monomize_named_type(memory.taip, generics), memory.size)
 
-    def monomize_words(self, words: List[ResolvedWord], generics: List[Type]) -> List[Word]:
-        return list(map(lambda w: self.monomize_word(w, generics), words))
+    def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int]) -> List[Word]:
+        return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count), words))
 
-    def monomize_word(self, word: ResolvedWord, generics: List[Type]) -> Word:
+    def monomize_word(self, word: ResolvedWord, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int]) -> Word:
         match word:
             case NumberWord():
                 return word
             case StringWord():
                 return word
             case ResolvedCallWord():
-                return self.monomize_call_word(word, generics)
-            case ResolvedGetWord(token, local_id, resolved_fields):
+                return self.monomize_call_word(word, copy_space_offset, max_struct_ret_count, generics)
+            case ResolvedIndirectCallWord(token, taip):
+                monomized_function_taip = self.monomize_function_type(taip, generics)
+                local_copy_space_offset = copy_space_offset.value
+                copy_space_offset.value += sum(taip.size() for taip in monomized_function_taip.returns)
+                max_struct_ret_count.value = max(max_struct_ret_count.value, len(monomized_function_taip.returns))
+                return IndirectCallWord(token, monomized_function_taip, local_copy_space_offset)
+            case ResolvedGetWord(token, local_id, resolved_fields, taip):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
-                return GetWord(token, local_id, fields)
+                monomized_taip = self.monomize_type(taip, generics)
+                if isinstance(monomized_taip, StructType):
+                    offset = copy_space_offset.value
+                    copy_space_offset.value += monomized_taip.size()
+                else:
+                    offset = None
+                return GetWord(token, local_id, fields, offset)
             case InitWord():
                 return word
             case ResolvedSetWord(token, local_id, resolved_fields):
@@ -2784,36 +2871,55 @@ class Monomizer:
             case IntrinsicMemGrow():
                 return word
             case ResolvedLoadWord(token, taip):
-                return LoadWord(token, self.monomize_type(taip, generics))
+                monomized_taip = self.monomize_type(taip, generics)
+                if isinstance(monomized_taip, StructType):
+                    offset = copy_space_offset.value
+                    copy_space_offset.value += monomized_taip.size()
+                else:
+                    offset = None
+                return LoadWord(token, monomized_taip, offset)
             case ResolvedCastWord(token, source, taip):
                 return CastWord(token, self.monomize_type(source, generics), self.monomize_type(taip, generics))
             case ResolvedIfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words):
-                if_words = self.monomize_words(resolved_if_words, generics)
-                else_words = self.monomize_words(resolved_else_words, generics)
+                if_words = self.monomize_words(resolved_if_words, generics, copy_space_offset, max_struct_ret_count)
+                else_words = self.monomize_words(resolved_else_words, generics, copy_space_offset, max_struct_ret_count)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return IfWord(token, parameters, returns, if_words, else_words)
-            case ResolvedIndirectCallWord(token, taip):
-                return IndirectCallWord(token, self.monomize_function_type(taip, generics))
             case ResolvedFunRefWord(call):
-                call_word = self.monomize_call_word(call, generics)
+                call_word = self.monomize_call_word(call, copy_space_offset, max_struct_ret_count, generics)
                 table_index = self.insert_function_into_table(call_word.function)
                 return FunRefWord(call_word, table_index)
             case ResolvedLoopWord(token, resolved_words, parameters, returns):
-                words = self.monomize_words(resolved_words, generics)
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), returns))
                 return LoopWord(token, words, parameters, returns)
             case ResolvedSizeofWord(token, taip):
                 return SizeofWord(token, self.monomize_type(taip, generics))
             case ResolvedBlockWord(token, resolved_words, resolved_parameters, resolved_returns):
-                words = self.monomize_words(resolved_words, generics)
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return BlockWord(token, words, parameters, returns)
             case ResolvedGetFieldWord(token, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 return GetFieldWord(token, fields)
+            case ResolvedStructWord(token, taip, resolved_words):
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count)
+                monomized_taip = self.monomize_type(taip, generics)
+                offset = copy_space_offset.value
+                self.struct_word_copy_space_offset = offset
+                copy_space_offset.value += monomized_taip.size()
+                return StructWord(token, monomized_taip, words, offset)
+            case ResolvedStructFieldInitWord(token, struct, taip):
+                field_copy_space_offset = self.struct_word_copy_space_offset
+                (struct_handle, monomized_struct) = self.monomize_struct(struct, generics)
+                for field in monomized_struct.fields:
+                    if field.name.lexeme == token.lexeme:
+                        break
+                    field_copy_space_offset += field.taip.size()
+                return StructFieldInitWord(token, struct_handle, self.monomize_type(taip, generics), field_copy_space_offset)
             case other:
                 assert_never(other)
 
@@ -2836,9 +2942,14 @@ class Monomizer:
         offset = struct.field_offset(field.field_index)
         return [FieldAccess(field.name, source_taip, target_taip, offset)] + self.monomize_field_accesses(fields[1:], struct.generic_parameters)
 
-    def monomize_call_word(self, word: ResolvedCallWord, generics: List[Type]) -> CallWord:
+    def monomize_call_word(self, word: ResolvedCallWord, copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], generics: List[Type]) -> CallWord:
         if isinstance(word.function, ResolvedExternHandle):
-            return CallWord(word.name, ExternHandle(word.function.module, word.function.index))
+            signature = self.externs[word.function.module][word.function.index].signature
+            offset = copy_space_offset.value
+            copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, StructType))
+            max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
+            copy_space_offset.value += copy_space
+            return CallWord(word.name, ExternHandle(word.function.module, word.function.index), offset)
         generics_here = list(map(lambda t: self.monomize_type(t, generics), word.generic_arguments))
         if word.function.module not in self.functions:
             self.functions[word.function.module] = {}
@@ -2846,12 +2957,20 @@ class Monomizer:
             function = self.functions[word.function.module][word.function.index]
             if isinstance(function, ConcreteFunction):
                 assert(len(word.generic_arguments) == 0)
-                return CallWord(word.name, FunctionHandle(word.function.module, word.function.index, None))
+                offset = copy_space_offset.value
+                copy_space = sum(taip.size() for taip in function.signature.returns if isinstance(taip, StructType))
+                max_struct_ret_count.value = max(max_struct_ret_count.value, len(function.signature.returns) if copy_space > 0 else 0)
+                copy_space_offset.value += copy_space
+                return CallWord(word.name, FunctionHandle(word.function.module, word.function.index, None), offset)
             for instance_index, (instance_generics, instance) in enumerate(function.instances):
                 if types_eq(instance_generics, generics_here):
-                    return CallWord(word.name, FunctionHandle(word.function.module, word.function.index, instance_index))
+                    offset = copy_space_offset.value
+                    copy_space = sum(taip.size() for taip in instance.signature.returns if isinstance(taip, StructType))
+                    max_struct_ret_count.value = max(max_struct_ret_count.value, len(instance.signature.returns) if copy_space > 0 else 0)
+                    copy_space_offset.value += copy_space
+                    return CallWord(word.name, FunctionHandle(word.function.module, word.function.index, instance_index), offset)
         self.monomize_function(word.function, generics_here)
-        return self.monomize_call_word(word, generics) # the function instance should now exist, try monomorphizing this CallWord again
+        return self.monomize_call_word(word, copy_space_offset, max_struct_ret_count, generics) # the function instance should now exist, try monomorphizing this CallWord again
 
     def lookup_struct(self, struct: ResolvedStructHandle, generics: List[Type]) -> Tuple[StructHandle, Struct] | None:
         if struct.module not in self.structs:
@@ -3010,6 +3129,7 @@ class WatGenerator:
             for (id, (_, instance)) in enumerate(function.instances):
                 self.write_function(module, instance, id)
             return
+        body = function.body.get()
         self.write_indent()
         self.write("(")
         self.write_signature(module, function.signature, instance_id)
@@ -3021,37 +3141,27 @@ class WatGenerator:
         self.write("\n")
         self.indent()
         self.write_locals(function.body.get())
-        struct_return_space, max_struct_arg_count = self.measure_struct_return_space(function.body.get().words)
-        if struct_return_space != 0:
-            for i in range(0, max_struct_arg_count):
-                self.write_indent()
-                self.write(f"(local $s{i}:a i32)\n")
-        locals_copy_space = self.measure_locals_copy_space(function.body.get().locals, function.body.get().words)
-        if locals_copy_space != 0:
+        for i in range(0, body.max_struct_ret_count):
+            self.write_indent()
+            self.write(f"(local $s{i}:a i32)\n")
+        if body.locals_copy_space != 0:
             self.write_indent()
             self.write("(local $locl-copy-spac:e i32)\n")
 
-        uses_stack = struct_return_space != 0 or locals_copy_space != 0 or any(isinstance(local.taip, StructType) or isinstance(local, MemoryLocal) for local in function.body.get().locals.values())
+        uses_stack = body.locals_copy_space != 0 or any(isinstance(local.taip, StructType) or isinstance(local, MemoryLocal) for local in function.body.get().locals.values())
         if uses_stack:
             self.write_indent()
             self.write("(local $stac:k i32)\n")
-            if struct_return_space > 0:
-                self.write_indent()
-                self.write("(local $struc-return-spac:e i32)\n")
-                self.write_indent()
-                self.write("global.get $stac:k local.set $stac:k\n")
-                self.write_mem("struc-return-spac:e", struct_return_space, 0, 0)
-            else:
-                self.write_indent()
-                self.write("global.get $stac:k local.set $stac:k\n")
+            self.write_indent()
+            self.write("global.get $stac:k local.set $stac:k\n")
 
         for local_id, local in function.body.get().locals.items():
             if isinstance(local, MemoryLocal):
                 self.write_mem(local.name.lexeme, local.size(), local_id.scope, local_id.shadow)
-        if locals_copy_space != 0:
-            self.write_mem("locl-copy-spac:e", locals_copy_space, 0, 0)
-        self.write_structs(function.body.get().locals)
-        self.write_body(module, Ref(0), Ref(0), function.body.get())
+        if body.locals_copy_space != 0:
+            self.write_mem("locl-copy-spac:e", body.locals_copy_space, 0, 0)
+        self.write_structs(body.locals)
+        self.write_body(module, body)
         if uses_stack:
             self.write_indent()
             self.write("local.get $stac:k global.set $stac:k\n")
@@ -3070,64 +3180,6 @@ class WatGenerator:
             if not isinstance(local, ParameterLocal) and isinstance(local.taip, StructType):
                 self.write_mem(local.name.lexeme, local.taip.size(), local_id.scope, local_id.shadow)
 
-    def measure_struct_return_space(self, words: List[Word]) -> Tuple[int, int]:
-        size = 0
-        max_struct_arg_count = 0
-        for word in words:
-            if isinstance(word, CallWord):
-                if isinstance(word.function, FunctionHandle):
-                    returns = self.lookup_function(word.function).signature.returns
-                else:
-                    returns = self.lookup_extern(word.function).signature.returns
-
-                for ret in returns:
-                    if isinstance(ret, StructType):
-                        size += ret.size()
-                        max_struct_arg_count = max(max_struct_arg_count, len(returns))
-            if isinstance(word, LoopWord):
-                s, sc = self.measure_struct_return_space(word.words)
-                size += s
-                max_struct_arg_count = max(max_struct_arg_count, sc)
-            if isinstance(word, BlockWord):
-                s, sc = self.measure_struct_return_space(word.words)
-                size += s
-                max_struct_arg_count = max(max_struct_arg_count, sc)
-            if isinstance(word, IfWord):
-                s, sc = self.measure_struct_return_space(word.if_words)
-                size += s
-                max_struct_arg_count = max(max_struct_arg_count, sc)
-                s, sc = self.measure_struct_return_space(word.else_words)
-                size += s
-                max_struct_arg_count = max(max_struct_arg_count, sc)
-        return size, max_struct_arg_count
-
-    def measure_locals_copy_space(self, locals: Dict[LocalId, Local], words: List[Word]) -> int:
-        size = 0
-        for word in words:
-            if isinstance(word, GetWord):
-                if isinstance(word.local_id, GlobalId):
-                    target_taip = word.fields[-1].target_taip if len(word.fields) > 0 else self.globals[word.local_id].taip.taip
-                else:
-                    local = locals[word.local_id]
-                    target_taip = word.fields[-1].target_taip if len(word.fields) > 0 else local.taip
-                if isinstance(target_taip, StructType):
-                    size += target_taip.size()
-                    continue
-            if isinstance(word, LoadWord):
-                size += word.taip.size()
-                continue
-            if isinstance(word, LoopWord):
-                size += self.measure_locals_copy_space(locals, word.words)
-                continue
-            if isinstance(word, BlockWord):
-                size += self.measure_locals_copy_space(locals, word.words)
-                continue
-            if isinstance(word, IfWord):
-                size += self.measure_locals_copy_space(locals, word.if_words)
-                size += self.measure_locals_copy_space(locals, word.else_words)
-                continue
-        return size
-
     def write_locals(self, body: Body) -> None:
         for local_id, local in body.locals.items():
             if isinstance(local, ParameterLocal):
@@ -3143,12 +3195,12 @@ class WatGenerator:
                 self.write(f":{local_id.scope}:{local_id.shadow}")
             self.write(f" {ty})\n")
 
-    def write_body(self, module: int, copy_space_offset: Ref[int], struct_return_space: Ref[int], body: Body) -> None:
-        self.write_words(module, body.locals, copy_space_offset, struct_return_space, body.words)
+    def write_body(self, module: int, body: Body) -> None:
+        self.write_words(module, body.locals, body.words)
 
-    def write_words(self, module: int, locals: Dict[LocalId, Local], copy_space_offset: Ref[int], struct_return_space: Ref[int], words: List[Word]) -> None:
+    def write_words(self, module: int, locals: Dict[LocalId, Local], words: List[Word]) -> None:
         for word in words:
-            self.write_word(module, locals, copy_space_offset, struct_return_space, word)
+            self.write_word(module, locals, word)
 
     def write_local_ident(self, name: str, local: LocalId) -> None:
         if local.scope != 0 or local.shadow != 0:
@@ -3156,11 +3208,11 @@ class WatGenerator:
         else:
             self.write(f"${name}")
 
-    def write_word(self, module: int, locals: Dict[LocalId, Local], copy_space_offset: Ref[int], struct_return_space: Ref[int], word: Word) -> None:
+    def write_word(self, module: int, locals: Dict[LocalId, Local], word: Word) -> None:
         match word:
             case NumberWord(token):
                 self.write_line(f"i32.const {token.lexeme}")
-            case GetWord(token, local_id, fields):
+            case GetWord(token, local_id, fields, copy_space_offset):
                 self.write_indent()
                 if isinstance(local_id, GlobalId):
                     target_taip = fields[-1].target_taip if len(fields) > 0 else self.globals[local_id].taip.taip
@@ -3168,8 +3220,7 @@ class WatGenerator:
                     local = locals[local_id]
                     target_taip = fields[-1].target_taip if len(fields) > 0 else local.taip
                 if isinstance(target_taip, StructType):
-                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset.value} i32.add call $intrinsic:dupi32 ")
-                    copy_space_offset.value += target_taip.size()
+                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 else:
@@ -3215,7 +3266,7 @@ class WatGenerator:
                 self.write_set(local_id, locals, fields)
             case InitWord(name, local_id):
                 self.write_set(local_id, locals, [])
-            case CallWord(name, function_handle):
+            case CallWord(name, function_handle, return_space_offset):
                 self.write_indent()
                 if isinstance(function_handle, ExternHandle):
                     extern = self.lookup_extern(function_handle)
@@ -3227,14 +3278,14 @@ class WatGenerator:
                     self.write(f"call ${function_handle.module}:{function.signature.name.lexeme}")
                     if function_handle.instance is not None:
                         self.write(f":{function_handle.instance}")
-                self.write_return_struct_receiving(struct_return_space, signature.returns)
-            case IndirectCallWord(token, taip):
+                self.write_return_struct_receiving(return_space_offset, signature.returns)
+            case IndirectCallWord(token, taip, return_space_offset):
                 self.write_indent()
                 self.write("(call_indirect")
                 self.write_parameters(taip.parameters)
                 self.write_returns(taip.returns)
                 self.write(")")
-                self.write_return_struct_receiving(struct_return_space, taip.returns)
+                self.write_return_struct_receiving(return_space_offset, taip.returns)
             case IntrinsicStore(token, taip):
                 if isinstance(taip, StructType):
                     self.write_line(f"i32.const {taip.size()} memory.copy")
@@ -3404,11 +3455,10 @@ class WatGenerator:
                 else:
                     self.write_type(target_type)
                     self.write(".store\n")
-            case LoadWord(_, taip):
+            case LoadWord(_, taip, copy_space_offset):
                 if isinstance(taip, StructType):
                     self.write_indent()
-                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset.value}")
-                    copy_space_offset.value += taip.size()
+                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset}")
                     self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy\n")
                 else:
                     self.write_indent()
@@ -3423,7 +3473,7 @@ class WatGenerator:
                 self.write_returns(returns)
                 self.write("\n")
                 self.indent()
-                self.write_words(module, locals, copy_space_offset, struct_return_space, words)
+                self.write_words(module, locals, words)
                 self.dedent()
                 self.write_indent()
                 self.write(")\n")
@@ -3440,7 +3490,7 @@ class WatGenerator:
                 self.write_returns(returns)
                 self.write("\n")
                 self.indent()
-                self.write_words(module, locals, copy_space_offset, struct_return_space, words)
+                self.write_words(module, locals, words)
                 self.write_line("br $loop")
                 self.dedent()
                 self.write_line(")")
@@ -3455,17 +3505,31 @@ class WatGenerator:
                 self.indent()
                 self.write_line("(then")
                 self.indent()
-                self.write_words(module, locals, copy_space_offset, struct_return_space, if_words)
+                self.write_words(module, locals, if_words)
                 self.dedent()
                 self.write_line(")")
                 if len(else_words) > 0:
                     self.write_line("(else")
                     self.indent()
-                    self.write_words(module, locals, copy_space_offset, struct_return_space, else_words)
+                    self.write_words(module, locals, else_words)
                     self.dedent()
                     self.write_line(")")
                 self.dedent()
                 self.write_line(")")
+            case StructWord(_, taip, words, copy_space_offset):
+                self.write_indent()
+                self.write(f";; make {format_type(taip)}\n")
+                self.indent()
+                self.write_words(module, locals, words)
+                self.dedent()
+                self.write_indent()
+                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
+            case StructFieldInitWord(token, struct, taip, copy_space_offset):
+                self.write_indent()
+                if not isinstance(taip, StructType):
+                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:flip i32.store\n")
+                else:
+                    self.write("TODO\n")
             case other:
                 assert_never(other)
 
@@ -3505,7 +3569,7 @@ class WatGenerator:
         return
 
 
-    def write_return_struct_receiving(self, struct_return_space: Ref[int], returns: List[Type]) -> None:
+    def write_return_struct_receiving(self, offset: int, returns: List[Type]) -> None:
         if not any(isinstance(t, StructType) for t in returns):
             self.write("\n")
             return
@@ -3514,8 +3578,8 @@ class WatGenerator:
         for i in range(len(returns), 0, -1):
             ret = returns[len(returns) - i]
             if isinstance(ret, StructType):
-                self.write_line(f"local.get $struc-return-spac:e i32.const {struct_return_space.value} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy")
-                struct_return_space.value += ret.size()
+                self.write_line(f"local.get $locl-copy-spac:e i32.const {offset} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy")
+                offset += 1
             else:
                 self.write_line(f"local.get $s{i - 1}:a")
 
@@ -3638,8 +3702,20 @@ class WatGenerator:
         else:
             self.write("i32")
 
+Mode = Literal["lex"] | Literal["compile"]
 
-def main(path: str, stdin: str | None = None) -> str:
+def run(path: str, mode: Mode, stdin: str | None = None) -> str:
+    if mode == "lex":
+        if path == "-":
+            file = stdin if stdin is not None else sys_stdin.get()
+        else:
+            with open(path, 'r') as reader:
+                file = reader.read()
+        tokens = Lexer(file).lex()
+        out = ""
+        for token in tokens:
+            out += str(token) + "\n"
+        return out
     modules: Dict[str, ParsedModule] = {}
     load_recursive(modules, os.path.normpath(path), stdin)
 
@@ -3652,9 +3728,15 @@ def main(path: str, stdin: str | None = None) -> str:
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
     return WatGenerator(mono_modules, function_table).write_wat_module()
 
+def main(argv: List[str], stdin: str | None = None) -> str:
+    mode: Literal["compile"] | Literal["lex"] = "compile"
+    if len(argv) > 2 and argv[2] == "--lex":
+        mode = "lex"
+    return run(argv[1], mode, stdin)
+
 if __name__ == "__main__":
     try:
-        print(main(sys.argv[1]))
+        print(main(sys.argv))
     except ParserException as e:
         print(e.display(), file=sys.stderr)
         exit(1)

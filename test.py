@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, asdict
-from typing import Any, TypeVar, Callable
+from typing import Any, TypeVar, Callable, List
 from shutil import copyfile
 import subprocess
 import glob
@@ -28,11 +28,11 @@ class CompilerOutput:
     stdout: str
     stderr: str
 
-def run_compiler(stdin: str):
+def run_compiler(args: List[str], stdin: str):
     # compiler = subprocess.run(["python", "./bootstrap.py", "-"], input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
     try:
-        stdout = main("-", stdin)
+        stdout = main([sys.argv[0], "-"] + args, stdin)
         return CompilerOutput(0, stdout.strip(), "")
     except ParserException as e:
         return CompilerOutput(1, "", e.display().strip())
@@ -51,7 +51,14 @@ for path in tests:
     if test["compiler-stdin"] is None:
         print(f"{path}: compiler-stdin ist missing", file=sys.stderr)
         continue
-    compiler = run_compiler(test['compiler-stdin'])
+    compiler = run_compiler(test['compiler-args'] if test['compiler-args'] is not None else [], test['compiler-stdin'])
+    if test['compiler-status'] is not None and compiler.returncode != test['compiler-status']:
+        print(f"{path}: expected different compiler status:", file=sys.stderr)
+        print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)
+        print(f"Actual:\n{compiler.returncode}", file=sys.stderr)
+        if test['compiler-stderr'] is None:
+            print(f"compiler-stderr was: {compiler.stderr}", file=sys.stderr)
+        continue
     if test['compiler-stderr'] is not None and compiler.stderr != test['compiler-stderr'].strip():
         print(f"{path}: expected different compiler stderr:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-stderr']}", file=sys.stderr)
@@ -62,17 +69,10 @@ for path in tests:
         print(f"Expected:\n{test['compiler-stdout']}", file=sys.stderr)
         print(f"Actual:\n{compiler.stdout}", file=sys.stderr)
         continue
-    if test['compiler-status'] is not None and compiler.returncode != test['compiler-status']:
-        print(f"{path}: expected different compiler status:", file=sys.stderr)
-        print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)
-        print(f"Actual:\n{compiler.returncode}", file=sys.stderr)
-        if test['compiler-stderr'] is None:
-            print(f"compiler-stderr was: {compiler.stderr}", file=sys.stderr)
-        continue
     with open('./out.wat', 'wb') as outwat:
         outwat.write(compiler.stdout.encode("UTF-8"))
         cmd = 'wasmtime ./out.wat'
-    if compiler.returncode == 0:
+    if compiler.returncode == 0 and test['status'] is not None:
         program = subprocess.run(["wasmtime", "./out.wat"], input=bytes(test["stdin"] or "", 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if test['stderr'] is not None and program.stderr.strip() != test['stderr'].encode('UTF-8').strip():
             print(f"{path}: expected different stderr:", file=sys.stderr)
@@ -88,6 +88,8 @@ for path in tests:
             print(f"{path}: expected different status:", file=sys.stderr)
             print(f"Expected:\n{test['status']}", file=sys.stderr)
             print(f"Actual:\n{program.returncode}", file=sys.stderr)
+            if test['stderr'] is None:
+                print(f"stderr was: {program.stderr.decode('UTF-8')}", file=sys.stderr)
             continue
     failed = previous_failed
     print(f"{path} passed")

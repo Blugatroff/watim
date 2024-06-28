@@ -2,18 +2,48 @@
 extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 
 struct Foo {
-    baz: bool
-    bar: i32
+	baz: bool
+	bar: i32
 }
 
 fn main "_start" () {
-    Foo { 1 0 = @bar 42 @baz } @foo // could desugar to: uninit<Foo> @anon 31 #anon.bar 42 #anon.baz $anon @foo
+	make Foo { 42 @bar 0 1 = @baz } @foo
 
-    31 42 Foo
-
-    $foo.bar proc_exit
+	$foo.bar proc_exit
 }
 [== Status Compiler ==]
 0
+[== Stdout Compiler ==]
+(module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		(local $foo i32)
+		(local $locl-copy-spac:e i32)
+		(local $stac:k i32)
+		global.get $stac:k local.set $stac:k
+		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $foo
+		;; make Foo
+			i32.const 42
+			local.get $locl-copy-spac:e i32.const 4 i32.add call $intrinsic:flip i32.store
+			i32.const 0
+			i32.const 1
+			i32.eq
+			local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:flip i32.store
+		local.get $locl-copy-spac:e i32.const 0 i32.add ;; make Foo end
+		local.get $foo call $intrinsic:flip i32.const 8 memory.copy
+		local.get $foo i32.load offset=4 
+		call $0:proc_exit
+		local.get $stac:k global.set $stac:k
+	)
+)
 [== Status ==]
 42
