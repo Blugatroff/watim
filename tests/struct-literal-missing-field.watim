@@ -1,0 +1,17 @@
+[== Stdin Compiler ==]
+struct V2 {
+	x: i32
+	y: i32
+	z: i32
+}
+
+fn main() {
+	make V2 { 5 @y } drop
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:8:2 missing fields in struct literal:
+	x: i32
+	z: i32
+

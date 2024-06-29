@@ -1688,6 +1688,30 @@ class BreakStack:
     reachable: bool
 
 @dataclass
+class StructLitContext:
+    struct: ResolvedStructHandle
+    fields: Dict[str, ResolvedType]
+
+@dataclass
+class ResolveWordContext:
+    env: Env
+    break_stacks: List[BreakStack]
+    reachable: bool
+    struct_context: StructLitContext | None
+
+    def with_env(self, env: Env) -> 'ResolveWordContext':
+        return ResolveWordContext(env, self.break_stacks, self.reachable, self.struct_context)
+
+    def with_break_stacks(self, break_stacks: List[BreakStack]) -> 'ResolveWordContext':
+        return ResolveWordContext(self.env, break_stacks, self.reachable, self.struct_context)
+
+    def with_reachable(self, reachable: bool) -> 'ResolveWordContext':
+        return ResolveWordContext(self.env, self.break_stacks, reachable, self.struct_context)
+
+    def with_struct_context(self, struct_context: StructLitContext) -> 'ResolveWordContext':
+        return ResolveWordContext(self.env, self.break_stacks, self.reachable, struct_context)
+
+@dataclass
 class FunctionResolver:
     module_resolver: 'ModuleResolver'
     externs: List[ResolvedExtern]
@@ -1708,7 +1732,8 @@ class FunctionResolver:
         for local in locals:
             env.insert(ResolvedInitLocal(local.name, local.taip))
         stack: Stack = Stack.empty()
-        (words, diverges) = self.resolve_words(env, stack, [], None, self.function.body)
+        context = ResolveWordContext(env, [], True, None)
+        (words, diverges) = self.resolve_words(context, stack, self.function.body)
         if not diverges:
             self.expect_stack(self.signature.name, stack, self.signature.returns)
             if len(stack) != 0:
@@ -1717,7 +1742,7 @@ class FunctionResolver:
         body = ResolvedBody(words, env.vars_by_id)
         return ResolvedFunction(self.signature, memories, locals, body)
 
-    def resolve_word(self, env: Env, stack: Stack, break_stacks: List[BreakStack], reachable: bool, struct_fields: Tuple[ResolvedStructHandle, Dict[str, ResolvedType]] | None, word: ParsedWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_word(self, context: ResolveWordContext, stack: Stack, word: ParsedWord) -> Tuple[ResolvedWord, bool]:
         match word:
             case NumberWord():
                 stack.append(PrimitiveType.I32)
@@ -1739,12 +1764,12 @@ class FunctionResolver:
                 if len(stack) == 0 or stack[-1] != PrimitiveType.BOOL:
                     self.abort(token, "expected a boolean on stack")
                 stack.pop()
-                if_env = Env(env)
+                if_env = Env(context.env)
                 if_stack = stack.make_child()
-                else_env = Env(env)
+                else_env = Env(context.env)
                 else_stack = stack.make_child()
-                (if_words, if_words_diverge) = self.resolve_words(if_env, if_stack, break_stacks, struct_fields, parsed_if_words)
-                (else_words, else_words_diverge) = self.resolve_words(else_env, else_stack, break_stacks, struct_fields, parsed_else_words)
+                (if_words, if_words_diverge) = self.resolve_words(context.with_env(if_env), if_stack, parsed_if_words)
+                (else_words, else_words_diverge) = self.resolve_words(context.with_env(else_env), else_stack, parsed_else_words)
                 parameters = if_stack.negative
                 if not if_stack.drained:
                     returns = if_stack.stack
@@ -1767,9 +1792,9 @@ class FunctionResolver:
                 return (ResolvedIfWord(token, parameters, returns, if_words, else_words), diverges)
             case ParsedLoopWord(token, parsed_words):
                 loop_stack = stack.make_child()
-                loop_env = Env(env)
+                loop_env = Env(context.env)
                 loop_break_stacks: List[BreakStack] = []
-                (words, diverges) = self.resolve_words(loop_env, loop_stack, loop_break_stacks, struct_fields, parsed_words)
+                (words, diverges) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks), loop_stack, parsed_words)
                 parameters = loop_stack.negative
                 if len(loop_break_stacks) != 0:
                     returns = loop_break_stacks[0].types
@@ -1782,9 +1807,9 @@ class FunctionResolver:
                 return (ResolvedLoopWord(token, words, parameters, returns), diverges)
             case ParsedBlockWord(token, parsed_words, end_token):
                 block_stack = stack.make_child()
-                block_env = Env(env)
+                block_env = Env(context.env)
                 block_break_stacks: List[BreakStack] = []
-                (words, diverges) = self.resolve_words(block_env, block_stack, block_break_stacks, struct_fields, parsed_words)
+                (words, diverges) = self.resolve_words(context.with_env(block_env).with_break_stacks(block_break_stacks), block_stack, parsed_words)
                 parameters = block_stack.negative
                 if len(block_break_stacks) != 0:
                     diverges = diverges and not block_break_stacks[0].reachable
@@ -1807,45 +1832,45 @@ class FunctionResolver:
                 if name.lexeme in INTRINSICS:
                     intrinsic = INTRINSICS[name.lexeme]
                     return (self.resolve_intrinsic(name, stack, intrinsic), False)
-                resolved_call_word = self.resolve_call_word(env, word)
+                resolved_call_word = self.resolve_call_word(context.env, word)
                 signature = self.module_resolver.get_signature(resolved_call_word.function)
                 self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_call_word, False)
             case ParsedForeignCallWord(module, name, generic_arguments):
-                resolved_word = self.resolve_foreign_call_word(env, word)
+                resolved_word = self.resolve_foreign_call_word(context.env, word)
                 signature = self.module_resolver.get_signature(resolved_word.function)
                 self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_word, False)
             case ParsedGetWord(token, fields):
-                (var_type, local) = self.resolve_var_name(env, token)
+                (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 resolved_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 stack.append(resolved_taip)
                 return (ResolvedGetWord(token, local, resolved_fields, resolved_taip), False)
             case ParsedInitWord(name):
-                if struct_fields is not None and name.lexeme in struct_fields[1]:
-                    field = struct_fields[1][name.lexeme]
+                if context.struct_context is not None and name.lexeme in context.struct_context.fields:
+                    field = context.struct_context.fields.pop(name.lexeme)
                     self.expect_stack(name, stack, [field])
-                    return (ResolvedStructFieldInitWord(name, struct_fields[0], field), False)
+                    return (ResolvedStructFieldInitWord(name, context.struct_context.struct, field), False)
                 taip = stack.pop()
                 if taip is None:
                     self.abort(name, "expected a non-empty stack")
                 named_taip = ResolvedNamedType(name, taip)
-                local_id = env.insert(ResolvedInitLocal(named_taip.name, named_taip.taip))
+                local_id = context.env.insert(ResolvedInitLocal(named_taip.name, named_taip.taip))
                 return (InitWord(name, local_id), False)
             case ParsedRefWord(token, fields):
-                (var_type, local) = self.resolve_var_name(env, token)
+                (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
             case ParsedSetWord(token, fields):
-                (var_type, local) = self.resolve_var_name(env, token)
+                (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 self.expect_stack(token, stack, [expected_taip])
                 return (ResolvedSetWord(token, local, resolved_fields), False)
             case ParsedStoreWord(token, fields):
-                (var_type, local) = self.resolve_var_name(env, token)
+                (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 if not isinstance(expected_taip, ResolvedPtrType):
@@ -1855,12 +1880,12 @@ class FunctionResolver:
             case ParsedFunRefWord(call):
                 match call:
                     case ParsedCallWord(name, _):
-                        resolved_call_word = self.resolve_call_word(env, call)
+                        resolved_call_word = self.resolve_call_word(context.env, call)
                         signature = self.module_resolver.get_signature(resolved_call_word.function)
                         stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
                         return (ResolvedFunRefWord(resolved_call_word), False)
                     case ParsedForeignCallWord(name):
-                        resolved_foreign_call_word = self.resolve_foreign_call_word(env, call)
+                        resolved_foreign_call_word = self.resolve_foreign_call_word(context.env, call)
                         signature = self.module_resolver.get_signature(resolved_foreign_call_word.function)
                         stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
                         return (ResolvedFunRefWord(resolved_foreign_call_word), False)
@@ -1876,7 +1901,7 @@ class FunctionResolver:
                 return (ResolvedLoadWord(token, top.child), False)
             case BreakWord(token):
                 dump = stack.dump()
-                break_stacks.append(BreakStack(token, dump, reachable))
+                context.break_stacks.append(BreakStack(token, dump, context.reachable))
                 stack.drain()
                 return (word, False)
             case ParsedSizeofWord(token, parsed_taip):
@@ -1900,8 +1925,13 @@ class FunctionResolver:
             case ParsedStructWord(token, taip, parsed_words):
                 resolved_struct_taip = self.module_resolver.resolve_struct_type(taip)
                 struct = self.module_resolver.get_struct(resolved_struct_taip.struct)
-                these_fields = (resolved_struct_taip.struct, { field.name.lexeme: field.taip for field in struct.fields })
-                (words, diverges) = self.resolve_words(env, stack, break_stacks, these_fields, parsed_words)
+                lit_context = StructLitContext(resolved_struct_taip.struct, { field.name.lexeme: field.taip for field in struct.fields })
+                (words, diverges) = self.resolve_words(context.with_struct_context(lit_context), stack, parsed_words)
+                if len(lit_context.fields) != 0:
+                    error_message = "missing fields in struct literal:"
+                    for field_name, field_taip in lit_context.fields.items():
+                        error_message += f"\n\t{field_name}: {format_resolved_type(field_taip)}"
+                    self.abort(token, error_message)
                 stack.append(resolved_struct_taip)
                 return (ResolvedStructWord(token, resolved_struct_taip, words), diverges)
             case ParsedUnnamedStructWord(token, taip):
@@ -1914,11 +1944,11 @@ class FunctionResolver:
             case other:
                 assert_never(other)
 
-    def resolve_words(self, env: Env, stack: Stack, break_stacks: List[BreakStack], struct_fields: Tuple[ResolvedStructHandle, Dict[str, ResolvedType]] | None, parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
+    def resolve_words(self, context: ResolveWordContext, stack: Stack, parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
         diverges = False
         words: List[ResolvedWord] = []
         for parsed_word in parsed_words:
-            (word, word_diverges) = self.resolve_word(env, stack, break_stacks, not diverges, struct_fields, parsed_word)
+            (word, word_diverges) = self.resolve_word(context.with_reachable(not diverges), stack, parsed_word)
             diverges = diverges or word_diverges
             words.append(word)
         return (words, diverges)
