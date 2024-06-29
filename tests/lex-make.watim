@@ -1,0 +1,9 @@
+[== Stdin Compiler ==]
+make
+[== Args Compiler ==]
+--lex
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+MAKE "make" 1 1
+

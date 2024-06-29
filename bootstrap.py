@@ -394,7 +394,12 @@ class ParsedStructWord:
     taip: ParsedStructType | ParsedForeignType
     words: List['ParsedWord']
 
-ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord
+@dataclass
+class ParsedUnnamedStructWord:
+    token: Token
+    taip: ParsedStructType | ParsedForeignType
+
+ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord | ParsedUnnamedStructWord
 
 @dataclass
 class ParsedNamedType:
@@ -734,14 +739,15 @@ class Parser:
         if token.ty == TokenType.MAKE:
             struct_name_token = self.advance(skip_ws=True)
             taip = self.parse_struct_type(struct_name_token, generic_parameters)
-            brace = self.advance(skip_ws=True)
+            brace = self.peek(skip_ws=True)
             if brace is not None and brace.ty == TokenType.LEFT_BRACE:
+                brace = self.advance(skip_ws=True)
                 words = self.parse_words(generic_parameters)
                 brace = self.advance(skip_ws=True)
                 if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                     self.abort("Expected `}`")
                 return ParsedStructWord(token, taip, words)
-            self.abort("Expected `{`")
+            return ParsedUnnamedStructWord(token, taip)
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: List[Token], token: Token) -> ParsedCallWord | ParsedForeignCallWord:
@@ -1225,6 +1231,11 @@ class ResolvedStructWord:
     taip: ResolvedStructType
     words: List['ResolvedWord']
 
+@dataclass
+class ResolvedUnnamedStructWord:
+    token: Token
+    taip: ResolvedStructType
+
 class IntrinsicType(str, Enum):
     ADD = "ADD"
     STORE = "STORE"
@@ -1393,7 +1404,7 @@ class ResolvedIntrinsicNot:
 
 ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot
 
-ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord | ResolvedStructFieldInitWord | ResolvedStructWord
+ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord
 
 @dataclass
 class ResolvedFunction:
@@ -1893,6 +1904,13 @@ class FunctionResolver:
                 (words, diverges) = self.resolve_words(env, stack, break_stacks, these_fields, parsed_words)
                 stack.append(resolved_struct_taip)
                 return (ResolvedStructWord(token, resolved_struct_taip, words), diverges)
+            case ParsedUnnamedStructWord(token, taip):
+                resolved_struct_taip = self.module_resolver.resolve_struct_type(taip)
+                struct = self.module_resolver.get_struct(resolved_struct_taip.struct)
+                struct_field_types = list(map(lambda f: f.taip, struct.fields))
+                self.expect_stack(token, stack, struct_field_types)
+                stack.append(resolved_struct_taip)
+                return (ResolvedUnnamedStructWord(token, resolved_struct_taip), False)
             case other:
                 assert_never(other)
 
@@ -2644,15 +2662,20 @@ class StructWord:
     copy_space_offset: int
 
 @dataclass
+class UnnamedStructWord:
+    token: Token
+    taip: StructType
+    copy_space_offset: int
+
+@dataclass
 class StructFieldInitWord:
     token: Token
-    struct: StructHandle
     taip: Type
     copy_space_offset: int
 
 IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot
 
-Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord
+Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord
 
 @dataclass
 class Module:
@@ -2906,12 +2929,20 @@ class Monomizer:
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 return GetFieldWord(token, fields)
             case ResolvedStructWord(token, taip, resolved_words):
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count)
                 monomized_taip = self.monomize_type(taip, generics)
+                offset = copy_space_offset.value
+                copy_space_offset.value += monomized_taip.size()
+                previous_struct_word_copy_space_offset = self.struct_word_copy_space_offset
+                self.struct_word_copy_space_offset = offset
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count)
+                self.struct_word_copy_space_offset = previous_struct_word_copy_space_offset
+                return StructWord(token, monomized_taip, words, offset)
+            case ResolvedUnnamedStructWord(token, taip):
+                monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
                 self.struct_word_copy_space_offset = offset
                 copy_space_offset.value += monomized_taip.size()
-                return StructWord(token, monomized_taip, words, offset)
+                return UnnamedStructWord(token, monomized_taip, offset)
             case ResolvedStructFieldInitWord(token, struct, taip):
                 field_copy_space_offset = self.struct_word_copy_space_offset
                 (struct_handle, monomized_struct) = self.monomize_struct(struct, generics)
@@ -2919,7 +2950,7 @@ class Monomizer:
                     if field.name.lexeme == token.lexeme:
                         break
                     field_copy_space_offset += field.taip.size()
-                return StructFieldInitWord(token, struct_handle, self.monomize_type(taip, generics), field_copy_space_offset)
+                return StructFieldInitWord(token, self.monomize_type(taip, generics), field_copy_space_offset)
             case other:
                 assert_never(other)
 
@@ -3231,7 +3262,7 @@ class WatGenerator:
                     self.write(f" i32.const {target_taip.size()} memory.copy")
                 for i, load in enumerate(loads):
                     if i + 1 < len(loads) or not isinstance(target_taip, StructType):
-                        self.write(f" i32.load offset={load} ")
+                        self.write(f" i32.load offset={load}")
                     else:
                         self.write(f" i32.const {load} i32.add i32.const {target_taip.size()} memory.copy")
                 self.write("\n")
@@ -3524,12 +3555,30 @@ class WatGenerator:
                 self.dedent()
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
-            case StructFieldInitWord(token, struct, taip, copy_space_offset):
+            case UnnamedStructWord(_, taip, copy_space_offset):
                 self.write_indent()
-                if not isinstance(taip, StructType):
-                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:flip i32.store\n")
+                self.write(f";; make {format_type(taip)}\n")
+                struct = self.lookup_struct(taip.struct)
+                field_offset = taip.size()
+                self.indent()
+                for field in reversed(struct.fields):
+                    field_offset -= field.taip.size()
+                    self.write_indent()
+                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + field_offset} i32.add call $intrinsic:flip ")
+                    if isinstance(field.taip, StructType):
+                        self.write(f"i32.const {field.taip.size()} memory.copy\n")
+                    else:
+                        self.write("i32.store\n")
+                self.dedent()
+                self.write_indent()
+                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
+            case StructFieldInitWord(_, taip, copy_space_offset):
+                self.write_indent()
+                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:flip ")
+                if isinstance(taip, StructType):
+                    self.write(f"i32.const {taip.size()} memory.copy\n")
                 else:
-                    self.write("TODO\n")
+                    self.write("i32.store\n")
             case other:
                 assert_never(other)
 
