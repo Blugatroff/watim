@@ -1,0 +1,36 @@
+[== Stdin Compiler ==]
+struct Foo {
+	a: i32
+	b: i32
+	c: i32
+}
+
+fn foo "foo" () -> Foo {
+	uninit<Foo> @foo
+	$foo
+}
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:foo (export "foo") (result i32)
+		(local $foo i32)
+		(local $locl-copy-spac:e i32)
+		(local $stac:k i32)
+		global.get $stac:k local.set $stac:k
+		global.get $stac:k global.get $stac:k i32.const 24 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		global.get $stac:k global.get $stac:k i32.const 12 i32.add global.set $stac:k local.set $foo
+		local.get $locl-copy-spac:e i32.const 0 i32.add
+		local.get $foo call $intrinsic:flip i32.const 12 memory.copy
+		local.get $locl-copy-spac:e i32.const 12 i32.add call $intrinsic:dupi32 local.get $foo i32.const 12 memory.copy
+		local.get $stac:k global.set $stac:k
+	)
+)

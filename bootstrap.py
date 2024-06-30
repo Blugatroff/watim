@@ -1391,6 +1391,7 @@ class IntrinsicType(str, Enum):
     MEM_GROW = "MEM_GROW"
     MEM_COPY = "MEM_COPY"
     FLIP = "FLIP"
+    UNINIT = "UNINIT"
 
 @dataclass
 class ParsedIntrinsicWord:
@@ -1421,7 +1422,8 @@ INTRINSICS: dict[str, IntrinsicType] = {
         "rotr": IntrinsicType.ROTR,
         "or": IntrinsicType.OR,
         "store": IntrinsicType.STORE,
-        }
+        "uninit": IntrinsicType.UNINIT,
+}
 INTRINSIC_TO_LEXEME: dict[IntrinsicType, str] = {v: k for k, v in INTRINSICS.items()}
 
 @dataclass
@@ -1533,7 +1535,12 @@ class ResolvedIntrinsicNot:
     token: Token
     taip: PrimitiveType
 
-ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot
+@dataclass
+class ResolvedIntrinsicUninit:
+    token: Token
+    taip: ResolvedType
+
+ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit
 
 ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord
 
@@ -1962,7 +1969,8 @@ class FunctionResolver:
             case ParsedCallWord(name, generic_arguments):
                 if name.lexeme in INTRINSICS:
                     intrinsic = INTRINSICS[name.lexeme]
-                    return (self.resolve_intrinsic(name, stack, intrinsic), False)
+                    resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
+                    return (self.resolve_intrinsic(name, stack, intrinsic, resolved_generic_arguments), False)
                 resolved_call_word = self.resolve_call_word(context.env, word)
                 signature = self.module_resolver.get_signature(resolved_call_word.function)
                 self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
@@ -2171,7 +2179,7 @@ class FunctionResolver:
             words.append(word)
         return (words, diverges)
 
-    def resolve_intrinsic(self, token: Token, stack: Stack, intrinsic: IntrinsicType) -> ResolvedIntrinsicWord:
+    def resolve_intrinsic(self, token: Token, stack: Stack, intrinsic: IntrinsicType, generic_arguments: List[ResolvedType]) -> ResolvedIntrinsicWord:
         match intrinsic:
             case IntrinsicType.ADD | IntrinsicType.SUB:
                 if len(stack) < 2:
@@ -2313,10 +2321,13 @@ class FunctionResolver:
                 if len(stack) == 0 or (stack[-1] != PrimitiveType.I32 and stack[-1] != PrimitiveType.BOOL):
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected a i32 or bool on the stack")
                 return ResolvedIntrinsicNot(token, stack[-1])
+            case IntrinsicType.UNINIT:
+                if len(generic_arguments) != 1:
+                    self.abort(token, "uninit only accepts one generic argument")
+                stack.append(generic_arguments[0])
+                return ResolvedIntrinsicUninit(token, generic_arguments[0])
             case _:
                 assert_never(intrinsic)
-                self.abort(token, "TODO")
-
 
     def expect_stack(self, token: Token, stack: Stack, expected: List[ResolvedType]) -> List[ResolvedType]:
         popped: List[ResolvedType] = []
@@ -2927,6 +2938,11 @@ class IntrinsicStore:
     taip: Type
 
 @dataclass
+class IntrinsicUninit:
+    token: Token
+    copy_space_offset: int
+
+@dataclass
 class StoreWord:
     token: Token
     local: LocalId | GlobalId
@@ -2972,7 +2988,7 @@ class MatchWord:
     parameters: List[Type]
     returns: List[Type]
 
-IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot
+IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit
 
 Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord
 
@@ -3192,6 +3208,11 @@ class Monomizer:
                 return word
             case IntrinsicMemGrow():
                 return word
+            case ResolvedIntrinsicUninit(token, taip):
+                monomized_taip = self.monomize_type(taip, generics)
+                offset = copy_space_offset.value
+                copy_space_offset.value += monomized_taip.size()
+                return IntrinsicUninit(token, offset)
             case ResolvedLoadWord(token, taip):
                 monomized_taip = self.monomize_type(taip, generics)
                 if isinstance(monomized_taip, StructType):
@@ -3777,6 +3798,8 @@ class WatGenerator:
                 self.write_line("memory.copy")
             case IntrinsicMemGrow():
                 self.write_line("memory.grow")
+            case IntrinsicUninit(_, copy_space_offset):
+                self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add")
             case CastWord(_, source, taip):
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I64: 
                     self.write_line(f"i64.extend_i32_s ;; cast to {format_type(taip)}")
