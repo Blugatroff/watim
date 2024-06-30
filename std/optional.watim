@@ -1,16 +1,5 @@
-struct T<T> {
-    value: T
-    present: bool
-}
-fn wrap<V>(value: V) -> T<V> {
-    local self: T<V>
-    $value #self.value
-    1 1 = #self.present
-    $self
-}
-fn none<V>() -> T<V> {
-    local self: T<V>
-    0 1 = #self.present
-    $self
+variant T<T> {
+	Some -> T
+	None
 }
 

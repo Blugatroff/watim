@@ -29,7 +29,7 @@ class CompilerOutput:
     stderr: str
 
 def run_compiler(args: List[str], stdin: str):
-    # compiler = subprocess.run(["python", "./bootstrap.py", "-"], input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # compiler = subprocess.run(["python", "./bootstrap.py", "-"] + args, input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
     try:
         stdout = main([sys.argv[0], "-"] + args, stdin)
@@ -56,7 +56,7 @@ for path in tests:
         print(f"{path}: expected different compiler status:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)
         print(f"Actual:\n{compiler.returncode}", file=sys.stderr)
-        if test['compiler-stderr'] is None:
+        if test['compiler-stderr'] is not None:
             print(f"compiler-stderr was: {compiler.stderr}", file=sys.stderr)
         continue
     if test['compiler-stderr'] is not None and compiler.stderr != test['compiler-stderr'].strip():

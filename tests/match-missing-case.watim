@@ -1,0 +1,17 @@
+[== Stdin Compiler ==]
+variant Foo {
+	case A
+	case B
+}
+
+fn foo() {
+	make Foo.A match {
+		case A -> { }
+	}
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:7:13 missing case in match:
+	B
+

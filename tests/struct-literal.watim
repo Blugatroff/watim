@@ -6,14 +6,14 @@ struct V2 {
 	y: i32
 }
 
-struct Foo {
+struct Foo<T> {
 	baz: bool
 	bar: i32
-    v: V2
+    v: T
 }
 
 fn main "_start" () {
-	make Foo {
+	make Foo<V2> {
 		make V2 { 5 @x 7 @y } @v
 		42 @bar
 		0 1 = @baz

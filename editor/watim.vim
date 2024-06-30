@@ -6,7 +6,7 @@
 " Usage Instructions
 " Put this file in .vim/syntax/watim.vim
 " and add in your .vimrc file the next line:
-" autocmd BufRead,BufNewFile *.porth set filetype=porth
+" autocmd BufRead,BufNewFile *.watim set filetype=watim
 
 if exists("b:current_syntax")
   finish
@@ -15,7 +15,7 @@ endif
 syntax keyword watimTodos TODO FIXME NOTE
 
 " Language keywords
-syntax keyword watimKeywords struct if extern loop local fn memory break else import as block
+syntax keyword watimKeywords struct if extern loop local fn memory break else import as block variant match make case
 
 " Comments
 syntax region watimCommentLine start="//" end="$" contains=watimTodos

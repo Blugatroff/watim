@@ -8,6 +8,8 @@
       <item>loop</item>
       <item>block</item>
       <item>break</item>
+      <item>match</item>
+      <item>case</item>
     </list>
     <list name="imports">
       <item>import</item>
@@ -18,6 +20,8 @@
     </list>
     <list name="struct">
       <item>struct</item>
+      <item>variant</item>
+      <item>make</item>
     </list>
     <list name="builtinTypes">
       <item>i32</item>

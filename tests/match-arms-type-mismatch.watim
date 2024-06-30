@@ -1,0 +1,19 @@
+[== Stdin Compiler ==]
+variant Foo {
+	case A
+	case B
+}
+
+fn foo() {
+	make Foo.A match {
+		case A -> { 0     }
+		case B -> { 0 1 = }
+	} drop
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:7:13 arms of match case have different types:
+	[] -> [i32]
+	[] -> [bool]
+

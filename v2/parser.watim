@@ -32,10 +32,13 @@ fn ParsedFunction-write(fd: i32, self: .ParsedFunction) -> i32 { block {
     $fd "{ \"name\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd &self.name L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
     $fd ", \"export\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
-    $self.export-name.present if {
-        $fd &self.export-name.value L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
-    } else {
-        $fd "null" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+    &self.export-name match {
+        Some -> {
+            $fd flip L:Token-write CORE:dup<i32> 0 /= if { break } else { drop }
+        }
+        None -> {
+            $fd "null" IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
+        }
     }
     $fd ", \"generic-parameters\": " IO:write-all CORE:dup<i32> 0 /= if { break } else { drop }
     $fd \L:Token-write &self.generic-parameters Array:print<L:Token> CORE:dup<i32> 0 /= if { break } else { drop }
@@ -1198,11 +1201,11 @@ fn parse-function-signature(arena: .A:Arena, cursor: i32, file-path: .ByteSlice:
         $file-path $token "Expected either `(` or a string as exported function name." abort
     }
     $token L:Token-ty L:TOKEN_STRING = if {
-        $token ~ Optional:wrap<L:Token>
+        $token ~ make Optional:T<L:Token>.Some
         $cursor $file-path $tokens next-non-space #cursor #token
         $token L:Token-ty L:TOKEN_LEFT_PAREN /= if {
             $file-path $token "Expected `(`." abort }
-    } else { Optional:none<L:Token> } @function-export-name-token
+    } else { make Optional:T<L:Token>.None } @function-export-name-token
 
     Array:new<ParsedNamedType> @parameters
     loop {
