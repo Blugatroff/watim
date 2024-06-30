@@ -11,21 +11,21 @@ struct T {
 }
 
 fn new() -> T {
-    local self: T
-    0 !.i32 #self.ptr
-    0 #self.len
-    0 #self.cap
-    0 !.A:Arena #self.arena
-    $self
+    make T {
+        0 !.i32 @ptr
+        0 @len
+        0 @cap
+        0 !.A:Arena @arena
+    }
 }
 
 fn init(ptr: .i32, len: i32) -> T {
-    local self: T
-    $ptr #self.ptr
-    $len #self.len
-    $len #self.cap
-    0 !.A:Arena #self.arena
-    $self
+    make T {
+        $ptr @ptr
+        $len @len
+        $len @cap
+        0 !.A:Arena @arena
+    }
 }
 
 fn check-same-arena(self: .T, arena: .A:Arena) {
@@ -65,12 +65,12 @@ fn alloc-bytes(arena: .A:Arena, self: .T, len: i32) -> .i32 {
     }
 }
 fn push-byte(arena: .A:Arena, self: .T, byte: i32) {
-    local ptr: CORE:I32
+    uninit<CORE:I32> @ptr
     $byte #ptr.inner
     $arena $self &ptr.inner 1 push
 }
 fn push-i32(arena: .A:Arena, self: .T, v: i32) {
-    local ptr: CORE:I32
+    uninit<CORE:I32> @ptr
     $v #ptr.inner
     $arena $self &ptr.inner 4 push
 }
@@ -89,6 +89,6 @@ fn unpack(self: .T) -> .i32, i32 {
 }
 
 fn to-slice(self: .T) -> ByteSlice:T {
-    $self unpack ByteSlice:new
+    $self unpack make ByteSlice:T
 }
 

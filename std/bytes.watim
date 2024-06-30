@@ -1,7 +1,7 @@
 import "./core.watim" as CORE
 
 fn eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
-    local i: i32
+    0 @i
     $len-a $len-b = if {
         loop {
             $i $len-a = if { 0 0 = break }
@@ -17,7 +17,7 @@ fn eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
     }
 }
 fn find(ptr: .i32, len: i32, byte: i32) -> i32, bool {
-    local i: i32
+    0 @i
     loop {
         $i $len = if {
             0 0 1 = break
@@ -29,7 +29,7 @@ fn find(ptr: .i32, len: i32, byte: i32) -> i32, bool {
     }
 }
 fn find-rev(ptr: .i32, len: i32, byte: i32) -> i32, bool {
-    local i: i32
+    0 @i
     $len #i
     loop {
         $i 0 = if {

@@ -8,8 +8,8 @@ extern "wasi_snapshot_preview1" "args_sizes_get" fn args_sizes_get(number: .i32,
 extern "wasi_snapshot_preview1" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
 
 fn get-args(arena: .Arena:Arena) -> Array:Array<ByteSlice:T> {
-    local arg_number_ptr: CORE:I32
-    local arg_sizes_ptr: CORE:I32
+    uninit<CORE:I32> @arg_number_ptr
+    uninit<CORE:I32> @arg_sizes_ptr
     &arg_number_ptr.inner &arg_sizes_ptr.inner args_sizes_get IO:check
     $arg_number_ptr.inner @arg_number
     $arg_sizes_ptr.inner @arg_sizes
@@ -26,7 +26,7 @@ fn get-args(arena: .Arena:Arena) -> Array:Array<ByteSlice:T> {
         $i $arg_number ge if { break }
         $ptr_buf $i 4 * + ~ !.i32 @ptr
         $arena &strings 
-        $ptr $ptr cstr-len ByteSlice:new
+        $ptr $ptr cstr-len make ByteSlice:T
         Array:push<ByteSlice:T>
         $i 1 + #i
     }
@@ -35,7 +35,7 @@ fn get-args(arena: .Arena:Arena) -> Array:Array<ByteSlice:T> {
 }
 
 fn cstr-len(ptr: .i32) -> i32 {
-    local i: i32
+    0 @i
     loop {
         $ptr load8 0 = if { $i break }
         $i 1 + #i

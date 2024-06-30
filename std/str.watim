@@ -3,7 +3,7 @@ import "./io.watim" as IO
 import "./arena.watim" as Arena
 
 fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
-    local i: i32
+    0 @i
     $len-a $len-b = if {
         loop {
             $i $len-a = if { 0 0 = break }
@@ -19,7 +19,7 @@ fn str-eq(ptr-a: .i32, len-a: i32, ptr-b: .i32, len-b: i32) -> bool {
     }
 }
 fn str-find(ptr: .i32, len: i32, char: i32) -> i32, bool {
-    local i: i32
+    0 @i
     loop {
         $i $len = if {
             0 0 1 = break
@@ -31,8 +31,7 @@ fn str-find(ptr: .i32, len: i32, char: i32) -> i32, bool {
     }
 }
 fn str-find-rev(ptr: .i32, len: i32, char: i32) -> i32, bool {
-    local i: i32
-    $len #i
+    $len @i
     loop {
         $i 0 = if {
             0 0 1 = break
@@ -47,15 +46,14 @@ fn str-is-prefix(ptr: .i32, len: i32, prefix-ptr: .i32, prefix-len: i32) -> bool
     $ptr $len $prefix-len CORE:min $prefix-ptr $prefix-len str-eq
 }
 fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, bool {
-    local prev-index: i32
-    local char: i32
-    local index: i32
+    0 @prev-index
+    0 @index
     loop {
         $target-len 0 = if { 0 0 0 = break }
         $len 0 = if {
             0 $target-len 0 = break
         }
-        $target-ptr load8 #char
+        $target-ptr load8 @char
         $ptr $len $char str-find if {
             #index
             $ptr $index + $len $index - 
@@ -75,12 +73,6 @@ fn str-find-str(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, 
 struct Str {
     ptr: .i32
     len: i32
-}
-fn Str-new(ptr: .i32, len: i32) -> Str {
-    local self: Str
-    $ptr #self.ptr
-    $len #self.len
-    $self
 }
 fn Str-len(self: .Str) -> i32 {
     $self.len

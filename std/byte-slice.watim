@@ -7,20 +7,14 @@ struct T {
     ptr: .i32
     len: i32
 }
-fn new(ptr: .i32, len: i32) -> T {
-    local self: T
-    $ptr #self.ptr
-    $len #self.len
-    $self
-}
 fn unpack(self: T) -> .i32, i32 {
     $self.ptr $self.len
 }
 fn empty() -> T {
-    0 !.i32 0 new
+    0 !.i32 0 make T
 }
 fn copy(arena: .Arena:Arena, self: T) -> T {
-    $arena $self.ptr $self.len Arena:push-bytes $self.len new
+    $arena $self.ptr $self.len Arena:push-bytes $self.len make T
 }
 fn get-byte(self: .T, index: i32) -> i32 {
     $index $self.len ge if { 
@@ -34,7 +28,7 @@ fn slice(self: .T, index: i32, len: i32) -> T {
         1 "ByteArray:slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $self.ptr $index + $len new
+    $self.ptr $index + $len make T
 }
 fn eq(self: T, other: T) -> bool {
     $self unpack $other unpack Bytes:eq
@@ -50,15 +44,15 @@ fn is-not-empty(self: .T) -> bool {
 }
 fn drop(self: T, n: i32) -> T {
     $n $self.len CORE:min #n
-    $self.ptr $n + 
-    $self.len $n - 
-    new
+    $self.ptr $n +
+    $self.len $n -
+    make T
 }
 fn drop-end(self: T, n: i32) -> T {
     $n $self.len CORE:min #n
     $self.ptr
     $self.len $n -
-    new
+    make T
 }
 fn find-byte(self: T, b: i32) -> i32, bool {
     0 @i

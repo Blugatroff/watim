@@ -10,17 +10,17 @@ struct Formatter {
 }
 
 fn Formatter-new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
-    local self: Formatter
-    $write #self.write
-    0 #self.indent-level
-    $user-data #self.user-data
-    $self
+    make Formatter {
+        $write @write
+        $user-data @user-data
+        0 @indent-level
+    }
 }
 fn Formatter-write(self: .Formatter, ptr: .i32, len: i32) {
     $self.user-data $ptr $len $self.write ->
 }
 fn Formatter-write-indent(self: .Formatter) {
-    local i: i32
+    0 @i
     loop {
         $i $self.indent-level = if { break }
         $self "  " Formatter-write

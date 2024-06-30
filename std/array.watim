@@ -13,12 +13,12 @@ struct Array<T> {
 }
 
 fn new<T>() -> Array<T> {
-    local self: Array<T>
-    0 !.T #self.ptr
-    0 #self.len
-    0 #self.cap
-    0 !.A:Arena #self.arena
-    $self
+    make Array<T> {
+        0 !.T @ptr
+        0 @len
+        0 @cap
+        0 !.A:Arena @arena
+    }
 }
 fn check-same-arena<T>(self: .Array<T>, arena: .A:Arena) {
     $self.arena 0 !.A:Arena = if {
@@ -31,28 +31,28 @@ fn check-same-arena<T>(self: .Array<T>, arena: .A:Arena) {
     }
 }
 fn new-with-capacity<T>(arena: .A:Arena, elems: i32) -> Array<T> {
-    local self: Array<T>
-    $arena #self.arena
-    $elems #self.cap
-    $arena $self.cap A:alloc-many<T> #self.ptr
-    0 #self.len
-    $self
+    make Array<T> {
+        $arena @arena
+        $elems @cap
+        $arena $elems A:alloc-many<T> @ptr
+        0 @len
+    }
 }
 fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
-    local self: Array<T>
-    $elems #self.cap
-    $arena $ptr $elems A:push-many<T> #self.ptr
-    $elems #self.len
-    $arena #self.arena
-    $self
+    make Array<T> {
+        $elems @cap
+        $arena $ptr $elems A:push-many<T> @ptr
+        $elems @len
+        $arena @arena
+    }
 }
 fn init-no-copy<T>(ptr: .T, elems: i32) -> Array<T> {
-    local self: Array<T>
-    $ptr #self.ptr
-    $elems #self.len
-    $elems #self.cap
-    0 !.A:Arena #self.arena
-    $self
+    make Array<T> {
+        $ptr @ptr
+        $elems @len
+        $elems @cap
+        0 !.A:Arena @arena
+    }
 }
 fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
     $self $arena check-same-arena<T>
@@ -139,7 +139,7 @@ fn print<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { 
     $fd "]" IO:write-all
 } }
 fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
-    local i: i32
+    0 @i
     loop {
         $i $self.len = if { 0 0 1 = break }
         $self $i get<T> $value $compare -> if {
@@ -182,13 +182,12 @@ fn reverse<T>(self: .Array<T>) { block {
     }
 } }
 fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {
-    local uninit: T
     $self $compare $value find<T, A> if {
         @i
         $self $i remove<T>
         $i 1 1 =
     } else { 
-        $uninit flip 0 1 =
+        uninit<T> flip 0 1 =
     }
 }
 fn join-with(arena: .A:Arena, self: .Array<ByteSlice:T>, del-ptr: .i32, del-len: i32) -> ByteArray:T {

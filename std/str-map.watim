@@ -9,10 +9,10 @@ struct StrMap<T> {
     values: Array:Array<T>
 }
 fn new<T>() -> StrMap<T> {
-    local self: StrMap<T>
-    Array:new<STR:Str> #self.keys
-    Array:new<T> #self.values
-    $self
+    make StrMap<T> {
+        Array:new<STR:Str> @keys
+        Array:new<T> @values
+    }
 }
 fn insert<T>(arena: .Arena:Arena, self: .StrMap<T>, key: STR:Str, value: T) {
     0 @i

@@ -29,32 +29,24 @@ fn create-rights(read: bool, write: bool) -> i64 {
 }
 
 struct PreopenedFd {
-    path: ByteSlice:T
     fd: i32
-}
-fn PreopenedFd-new(fd: i32, path: ByteSlice:T) -> PreopenedFd {
-    local self: PreopenedFd
-    $fd #self.fd
-    $path #self.path
-    $self
+    path: ByteSlice:T
 }
 struct FileSystem {
     preopened-fds: Array:Array<PreopenedFd>
 }
 fn FileSystem-new(preopened-fds: Array:Array<PreopenedFd>) -> FileSystem {
-    local fs: FileSystem
-    $preopened-fds #fs.preopened-fds
-    $fs
+    $preopened-fds make FileSystem
 }
 
 fn init(arena: .Arena:Arena) -> FileSystem, i32 {
-    local prestat: Prestat
     0 @code
     3 @fd
     $arena Arena:save @restore
     Array:new<PreopenedFd> @fds
     $arena Arena:temp @temp @temp-save
     loop {
+        uninit<Prestat> @prestat
         $fd &prestat fd_prestat_get #code
         // 8 = Bad file descriptor
         $code 8 = if { 
@@ -71,8 +63,8 @@ fn init(arena: .Arena:Arena) -> FileSystem, i32 {
         $code 0 /= if {
             break
         }
-        $buf $len ByteSlice:new @path
-        $temp &fds $fd $path PreopenedFd-new Array:push<PreopenedFd>
+        $buf $len make ByteSlice:T @path
+        $temp &fds $fd $path make PreopenedFd Array:push<PreopenedFd>
         $fd 1 + #fd
     }
     $arena $fds.ptr $fds.len Array:init<PreopenedFd> FileSystem-new $code
@@ -108,9 +100,8 @@ struct Prestat {
 }
 
 fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
-    local index: i32
     $path-ptr $path-len "/" drop load8 Bytes:find-rev if {
-        #index $path-ptr $index
+        $path-ptr flip
     } else {
         drop $path-ptr $path-len
     }
@@ -181,11 +172,11 @@ fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
 }
 
 fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> i32, i32 {
-    local fd: CORE:I32
     $fs find-current-dir @code @parent-fd
     $code 0 /= if {
         0 $code
     } else {
+        uninit<CORE:I32> @fd
         $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 &fd.inner path_open #code
         $fd.inner $code
     }

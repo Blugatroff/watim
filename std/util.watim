@@ -6,14 +6,11 @@ import "./array.watim" as Array
 import "./arena.watim" as Arena
 
 fn parse(pt: .i32, len: i32) -> i32 {
-    local n: i32
-    local d: i32
-    local original-ptr: .i32
-    local original-len: i32
-    $pt #original-ptr
-    $len #original-len
+    $pt @original-ptr
+    $len @original-len
+    0 @n
     loop {
-        $pt load8 #d
+        $pt load8 @d
         $d 48 ge $d 58 le and if { // 48 is ascii '0'
             $n $d 48 - + #n
         } else {

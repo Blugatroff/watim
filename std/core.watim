@@ -42,15 +42,12 @@ fn exit(code: i32) {
 }
 
 fn unreachable<T>() -> T {
-    local v: T
     0 0 / drop
-    $v
+    uninit<T>
 }
 
 fn escape(char: i32, dest: .i32) -> i32 {
-    local hex-digits-ptr: .i32
-    local hex-digits-len: i32
-    "0123456789abcdef" #hex-digits-len #hex-digits-ptr
+    "0123456789abcdef" @hex-digits-len @hex-digits-ptr
     loop {
         $char "\t" drop load8 = if { "\\t" $dest flip copy-bytes 2 break }
         $char "\r" drop load8 = if { "\\r" $dest flip copy-bytes 2 break }

@@ -29,7 +29,6 @@ struct Arena {
     size: i32
     name-ptr: .i32
     name-len: i32
-    index: i32
 }
 
 fn free-page(page: .Page) { block {
@@ -81,11 +80,12 @@ fn add-multiple-page(self: .Arena, n: i32) -> .i32 {
 }
 
 fn new(name-ptr: .i32, name-len: i32) -> Arena {
-    local self: Arena
-    0 !.Page #self.used-pages
-    $name-ptr #self.name-ptr
-    $name-len #self.name-len
-    0 #self.size
+    make Arena {
+        0 !.Page @used-pages
+        $name-ptr @name-ptr
+        $name-len @name-len
+        0 @size
+    } @self
     $ON_NEW ~ 0 !(.Arena ->) /= if { &self $ON_NEW ~ -> }
     $self
 }
@@ -98,7 +98,6 @@ fn clear(self: .Arena) {
     }
     0 !.Page #self.used-pages
     0 #self.size
-    0 #self.index
     $ON_CLEAR ~ 0 !(.Arena ->) /= if { $self $ON_CLEAR ~ -> }
 }
 fn visit-mem(self: .Arena, f: (.i32, i32 ->)) {
@@ -180,11 +179,11 @@ struct ArenaRestorePoint {
     size: i32
 }
 fn save(self: .Arena) -> ArenaRestorePoint {
-    local point: ArenaRestorePoint
-    $self.used-pages #point.used-pages
-    $self.used-pages.pos #point.pos
-    $self.size #point.size
-    $point
+    make ArenaRestorePoint {
+        $self.used-pages @used-pages
+        $self.used-pages.pos @pos
+        $self.size @size
+    }
 }
 fn restore(self: .Arena, point: ArenaRestorePoint) {
     $self.size $point.size lt if {

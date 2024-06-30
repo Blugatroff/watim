@@ -9,19 +9,16 @@ struct Iov {
 
 fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     memory space: Iov 8
-    local writ: CORE:I32
-    local code: i32
+    uninit<CORE:I32> @writ
     0 #writ.inner
     $pt #space.ptr
     $len #space.len
-    $fd $space 1 &writ.inner raw_write #code
-    $writ.inner $code
+    $fd $space 1 &writ.inner raw_write
+    $writ.inner flip
 }
 
 fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
-    local written: i32
-    local code: i32
-    $fd $pt $len write #code #written
+    $fd $pt $len write @code @written
     $code 0 = if {
         $written $len = if {
             $written $code
@@ -53,20 +50,17 @@ fn newline(fd: i32) {
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
     memory iov: Iov 8
-    local read: CORE:I32
-    local code: i32
+    uninit<CORE:I32> @read
     $buf_addr #iov.ptr 
     $buf_size #iov.len 
-    $file $iov 1 &read.inner raw_read #code
-    $read.inner $code
+    $file $iov 1 &read.inner raw_read
+    $read.inner flip
 }
 
 fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
-    local read: i32
-    local read-total: i32
-    local code: i32
+    0 @read-total
     loop {
-        $file $buf-addr $read-total + $buf-size $read-total - read #code #read
+        $file $buf-addr $read-total + $buf-size $read-total - read @code @read
         $code 0 = if {
             $read-total $read + #read-total
             $read-total $buf-size ge
@@ -85,9 +79,7 @@ fn print(fd: i32, n: i32) -> i32 {
 }
 fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
     memory buf: i32 24
-    local l: i32
-    local i: i32
-    0 #l
+    0 @l
     $n 0 = if {
         1 #l // length = 1
         $buf 48 store8 // put '0' in buf
@@ -102,7 +94,7 @@ fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
             $l 1 + #l
         }
     }
-    0 #i
+    0 @i
     loop {
         $buf-reversed $i +
         $buf $l 1 - $i - + load8
