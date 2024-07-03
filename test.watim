@@ -63,8 +63,8 @@ fn write-nullable-string-json(fd: i32, str: .ByteSlice:T) -> i32 { block {
     $str 0!.ByteSlice:T = if {
         $fd "null" IO:write-all break
     }
-    $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $str ~ ByteSlice:unpack IO:write-escaped Core:dup<i32> 0 /= if { break } else { drop }
+    $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $str ~ ByteSlice:unpack IO:write-escaped Core:dup<i32> 0 /= if { break } drop
     $fd "\"" IO:write-all
 } }
 fn write-nullable-number-json(fd: i32, n: .i32) -> i32 {
@@ -75,40 +75,40 @@ fn write-nullable-number-json(fd: i32, n: .i32) -> i32 {
     }
 }
 fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
-    $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
-    $fd ", \"compiler-status\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.compiler-status write-nullable-number-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop 
+    $fd $self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd ", \"compiler-status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.compiler-status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.compiler-stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.compiler-stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.compiler-stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
-    $fd ", \"compiler-args\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+    $fd $self.compiler-stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd ", \"compiler-args\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $self.compiler-args 0!.Array:Array<ByteSlice:T> = if {
-        $fd "null" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+        $fd "null" IO:write-all Core:dup<i32> 0 /= if { break } drop
     } else {
         0 @i
-        $fd "[" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+        $fd "[" IO:write-all Core:dup<i32> 0 /= if { break } drop
         loop {
-            $i $self.compiler-args.len = if { break }
-            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-            $fd &self.compiler-args ~ $i Array:get<ByteSlice:T> ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+            $i $self.compiler-args.len = if { 0 break }
+            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fd &self.compiler-args ~ $i Array:get<ByteSlice:T> ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
             $i 1 + $self.compiler-args.len /= if {
-                $fd ", " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+                $fd ", " IO:write-all Core:dup<i32> 0 /= if { break } drop
             }
             $i 1 + #i
-        }
-        $fd "]" IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
+        } Core:dup<i32> 0 /= if { break } drop
+        $fd "]" IO:write-all Core:dup<i32> 0 /= if { break } drop
     }
-    $fd ", \"stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
-    $fd ", \"status\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.status write-nullable-number-json Core:dup<i32> 0 /= if { break } else { drop }
-    $fd ", \"stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
-    $fd ", \"stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } else { drop }
+    $fd ", \"stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd ", \"status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
+    $fd ", \"stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd ", \"stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd " }" IO:write-all
 } }
 
@@ -125,15 +125,15 @@ fn parse-test-file2(arena: .Arena:Arena, file: ByteSlice:T) -> Test {
         0 !.ByteSlice:T @stderr
     } @test
 
-    "[== Args Compiler ==]" ByteSlice:new @compiler-args-header
-    "[== Stdin Compiler ==]" ByteSlice:new @compiler-stdin-header
-    "[== Status Compiler ==]" ByteSlice:new @compiler-status-header
-    "[== Stdout Compiler ==]" ByteSlice:new @compiler-stdout-header
-    "[== Stderr Compiler ==]" ByteSlice:new @compiler-stderr-header
-    "[== Stdin ==]" ByteSlice:new @stdin-header
-    "[== Status ==]" ByteSlice:new @status-header
-    "[== Stdout ==]" ByteSlice:new @stdout-header
-    "[== Stderr ==]" ByteSlice:new @stderr-header
+    "[== Args Compiler ==]" make ByteSlice:T @compiler-args-header
+    "[== Stdin Compiler ==]" make ByteSlice:T @compiler-stdin-header
+    "[== Status Compiler ==]" make ByteSlice:T @compiler-status-header
+    "[== Stdout Compiler ==]" make ByteSlice:T @compiler-stdout-header
+    "[== Stderr Compiler ==]" make ByteSlice:T @compiler-stderr-header
+    "[== Stdin ==]" make ByteSlice:T @stdin-header
+    "[== Status ==]" make ByteSlice:T @status-header
+    "[== Stdout ==]" make ByteSlice:T @stdout-header
+    "[== Stderr ==]" make ByteSlice:T @stderr-header
 
     Array:new<ByteSlice:T> @headers
     $arena &headers $compiler-args-header Array:push<ByteSlice:T>

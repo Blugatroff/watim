@@ -1292,6 +1292,7 @@ class ResolvedIfWord:
     returns: List[ResolvedType]
     if_words: List['ResolvedWord']
     else_words: List['ResolvedWord']
+    diverges: bool
 
 @dataclass
 class ResolvedLoopWord:
@@ -1880,7 +1881,18 @@ class FunctionResolver:
         body = ResolvedBody(words, env.vars_by_id)
         return ResolvedFunction(self.signature, memories, locals, body)
 
-    def resolve_word(self, context: ResolveWordContext, stack: Stack, word: ParsedWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_words(self, context: ResolveWordContext, stack: Stack, parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
+        parsed_words.reverse()
+        diverges = False
+        words: List[ResolvedWord] = []
+        while len(parsed_words) != 0:
+            parsed_word = parsed_words.pop()
+            (word, word_diverges) = self.resolve_word(context.with_reachable(not diverges), stack, parsed_word, parsed_words)
+            diverges = diverges or word_diverges
+            words.append(word)
+        return (words, diverges)
+
+    def resolve_word(self, context: ResolveWordContext, stack: Stack, word: ParsedWord, remaining_words: List[ParsedWord]) -> Tuple[ResolvedWord, bool]:
         match word:
             case NumberWord():
                 stack.append(PrimitiveType.I32)
@@ -1909,6 +1921,10 @@ class FunctionResolver:
                 (if_words, if_words_diverge) = self.resolve_words(context.with_env(if_env), if_stack, parsed_if_words)
                 (else_words, else_words_diverge) = self.resolve_words(context.with_env(else_env), else_stack, parsed_else_words)
                 parameters = if_stack.negative
+                if len(else_words) == 0 and if_words_diverge:
+                    remaining_words.reverse()
+                    (remaining_resolved_words, remaining_words_diverge) = self.resolve_words(context.with_env(else_env), stack, remaining_words)
+                    return (ResolvedIfWord(token, parameters, stack.stack, if_words, remaining_resolved_words, remaining_words_diverge), remaining_words_diverge)
                 if not if_stack.drained:
                     returns = if_stack.stack
                 elif not else_stack.drained:
@@ -1927,13 +1943,15 @@ class FunctionResolver:
                     assert(not else_stack.drained)
                     stack.apply(else_stack)
                 diverges = if_words_diverge and else_words_diverge
-                return (ResolvedIfWord(token, parameters, returns, if_words, else_words), diverges)
+                return (ResolvedIfWord(token, parameters, returns, if_words, else_words, diverges), diverges)
             case ParsedLoopWord(token, parsed_words):
                 loop_stack = stack.make_child()
                 loop_env = Env(context.env)
                 loop_break_stacks: List[BreakStack] = []
                 (words, diverges) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks), loop_stack, parsed_words)
                 parameters = loop_stack.negative
+                if not resolved_types_eq(parameters, loop_stack.stack):
+                    self.abort(token, "unexpected items remaining on stack at the end of loop")
                 if len(loop_break_stacks) != 0:
                     returns = loop_break_stacks[0].types
                     stack.extend(returns)
@@ -2043,7 +2061,7 @@ class FunctionResolver:
                 dump = stack.dump()
                 context.break_stacks.append(BreakStack(token, dump, context.reachable))
                 stack.drain()
-                return (word, False)
+                return (word, True)
             case ParsedSizeofWord(token, parsed_taip):
                 stack.append(PrimitiveType.I32)
                 return (ResolvedSizeofWord(token, self.module_resolver.resolve_type(parsed_taip)), False)
@@ -2169,15 +2187,6 @@ class FunctionResolver:
                 return (ResolvedMatchWord(token, arg, by_ref, resolved_cases, parameters, returns), match_diverges)
             case other:
                 assert_never(other)
-
-    def resolve_words(self, context: ResolveWordContext, stack: Stack, parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
-        diverges = False
-        words: List[ResolvedWord] = []
-        for parsed_word in parsed_words:
-            (word, word_diverges) = self.resolve_word(context.with_reachable(not diverges), stack, parsed_word)
-            diverges = diverges or word_diverges
-            words.append(word)
-        return (words, diverges)
 
     def resolve_intrinsic(self, token: Token, stack: Stack, intrinsic: IntrinsicType, generic_arguments: List[ResolvedType]) -> ResolvedIntrinsicWord:
         match intrinsic:
@@ -2790,6 +2799,7 @@ class IfWord:
     returns: List[Type]
     if_words: List['Word']
     else_words: List['Word']
+    diverges: bool
 
 @dataclass
 class IndirectCallWord:
@@ -3223,12 +3233,12 @@ class Monomizer:
                 return LoadWord(token, monomized_taip, offset)
             case ResolvedCastWord(token, source, taip):
                 return CastWord(token, self.monomize_type(source, generics), self.monomize_type(taip, generics))
-            case ResolvedIfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words):
+            case ResolvedIfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words, diverges):
                 if_words = self.monomize_words(resolved_if_words, generics, copy_space_offset, max_struct_ret_count)
                 else_words = self.monomize_words(resolved_else_words, generics, copy_space_offset, max_struct_ret_count)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
-                return IfWord(token, parameters, returns, if_words, else_words)
+                return IfWord(token, parameters, returns, if_words, else_words, diverges)
             case ResolvedFunRefWord(call):
                 call_word = self.monomize_call_word(call, copy_space_offset, max_struct_ret_count, generics)
                 table_index = self.insert_function_into_table(call_word.function)
@@ -3585,7 +3595,7 @@ class WatGenerator:
         else:
             self.write(f"${name}")
 
-    def write_word(self, module: int, locals: Dict[LocalId, Local], word: Word) -> None:
+    def write_word(self, module: int, locals: Dict[LocalId, Local], word: Word):
         match word:
             case NumberWord(token):
                 self.write_line(f"i32.const {token.lexeme}")
@@ -3875,7 +3885,7 @@ class WatGenerator:
                 self.write_line(")")
                 self.dedent()
                 self.write_line(")")
-            case IfWord(_, parameters, returns, if_words, else_words):
+            case IfWord(_, parameters, returns, if_words, else_words, diverges):
                 self.write_indent()
                 self.write("(if")
                 self.write_parameters(parameters)
@@ -3895,6 +3905,8 @@ class WatGenerator:
                     self.write_line(")")
                 self.dedent()
                 self.write_line(")")
+                if diverges:
+                    self.write_line("unreachable")
             case StructWord(_, taip, words, copy_space_offset):
                 self.write_indent()
                 self.write(f";; make {format_type(taip)}\n")
@@ -3983,6 +3995,7 @@ class WatGenerator:
             case other:
                 print(other, file=sys.stderr)
                 assert_never(other)
+        return False
 
     def write_set(self, local_id: LocalId, locals: Dict[LocalId, Local], fields: List[FieldAccess]):
         local = locals[local_id]
