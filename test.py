@@ -28,7 +28,17 @@ class CompilerOutput:
     stdout: str
     stderr: str
 
-def run_compiler(args: List[str], stdin: str):
+already_compiled = False
+def run_native_compiler(args: List[str], stdin: str):
+    global already_compiled
+    if not already_compiled:
+        already_compiled = True
+        if subprocess.run(f"python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
+            exit(1)
+    compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat", "-"] + args, input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
+
+def run_bootstrap_compiler(args: List[str], stdin: str):
     # compiler = subprocess.run(["python", "./bootstrap.py", "-"] + args, input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
     try:
@@ -39,7 +49,7 @@ def run_compiler(args: List[str], stdin: str):
     except ResolverException as e:
         return CompilerOutput(1, "", e.display().strip())
 
-tests = glob.glob(sys.argv[1] if len(sys.argv) > 1 else './tests/*.watim')
+tests = glob.glob(sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "--native" else './tests/*.watim')
 failed = False
 for path in tests:
     test = parse_test_file(path)
@@ -51,7 +61,10 @@ for path in tests:
     if test["compiler-stdin"] is None:
         print(f"{path}: compiler-stdin ist missing", file=sys.stderr)
         continue
-    compiler = run_compiler(test['compiler-args'] if test['compiler-args'] is not None else [], test['compiler-stdin'])
+    if "--native" in sys.argv:
+        compiler = run_native_compiler(test['compiler-args'] if test['compiler-args'] is not None else [], test['compiler-stdin'])
+    else:
+        compiler = run_bootstrap_compiler(test['compiler-args'] if test['compiler-args'] is not None else [], test['compiler-stdin'])
     if test['compiler-status'] is not None and compiler.returncode != test['compiler-status']:
         print(f"{path}: expected different compiler status:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)

@@ -92,28 +92,28 @@ fn Str-slice(self: .Str, index: i32, len: i32) -> Str {
         1 "Str-slice Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $self.ptr $index + $len Str-new
+    $self.ptr $index + $len make Str
 }
 fn Str-eq(self: .Str, other: .Str) -> bool {
     $self ~ Str-unpack $other ~ Str-unpack str-eq
 }
 fn Str-drop(self: Str, n: i32) -> Str {
     $n $self.len CORE:min #n
-    $self.ptr $n + 
-    $self.len $n - 
-    Str-new
+    $self.ptr $n +
+    $self.len $n -
+    make Str
 }
 fn Str-drop-end(self: Str, n: i32) -> Str {
     $n $self.len CORE:min #n
     $self.ptr
     $self.len $n -
-    Str-new
+    make Str
 }
 fn Str-empty() -> Str {
-    0 !.i32 0 Str-new
+    0 !.i32 0 make Str
 }
 fn Str-copy-into(arena: .Arena:Arena, self: Str) -> Str {
-    $arena $self.ptr $self.len Arena:push-bytes $self.len Str-new
+    $arena $self.ptr $self.len Arena:push-bytes $self.len make Str
 }
 fn Str-print(fd: i32, self: .Str) {
     $fd $self.ptr $self.len IO:write-all IO:check

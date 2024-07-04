@@ -1,20 +1,43 @@
 [== Stdin Compiler ==]
-[== Status Compiler ==]
-0
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+struct A {
+    a: i32
+}
+fn main "_start" () {
+    4 make A
+    3 make A
+    = if { 1 proc_exit } else { 0 proc_exit }
+}
 [== Stdout Compiler ==]
 (module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
 	(memory 1 65536)
 	(export "memory" (memory 0))
 	(table funcref (elem))
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		i32.const 4
+		;; make A
+		i32.const 3
+		;; make A
+		i32.eq
+		(if
+			(then
+				i32.const 1
+				call $0:proc_exit
+			)
+			(else
+				i32.const 0
+				call $0:proc_exit
+			)
+		)
+	)
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
 	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
 	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
 )
-[== Stderr Compiler ==]
 [== Status ==]
 0
-[== Stdout ==]
-[== Stderr ==]
 

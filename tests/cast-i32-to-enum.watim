@@ -1,0 +1,54 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+variant Enum {
+	case A
+	case B
+	case C
+}
+fn main "_start" () {
+	2 !Enum match {
+		case A -> { 42 }
+		case B -> { 43 }
+		case C -> { 44 }
+	} proc_exit
+}
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		i32.const 2
+		;; cast to Enum
+		;; match on Enum
+		call $intrinsic:dupi32 i32.const 0 i32.eq (if (param i32) (result i32)
+		(then
+			drop
+			i32.const 42
+		)
+		(else call $intrinsic:dupi32 i32.const 1 i32.eq (if (param i32) (result i32)
+		(then
+			drop
+			i32.const 43
+		)
+		(else call $intrinsic:dupi32 i32.const 2 i32.eq (if (param i32) (result i32)
+		(then
+			drop
+			i32.const 44
+		)
+		(else unreachable))))))
+		call $0:proc_exit
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)
+[== Status ==]
+44
+
