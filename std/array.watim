@@ -2,8 +2,8 @@ import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./arena.watim" as A
 import "./fmt.watim" as FMT
-import "./byte-slice.watim" as ByteSlice
-import "./byte-array.watim" as ByteArray
+import "./byte-slice.watim" as ByteSlice (ByteSlice)
+import "./byte-array.watim" as ByteArray (ByteArray)
 
 struct Array<T> {
     ptr: .T
@@ -190,12 +190,12 @@ fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, 
         uninit<T> flip 0 1 =
     }
 }
-fn join-with(arena: .A:Arena, self: .Array<ByteSlice:T>, del-ptr: .i32, del-len: i32) -> ByteArray:T {
+fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i32, del-len: i32) -> ByteArray {
     ByteArray:new @out
     0 @i
     loop {
         $i $self.len = if { break }
-        $arena &out $self $i get<ByteSlice:T> ~ ByteSlice:unpack ByteArray:push
+        $arena &out $self $i get<ByteSlice> ~ ByteSlice:unpack ByteArray:push
         $i 1 + $self.len /= if {
             $arena &out $del-ptr $del-len ByteArray:push
         }

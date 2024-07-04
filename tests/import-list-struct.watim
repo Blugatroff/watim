@@ -1,0 +1,9 @@
+[== Stdin Compiler ==]
+import "./std/core.watim" as Core (I32)
+
+fn main "_start" () {
+    uninit<I32> drop
+}
+[== Status Compiler ==]
+0
+

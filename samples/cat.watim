@@ -1,15 +1,15 @@
 import "../std/args.watim" as Args
-import "../std/byte-slice.watim" as ByteSlice
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/core.watim" as Core
-import "../std/arena.watim" as Arena
+import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array
 
 fn main "_start" () {
     Arena:init-temp
 
-    0 !.Arena:Arena Arena:temp @temp @save
+    0 !.Arena Arena:temp @temp @save
     $temp Args:get-args @args
 
     $args.len 1 le if {
@@ -23,7 +23,7 @@ fn main "_start" () {
     1 @arg-index
     loop {
         $args.len $arg-index = if { break }
-        &fs &args $arg-index Array:get<ByteSlice:T> ~ ByteSlice:unpack
+        &fs &args $arg-index Array:get<ByteSlice> ~ ByteSlice:unpack
         1 1 = 0 1 = FS:create-rights
         0 1 = 0 1 = FS:create-rights
         FS:open-file IO:check @fd

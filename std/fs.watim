@@ -1,10 +1,10 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./arena.watim" as Arena
-import "./array.watim" as Array
+import "./arena.watim" as Arena (Arena)
+import "./array.watim" as Array (Array)
 import "./bytes.watim" as Bytes
-import "./byte-slice.watim" as ByteSlice
-import "./byte-array.watim" as ByteArray
+import "./byte-slice.watim" as ByteSlice (ByteSlice)
+import "./byte-array.watim" as ByteArray (ByteArray)
 import "./util.watim" as Util
 
 extern "wasi_snapshot_preview1" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
@@ -30,16 +30,16 @@ fn create-rights(read: bool, write: bool) -> i64 {
 
 struct PreopenedFd {
     fd: i32
-    path: ByteSlice:T
+    path: ByteSlice
 }
 struct FileSystem {
-    preopened-fds: Array:Array<PreopenedFd>
+    preopened-fds: Array<PreopenedFd>
 }
-fn FileSystem-new(preopened-fds: Array:Array<PreopenedFd>) -> FileSystem {
+fn FileSystem-new(preopened-fds: Array<PreopenedFd>) -> FileSystem {
     $preopened-fds make FileSystem
 }
 
-fn init(arena: .Arena:Arena) -> FileSystem, i32 {
+fn init(arena: .Arena) -> FileSystem, i32 {
     0 @code
     3 @fd
     $arena Arena:save @restore
@@ -63,7 +63,7 @@ fn init(arena: .Arena:Arena) -> FileSystem, i32 {
         $code 0 /= if {
             break
         }
-        $buf $len make ByteSlice:T @path
+        $buf $len make ByteSlice @path
         $temp &fds $fd $path make PreopenedFd Array:push<PreopenedFd>
         $fd 1 + #fd
     }
@@ -108,7 +108,7 @@ fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
 }
 
 
-fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> ByteArray:T {
+fn str-replace(arena: .Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> ByteArray {
     ByteArray:new @new
     $ptr $len $target-ptr $target-len Bytes:find-seq if {
         @index
@@ -131,7 +131,7 @@ fn str-replace(arena: .Arena:Arena, ptr: .i32, len: i32, target-ptr: .i32, targe
     }
 }
 
-fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
+fn normalize(arena: .Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $arena Arena:temp @temp @temp-save
     ByteArray:new @out
 
@@ -145,20 +145,20 @@ fn normalize(arena: .Arena:Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $temp &out ByteArray:unpack "./." "." str-replace #out
 
     $temp &out ByteArray:to-slice "/" drop load8 Util:split-bytes @splits
-    Array:new<ByteSlice:T> @outsplits
+    Array:new<ByteSlice> @outsplits
     0 @i
     loop {
         $i $splits.len = if { break }
         block {
             $i 1 + $splits.len /= if {
-                &splits $i 1 + Array:get<ByteSlice:T> ~ ByteSlice:unpack ".." Bytes:eq 
-                &splits $i Array:get<ByteSlice:T> ~ ByteSlice:unpack "." Bytes:eq not and
-                &splits $i Array:get<ByteSlice:T> ~ ByteSlice:unpack ".." Bytes:eq not and
+                &splits $i 1 + Array:get<ByteSlice> ~ ByteSlice:unpack ".." Bytes:eq 
+                &splits $i Array:get<ByteSlice> ~ ByteSlice:unpack "." Bytes:eq not and
+                &splits $i Array:get<ByteSlice> ~ ByteSlice:unpack ".." Bytes:eq not and
                 if {
                     $i 1 + #i break
                 }
             }
-            $temp &outsplits &splits $i Array:get<ByteSlice:T> ~ Array:push<ByteSlice:T>
+            $temp &outsplits &splits $i Array:get<ByteSlice> ~ Array:push<ByteSlice>
         }
         $i 1 + #i
     }
@@ -182,7 +182,7 @@ fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting
     }
 }
 
-fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteArray:T, i32 { block {
+fn read-file(arena: .Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteArray, i32 { block {
     $fs
     $path $path-len
     0 0 = 0 1 = create-rights
@@ -201,7 +201,7 @@ fn read-file(arena: .Arena:Arena, fs: .FileSystem, path: .i32, path-len: i32) ->
     }
 } }
 
-fn read-all(arena: .Arena:Arena, file: i32) -> ByteArray:T, i32 {
+fn read-all(arena: .Arena, file: i32) -> ByteArray, i32 {
     64 @buf-size
     $arena Arena:temp @temp @temp-save
     $temp $buf-size Arena:alloc-bytes @buf

@@ -1,0 +1,11 @@
+[== Stdin Compiler ==]
+import "./std/core.watim" as Core (raw_exit)
+
+fn main "_start" () {
+    42 raw_exit
+}
+[== Status Compiler ==]
+0
+[== Status ==]
+42
+

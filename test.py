@@ -56,8 +56,7 @@ for path in tests:
         print(f"{path}: expected different compiler status:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)
         print(f"Actual:\n{compiler.returncode}", file=sys.stderr)
-        if test['compiler-stderr'] is not None:
-            print(f"compiler-stderr was: {compiler.stderr}", file=sys.stderr)
+        print(f"compiler-stderr was: {compiler.stderr}", file=sys.stderr)
         continue
     if test['compiler-stderr'] is not None and compiler.stderr != test['compiler-stderr'].strip():
         print(f"{path}: expected different compiler stderr:", file=sys.stderr)

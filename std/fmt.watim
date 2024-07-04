@@ -1,7 +1,7 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./byte-array.watim" as ByteArray
-import "./arena.watim" as A
+import "./byte-array.watim" as ByteArray (ByteArray)
+import "./arena.watim" as Arena (Arena)
 
 struct Formatter {
     indent-level: i32
@@ -55,8 +55,8 @@ fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
 }
 
 struct FormatterIntoStringUserData {
-    string: .ByteArray:T
-    arena: .A:Arena
+    string: .ByteArray
+    arena: .Arena
 }
 
 fn append-string(user-data: i32, ptr: .i32, len: i32) {
@@ -64,8 +64,8 @@ fn append-string(user-data: i32, ptr: .i32, len: i32) {
     $user-data.arena $user-data.string $ptr $len ByteArray:push
 }
 
-fn Formatter-into-string(arena: .A:Arena, target: .ByteArray:T) -> Formatter {
-    $arena A:alloc<FormatterIntoStringUserData> @user-data
+fn Formatter-into-string(arena: .Arena, target: .ByteArray) -> Formatter {
+    $arena Arena:alloc<FormatterIntoStringUserData> @user-data
     $arena #user-data.arena
     $target #user-data.string
     \append-string $user-data !i32 Formatter-new

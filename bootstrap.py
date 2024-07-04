@@ -433,6 +433,7 @@ class ParsedNamedType:
 class ParsedImport:
     file_path: Token
     module_qualifier: Token
+    items: List[Token]
 
 @dataclass
 class ParsedFunctionSignature:
@@ -566,7 +567,18 @@ class Parser:
                 if module_qualifier is None or module_qualifier.ty != TokenType.IDENT:
                     self.abort("Expected an identifier as module qualifier")
 
-                imports.append(ParsedImport(file_path, module_qualifier))
+                paren = self.peek(skip_ws=True)
+                items = []
+                if paren is not None and paren.ty == TokenType.LEFT_PAREN:
+                    self.advance(skip_ws=True) # skip LEFT_PAREN
+                    while True:
+                        item = self.advance(skip_ws=True)
+                        if item is not None and item.ty == TokenType.RIGHT_PAREN:
+                            break
+                        if item is None:
+                            self.abort("expected a function or type to import")
+                        items.append(item)
+                imports.append(ParsedImport(file_path, module_qualifier, items))
                 continue
 
             if token.ty == TokenType.FN:
@@ -1052,13 +1064,16 @@ class Parser:
         self.abort("Expected type")
 
 @dataclass
+class ImportItem:
+    name: str
+    handle: 'ResolvedFunctionHandle | ResolvedExternHandle | ResolvedStructHandle'
+
+@dataclass
 class Import:
     file_path: Token
     qualifier: Token
     module: int
-
-    def __str__(self) -> str:
-        return f"Import(file_path={str(self.file_path)}, qualifier={str(self.qualifier)})"
+    items: List[ImportItem]
 
 @dataclass
 class ResolvedPtrType:
@@ -2487,6 +2502,10 @@ class ModuleResolver:
         for index, extern in enumerate(self.externs):
             if extern.signature.name.lexeme == name.lexeme:
                 return ResolvedExternHandle(self.id, index)
+        for imp in self.imports:
+            for item in imp.items:
+                if item.name == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
+                    return item.handle
         self.abort(name, f"function {name.lexeme} not found")
 
     def resolve_memory(self, memory: ParsedMemory) -> ResolvedMemory:
@@ -2501,7 +2520,32 @@ class ModuleResolver:
         else:
             path = os.path.normpath(imp.file_path.lexeme[1:-1])
         imported_module = self.resolved_modules_by_path[path]
-        return Import(imp.file_path, imp.module_qualifier, imported_module.id)
+        resolved_items: List[ImportItem] = []
+        for item in imp.items:
+            resolved_item = None
+            for struct_id, type_definition in enumerate(imported_module.type_definitions):
+                if type_definition.name.lexeme == item.lexeme:
+                    resolved_item = ImportItem(item.lexeme, ResolvedStructHandle(imported_module.id, struct_id))
+                    break
+            if resolved_item is not None:
+                resolved_items.append(resolved_item)
+                break
+            for fun_id, function in enumerate(imported_module.functions):
+                if function.signature.name.lexeme == item.lexeme:
+                    resolved_item = ImportItem(item.lexeme, ResolvedFunctionHandle(imported_module.id, fun_id))
+                    break
+            if resolved_item is not None:
+                resolved_items.append(resolved_item)
+                break
+            for extern_id, extern in enumerate(imported_module.externs):
+                if extern.signature.name.lexeme == item.lexeme:
+                    resolved_item = ImportItem(item.lexeme, ResolvedExternHandle(imported_module.id, extern_id))
+                    break
+            if resolved_item is not None:
+                resolved_items.append(resolved_item)
+                break
+            self.abort(item, "not found")
+        return Import(imp.file_path, imp.module_qualifier, imported_module.id, resolved_items)
 
     def resolve_named_type(self, named_type: ParsedNamedType) -> ResolvedNamedType:
         return ResolvedNamedType(named_type.name, self.resolve_type(named_type.taip))
@@ -2541,6 +2585,10 @@ class ModuleResolver:
         for index, struct in enumerate(self.module.type_definitions):
             if struct.name.lexeme == name.lexeme:
                 return ResolvedStructHandle(self.id, index)
+        for imp in self.imports:
+            for item in imp.items:
+                if item.name == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
+                    return item.handle
         self.abort(name, f"struct {name.lexeme} not found")
 
     def resolve_type_definition(self, definition: ParsedTypeDefinition) -> ResolvedTypeDefinition:
