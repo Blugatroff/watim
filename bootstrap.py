@@ -1818,20 +1818,33 @@ class Stack:
     def __getitem__(self, index: int) -> ResolvedType:
         return self.stack[index]
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Stack):
+    def __eq__(self, b: object) -> bool:
+        if not isinstance(b, Stack):
             return False
-        if len(self.stack) != len(other.stack):
-            return False
-        if len(self.negative) != len(other.negative):
-            return False
-        for i in range(len(self.stack)):
-            if not resolved_type_eq(self.stack[i], other.stack[i]):
+        a = self
+        ia = len(a.stack)
+        ib = len(b.stack)
+        while True:
+            while ia == 0 and a.parent is not None:
+                a = a.parent
+                ia = len(a.stack)
+            while ib == 0 and b.parent is not None:
+                b = b.parent
+                ib = len(b.stack)
+            if (a is None) ^ (b is None):
                 return False
-        for i in range(len(self.negative)):
-            if not resolved_type_eq(self.negative[i], other.negative[i]):
+            if a is None and b is None:
+                return True
+            a_end = ia == 0 and a.parent is None
+            b_end = ib == 0 and b.parent is None
+            if a_end ^ b_end:
                 return False
-        return True
+            if a_end and b_end:
+                return True
+            if not resolved_type_eq(a.stack[ia - 1], b.stack[ib - 1]):
+                return False
+            ib -= 1
+            ia -= 1
 
     def __str__(self) -> str:
         return f"Stack(drained={str(self.drained)}, parent={self.parent}, stack={listtostr(self.stack)}, negative={listtostr(self.negative)})"
@@ -1949,7 +1962,8 @@ class FunctionResolver:
                     returns = []
                 if not if_stack.drained and not else_stack.drained:
                     if if_stack != else_stack:
-                        self.abort(word.token, "Type mismatch in if branches")
+                        error_message = f"stack mismatch between if and else branch:\n\tif   {listtostr(if_stack.stack)}\n\telse {listtostr(else_stack.stack)}"
+                        self.abort(word.token, error_message)
                     stack.apply(if_stack)
                 elif if_stack.drained and else_stack.drained:
                     stack.drain()

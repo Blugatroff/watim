@@ -1,0 +1,13 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+fn foo() -> i32 {
+	9 1 0 = if { drop 3 } else { }
+}
+fn main "_start" () {
+	foo proc_exit
+}
+[== Status Compiler ==]
+0
+[== Status ==]
+9
+

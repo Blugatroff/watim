@@ -1,0 +1,11 @@
+[== Stdin Compiler ==]
+fn foo() -> i32 {
+	0 1 = if { 42 } else { 1 1 = 43 }
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:2:8 stack mismatch between if and else branch:
+	if   [i32]
+	else [bool, i32]
+
