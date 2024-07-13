@@ -1254,14 +1254,16 @@ class LocalId:
     shadow: int
 
 @dataclass
-class InitWord:
+class ResolvedInitWord:
     name: Token
     local_id: LocalId
+    taip: ResolvedType
 
 @dataclass
 class ResolvedGetWord:
     token: Token
     local_id: LocalId | GlobalId
+    var_taip: ResolvedType
     fields: List[ResolvedFieldAccess]
     taip: ResolvedType
 
@@ -1562,7 +1564,7 @@ class ResolvedIntrinsicUninit:
 
 ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit
 
-ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | InitWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | InitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord
+ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord
 
 @dataclass
 class ResolvedFunction:
@@ -2029,11 +2031,11 @@ class FunctionResolver:
                 self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_word, False)
             case ParsedGetWord(token, fields):
-                (var_type, local) = self.resolve_var_name(context.env, token)
-                resolved_fields = self.resolve_fields(var_type, fields)
-                resolved_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
+                (var_taip, local) = self.resolve_var_name(context.env, token)
+                resolved_fields = self.resolve_fields(var_taip, fields)
+                resolved_taip = var_taip if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 stack.append(resolved_taip)
-                return (ResolvedGetWord(token, local, resolved_fields, resolved_taip), False)
+                return (ResolvedGetWord(token, local, var_taip, resolved_fields, resolved_taip), False)
             case ParsedInitWord(name):
                 if context.struct_context is not None and name.lexeme in context.struct_context.fields:
                     field = context.struct_context.fields.pop(name.lexeme)
@@ -2045,12 +2047,12 @@ class FunctionResolver:
                     self.abort(name, "expected a non-empty stack")
                 named_taip = ResolvedNamedType(name, taip)
                 local_id = context.env.insert(ResolvedInitLocal(named_taip.name, named_taip.taip))
-                return (InitWord(name, local_id), False)
+                return (ResolvedInitWord(name, local_id, taip), False)
             case ParsedRefWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
-                if not isinstance(local, GlobalId):
-                    context.env.mark_var_as_reffed(local)
                 resolved_fields = self.resolve_fields(var_type, fields)
+                if not isinstance(local, GlobalId) and not isinstance(var_type, ResolvedPtrType):
+                    context.env.mark_var_as_reffed(local)
                 stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
             case ParsedSetWord(token, fields):
@@ -2768,13 +2770,13 @@ def format_type(a: Type) -> str:
 class ParameterLocal:
     name: Token
     taip: Type
-    _lives_on_stack: bool
+    _lives_in_memory: bool
 
     def size(self) -> int:
         return self.taip.size()
 
-    def lives_on_stack(self) -> bool:
-        return self._lives_on_stack
+    def lives_in_memory(self) -> bool:
+        return self._lives_in_memory
 
 @dataclass
 class MemoryLocal:
@@ -2785,20 +2787,20 @@ class MemoryLocal:
     def size(self) -> int:
         return self.annotated_size if self.annotated_size is not None else self.taip.size()
 
-    def lives_on_stack(self) -> bool:
+    def lives_in_memory(self) -> bool:
         return True
 
 @dataclass
 class InitLocal:
     name: Token
     taip: Type
-    _lives_on_stack: bool
+    _lives_in_memory: bool
 
     def size(self) -> int:
         return self.taip.size()
 
-    def lives_on_stack(self) -> bool:
-        return self._lives_on_stack
+    def lives_in_memory(self) -> bool:
+        return self._lives_in_memory
 
 Local = ParameterLocal | MemoryLocal | InitLocal
 
@@ -2922,7 +2924,9 @@ class FieldAccess:
 @dataclass
 class GetFieldWord:
     token: Token
-    fields: List[FieldAccess]
+    source_taip: Type
+    target_taip: Type
+    loads: List[int]
     on_ptr: bool
     copy_space_offset: int | None
 
@@ -2930,21 +2934,32 @@ class GetFieldWord:
 class SetWord:
     token: Token
     local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
+    target_taip: Type
+    loads: List[int]
+    var_lives_in_memory: bool
+
+@dataclass
+class InitWord:
+    token: Token
+    local_id: LocalId
+    taip: Type
+    var_lives_in_memory: bool
 
 @dataclass
 class GetWord:
     token: Token
     local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
+    var_taip: Type
+    target_taip: Type
+    loads: List[int]
     copy_space_offset: int | None
-    lives_on_stack: bool
+    var_lives_in_memory: bool
 
 @dataclass
 class RefWord:
     token: Token
     local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
+    loads: List[int]
 
 @dataclass
 class IntrinsicAdd:
@@ -3041,7 +3056,8 @@ class IntrinsicUninit:
 class StoreWord:
     token: Token
     local: LocalId | GlobalId
-    fields: List[FieldAccess]
+    taip: Type
+    loads: List[int]
 
 @dataclass
 class StructWord:
@@ -3085,7 +3101,7 @@ class MatchWord:
 
 IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit
 
-Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord
+Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord
 
 @dataclass
 class Module:
@@ -3101,6 +3117,7 @@ class Monomizer:
     modules: Dict[int, ResolvedModule]
     type_definitions: Dict[int, Dict[int, List[Tuple[List[Type], TypeDefinition]]]] = field(default_factory=dict)
     externs: Dict[int, List[Extern]] = field(default_factory=dict)
+    memories: Dict[int, List[Memory]] = field(default_factory=dict)
     functions: Dict[int, Dict[int, Function]] = field(default_factory=dict)
     function_table: Dict[FunctionHandle | ExternHandle, int] = field(default_factory=dict)
     struct_word_copy_space_offset: int = 0
@@ -3110,16 +3127,18 @@ class Monomizer:
             module = self.modules[id]
             functions: List[Function] = []
             self.externs[id] = list(map(self.monomize_extern, module.externs))
+            self.memories[id] = list(map(lambda m: self.monomize_memory(m, []), module.memories))
             for index, function in enumerate(module.functions):
                 if function.signature.export_name is not None:
                     assert(len(function.signature.generic_parameters) == 0)
                     signature = self.monomize_concrete_signature(function.signature)
-                    memories = list(map(lambda m: self.monomize_memory(m, []), function.memories))
+                    function_memories = list(map(lambda m: self.monomize_memory(m, []), function.memories))
                     locals = list(map(lambda t: self.monomize_named_type(t, []), function.locals))
                     copy_space_offset = Ref(0)
                     max_struct_ret_count = Ref(0)
-                    body = Lazy(lambda: Body(self.monomize_words(function.body.words, [], copy_space_offset, max_struct_ret_count, function.body.locals), copy_space_offset.value, max_struct_ret_count.value, self.monomize_locals(function.body.locals, [])))
-                    f = ConcreteFunction(signature, memories, locals, body)
+                    monomized_locals = self.monomize_locals(function.body.locals, [])
+                    body = Lazy(lambda: Body(self.monomize_words(function.body.words, [], copy_space_offset, max_struct_ret_count, monomized_locals), copy_space_offset.value, max_struct_ret_count.value, monomized_locals))
+                    f = ConcreteFunction(signature, function_memories, locals, body)
                     if id not in self.functions:
                         self.functions[id] = {}
                     self.functions[id][index] = f
@@ -3155,8 +3174,8 @@ class Monomizer:
                 self.functions[module_id] = {}
             module = self.modules[module_id]
             externs: List[Extern] = self.externs[module_id]
+            memories: List[Memory] = self.memories[module_id]
             type_definitions: Dict[int, List[TypeDefinition]] = { k: [t[1] for t in v] for k, v in self.type_definitions[module_id].items() }
-            memories = list(map(lambda m: self.monomize_memory(m, []), module.memories))
             mono_modules[module_id] = Module(module_id, type_definitions, externs, memories, self.functions[module_id], self.modules[module_id].data)
         return self.function_table, mono_modules
 
@@ -3166,15 +3185,15 @@ class Monomizer:
             taip = self.monomize_type(local.taip, generics)
             match local:
                 case ResolvedParameterLocal(name, _, was_reffed):
-                    lives_on_stack = was_reffed or not taip.can_live_in_reg()
-                    res[id] = ParameterLocal(local.name, taip, lives_on_stack)
+                    lives_in_memory = was_reffed or not taip.can_live_in_reg()
+                    res[id] = ParameterLocal(local.name, taip, lives_in_memory)
                     continue
                 case ResolvedMemoryLocal(name):
                     res[id] = MemoryLocal(local.name, taip, local.size)
                     continue
                 case ResolvedInitLocal(name, _, was_reffed):
-                    lives_on_stack = was_reffed or not taip.can_live_in_reg()
-                    res[id] = InitLocal(local.name, taip, lives_on_stack)
+                    lives_in_memory = was_reffed or not taip.can_live_in_reg()
+                    res[id] = InitLocal(local.name, taip, lives_in_memory)
                     continue
                 case other:
                     assert_never(other)
@@ -3193,7 +3212,8 @@ class Monomizer:
         locals = list(map(lambda t: self.monomize_named_type(t, generics), f.locals))
         copy_space_offset = Ref(0)
         max_struct_ret_count = Ref(0)
-        body = Lazy(lambda: Body(self.monomize_words(f.body.words, generics, copy_space_offset, max_struct_ret_count, f.body.locals), copy_space_offset.value, max_struct_ret_count.value, self.monomize_locals(f.body.locals, generics)))
+        monomized_locals = self.monomize_locals(f.body.locals, generics)
+        body = Lazy(lambda: Body(self.monomize_words(f.body.words, generics, copy_space_offset, max_struct_ret_count, monomized_locals), copy_space_offset.value, max_struct_ret_count.value, monomized_locals))
         concrete_function = ConcreteFunction(signature, memories, locals, body)
         if function.module not in self.functions:
             self.functions[function.module] = {}
@@ -3217,10 +3237,10 @@ class Monomizer:
     def monomize_memory(self, memory: ResolvedMemory, generics: List[Type]) -> Memory:
         return Memory(self.monomize_named_type(memory.taip, generics), memory.size)
 
-    def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, ResolvedLocal]) -> List[Word]:
+    def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local]) -> List[Word]:
         return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count, locals), words))
 
-    def monomize_word(self, word: ResolvedWord, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, ResolvedLocal]) -> Word:
+    def monomize_word(self, word: ResolvedWord, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local]) -> Word:
         match word:
             case NumberWord():
                 return word
@@ -3234,28 +3254,37 @@ class Monomizer:
                 copy_space_offset.value += sum(taip.size() for taip in monomized_function_taip.returns)
                 max_struct_ret_count.value = max(max_struct_ret_count.value, len(monomized_function_taip.returns))
                 return IndirectCallWord(token, monomized_function_taip, local_copy_space_offset)
-            case ResolvedGetWord(token, local, resolved_fields, taip):
+            case ResolvedGetWord(token, local_id, var_taip, resolved_fields, taip):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 monomized_taip = self.monomize_type(taip, generics)
-                local_was_reffed = isinstance(local, GlobalId) or locals[local].was_reffed
-                lives_on_stack = not monomized_taip.can_live_in_reg() or local_was_reffed
-                if lives_on_stack:
+                if not monomized_taip.can_live_in_reg():
                     offset = copy_space_offset.value
                     copy_space_offset.value += monomized_taip.size()
                 else:
                     offset = None
-                return GetWord(token, local, fields, offset, lives_on_stack)
-            case InitWord():
-                return word
+                loads = determine_loads(fields)
+                monomized_var_taip = self.monomize_type(var_taip, generics)
+                target_taip = fields[-1].target_taip if len(fields) != 0 else monomized_var_taip
+                return GetWord(token, local_id, monomized_var_taip, target_taip, loads, offset, self.does_var_live_in_memory(local_id, locals))
+            case ResolvedInitWord(token, local_id, taip):
+                return InitWord(token, local_id, self.monomize_type(taip, generics), self.does_var_live_in_memory(local_id, locals))
             case ResolvedSetWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
-                return SetWord(token, local_id, fields)
+                loads = determine_loads(fields)
+                monomized_taip = fields[-1].target_taip if len(fields) != 0 else self.lookup_var_taip(local_id, locals)
+                return SetWord(token, local_id, monomized_taip, loads, self.does_var_live_in_memory(local_id, locals))
             case ResolvedRefWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
-                return RefWord(token, local_id, fields)
+                loads = determine_loads(fields)
+                return RefWord(token, local_id, loads)
             case ResolvedStoreWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
-                return StoreWord(token, local_id, fields)
+                loads = determine_loads(fields)
+                monomized_taip = fields[-1].target_taip if len(fields) != 0 else self.lookup_var_taip(local_id, locals)
+                if len(fields) == 0 and isinstance(local_id, LocalId):
+                    assert(isinstance(monomized_taip, PtrType))
+                    monomized_taip = monomized_taip.child
+                return StoreWord(token, local_id, monomized_taip, loads)
             case ResolvedIntrinsicAdd(token, taip):
                 return IntrinsicAdd(token, self.monomize_addable_type(taip, generics))
             case ResolvedIntrinsicSub(token, taip):
@@ -3349,7 +3378,9 @@ class Monomizer:
                 if not on_ptr and not target_taip.can_live_in_reg():
                     offset = copy_space_offset.value
                     copy_space_offset.value += target_taip.size()
-                return GetFieldWord(token, fields, on_ptr, offset)
+                source_taip = fields[0].source_taip
+                loads = determine_loads(fields)
+                return GetFieldWord(token, source_taip, target_taip, loads, on_ptr, offset)
             case ResolvedStructWord(token, taip, resolved_words):
                 monomized_taip = self.monomize_type(taip, generics)
                 offset = copy_space_offset.value
@@ -3396,6 +3427,14 @@ class Monomizer:
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, parameters, returns)
             case other:
                 assert_never(other)
+
+    def lookup_var_taip(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> Type:
+        if isinstance(local_id, LocalId):
+            return locals[local_id].taip
+        return self.memories[local_id.module][local_id.index].taip.taip
+
+    def does_var_live_in_memory(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> bool:
+        return isinstance(local_id, GlobalId) or locals[local_id].lives_in_memory()
 
     def insert_function_into_table(self, function: FunctionHandle | ExternHandle) -> int:
         if function not in self.function_table:
@@ -3529,6 +3568,23 @@ class Monomizer:
 def align_to(n: int, to: int) -> int:
     return n + (to - (n % to)) * ((n % to) > 0)
 
+def determine_loads(fields: List[FieldAccess]) -> List[int]:
+    loads: List[int] = []
+    i = 0
+    while i < len(fields):
+        taip = fields[i].source_taip
+        assert(isinstance(taip, StructType) or (isinstance(taip, PtrType) and isinstance(taip.child, StructType)))
+
+        offset = 0
+        while i < len(fields): # loop for every field access which can be reduced to one load with offset
+            field = fields[i]
+            offset += field.offset
+            i += 1
+            if not isinstance(field.target_taip, StructType):
+                break
+        loads.append(offset)
+    return loads
+
 @dataclass
 class WatGenerator:
     modules: Dict[int, Module]
@@ -3631,7 +3687,7 @@ class WatGenerator:
             self.write_indent()
             self.write("(local $locl-copy-spac:e i32)\n")
 
-        uses_stack = body.locals_copy_space != 0 or any(local.lives_on_stack() for local in function.body.get().locals.values())
+        uses_stack = body.locals_copy_space != 0 or any(local.lives_in_memory() for local in function.body.get().locals.values())
         if uses_stack:
             self.write_indent()
             self.write("(local $stac:k i32)\n")
@@ -3660,8 +3716,13 @@ class WatGenerator:
 
     def write_structs(self, locals: Dict[LocalId, Local]) -> None:
         for local_id, local in locals.items():
-            if not isinstance(local, ParameterLocal) and local.lives_on_stack():
+            if not isinstance(local, ParameterLocal) and local.lives_in_memory():
                 self.write_mem(local.name.lexeme, local.taip.size(), local_id.scope, local_id.shadow)
+            if isinstance(local, ParameterLocal) and local.lives_in_memory() and local.taip.can_live_in_reg():
+                self.write_indent()
+                self.write(f"global.get $stac:k global.get $stac:k local.get ${local.name.lexeme} ")
+                self.write_type(local.taip)
+                self.write(f".store local.tee ${local.name.lexeme} i32.const {local.taip.size()} i32.add global.set $stac:k\n")
 
     def write_locals(self, body: Body) -> None:
         for local_id, local in body.locals.items():
@@ -3679,9 +3740,9 @@ class WatGenerator:
             self.write(f" {ty})\n")
 
     def write_body(self, module: int, body: Body) -> None:
-        self.write_words(module, body.locals, body.words)
+        self.write_words(module, { id: local.name.lexeme for id, local in body.locals.items() }, body.words)
 
-    def write_words(self, module: int, locals: Dict[LocalId, Local], words: List[Word]) -> None:
+    def write_words(self, module: int, locals: Dict[LocalId, str], words: List[Word]) -> None:
         for word in words:
             self.write_word(module, locals, word)
 
@@ -3691,37 +3752,31 @@ class WatGenerator:
         else:
             self.write(f"${name}")
 
-    def write_word(self, module: int, locals: Dict[LocalId, Local], word: Word):
+    def write_word(self, module: int, locals: Dict[LocalId, str], word: Word):
         match word:
             case NumberWord(token):
                 self.write_line(f"i32.const {token.lexeme}")
-            case GetWord(token, local_id, fields, copy_space_offset):
+            case GetWord(token, local_id, var_taip, target_taip, loads, copy_space_offset, var_lives_in_memory):
                 self.write_indent()
-                if isinstance(local_id, GlobalId):
-                    source_taip = self.globals[local_id].taip.taip
-                    target_taip = fields[-1].target_taip if len(fields) > 0 else source_taip
-                if isinstance(local_id, LocalId):
-                    local = locals[local_id]
-                    source_taip = local.taip
-                    target_taip = fields[-1].target_taip if len(fields) > 0 else source_taip
-                loads = self.determine_loads(fields)
-                if not isinstance(source_taip, PtrType) and isinstance(local_id, LocalId) and not locals[local_id].lives_on_stack():
+                if not isinstance(var_taip, PtrType) and isinstance(local_id, LocalId) and not var_lives_in_memory:
                     self.write("local.get ")
                     self.write_local_ident(token.lexeme, local_id)
                     self.write("\n")
                     return
                 if not target_taip.can_live_in_reg():
+                    # set up the address to store store the result in
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 else:
                     self.write("local.get ")
                     self.write_local_ident(token.lexeme, local_id)
+                # at this point, either the value itself or a pointer to it is one the stack
                 if len(loads) == 0 and not isinstance(target_taip, PtrType):
                     if not target_taip.can_live_in_reg():
                         self.write(f" i32.const {target_taip.size()} memory.copy\n")
                         return
-                    if isinstance(local_id, LocalId) and target_taip.can_live_in_reg() and locals[local_id].lives_on_stack():
+                    if isinstance(local_id, LocalId) and target_taip.can_live_in_reg() and var_lives_in_memory:
                         self.write(f" i32.load\n")
                         return
                 for i, load in enumerate(loads):
@@ -3733,11 +3788,7 @@ class WatGenerator:
                         else:
                             self.write(f" i32.const {load} i32.add i32.const {target_taip.size()} memory.copy")
                 self.write("\n")
-            case GetFieldWord(token, fields, on_ptr, copy_space_offset):
-                assert(fields != 0)
-                source_taip = fields[0].source_taip
-                target_taip = fields[-1].target_taip
-                loads = self.determine_loads(fields)
+            case GetFieldWord(token, source_taip, target_taip, loads, on_ptr, copy_space_offset):
                 if not on_ptr and source_taip.can_live_in_reg():
                     return
                 if on_ptr and len(loads) == 1 and loads[0] == 0:
@@ -3762,28 +3813,27 @@ class WatGenerator:
                             else:
                                 self.write(f" i32.const {load} i32.add i32.const {target_taip.size()} memory.copy")
                 self.write("\n")
-            case RefWord(token, local_id, fields):
+            case RefWord(token, local_id, loads):
                 self.write_indent()
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 if isinstance(local_id, LocalId):
                     self.write(f"local.get ")
                     self.write_local_ident(token.lexeme, local_id)
-                loads = self.determine_loads(fields)
                 for i, load in enumerate(loads):
                     if i + 1 == len(loads):
                         self.write(f" i32.const {load} i32.add")
                     else:
                         self.write(f" i32.load offset={load}")
                 self.write("\n")
-            case SetWord(token, local_id, fields):
+            case SetWord(token, local_id, target_taip, loads, var_lives_in_memory):
                 if isinstance(local_id, GlobalId):
                     print("SetWord on Global: TODO", file=sys.stderr)
                     assert(False)
                     return
-                self.write_set(local_id, locals, fields)
-            case InitWord(name, local_id):
-                self.write_set(local_id, locals, [])
+                self.write_set(local_id, locals, var_lives_in_memory, target_taip, loads)
+            case InitWord(name, local_id, taip, var_lives_in_memory):
+                self.write_set(local_id, locals, var_lives_in_memory, taip, [])
             case CallWord(name, function_handle, return_space_offset):
                 self.write_indent()
                 if isinstance(function_handle, ExternHandle):
@@ -3956,26 +4006,21 @@ class WatGenerator:
                 self.write_line(f"i32.const {taip.size()}")
             case FunRefWord(_, table_index):
                 self.write_line(f"i32.const {table_index}")
-            case StoreWord(token, local_id, fields):
+            case StoreWord(token, local_id, target_taip, loads):
                 self.write_indent()
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
-                    target_type = fields[-1].target_taip if len(fields) > 0 else self.globals[local_id].taip.taip
                 else:
                     self.write(f"local.get ")
                     self.write_local_ident(token.lexeme, local_id)
-                    target_type = locals[local_id].taip
-                    assert(isinstance(target_type, PtrType))
-                    target_type = fields[-1].target_taip if len(fields) > 0 else target_type.child
-                loads = self.determine_loads(fields)
                 for offset in loads:
                     self.write(f" i32.load offset={offset}")
                 self.write(" call $intrinsic:flip ")
-                if isinstance(target_type, StructType):
-                    self.write(f" i32.const {target_type.size()} memory.copy\n")
-                else:
-                    self.write_type(target_type)
+                if target_taip.can_live_in_reg():
+                    self.write_type(target_taip)
                     self.write(".store\n")
+                else:
+                    self.write(f" i32.const {target_taip.size()} memory.copy\n")
             case LoadWord(_, taip, copy_space_offset):
                 if isinstance(taip, StructType):
                     self.write_indent()
@@ -4138,21 +4183,18 @@ class WatGenerator:
                 assert_never(other)
         return False
 
-    def write_set(self, local_id: LocalId, locals: Dict[LocalId, Local], fields: List[FieldAccess]):
-        local = locals[local_id]
-        loads = self.determine_loads(fields)
-        target_taip = fields[-1].target_taip if len(fields) != 0 else local.taip
+    def write_set(self, local_id: LocalId, locals: Dict[LocalId, str], var_lives_in_memory: bool, target_taip: Type, loads: List[int]):
         self.write_indent()
-
-        if len(loads) == 0 and not local.lives_on_stack():
-            # the local lives on the stack so the target_taip must also already be unpacked on the stack
+        local = locals[local_id]
+        if len(loads) == 0 and not var_lives_in_memory:
+            # The local does not live in linear memory, so the target_taip must also already be on the stack unpacked.
             assert(target_taip.can_live_in_reg())
             self.write(f"local.set ")
-            self.write_local_ident(local.name.lexeme, local_id)
+            self.write_local_ident(local, local_id)
             self.write("\n")
             return
         self.write(f"local.get ")
-        self.write_local_ident(local.name.lexeme, local_id)
+        self.write_local_ident(local, local_id)
         if len(loads) == 0:
             if target_taip.can_live_in_reg():
                 self.write(f" call $intrinsic:flip i32.store\n")
@@ -4164,7 +4206,7 @@ class WatGenerator:
                 self.write(f" i32.const {load} i32.add ")
                 if i + 1 == len(loads):
                     self.write("call $intrinsic:flip ")
-                    self.write_type(local.taip)
+                    self.write_type(target_taip)
                     self.write(".store")
                 else:
                     self.write("i32.load")
@@ -4193,23 +4235,6 @@ class WatGenerator:
                 offset += 1
             else:
                 self.write_line(f"local.get $s{i - 1}:a")
-
-    def determine_loads(self, fields: List[FieldAccess]) -> List[int]:
-        loads: List[int] = []
-        i = 0
-        while i < len(fields):
-            taip = fields[i].source_taip
-            assert(isinstance(taip, StructType) or (isinstance(taip, PtrType) and isinstance(taip.child, StructType)))
-
-            offset = 0
-            while i < len(fields): # loop for every field access which can be reduced to one load with offset
-                field = fields[i]
-                offset += field.offset
-                i += 1
-                if not isinstance(field.target_taip, StructType):
-                    break
-            loads.append(offset)
-        return loads
 
     def write_signature(self, module: int, signature: FunctionSignature, instance_id: int | None = None) -> None:
         self.write(f"func ${module}:{signature.name.lexeme}")
