@@ -367,12 +367,16 @@ class ParsedLoadWord:
 class ParsedLoopWord:
     token: Token
     words: List['ParsedWord']
+    parameters: List[ParsedType] | None
+    returns: List[ParsedType] | None
 
 @dataclass
 class ParsedBlockWord:
     token: Token
     words: List['ParsedWord']
     end_token: Token
+    parameters: List[ParsedType] | None
+    returns: List[ParsedType] | None
 
 @dataclass
 class BreakWord:
@@ -469,6 +473,7 @@ class ParsedFunction:
 class ParsedStruct:
     name: Token
     fields: List[ParsedNamedType]
+    generic_parameters: List[Token]
 
 @dataclass
 class ParsedVariantCase:
@@ -576,11 +581,16 @@ class Parser:
                     self.advance(skip_ws=True) # skip LEFT_PAREN
                     while True:
                         item = self.advance(skip_ws=True)
-                        if item is not None and item.ty == TokenType.RIGHT_PAREN:
-                            break
                         if item is None:
                             self.abort("expected a function or type to import")
+                        if item.ty == TokenType.RIGHT_PAREN:
+                            break
                         items.append(item)
+                        comma = self.advance(skip_ws=True)
+                        if comma is None or comma.ty == TokenType.RIGHT_PAREN:
+                            break
+                        if comma.ty != TokenType.COMMA:
+                            self.abort("expected `)`")
                 imports.append(ParsedImport(file_path, module_qualifier, items))
                 continue
 
@@ -623,7 +633,7 @@ class Parser:
                         self.abort("Expected `:` after field name")
                     taip = self.parse_type(generic_parameters)
                     fields.append(ParsedNamedType(field_name, taip))
-                type_definitions.append(ParsedStruct(name, fields))
+                type_definitions.append(ParsedStruct(name, fields, generic_parameters))
                 continue
 
             if token.ty == TokenType.VARIANT:
@@ -786,16 +796,52 @@ class Parser:
             return ParsedLoadWord(token)
         if token.ty == TokenType.LOOP or token.ty == TokenType.BLOCK:
             brace = self.advance(skip_ws=True)
-            if brace is None or brace.ty != TokenType.LEFT_BRACE:
+            if brace is None:
                 self.abort("Expected `{`")
+            if brace.ty == TokenType.LEFT_BRACE:
+                parameters = None
+                returns = None
+            else:
+                if brace.ty == TokenType.LEFT_PAREN:
+                    parameters = []
+                    while True:
+                        next = self.peek(skip_ws=True)
+                        if next is None or next.ty == TokenType.RIGHT_PAREN:
+                           self.advance(skip_ws=True) # skip `)`
+                           break
+                        parameters.append(self.parse_type(generic_parameters))
+                        comma = self.peek(skip_ws=True)
+                        if comma is None or comma.ty == TokenType.RIGHT_PAREN:
+                            self.advance(skip_ws=True) # skip `)`
+                            break
+                        if comma.ty != TokenType.COMMA:
+                            self.abort("Expected `,`")
+                        self.advance(skip_ws=True)
+                    arrow = self.advance(skip_ws=True)
+                    if arrow is None or arrow.ty != TokenType.ARROW:
+                        self.abort("Expected `->`")
+                else:
+                    parameters = None
+                returns = []
+                while True:
+                    next = self.peek(skip_ws=True)
+                    if next is None or next.ty == TokenType.LEFT_BRACE:
+                        break
+                    returns.append(self.parse_type(generic_parameters))
+                    comma = self.advance(skip_ws=True)
+                    if comma is None or comma.ty == TokenType.LEFT_BRACE:
+                        break
+                    if comma.ty != TokenType.COMMA:
+                        self.abort("Expected `,`")
+
             words = self.parse_words(generic_parameters)
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                 self.abort("Expected `}`")
             if token.ty == TokenType.LOOP:
-                return ParsedLoopWord(token, words)
+                return ParsedLoopWord(token, words, parameters, returns)
             if token.ty == TokenType.BLOCK:
-                return ParsedBlockWord(token, words, brace)
+                return ParsedBlockWord(token, words, brace, parameters, returns)
         if token.ty == TokenType.BREAK:
             return BreakWord(token)
         if token.ty == TokenType.BANG:
@@ -1123,9 +1169,7 @@ class ResolvedFunctionType:
 class ResolvedStruct:
     name: Token
     fields: List['ResolvedNamedType']
-
-    def __str__(self) -> str:
-        return f"ResolvedStruct(name={str(self.name)})"
+    generic_parameters: List[Token]
 
 @dataclass
 class ResolvedVariantCase:
@@ -1136,6 +1180,7 @@ class ResolvedVariantCase:
 class ResolvedVariant:
     name: Token
     cases: List[ResolvedVariantCase]
+    generic_parameters: List[Token]
 
 ResolvedTypeDefinition = ResolvedStruct | ResolvedVariant
 
@@ -1320,6 +1365,7 @@ class ResolvedLoopWord:
     words: List['ResolvedWord']
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
+    diverges: bool
 
 @dataclass
 class ResolvedBlockWord:
@@ -1764,7 +1810,6 @@ class Stack:
     parent: 'Stack | None'
     stack: List[ResolvedType]
     negative: List[ResolvedType]
-    drained: bool = False # True in case of non-termination because of break
 
     @staticmethod
     def empty() -> 'Stack':
@@ -1800,11 +1845,6 @@ class Stack:
                 return dump
             dump.append(t)
 
-    def drain(self):
-        self.drained = True
-        if self.parent is not None:
-            self.parent.drain()
-
     def make_child(self) -> 'Stack':
         return Stack(self.clone(), [], [])
 
@@ -1818,7 +1858,12 @@ class Stack:
         return len(self.stack) + (len(self.parent) if self.parent is not None else 0)
 
     def __getitem__(self, index: int) -> ResolvedType:
-        return self.stack[index]
+        if index > 0:
+            return self.stack[index]
+        if abs(index) <= len(self.stack):
+            return self.stack[index]
+        assert(self.parent is not None)
+        return self.parent[index + len(self.stack)]
 
     def __eq__(self, b: object) -> bool:
         if not isinstance(b, Stack):
@@ -1849,7 +1894,7 @@ class Stack:
             ia -= 1
 
     def __str__(self) -> str:
-        return f"Stack(drained={str(self.drained)}, parent={self.parent}, stack={listtostr(self.stack)}, negative={listtostr(self.negative)})"
+        return f"Stack(parent={self.parent}, stack={listtostr(self.stack)}, negative={listtostr(self.negative)})"
 
 @dataclass
 class BreakStack:
@@ -1867,20 +1912,21 @@ class StructLitContext:
 class ResolveWordContext:
     env: Env
     break_stacks: List[BreakStack]
+    block_returns: List[ResolvedType] | None
     reachable: bool
     struct_context: StructLitContext | None
 
     def with_env(self, env: Env) -> 'ResolveWordContext':
-        return ResolveWordContext(env, self.break_stacks, self.reachable, self.struct_context)
+        return ResolveWordContext(env, self.break_stacks, self.block_returns, self.reachable, self.struct_context)
 
-    def with_break_stacks(self, break_stacks: List[BreakStack]) -> 'ResolveWordContext':
-        return ResolveWordContext(self.env, break_stacks, self.reachable, self.struct_context)
+    def with_break_stacks(self, break_stacks: List[BreakStack], block_returns: List[ResolvedType] | None) -> 'ResolveWordContext':
+        return ResolveWordContext(self.env, break_stacks, block_returns, self.reachable, self.struct_context)
 
     def with_reachable(self, reachable: bool) -> 'ResolveWordContext':
-        return ResolveWordContext(self.env, self.break_stacks, reachable, self.struct_context)
+        return ResolveWordContext(self.env, self.break_stacks, self.block_returns, reachable, self.struct_context)
 
     def with_struct_context(self, struct_context: StructLitContext) -> 'ResolveWordContext':
-        return ResolveWordContext(self.env, self.break_stacks, self.reachable, struct_context)
+        return ResolveWordContext(self.env, self.break_stacks, self.block_returns, self.reachable, struct_context)
 
 @dataclass
 class FunctionResolver:
@@ -1903,12 +1949,12 @@ class FunctionResolver:
         for local in locals:
             env.insert(ResolvedInitLocal(local.name, local.taip))
         stack: Stack = Stack.empty()
-        context = ResolveWordContext(env, [], True, None)
+        context = ResolveWordContext(env, [], None, True, None)
         (words, diverges) = self.resolve_words(context, stack, self.function.body)
         if not diverges:
             self.expect_stack(self.signature.name, stack, self.signature.returns)
             if len(stack) != 0:
-                self.abort(self.signature.name, "items left on stack at end of function")
+                self.abort(self.signature.name, f"items left on stack at end of function: {listtostr(stack.stack)}")
         body = ResolvedBody(words, env.vars_by_id)
         return ResolvedFunction(self.signature, memories, locals, body)
 
@@ -1951,36 +1997,42 @@ class FunctionResolver:
                 else_stack = stack.make_child()
                 (if_words, if_words_diverge) = self.resolve_words(context.with_env(if_env), if_stack, parsed_if_words)
                 (else_words, else_words_diverge) = self.resolve_words(context.with_env(else_env), else_stack, parsed_else_words)
-                parameters = if_stack.negative
+                if_parameters = if_stack.negative
                 if len(else_words) == 0 and if_words_diverge:
                     remaining_words.reverse()
-                    (remaining_resolved_words, remaining_words_diverge) = self.resolve_words(context.with_env(else_env), stack, remaining_words)
-                    return (ResolvedIfWord(token, parameters, stack.stack, if_words, remaining_resolved_words, remaining_words_diverge), remaining_words_diverge)
-                if not if_stack.drained:
-                    returns = if_stack.stack
-                elif not else_stack.drained:
-                    returns = else_stack.stack
+                    remaining_stack = stack.make_child()
+                    (remaining_resolved_words, remaining_words_diverge) = self.resolve_words(context.with_env(else_env), remaining_stack, remaining_words)
+                    stack.apply(remaining_stack)
+                    if_returns = remaining_stack.dump()
+                    return (ResolvedIfWord(token, if_parameters, if_returns, if_words, remaining_resolved_words, remaining_words_diverge), remaining_words_diverge)
+                if not if_words_diverge:
+                    if_returns = if_stack.stack
+                elif not else_words_diverge:
+                    if_returns = else_stack.stack
                 else:
-                    returns = []
-                if not if_stack.drained and not else_stack.drained:
+                    if_returns = []
+                if not if_words_diverge and not else_words_diverge:
                     if if_stack != else_stack:
                         error_message = f"stack mismatch between if and else branch:\n\tif   {listtostr(if_stack.stack)}\n\telse {listtostr(else_stack.stack)}"
                         self.abort(word.token, error_message)
                     stack.apply(if_stack)
-                elif if_stack.drained and else_stack.drained:
-                    stack.drain()
-                elif not if_stack.drained:
+                elif if_words_diverge and else_words_diverge:
+                    for _ in range(max(len(if_stack.negative), len(else_stack.negative))):
+                        stack.pop()
+                elif not if_words_diverge:
                     stack.apply(if_stack)
                 else:
-                    assert(not else_stack.drained)
+                    assert(not else_words_diverge)
                     stack.apply(else_stack)
                 diverges = if_words_diverge and else_words_diverge
-                return (ResolvedIfWord(token, parameters, returns, if_words, else_words, diverges), diverges)
-            case ParsedLoopWord(token, parsed_words):
+                return (ResolvedIfWord(token, if_parameters, if_returns, if_words, else_words, diverges), diverges)
+            case ParsedLoopWord(token, parsed_words, parsed_parameters, parsed_returns):
                 loop_stack = stack.make_child()
                 loop_env = Env(context.env)
                 loop_break_stacks: List[BreakStack] = []
-                (words, diverges) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks), loop_stack, parsed_words)
+                parameters = None if parsed_parameters is None else list(map(self.module_resolver.resolve_type, parsed_parameters))
+                (words, _) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks, parameters), loop_stack, parsed_words)
+                diverges = len(loop_break_stacks) == 0
                 parameters = loop_stack.negative
                 if not resolved_types_eq(parameters, loop_stack.stack):
                     self.abort(token, "unexpected items remaining on stack at the end of loop")
@@ -1990,27 +2042,34 @@ class FunctionResolver:
                 else:
                     returns = loop_stack.stack
                     stack.apply(loop_stack)
-                if len(loop_break_stacks) == 0:
-                    diverges = True
-                return (ResolvedLoopWord(token, words, parameters, returns), diverges)
-            case ParsedBlockWord(token, parsed_words, end_token):
+                return (ResolvedLoopWord(token, words, parameters, returns, diverges), diverges)
+            case ParsedBlockWord(token, parsed_words, end_token, parameters, returns):
                 block_stack = stack.make_child()
                 block_env = Env(context.env)
                 block_break_stacks: List[BreakStack] = []
-                (words, diverges) = self.resolve_words(context.with_env(block_env).with_break_stacks(block_break_stacks), block_stack, parsed_words)
-                parameters = block_stack.negative
+                block_context = context.with_env(block_env).with_break_stacks(block_break_stacks, returns)
+                (words, diverges) = self.resolve_words(block_context, block_stack, parsed_words)
+                parameters = parameters or stack.clone().dump() # TODO: check that the annotation matches the inferred params
+                for _ in range(len(parameters)):
+                    stack.pop()
+                block_end_is_reached = not diverges
                 if len(block_break_stacks) != 0:
                     diverges = diverges and not block_break_stacks[0].reachable
+                    def on_error():
+                        error_message = "break stack mismatch:"
+                        for break_stack in block_break_stacks:
+                            error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types)}"
+                        error_message += f"\n\t{end_token.line}:{end_token.column} {listtostr(block_stack.stack)}"
+                        self.abort(token, error_message)
                     for i in range(1, len(block_break_stacks)):
                         if not resolved_types_eq(block_break_stacks[0].types, block_break_stacks[i].types):
-                            error_message = "break stack mismatch:"
-                            for break_stack in block_break_stacks:
-                                error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types)}"
-                            error_message += f"\n\t{end_token.line}:{end_token.column} {listtostr(block_stack.stack)}"
-                            self.abort(token, error_message)
-                    if not block_stack.drained and not resolved_types_eq(block_break_stacks[0].types, block_stack.stack):
-                        self.abort(word.token, "the items remaining on the stack at the end of the block don't match the break statements")
+                            on_error()
+                    if block_end_is_reached:
+                        if not resolved_types_eq(block_break_stacks[0].types, block_stack.clone().dump()):
+                            on_error()
                     returns = block_break_stacks[0].types
+                    for _ in range(len(block_stack.negative)):
+                        stack.pop()
                     stack.extend(returns)
                 else:
                     returns = block_stack.stack
@@ -2092,9 +2151,16 @@ class FunctionResolver:
                 stack.append(top.child)
                 return (ResolvedLoadWord(token, top.child), False)
             case BreakWord(token):
-                dump = stack.dump()
+                if context.block_returns is None:
+                    dump = stack.dump()
+                else:
+                    dump = []
+                    for _ in context.block_returns:
+                        t = stack.pop()
+                        assert(t is not None)
+                        dump.append(t)
+                    dump.reverse()
                 context.break_stacks.append(BreakStack(token, dump, context.reachable))
-                stack.drain()
                 return (word, True)
             case ParsedSizeofWord(token, parsed_taip):
                 stack.append(PrimitiveType.I32)
@@ -2552,21 +2618,21 @@ class ModuleResolver:
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
-                break
+                continue
             for fun_id, function in enumerate(imported_module.functions):
                 if function.signature.name.lexeme == item.lexeme:
                     resolved_item = ImportItem(item.lexeme, ResolvedFunctionHandle(imported_module.id, fun_id))
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
-                break
+                continue
             for extern_id, extern in enumerate(imported_module.externs):
                 if extern.signature.name.lexeme == item.lexeme:
                     resolved_item = ImportItem(item.lexeme, ResolvedExternHandle(imported_module.id, extern_id))
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
-                break
+                continue
             self.abort(item, "not found")
         return Import(imp.file_path, imp.module_qualifier, imported_module.id, resolved_items)
 
@@ -2592,7 +2658,14 @@ class ModuleResolver:
         match taip:
             case ParsedStructType(name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
-                return ResolvedStructType(name, self.resolve_struct_name(name), resolved_generic_arguments)
+                struct_handle = self.resolve_struct_name(name)
+                if struct_handle.module == self.id:
+                    generic_parameters = self.module.type_definitions[struct_handle.index].generic_parameters
+                else:
+                    generic_parameters = self.resolved_modules[struct_handle.module].type_definitions[struct_handle.index].generic_parameters
+                if len(generic_parameters) != len(generic_arguments):
+                    self.abort(name, f"expected {len(generic_parameters)} generic arguments, actual: {len(generic_arguments)}")
+                return ResolvedStructType(name, struct_handle, resolved_generic_arguments)
             case ParsedForeignType(module, name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
                 for imp in self.imports:
@@ -2624,10 +2697,10 @@ class ModuleResolver:
                 assert_never(other)
 
     def resolve_struct(self, struct: ParsedStruct) -> ResolvedStruct:
-        return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)))
+        return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)), struct.generic_parameters)
 
     def resolve_variant(self, variant: ParsedVariant) -> ResolvedVariant:
-        return ResolvedVariant(variant.name, list(map(lambda t: ResolvedVariantCase(t.name, self.resolve_type(t.taip) if t.taip is not None else None), variant.cases)))
+        return ResolvedVariant(variant.name, list(map(lambda t: ResolvedVariantCase(t.name, self.resolve_type(t.taip) if t.taip is not None else None), variant.cases)), variant.generic_parameters)
 
     def resolve_function_signature(self, signature: ParsedFunctionSignature) -> ResolvedFunctionSignature:
         parameters = list(map(self.resolve_named_type, signature.parameters))
@@ -2901,6 +2974,7 @@ class LoopWord:
     words: List['Word']
     parameters: List[Type]
     returns: List[Type]
+    diverges: bool
 
 @dataclass
 class BlockWord:
@@ -3359,11 +3433,11 @@ class Monomizer:
                 call_word = self.monomize_call_word(call, copy_space_offset, max_struct_ret_count, generics)
                 table_index = self.insert_function_into_table(call_word.function)
                 return FunRefWord(call_word, table_index)
-            case ResolvedLoopWord(token, resolved_words, parameters, returns):
+            case ResolvedLoopWord(token, resolved_words, parameters, returns, diverges):
                 words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), returns))
-                return LoopWord(token, words, parameters, returns)
+                return LoopWord(token, words, parameters, returns, diverges)
             case ResolvedSizeofWord(token, taip):
                 return SizeofWord(token, self.monomize_type(taip, generics))
             case ResolvedBlockWord(token, resolved_words, resolved_parameters, resolved_returns):
@@ -4034,7 +4108,7 @@ class WatGenerator:
                 self.write_line("br $block")
             case BlockWord(token, words, parameters, returns):
                 self.write_indent()
-                self.write("(block $block ")
+                self.write("(block $block")
                 self.write_parameters(parameters)
                 self.write_returns(returns)
                 self.write("\n")
@@ -4043,7 +4117,7 @@ class WatGenerator:
                 self.dedent()
                 self.write_indent()
                 self.write(")\n")
-            case LoopWord(_, words, parameters, returns):
+            case LoopWord(_, words, parameters, returns, diverges):
                 self.write_indent()
                 self.write("(block $block ")
                 self.write_parameters(parameters)
@@ -4062,6 +4136,8 @@ class WatGenerator:
                 self.write_line(")")
                 self.dedent()
                 self.write_line(")")
+                if diverges:
+                    self.write_line("unreachable")
             case IfWord(_, parameters, returns, if_words, else_words, diverges):
                 self.write_indent()
                 self.write("(if")

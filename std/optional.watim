@@ -1,5 +1,0 @@
-variant T<T> {
-	Some -> T
-	None
-}
-

@@ -1,0 +1,12 @@
+[== Stdin Compiler ==]
+struct S<T> {
+    a: T
+}
+fn foo(s: S) {
+    $s.a drop
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:4:11 expected 1 generic arguments, actual: 0
+
