@@ -2,18 +2,21 @@
 variant Foo {
 	case A
 	case B
+	case C
 }
 
 fn foo() {
 	make Foo.A match {
 		case A -> { 0     }
 		case B -> { 0 1 = }
+		case _ -> { }
 	} drop
 }
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
--:7:13 arms of match case have different types:
-	[] -> [i32]
-	[] -> [bool]
+-:8:13 arms of match case have different types:
+	[] -> [i32] in case A
+	[] -> [bool] in case B
+	[] -> [Foo] in case _
 

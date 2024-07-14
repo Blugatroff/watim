@@ -51,6 +51,7 @@ class TokenType(str, Enum):
     VARIANT = "VARIANT"
     MATCH = "MATCH"
     CASE = "CASE"
+    UNDERSCORE = "UNDERSCORE"
 
 @dataclass(frozen=True)
 class Token:
@@ -150,7 +151,7 @@ class Lexer:
                     self.advance(2)
                     continue
 
-            one_char_tokens = "<>(){}:.,$&#@!~\\"
+            one_char_tokens = "<>(){}:.,$&#@!~\\_"
             if self.current() in one_char_tokens:
                 ty = TokenType(LEXEME_TYPE_DICT[self.current()])
                 self.tokens.append(Token(ty, self.line, self.column, self.current()))
@@ -249,6 +250,7 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "variant":TokenType.VARIANT,
     "match":  TokenType.MATCH,
     "case":   TokenType.CASE,
+    "_":      TokenType.UNDERSCORE,
 }
 TYPE_LEXEME_DICT: dict[TokenType, str] = {v: k for k, v in LEXEME_TYPE_DICT.items()}
 
@@ -428,6 +430,7 @@ class ParsedMatchCase:
 class ParsedMatchWord:
     token: Token
     cases: List[ParsedMatchCase]
+    default: List['ParsedWord'] | None
 
 ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord | ParsedUnnamedStructWord | ParsedMatchWord | ParsedVariantWord
 
@@ -888,12 +891,12 @@ class Parser:
                 next = self.peek(skip_ws=True)
                 if next is None or next.ty == TokenType.RIGHT_BRACE:
                     self.advance(skip_ws=True)
-                    return ParsedMatchWord(token, cases)
+                    return ParsedMatchWord(token, cases, None)
                 case = self.advance(skip_ws=True)
                 if case is None or case.ty != TokenType.CASE:
                     self.abort("expected `case`")
                 case_name = self.advance(skip_ws=True)
-                if case_name is None or case_name.ty != TokenType.IDENT:
+                if case_name is None or (case_name.ty != TokenType.IDENT and case_name.ty != TokenType.UNDERSCORE):
                     self.abort("Expected an identifier")
                 arrow = self.advance(skip_ws=True)
                 if arrow is None or arrow.ty != TokenType.ARROW:
@@ -905,6 +908,11 @@ class Parser:
                 brace = self.advance(skip_ws=True)
                 if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                     self.abort("Expected `}`")
+                if case_name.ty == TokenType.UNDERSCORE:
+                    brace = self.advance(skip_ws=True)
+                    if brace is None or brace.ty != TokenType.RIGHT_BRACE:
+                        self.abort("Expectec `}`")
+                    return ParsedMatchWord(token, cases, words)
                 cases.append(ParsedMatchCase(next, case_name, words))
         self.abort("Expected word")
 
@@ -1157,7 +1165,15 @@ class ResolvedStructType:
     generic_arguments: List['ResolvedType']
 
     def __str__(self) -> str:
-        return f"ResolvedStructType(name={str(self.name)}, struct={str(self.struct)}, generic_arguments={listtostr(self.generic_arguments)})"
+        s = self.name.lexeme
+        if len(self.generic_arguments) == 0:
+            return s
+        s += "<"
+        for i in range(0, len(s)):
+            s += str(self.generic_arguments[i])
+            if i + 1 != len(s):
+                s += ", "
+        return s + ">"
 
 @dataclass
 class ResolvedFunctionType:
@@ -1432,6 +1448,7 @@ class ResolvedMatchWord:
     variant: ResolvedStructType
     by_ref: bool
     cases: List[ResolvedMatchCase]
+    default: List['ResolvedWord'] | None
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
 
@@ -2222,9 +2239,9 @@ class FunctionResolver:
                     self.expect_stack(token, stack, [FunctionResolver.resolve_generic(resolved_variant_taip.generic_arguments)(case_taip)])
                 stack.append(resolved_variant_taip)
                 return (ResolvedVariantWord(token, tag, resolved_variant_taip), False)
-            case ParsedMatchWord(token, cases):
+            case ParsedMatchWord(token, cases, default):
                 resolved_cases: List[ResolvedMatchCase] = []
-                match_diverges = False
+                match_diverges = True
                 arg = stack.pop()
                 if arg is None:
                     self.abort(token, "expected an item on stack")
@@ -2241,7 +2258,7 @@ class FunctionResolver:
                     self.abort(token, "can only match on variants")
                 remaining_cases = list(map(lambda c: c.name.lexeme, variant.cases))
                 visited_cases: Dict[str, Token] = {}
-                case_stacks: List[Stack] = []
+                case_stacks: List[Tuple[Stack, str]] = []
                 for parsed_case in cases:
                     tag = None
                     for i, vc in enumerate(variant.cases):
@@ -2254,10 +2271,9 @@ class FunctionResolver:
                     if taip is not None:
                         if by_ref:
                             taip = ResolvedPtrType(taip)
-                        foo = FunctionResolver.resolve_generic(arg.generic_arguments)(taip)
-                        case_stack.append(foo)
+                        case_stack.append(FunctionResolver.resolve_generic(arg.generic_arguments)(taip))
                     (resolved_words, diverges) = self.resolve_words(context, case_stack, parsed_case.words)
-                    match_diverges = match_diverges or diverges
+                    match_diverges = match_diverges and diverges
                     resolved_cases.append(ResolvedMatchCase(taip, tag, resolved_words))
                     if parsed_case.case.lexeme in visited_cases:
                         error_message = "duplicate case in match:"
@@ -2266,29 +2282,39 @@ class FunctionResolver:
                         self.abort(token, error_message)
                     remaining_cases.remove(parsed_case.case.lexeme)
                     visited_cases[parsed_case.case.lexeme] = parsed_case.case
-                    case_stacks.append(case_stack)
+                    case_stacks.append((case_stack, parsed_case.case.lexeme))
+                if default is not None:
+                    default_case_stack = stack.make_child()
+                    default_case_stack.append(arg if not by_ref else ResolvedPtrType(arg))
+                    (resolved_words, diverges) = self.resolve_words(context, default_case_stack, default)
+                    case_stacks.append((default_case_stack, "_"))
+                    match_diverges = match_diverges and diverges
+                    default_case = resolved_words
+                else:
+                    default_case = None
                 if len(case_stacks) != 0:
                     for i in range(1, len(case_stacks)):
-                        negative_is_fine = resolved_types_eq(case_stacks[i].negative, case_stacks[0].negative)
-                        positive_is_fine = resolved_types_eq(case_stacks[i].stack, case_stacks[0].stack)
+                        (case_stack, _) = case_stacks[i]
+                        negative_is_fine = resolved_types_eq(case_stack.negative, case_stacks[0][0].negative)
+                        positive_is_fine = resolved_types_eq(case_stack.stack, case_stacks[0][0].stack)
                         if not negative_is_fine or not positive_is_fine:
                             error_message = "arms of match case have different types:"
-                            for case_stack in case_stacks:
-                                error_message += f"\n\t{listtostr(case_stack.negative)} -> {listtostr(case_stack.stack)}"
+                            for case_stack, case_name_str in case_stacks:
+                                error_message += f"\n\t{listtostr(case_stack.negative)} -> {listtostr(case_stack.stack)} in case {case_name_str}"
                             self.abort(token, error_message)
-                    parameters = case_stacks[0].negative
-                    returns = case_stacks[0].stack
-                    stack.apply(case_stacks[0])
+                    parameters = case_stacks[0][0].negative
+                    returns = case_stacks[0][0].stack
+                    stack.apply(case_stacks[0][0])
                 else:
                     parameters = []
                     returns = []
-                if len(remaining_cases) != 0:
+                if len(remaining_cases) != 0 and default is None:
                     error_message = "missing case in match:"
                     for case_name_str in remaining_cases:
                         error_message += f"\n\t{case_name_str}"
                     self.abort(token, error_message)
-                match_diverges = match_diverges or len(cases) == 0
-                return (ResolvedMatchWord(token, arg, by_ref, resolved_cases, parameters, returns), match_diverges)
+                match_diverges = match_diverges
+                return (ResolvedMatchWord(token, arg, by_ref, resolved_cases, default_case, parameters, returns), match_diverges)
             case other:
                 assert_never(other)
 
@@ -2495,9 +2521,13 @@ class FunctionResolver:
                 module = self.module_resolver.resolved_modules[imp.module]
                 for index, f in enumerate(module.functions):
                     if f.signature.name.lexeme == word.name.lexeme:
+                        if len(word.generic_arguments) != len(f.signature.generic_parameters):
+                            self.module_resolver.abort(word.name, f"expected {len(f.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
                         return ResolvedCallWord(word.name, ResolvedFunctionHandle(module.id, index), resolved_generic_arguments)
                 for index, extern in enumerate(module.externs):
                     if extern.signature.name.lexeme == word.name.lexeme:
+                        if len(word.generic_arguments) != len(extern.signature.generic_parameters):
+                            self.module_resolver.abort(word.name, f"expected {len(extern.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
                         return ResolvedCallWord(word.name, ResolvedExternHandle(module.id, index), resolved_generic_arguments)
                 self.abort(word.name, f"function {word.name.lexeme} not found")
         self.abort(word.name, f"module {word.module.lexeme} not found")
@@ -3170,6 +3200,7 @@ class MatchWord:
     variant: StructHandle
     by_ref: bool
     cases: List[MatchCase]
+    default: List['Word'] | None
     parameters: List[Type]
     returns: List[Type]
 
@@ -3491,14 +3522,15 @@ class Monomizer:
                 if variant.size() > 4:
                     copy_space_offset.value += variant.size()
                 return VariantWord(token, case, variant_handle, offset)
-            case ResolvedMatchWord(token, resolved_variant_type, by_ref, cases, parameters, returns):
+            case ResolvedMatchWord(token, resolved_variant_type, by_ref, cases, default_case, parameters, returns):
                 monomized_cases: List[MatchCase] = []
                 for resolved_case in cases:
                     words = self.monomize_words(resolved_case.words, generics, copy_space_offset, max_struct_ret_count, locals)
                     monomized_cases.append(MatchCase(resolved_case.tag, words))
+                monomized_default_case = None if default_case is None else self.monomize_words(default_case, generics, copy_space_offset, max_struct_ret_count, locals)
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 monomized_variant = self.monomize_struct(resolved_variant_type.struct, this_generics)[0]
-                return MatchWord(token, monomized_variant, by_ref, monomized_cases, parameters, returns)
+                return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
             case other:
                 assert_never(other)
 
@@ -4195,11 +4227,18 @@ class WatGenerator:
                     self.write(f"i32.const {taip.size()} memory.copy\n")
                 else:
                     self.write("i32.store\n")
-            case MatchWord(_, variant_handle, by_ref, cases, parameters, returns):
+            case MatchWord(_, variant_handle, by_ref, cases, default, parameters, returns):
                 variant = self.lookup_type_definition(variant_handle)
                 def go(cases: List[MatchCase]):
                     if len(cases) == 0:
-                        self.write("unreachable")
+                        if default is None:
+                            self.write("unreachable")
+                            return
+                        self.write_indent()
+                        if variant.size() <= 4 and not by_ref:
+                            self.write("i32.load")
+                            self.write("\n")
+                        self.write_words(module, locals, default)
                         return
                     case = cases[0]
                     assert(isinstance(variant, Variant))
@@ -4227,9 +4266,17 @@ class WatGenerator:
                     self.dedent()
                     self.write_line(")")
                     self.write_indent()
-                    self.write("(else ")
-                    go(cases[1:])
-                    self.write("))")
+                    if len(cases) == 1 and default is not None:
+                        self.write("(else\n")
+                        self.indent()
+                        go(cases[1:])
+                        self.dedent()
+                        self.write_indent()
+                        self.write("))")
+                    else:
+                        self.write("(else ")
+                        go(cases[1:])
+                        self.write("))")
                 self.write_line(f";; match on {variant.name.lexeme}")
                 self.write_indent()
                 go(cases)

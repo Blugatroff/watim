@@ -1,0 +1,10 @@
+[== Stdin Compiler ==]
+import "./std/array.watim" as Array
+fn main() {
+	Array:new<>
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:3:8 expected 1 generic arguments, not 0
+
