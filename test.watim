@@ -193,7 +193,7 @@ fn parse-test-file(arena: .Arena:Arena, file: ByteSlice) -> Test {
 
         $section-header $compiler-args-header ByteSlice:eq if {
             $arena $value 10 Util:split-bytes @args
-            $arena &args \ByteSlice:is-not-empty Array:filter<ByteSlice, ByteSlice> @args
+            $arena &args \ByteSlice:is-not-empty Array:filter<ByteSlice> @args
             $arena $args Arena:push<Array:Array<ByteSlice>> #test.compiler-args
         }
         $section-header $compiler-stdin-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.compiler-stdin }

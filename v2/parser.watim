@@ -1,0 +1,31 @@
+import "../std/io.watim" as IO
+import "../std/arena.watim" as Arena (Arena)
+import "../std/array.watim" as Array (Array)
+
+import "./lexer.watim" as Lexer (Token, Token-ty, Token-print)
+
+struct ParsedImport {
+
+}
+
+variant TopItem {
+    case Import -> ParsedImport
+}
+
+fn parse(arena: .Arena, tokens: Array<Token>) -> Array<TopItem> {
+    Array:new<TopItem> @items
+    0 @i
+    loop {
+        $i $tokens.len = if { break }
+        &tokens $i Array:get<Token> @token
+        $token Token-ty match {
+            case TOKEN_IMPORT -> {
+                2 $token Token-print IO:check
+                2 IO:newline
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+    $items
+}

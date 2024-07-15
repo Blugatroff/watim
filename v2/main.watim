@@ -1,7 +1,8 @@
 import "../std/core.watim" as Core
-import "../std/arena.watim" as A
+import "../std/option.watim" as Option (Option, or-default)
+import "../std/arena.watim" as Arena (Arena)
 import "../std/args.watim" as Args
-import "../std/array.watim" as Array
+import "../std/array.watim" as Array (Array)
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS
 import "../std/bytes.watim" as Bytes
@@ -11,18 +12,20 @@ import "../std/page-alloc.watim" as PA
 
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
+import "./parser.watim" as Parser (parse)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
     2 "Usage: watim <watim-source-file>\n" IO:write-all IO:check
+    2 "Commands:\n" IO:write-all IO:check
+    2 "  lex   [path]   Lex watim code and print the Tokens.\n" IO:write-all IO:check
+    2 "  parse [path]   Parse watim code and print the AST\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
-    2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
-    2 "  --lex          Lex stdin into watim Tokens and print them as JSON\n" IO:write-all IO:check
-    2 "  --parse        Parse stdin into a watim AST in print it as JSON\n" IO:write-all IO:check
+    2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
     1 Core:exit
 }
 
-fn find-flag(args: .Array:Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
+fn find-flag(args: .Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
     $ptr $len make ByteSlice @str
     $args \ByteSlice:eq-by-ref &str Array:find<ByteSlice, .ByteSlice> if {
         $args flip Array:remove<ByteSlice> drop
@@ -33,54 +36,86 @@ fn find-flag(args: .Array:Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
     }
 }
 
-fn MODE_COMPILE() -> i32 { 1 }
-fn MODE_LEX() -> i32 { 2 }
-fn MODE_PARSE() -> i32 { 3 }
+variant CliCommand {
+    case Lex -> Option<ByteSlice>
+    case Parse -> Option<ByteSlice>
+}
+struct CliArgs {
+    command: CliCommand
+    quiet: bool
+}
 
-fn main "_start" () {
-    A:init-temp
-    "Main" A:new @arena
-    &arena Args:get-args @args
-
-    &args "-q" find-flag &args "--quiet" find-flag or not Logging:set
-    MODE_COMPILE @mode
-    &args "--lex" find-flag if { MODE_LEX #mode }
-    &args "--parse" find-flag if { MODE_PARSE #mode }
-
+fn parse-args(arena: .Arena) -> CliArgs {
+    $arena Args:get-args @args
     $args.len 1 le if {
         print-usage-and-exit
     }
-    &args 1 Array:get<ByteSlice> @file-path
+    block {
+        &args 1 Array:remove<ByteSlice> @command
+        $args.len 1 gt if {
+            &args 1 Array:remove<ByteSlice> make Option<ByteSlice>.Some
+        } else { make Option<ByteSlice>.None } @path
+        $command ByteSlice:unpack "lex" Bytes:eq if {
+            $path make CliCommand.Lex break
+        }
+        $command ByteSlice:unpack "parse" Bytes:eq if {
+            $path make CliCommand.Parse break
+        }
+        print-usage-and-exit loop { }
+    }
+    &args "-q" find-flag &args "--quiet" find-flag or
+    make CliArgs
+}
 
-    "Files" A:new @files-arena
+fn main "_start" () {
+    Arena:init-temp
+    "Main" Arena:new @arena
+
+    &arena parse-args @args
+    $args.quiet Logging:set
+
+    "Files" Arena:new @files-arena
     &files-arena FS:init IO:check @fs
 
-    $file-path ~ ByteSlice:unpack "-" Bytes:eq if {
+    $args.command match {
+        case Lex -> { "-" make ByteSlice or-default<ByteSlice> }
+        case Parse -> { "-" make ByteSlice or-default<ByteSlice> }
+    } @file-path
+
+    $file-path ByteSlice:unpack "-" Bytes:eq if {
         &files-arena 0 FS:read-all IO:check
     } else {
-        &files-arena &fs $file-path ~ ByteSlice:unpack FS:read-file IO:check
+        &files-arena &fs $file-path ByteSlice:unpack FS:read-file IO:check
     } @file-content
     &file-content ByteArray:to-slice @file-content
 
-    "Lexer" A:new @lexer-arena
+    "Lexer" Arena:new @lexer-arena
     &lexer-arena &file-content Lexer:lex @tokens
-    &files-arena A:shred
-
-    "Tokens" A:new @tokens-arena
+    &files-arena Arena:shred
+    "Tokens" Arena:new @tokens-arena
     &tokens-arena &tokens Lexer:Tokens-copy @tokens
-    &lexer-arena A:shred
+    &lexer-arena Arena:shred
 
-    0 @i
-    loop {
-        $tokens.len $i = if { break }
-        1 &tokens $i Array:get<Lexer:Token> Lexer:Token-print IO:check
-        1 IO:newline
-        $i 1 + #i
-    }
-    Logging:enabled if {
-        2 "tokens-arena usage: " IO:write-all IO:check
-        2 &tokens-arena A:usage IO:print IO:check
-        2 IO:newline
+    &args.command match {
+        case Lex -> {
+            drop
+            0 @i
+            loop {
+                $tokens.len $i = if { break }
+                1 &tokens $i Array:get<Lexer:Token> Lexer:Token-print IO:check
+                1 IO:newline
+                $i 1 + #i
+            }
+            Logging:enabled if {
+                2 "tokens-arena usage: " IO:write-all IO:check
+                2 &tokens-arena Arena:usage IO:print IO:check
+                2 IO:newline
+            }
+        }
+        case Parse -> {
+            drop
+            &arena $tokens parse drop
+        }
     }
     exit
 }

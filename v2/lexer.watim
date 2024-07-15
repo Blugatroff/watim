@@ -47,6 +47,7 @@ variant TokenTy {
     case TOKEN_SIZEOF
     case TOKEN_SPACE
     case TOKEN_MAKE
+    case TOKEN_UNDERSCORE
 }
 
 fn TokenTy-name(self: TokenTy) -> .i32, i32 {
@@ -91,6 +92,7 @@ fn TokenTy-name(self: TokenTy) -> .i32, i32 {
         case TOKEN_SIZEOF -> { "SIZEOF" }
         case TOKEN_SPACE -> { "SPACE" }
         case TOKEN_MAKE -> { "MAKE" }
+        case TOKEN_UNDERSCORE -> { "UNDERSCORE" }
     }
 }
 
@@ -157,25 +159,26 @@ fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 {
         case TOKEN_SIZEOF -> { "sizeof" }
         case TOKEN_SPACE -> { " " }
         case TOKEN_MAKE -> { "make" }
+        case TOKEN_LEFT_TRIANGLE -> { "<" }
+        case TOKEN_RIGHT_TRIANGLE -> { ">" }
+        case TOKEN_LEFT_PAREN -> { "(" }
+        case TOKEN_RIGHT_PAREN -> { ")" }
+        case TOKEN_LEFT_BRACE -> { "{" }
+        case TOKEN_RIGHT_BRACE -> { "}" }
+        case TOKEN_COLON -> { ":" }
+        case TOKEN_DOT -> { "." }
+        case TOKEN_COMMA -> { "," }
+        case TOKEN_DOLLAR -> { "$" }
+        case TOKEN_AMPERSAND -> { "&" }
+        case TOKEN_HASH -> { "#" }
+        case TOKEN_AT -> { "@" }
+        case TOKEN_BANG -> { "!" }
+        case TOKEN_TILDE -> { "~" }
+        case TOKEN_BACKSLASH -> { "\\" }
+        case TOKEN_UNDERSCORE -> { "_" }
         case TOKEN_NUMBER -> { 0 !.i32 0 }
         case TOKEN_IDENT -> { 0 !.i32 0 }
         case TOKEN_STRING -> { 0 !.i32 0 }
-        case TOKEN_LEFT_TRIANGLE -> { 0 !.i32 0 }
-        case TOKEN_RIGHT_TRIANGLE -> { 0 !.i32 0 }
-        case TOKEN_LEFT_PAREN -> { 0 !.i32 0 }
-        case TOKEN_RIGHT_PAREN -> { 0 !.i32 0 }
-        case TOKEN_LEFT_BRACE -> { 0 !.i32 0 }
-        case TOKEN_RIGHT_BRACE -> { 0 !.i32 0 }
-        case TOKEN_COLON -> { 0 !.i32 0 }
-        case TOKEN_DOT -> { 0 !.i32 0 }
-        case TOKEN_COMMA -> { 0 !.i32 0 }
-        case TOKEN_DOLLAR -> { 0 !.i32 0 }
-        case TOKEN_AMPERSAND -> { 0 !.i32 0 }
-        case TOKEN_HASH -> { 0 !.i32 0 }
-        case TOKEN_AT -> { 0 !.i32 0 }
-        case TOKEN_BANG -> { 0 !.i32 0 }
-        case TOKEN_TILDE -> { 0 !.i32 0 }
-        case TOKEN_BACKSLASH -> { 0 !.i32 0 }
     }
 }
 fn Token-print(fd: i32, self: .Token) -> i32 { block {
@@ -302,7 +305,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
                     $done not break
                 }
             }
-            "<>(){}:.,$&#@!~\\" @one-char-tokens-len @one-char-tokens
+            "<>(){}:.,$&#@!~\\_" @one-char-tokens-len @one-char-tokens
             $one-char-tokens $one-char-tokens-len $char Bytes:find if {
                 @index
                 $one-char-tokens $index + 1 make ByteSlice @lexeme
