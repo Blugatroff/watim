@@ -1137,7 +1137,7 @@ class ResolvedPtrType:
     child: 'ResolvedType'
 
     def __str__(self) -> str:
-        return f"ResolvedPtrType(child={str(self.child)})"
+        return f".{str(self.child)}"
 
 def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None) -> str:
     if len(l) == 0:
@@ -1169,9 +1169,9 @@ class ResolvedStructType:
         if len(self.generic_arguments) == 0:
             return s
         s += "<"
-        for i in range(0, len(s)):
+        for i in range(0, len(self.generic_arguments)):
             s += str(self.generic_arguments[i])
-            if i + 1 != len(s):
+            if i + 1 != len(self.generic_arguments):
                 s += ", "
         return s + ">"
 
@@ -2051,6 +2051,14 @@ class FunctionResolver:
                 (words, _) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks, parameters), loop_stack, parsed_words)
                 diverges = len(loop_break_stacks) == 0
                 parameters = loop_stack.negative
+                if len(loop_break_stacks) != 0:
+                    diverges = diverges or not loop_break_stacks[0].reachable
+                    for i in range(1, len(loop_break_stacks)):
+                        if not resolved_types_eq(loop_break_stacks[0].types, loop_break_stacks[i].types):
+                            error_message = "break stack mismatch:"
+                            for break_stack in loop_break_stacks:
+                                error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types)}"
+                            self.abort(token, error_message)
                 if not resolved_types_eq(parameters, loop_stack.stack):
                     self.abort(token, "unexpected items remaining on stack at the end of loop")
                 if len(loop_break_stacks) != 0:
@@ -2282,14 +2290,16 @@ class FunctionResolver:
                         self.abort(token, error_message)
                     remaining_cases.remove(parsed_case.case.lexeme)
                     visited_cases[parsed_case.case.lexeme] = parsed_case.case
-                    case_stacks.append((case_stack, parsed_case.case.lexeme))
+                    if not diverges:
+                        case_stacks.append((case_stack, parsed_case.case.lexeme))
                 if default is not None:
                     default_case_stack = stack.make_child()
                     default_case_stack.append(arg if not by_ref else ResolvedPtrType(arg))
                     (resolved_words, diverges) = self.resolve_words(context, default_case_stack, default)
-                    case_stacks.append((default_case_stack, "_"))
                     match_diverges = match_diverges and diverges
                     default_case = resolved_words
+                    if not diverges:
+                        case_stacks.append((default_case_stack, "_"))
                 else:
                     default_case = None
                 if len(case_stacks) != 0:

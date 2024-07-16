@@ -1,0 +1,9 @@
+[== Stdin Compiler ==]
+fn main() {
+	break
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:2:2 `break` can only be used inside of blocks and loops
+

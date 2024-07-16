@@ -1,31 +1,174 @@
+import "../std/core.watim" as Core (exit)
 import "../std/io.watim" as IO
 import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../std/byte-array.watim" as ByteArray (ByteArray)
 
-import "./lexer.watim" as Lexer (Token, Token-ty, Token-print)
+import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, Token-print, Token-location, Token-column)
 
-struct ParsedImport {
-
+struct Import {
+    path: Token
+    qualifier: Token
+    items: Array<Token>
 }
 
 variant TopItem {
-    case Import -> ParsedImport
+    case Import -> Import
 }
 
-fn parse(arena: .Arena, tokens: Array<Token>) -> Array<TopItem> {
-    Array:new<TopItem> @items
-    0 @i
-    loop {
-        $i $tokens.len = if { break }
-        &tokens $i Array:get<Token> @token
-        $token Token-ty match {
-            case TOKEN_IMPORT -> {
-                2 $token Token-print IO:check
-                2 IO:newline
-            }
-            case _ -> { drop }
-        }
-        $i 1 + #i
-    }
-    $items
+struct Parser {
+    arena: .Arena
+    tokens: Array<Token>
+    cursor: i32
 }
+fn eof(parser: .Parser) -> bool {
+    $parser.cursor $parser.tokens.len ge
+}
+fn peek(parser: .Parser) -> .Token {
+    $parser.cursor @i
+    loop {
+        $parser.tokens.len $i = if { 0!.Token break }
+        &parser.tokens $i Array:get<Token> @token
+        $i 1 + #i
+        $token Token-ty match {
+            case TOKEN_SPACE -> {}
+            case _ -> { drop $token break }
+        }
+    }
+}
+fn advance(parser: .Parser) -> .Token {
+    loop {
+        $parser.tokens.len $parser.cursor = if { 0!.Token break }
+        &parser.tokens $parser.cursor Array:get<Token> @token
+        $parser.cursor 1 + #parser.cursor
+        $token Token-ty match {
+            case TOKEN_SPACE -> {}
+            case _ -> { drop $token break }
+        }
+    }
+}
+fn abort<T>(parser: .Parser, message-ptr: .i32, message-len: i32) -> Result<T, ParseError> {
+    $parser.tokens.len 0 = if {
+        0 0 / drop // parsing an empty file always should always succeed
+    }
+    &parser.tokens $parser.cursor 0 = if { 0 } else { $parser.cursor 1 - } Array:get<Token> @token
+    $token Token-location $parser.arena $message-ptr $message-len ByteArray:copy make ParseError
+    make Result<T, ParseError>.Error
+}
+
+variant Result<T, E> {
+    case Success -> T
+    case Error -> E
+}
+
+struct ParseError {
+    line: i32
+    column: i32
+    message: ByteArray
+}
+fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i32, file-path: i32) -> i32 { block {
+    $fd $file-path-ptr $file-path IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.line IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.column IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd &self.message ByteArray:unpack IO:write-all
+} }
+
+fn parse(arena: .Arena, tokens: Array<Token>) -> Result<Array<TopItem>, ParseError> {
+    Array:new<TopItem> @items
+    $arena $tokens 0 make Parser @parser
+    loop {
+        &parser eof if { $items make Result<Array<TopItem>, ParseError>.Success break }
+        &parser &parser advance top-item match {
+            case Success -> { @top-item $arena &items $top-item Array:push<TopItem> }
+            case Error -> { make Result<Array<TopItem>, ParseError>.Error break }
+        }
+    }
+}
+
+fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { block {
+    $token Token-ty match {
+        case TOKEN_IMPORT -> {
+            $parser advance @token
+            $token 0!.Token = if { $parser "expected a file path" abort<TopItem> break }
+            $token Token-ty match {
+                case TOKEN_STRING -> { $token }
+                case _ -> { drop $parser "expected a file path" abort<TopItem> break }
+            } @path
+
+            $parser advance @token
+            $token 0!.Token = if { $parser "expected `as`" abort<TopItem> break }
+            $token Token-ty match {
+                case TOKEN_AS -> { }
+                case _ -> { drop $parser "expected `as`" abort<TopItem> break }
+            }
+            $parser advance @token
+            $token 0!.Token = if { $parser "expected an identifier" abort<TopItem> break }
+            $token Token-ty match {
+                case TOKEN_IDENT -> { $token }
+                case _ -> { drop $parser "expected an identifier" abort<TopItem> break }
+            } @qualifier
+
+            $parser peek @token
+            $token 0!.Token = if { 1 1 = } else { $token Token-ty make TokenTy.TOKEN_LEFT_PAREN /= } if {
+                make Import {
+                    $path ~ @path
+                    $qualifier ~ @qualifier
+                    Array:new<Token> @items
+                }
+                make TopItem.Import
+                make Result<TopItem, ParseError>.Success break
+            }
+            Array:new<Token> @items
+            $parser advance drop // drop the `(`
+            loop {
+                $parser advance @item
+                $item 0!.Token = if {
+                    $parser "expected `)` or an identifier" abort<Array<Token>> break
+                }
+                $item Token-ty match {
+                    case TOKEN_RIGHT_PAREN -> {
+                        $items make Result<Array<Token>, ParseError>.Success break
+                    }
+                    case TOKEN_IDENT -> {
+                        $parser.arena &items $item ~ Array:push<Token>
+                        $parser peek @comma
+                        $comma 0!.Token = if {
+                            $parser "expected `)` or `,`" abort<Array<Token>> break
+                        }
+                        $comma Token-ty match {
+                            case TOKEN_COMMA -> { $parser advance drop }
+                            case TOKEN_RIGHT_PAREN -> { 
+                                $parser advance drop
+                                $items make Result<Array<Token>, ParseError>.Success break
+                            }
+                            case _ -> {
+                                drop $parser "expected `)` or `,`" abort<Array<Token>> break
+                            }
+                        }
+                    }
+                    case _ -> {
+                        drop $parser "expected `)` or an identifier" abort<Array<Token>> break
+                    }
+                }
+            } match {
+                case Success -> {
+                    @items
+                    make Import {
+                        $path ~ @path
+                        $qualifier ~ @qualifier
+                        $items @items
+                    }
+                    make TopItem.Import
+                    make Result<TopItem, ParseError>.Success break
+                }
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+            }
+        }
+        case _ -> { drop $parser "TODO" abort<TopItem> }
+    }
+} }
+

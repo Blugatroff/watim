@@ -12,7 +12,7 @@ import "../std/page-alloc.watim" as PA
 
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
-import "./parser.watim" as Parser (parse)
+import "./parser.watim" as Parser (parse, ParseError-print)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -114,7 +114,19 @@ fn main "_start" () {
         }
         case Parse -> {
             drop
-            &arena $tokens parse drop
+            &arena $tokens parse match {
+                case Error -> {
+                    2 flip $file-path ByteSlice:unpack ParseError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                }
+                case Success -> {
+                    .len
+                    2 "Successfully parsed " IO:write-all IO:check
+                    2 flip IO:print IO:check
+                    2 " TopItems\n" IO:write-all IO:check
+                }
+            }
         }
     }
     exit
