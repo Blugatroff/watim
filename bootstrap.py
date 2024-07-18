@@ -1928,7 +1928,7 @@ class StructLitContext:
 @dataclass
 class ResolveWordContext:
     env: Env
-    break_stacks: List[BreakStack]
+    break_stacks: List[BreakStack] | None
     block_returns: List[ResolvedType] | None
     reachable: bool
     struct_context: StructLitContext | None
@@ -1966,7 +1966,7 @@ class FunctionResolver:
         for local in locals:
             env.insert(ResolvedInitLocal(local.name, local.taip))
         stack: Stack = Stack.empty()
-        context = ResolveWordContext(env, [], None, True, None)
+        context = ResolveWordContext(env, None, None, True, None)
         (words, diverges) = self.resolve_words(context, stack, self.function.body)
         if not diverges:
             self.expect_stack(self.signature.name, stack, self.signature.returns)
@@ -2185,6 +2185,8 @@ class FunctionResolver:
                         assert(t is not None)
                         dump.append(t)
                     dump.reverse()
+                if context.break_stacks is None:
+                    self.abort(token, "`break` can only be used inside of blocks and loops")
                 context.break_stacks.append(BreakStack(token, dump, context.reachable))
                 return (word, True)
             case ParsedSizeofWord(token, parsed_taip):
