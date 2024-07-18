@@ -73,7 +73,7 @@ struct Iov {
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
 	memory iov: Iov 8
-	local read: I32
+	uninit<I32> @read
 	$buf_addr #iov.ptr
 	$buf_size #iov.len
 	$file $iov 1 &read.inner raw_read $read.inner flip
@@ -96,8 +96,8 @@ fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
 }
 
 fn write(file: i32, ptr: .i32, len: i32) -> i32 {
-	local iov: Iov
-	local written-ptr: I32
+	uninit<Iov> @iov
+	uninit<I32> @written-ptr
 	$ptr #iov.ptr
 	$len #iov.len
 	$file &iov 1 &written-ptr.inner raw_write drop
@@ -391,6 +391,8 @@ fn dup(a: i32) -> i32, i32 {
 		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $iov
 		global.get $stac:k global.get $stac:k i32.const 4 i32.add global.set $stac:k local.set $iov
 		global.get $stac:k global.get $stac:k i32.const 4 i32.add global.set $stac:k local.set $read
+		i32.const 0
+		local.get $read call $intrinsic:flip i32.store
 		local.get $buf_addr
 		local.get $iov i32.const 0 i32.add call $intrinsic:flip i32.store
 		local.get $buf_size
@@ -408,10 +410,16 @@ fn dup(a: i32) -> i32, i32 {
 		(local $iov i32)
 		(local $written-ptr i32)
 		(local $written i32)
+		(local $locl-copy-spac:e i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
+		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $locl-copy-spac:e
 		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $iov
 		global.get $stac:k global.get $stac:k i32.const 4 i32.add global.set $stac:k local.set $written-ptr
+		local.get $locl-copy-spac:e i32.const 0 i32.add
+		local.get $iov call $intrinsic:flip i32.const 8 memory.copy
+		i32.const 0
+		local.get $written-ptr call $intrinsic:flip i32.store
 		local.get $ptr
 		local.get $iov i32.const 0 i32.add call $intrinsic:flip i32.store
 		local.get $len

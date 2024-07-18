@@ -1,0 +1,21 @@
+import "./core.watim" as Core (unreachable)
+
+variant Maybe<T> {
+    case Some -> T
+    case None
+}
+
+fn or-default<T>(o: Maybe<T>, default: T) -> T {
+    $o match {
+        case Some -> {}
+        case None -> { $default }
+    }
+}
+
+fn assert-some<T>(o: Maybe<T>) -> T {
+    $o match {
+        case Some -> {}
+        case None -> { unreachable<T> }
+    }
+}
+

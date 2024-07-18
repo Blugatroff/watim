@@ -7,16 +7,16 @@ struct Foo<A, B> {
 struct Bla { }
 
 fn main "_start" () {
-    local a: Foo<i32, i64>
-    local b: Foo<Foo<i32, bool>, bool>
-    local c: Foo<Bla, Bla>
-    local d: Foo<Bla, Bla>
+    uninit<Foo<i32, i64>> drop
+    uninit<Foo<Foo<i32, bool>, bool>> drop
+    uninit<Foo<Bla, Bla>> drop
+    uninit<Foo<Bla, Bla>> drop
     test<Foo<i32, bool>>
 }
 
 fn test<T>() {
-    local a: Foo<i32, bool>
-    local b: Foo<i32, T>
+    uninit<Foo<i32, bool>> drop
+    uninit<Foo<i32, T>> drop
 }
 [== Status Compiler ==]
 0

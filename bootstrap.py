@@ -31,7 +31,6 @@ class TokenType(str, Enum):
     BACKSLASH = "BACKSLASH"
     MEMORY = "MEMORY"
     SIZEOF = "SIZEOF"
-    LOCAL = "LOCAL"
     AS = "AS"
     STRUCT = "STRUCT"
     BLOCK = "BLOCK"
@@ -214,7 +213,6 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "import": TokenType.IMPORT,
     "as":     TokenType.AS,
     "memory": TokenType.MEMORY,
-    "local":  TokenType.LOCAL,
     "struct": TokenType.STRUCT,
     "block":  TokenType.BLOCK,
     "break":  TokenType.BREAK,
@@ -469,7 +467,6 @@ class ParsedMemory:
 class ParsedFunction:
     signature: ParsedFunctionSignature
     memories: List[ParsedMemory]
-    locals: List[ParsedNamedType]
     body: List[ParsedWord]
 
 @dataclass
@@ -687,24 +684,11 @@ class Parser:
                 break
             memories.append(self.parse_memory(signature.generic_parameters))
 
-        locals = []
-        while True:
-            token = self.peek(skip_ws=True)
-            if token is None or token.ty != TokenType.LOCAL:
-                break
-            self.advance(skip_ws=True) # skip `local`
-            name = self.advance(skip_ws=True)
-            token = self.advance(skip_ws=True)
-            if token is None or token.ty != TokenType.COLON:
-                self.abort("Expected `:`")
-            taip = self.parse_type(signature.generic_parameters)
-            locals.append(ParsedNamedType(name, taip))
-
         body = self.parse_words(signature.generic_parameters)
 
         token = self.advance(skip_ws=True)
         assert(token.ty == TokenType.RIGHT_BRACE)
-        return ParsedFunction(signature, memories, locals, body)
+        return ParsedFunction(signature, memories, body)
 
     def parse_words(self, generic_parameters: List[Token]) -> List[ParsedWord]:
         words = []
@@ -1241,8 +1225,10 @@ def format_resolved_type(a: ResolvedType) -> str:
             if len(generic_arguments) == 0:
                 return name.lexeme
             s = name.lexeme + "<"
-            for arg in generic_arguments:
-                s += format_resolved_type(arg) + ", "
+            for i,arg in enumerate(generic_arguments):
+                s += format_resolved_type(arg)
+                if i + 1 != len(generic_arguments):
+                    s += ", "
             return s + ">"
         case ResolvedFunctionType(_, parameters, returns):
             s = "("
@@ -1633,7 +1619,6 @@ ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | Re
 class ResolvedFunction:
     signature: ResolvedFunctionSignature
     memories: List[ResolvedMemory]
-    locals: List[ResolvedNamedType]
     body: ResolvedBody
 
 @dataclass
@@ -1959,12 +1944,9 @@ class FunctionResolver:
 
     def resolve(self) -> ResolvedFunction:
         memories = list(map(self.module_resolver.resolve_memory, self.function.memories))
-        locals = list(map(self.module_resolver.resolve_named_type, self.function.locals))
         env = Env(list(map(ResolvedParameterLocal.make, self.signature.parameters)))
         for memory in memories:
             env.insert(ResolvedMemoryLocal(memory.taip.name, memory.taip.taip, int(memory.size.lexeme) if memory.size is not None else None))
-        for local in locals:
-            env.insert(ResolvedInitLocal(local.name, local.taip))
         stack: Stack = Stack.empty()
         context = ResolveWordContext(env, None, None, True, None)
         (words, diverges) = self.resolve_words(context, stack, self.function.body)
@@ -1973,7 +1955,7 @@ class FunctionResolver:
             if len(stack) != 0:
                 self.abort(self.signature.name, f"items left on stack at end of function: {listtostr(stack.stack)}")
         body = ResolvedBody(words, env.vars_by_id)
-        return ResolvedFunction(self.signature, memories, locals, body)
+        return ResolvedFunction(self.signature, memories, body)
 
     def resolve_words(self, context: ResolveWordContext, stack: Stack, parsed_words: List[ParsedWord]) -> Tuple[List[ResolvedWord], bool]:
         parsed_words.reverse()
@@ -2228,7 +2210,8 @@ class FunctionResolver:
             case ParsedUnnamedStructWord(token, taip):
                 resolved_struct_taip = self.module_resolver.resolve_struct_type(taip)
                 struct = self.module_resolver.get_type_definition(resolved_struct_taip.struct)
-                assert(not isinstance(struct, ResolvedVariant))
+                if isinstance(struct, ResolvedVariant):
+                    self.abort(token, "expected a struct")
                 struct_field_types = list(map(FunctionResolver.resolve_generic(resolved_struct_taip.generic_arguments), map(lambda f: f.taip, struct.fields)))
                 self.expect_stack(token, stack, struct_field_types)
                 stack.append(resolved_struct_taip)
@@ -2952,7 +2935,6 @@ class Extern:
 class ConcreteFunction:
     signature: FunctionSignature
     memories: List[Memory]
-    locals: List[NamedType]
     body: Lazy[Body]
 
 @dataclass
@@ -3250,12 +3232,11 @@ class Monomizer:
                     assert(len(function.signature.generic_parameters) == 0)
                     signature = self.monomize_concrete_signature(function.signature)
                     function_memories = list(map(lambda m: self.monomize_memory(m, []), function.memories))
-                    locals = list(map(lambda t: self.monomize_named_type(t, []), function.locals))
                     copy_space_offset = Ref(0)
                     max_struct_ret_count = Ref(0)
                     monomized_locals = self.monomize_locals(function.body.locals, [])
                     body = Lazy(lambda: Body(self.monomize_words(function.body.words, [], copy_space_offset, max_struct_ret_count, monomized_locals), copy_space_offset.value, max_struct_ret_count.value, monomized_locals))
-                    f = ConcreteFunction(signature, function_memories, locals, body)
+                    f = ConcreteFunction(signature, function_memories, body)
                     if id not in self.functions:
                         self.functions[id] = {}
                     self.functions[id][index] = f
@@ -3326,12 +3307,11 @@ class Monomizer:
             assert(len(f.signature.generic_parameters) == 0)
         signature = self.monomize_signature(f.signature, generics)
         memories = list(map(lambda m: self.monomize_memory(m, generics), f.memories))
-        locals = list(map(lambda t: self.monomize_named_type(t, generics), f.locals))
         copy_space_offset = Ref(0)
         max_struct_ret_count = Ref(0)
         monomized_locals = self.monomize_locals(f.body.locals, generics)
         body = Lazy(lambda: Body(self.monomize_words(f.body.words, generics, copy_space_offset, max_struct_ret_count, monomized_locals), copy_space_offset.value, max_struct_ret_count.value, monomized_locals))
-        concrete_function = ConcreteFunction(signature, memories, locals, body)
+        concrete_function = ConcreteFunction(signature, memories, body)
         if function.module not in self.functions:
             self.functions[function.module] = {}
         if len(f.signature.generic_parameters) == 0:

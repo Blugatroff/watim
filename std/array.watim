@@ -122,12 +122,46 @@ fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->),
     }
     $formatter "]" FMT:Formatter-write
 }
+fn format-multi-line<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) {
+    $formatter "[" FMT:Formatter-write
+    0 @i
+    $formatter FMT:Formatter-indent
+    loop {
+        $i $self.len = if { break }
+        $formatter FMT:Formatter-write-indent
+        $formatter $self $i get<T> $format-element ->
+        $i 1 + #i
+        $i $self.len /= if { $formatter "," FMT:Formatter-write }
+    }
+    $formatter FMT:Formatter-dedent
+    $formatter "]" FMT:Formatter-write
+}
 fn print<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { block {
     $fd "[" IO:write-all @code
     $code 0 /= if { $code break }
     0 @i
     loop {
         $i $self.len = if { 0 break }
+        $fd $self $i get<T> $print-element -> #code
+        $code 0 /= if { $code break }
+        $i 1 + #i
+        $i $self.len /= if {
+            $fd ", " IO:write-all #code
+            $code 0 /= if { $code break }
+        }
+    } #code $code 0 /= if { $code break }
+    $fd "]" IO:write-all
+} }
+fn print-multi-line<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { block {
+    $fd "[" IO:write-all @code
+    $code 0 /= if { $code break }
+    0 @i
+    loop {
+        $i $self.len = if {
+            $self.len 0 = if { 0 break }
+            $fd "\n" IO:write-all break
+        }
+        $fd "\n\t" IO:write-all CORE:dup<i32> 0 /= if { break } drop
         $fd $self $i get<T> $print-element -> #code
         $code 0 /= if { $code break }
         $i 1 + #i

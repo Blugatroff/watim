@@ -1,5 +1,5 @@
 import "../std/core.watim" as Core
-import "../std/option.watim" as Option (Option, or-default)
+import "../std/maybe.watim" as Maybe (Maybe, or-default)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/args.watim" as Args
 import "../std/array.watim" as Array (Array)
@@ -12,7 +12,7 @@ import "../std/page-alloc.watim" as PA
 
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
-import "./parser.watim" as Parser (parse, ParseError-print)
+import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-print)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -37,8 +37,8 @@ fn find-flag(args: .Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
 }
 
 variant CliCommand {
-    case Lex -> Option<ByteSlice>
-    case Parse -> Option<ByteSlice>
+    case Lex -> Maybe<ByteSlice>
+    case Parse -> Maybe<ByteSlice>
 }
 struct CliArgs {
     command: CliCommand
@@ -53,8 +53,8 @@ fn parse-args(arena: .Arena) -> CliArgs {
     block {
         &args 1 Array:remove<ByteSlice> @command
         $args.len 1 gt if {
-            &args 1 Array:remove<ByteSlice> make Option<ByteSlice>.Some
-        } else { make Option<ByteSlice>.None } @path
+            &args 1 Array:remove<ByteSlice> make Maybe<ByteSlice>.Some
+        } else { make Maybe<ByteSlice>.None } @path
         $command ByteSlice:unpack "lex" Bytes:eq if {
             $path make CliCommand.Lex break
         }
@@ -119,13 +119,20 @@ fn main "_start" () {
                     2 flip $file-path ByteSlice:unpack ParseError-print drop
                     2 IO:newline
                     1 Core:exit
+                    Core:unreachable<Array<TopItem>>
                 }
-                case Success -> {
-                    .len
-                    2 "Successfully parsed " IO:write-all IO:check
-                    2 flip IO:print IO:check
-                    2 " TopItems\n" IO:write-all IO:check
-                }
+                case Success -> {}
+            }
+            @items
+            2 "Successfully parsed " IO:write-all IO:check
+            2 $items.len IO:print IO:check
+            2 " TopItems\n" IO:write-all IO:check
+            0 @i
+            loop {
+                $i $items.len = if { break }
+                1 &items $i Array:get<TopItem> TopItem-print IO:check
+                1 IO:newline
+                $i 1 + #i
             }
         }
     }
