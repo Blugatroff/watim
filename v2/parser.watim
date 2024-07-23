@@ -63,11 +63,38 @@ fn ForeignCall-print(fd: i32, self: .ForeignCall) -> i32 { block {
     $fd ")" IO:write-all
 } }
 
+struct RefLocal {
+    ident: Token
+    fields: Array<Token>
+}
+fn RefLocal-print(fd: i32, self: .RefLocal) -> i32 { block {
+    $fd "(RefLocal " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd &self.ident Token-print Core:dup<i32> 0 /= if { break } drop
+    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd \Token-print &self.fields Array:print<Token> Core:dup<i32> 0 /= if { break } drop
+    $fd ")" IO:write-all
+} }
+
+struct GetLocal {
+    ident: Token
+    fields: Array<Token>
+}
+fn GetLocal-print(fd: i32, self: .GetLocal) -> i32 { block {
+    $fd "(GetLocal " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd &self.ident Token-print Core:dup<i32> 0 /= if { break } drop
+    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd \Token-print &self.fields Array:print<Token> Core:dup<i32> 0 /= if { break } drop
+    $fd ")" IO:write-all
+} }
+
 variant Word {
     case Call -> Token
     case ForeignCall -> ForeignCall
     case String -> Token
     case InitLocal -> Token
+    case RefLocal -> RefLocal
+    case GetLocal -> GetLocal
+    case Number -> Token
 }
 fn Word-print(fd: i32, self: .Word) -> i32 { block {
     $self match {
@@ -75,6 +102,9 @@ fn Word-print(fd: i32, self: .Word) -> i32 { block {
         case ForeignCall -> { $fd flip ForeignCall-print break }
         case String -> { "String" }
         case InitLocal -> { "InitLocal" }
+        case RefLocal -> { $fd flip RefLocal-print break }
+        case GetLocal -> { $fd flip GetLocal-print break }
+        case Number -> { "Number" }
     } @name-len @name-ptr
     $fd "(" IO:write-all Core:dup<i32> 0 /= if { flip drop break } drop
     $fd $name-ptr $name-len IO:write-all Core:dup<i32> 0 /= if { flip drop break } drop
@@ -139,6 +169,13 @@ struct Parser {
 fn eof(parser: .Parser) -> bool {
     $parser.cursor $parser.tokens.len ge
 }
+fn peek-immediate(parser: .Parser) -> Maybe<.Token> {
+    $parser.cursor $parser.tokens.len = if {
+        make Maybe<.Token>.None
+    } else {
+        &parser.tokens $parser.cursor Array:get<Token> make Maybe<.Token>.Some
+    }
+}
 fn peek(parser: .Parser) -> Maybe<.Token> {
     $parser.cursor @i
     loop {
@@ -149,6 +186,14 @@ fn peek(parser: .Parser) -> Maybe<.Token> {
             case TOKEN_SPACE -> {}
             case _ -> { drop $token make Maybe<.Token>.Some break }
         }
+    }
+}
+fn advance-immediate(parser: .Parser) -> Maybe<.Token> {
+    $parser.cursor $parser.tokens.len = if {
+        make Maybe<.Token>.None
+    } else {
+        &parser.tokens $parser.cursor Array:get<Token> make Maybe<.Token>.Some
+        $parser.cursor 1 + #parser.cursor
     }
 }
 fn advance(parser: .Parser) -> Maybe<.Token> {
@@ -374,7 +419,10 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
     $token Token-ty match {
         case TOKEN_IDENT -> { $parser $token call break }
         case TOKEN_STRING -> { $token ~ make Word.String }
-        case TOKEN_AT -> { $parser $token init-locl break }
+        case TOKEN_AT -> { $parser init-locl break }
+        case TOKEN_AMPERSAND -> { $parser ref-locl break }
+        case TOKEN_DOLLAR -> { $parser get-locl break }
+        case TOKEN_NUMBER -> { $token ~ make Word.Number }
         case _ -> {
             drop
             $parser "word TODO" abort<Word> break
@@ -402,16 +450,73 @@ fn call(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
     $token ~ $name ~ make ForeignCall make Word.ForeignCall make Result<Word, ParseError>.Success
 } }
 
-fn init-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
+fn fields(parser: .Parser) -> Result<Array<Token>, ParseError> {
+    Array:new<Token> @fields
+    loop {
+        $parser peek-immediate match {
+            case None -> { $fields make Result<Array<Token>, ParseError>.Success break }
+            case Some -> {}
+        } @dot
+        $dot Token-ty match {
+            case TOKEN_DOT -> { $parser advance-immediate assert-some<.Token> drop }
+            case TOKEN_SPACE -> { $fields make Result<Array<Token>, ParseError>.Success break }
+            case _ -> { drop $parser "expected `.`" abort<Array<Token>> break }
+        }
+        $parser advance-immediate match {
+            case None -> { $parser "expected an identifier" abort<Array<Token>> break }
+            case Some -> {}
+        } ~ @field
+        &field Token-ty match {
+            case TOKEN_IDENT -> {}
+            case _ -> { drop $parser "expected an identifier" abort<Array<Token>> break }
+        }
+        $parser.arena &fields $field Array:push<Token>
+    }
+}
+
+fn ident(parser: .Parser) -> Result<Token, ParseError> { block {
     $parser advance match {
-        case None -> { $parser "expected an identifier" abort<Word> break }
+        case None -> { $parser "expected an identifier" abort<Token> break }
         case Some -> {}
     } @ident
     $ident Token-ty match {
         case TOKEN_IDENT -> {}
-        case _ -> { drop $parser "expected an identifier" abort<Word> break }
+        case _ -> { drop $parser "expected an identifier" abort<Token> break }
     }
-    $ident ~ make Word.InitLocal make Result<Word, ParseError>.Success
+    $ident ~ make Result<Token, ParseError>.Success
+} }
+
+fn ref-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+    $parser ident match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } @ident
+    $parser fields match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    }
+    $ident flip make RefLocal
+    make Word.RefLocal make Result<Word, ParseError>.Success
+} }
+
+fn get-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+    $parser ident match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } @ident
+    $parser fields match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    }
+    $ident flip make GetLocal
+    make Word.GetLocal make Result<Word, ParseError>.Success
+} }
+
+fn init-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+    $parser ident match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } make Word.InitLocal make Result<Word, ParseError>.Success
 } }
 
 fn generic-params(parser: .Parser, token: .Token) -> Result<Array<Token>, ParseError> { block {
