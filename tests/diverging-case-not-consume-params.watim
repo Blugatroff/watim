@@ -1,0 +1,22 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+variant Foo {
+	case A
+	case B
+}
+
+fn main "_start" () {
+	block {
+		0 1 = 42
+		make Foo.A match {
+			case A -> { 3 + break }
+			case B -> {}
+		} proc_exit
+		37
+	} proc_exit drop
+}
+[== Status Compiler ==]
+0
+[== Status ==]
+45
+

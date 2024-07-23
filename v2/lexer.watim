@@ -194,17 +194,10 @@ fn Token-format(fmt: .Formatter, self: .Token) {
     $fmt $self Token-column Util:i32-format
     $fmt ")" Fmt:write
 }
-fn Token-print(fd: i32, self: .Token) -> i32 { block {
-    $fd "(" IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self Token-ty TokenTy-name IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self Token-lexeme IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self Token-line IO:print Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self Token-column IO:print Core:dup<i32> 0 /= if { break } drop
-    $fd ")" IO:write-all
-} }
+fn Token-print(fd: i32, self: .Token) {
+    $fd Fmt:to-fd @fmt
+    &fmt $self Token-format
+}
 fn Token-location(self: .Token) -> i32, i32 {
     $self Token-line $self Token-column
 }

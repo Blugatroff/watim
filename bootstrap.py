@@ -2044,10 +2044,10 @@ class FunctionResolver:
                 if not resolved_types_eq(parameters, loop_stack.stack):
                     self.abort(token, "unexpected items remaining on stack at the end of loop")
                 if len(loop_break_stacks) != 0:
-                    returns = loop_break_stacks[0].types
+                    returns = list(map(self.module_resolver.resolve_type, parsed_returns)) if parsed_returns is not None else loop_break_stacks[0].types
                     stack.extend(returns)
                 else:
-                    returns = loop_stack.stack
+                    returns = list(map(self.module_resolver.resolve_type, parsed_returns)) if parsed_returns is not None else loop_stack.stack
                     stack.apply(loop_stack)
                 return (ResolvedLoopWord(token, words, parameters, returns, diverges), diverges)
             case ParsedBlockWord(token, parsed_words, end_token, parameters, returns):
@@ -2251,7 +2251,7 @@ class FunctionResolver:
                     self.abort(token, "can only match on variants")
                 remaining_cases = list(map(lambda c: c.name.lexeme, variant.cases))
                 visited_cases: Dict[str, Token] = {}
-                case_stacks: List[Tuple[Stack, str]] = []
+                case_stacks: List[Tuple[Stack, str, bool]] = []
                 for parsed_case in cases:
                     tag = None
                     for i, vc in enumerate(variant.cases):
@@ -2275,34 +2275,48 @@ class FunctionResolver:
                         self.abort(token, error_message)
                     remaining_cases.remove(parsed_case.case.lexeme)
                     visited_cases[parsed_case.case.lexeme] = parsed_case.case
-                    if not diverges:
-                        case_stacks.append((case_stack, parsed_case.case.lexeme))
+                    case_stacks.append((case_stack, parsed_case.case.lexeme, diverges))
                 if default is not None:
                     default_case_stack = stack.make_child()
                     default_case_stack.append(arg if not by_ref else ResolvedPtrType(arg))
                     (resolved_words, diverges) = self.resolve_words(context, default_case_stack, default)
                     match_diverges = match_diverges and diverges
                     default_case = resolved_words
-                    if not diverges:
-                        case_stacks.append((default_case_stack, "_"))
+                    case_stacks.append((default_case_stack, "_", diverges))
                 else:
                     default_case = None
-                if len(case_stacks) != 0:
-                    for i in range(1, len(case_stacks)):
-                        (case_stack, _) = case_stacks[i]
-                        negative_is_fine = resolved_types_eq(case_stack.negative, case_stacks[0][0].negative)
-                        positive_is_fine = resolved_types_eq(case_stack.stack, case_stacks[0][0].stack)
+                non_diverging_case_stacks = list(map(lambda t: (t[0], t[1]), filter(lambda t: not t[2], case_stacks)))
+                if len(non_diverging_case_stacks) != 0:
+                    for i in range(1, len(non_diverging_case_stacks)):
+                        (case_stack, _) = non_diverging_case_stacks[i]
+                        negative_is_fine = resolved_types_eq(case_stack.negative, non_diverging_case_stacks[0][0].negative)
+                        positive_is_fine = resolved_types_eq(case_stack.stack, non_diverging_case_stacks[0][0].stack)
                         if not negative_is_fine or not positive_is_fine:
                             error_message = "arms of match case have different types:"
-                            for case_stack, case_name_str in case_stacks:
+                            for case_stack, case_name_str in non_diverging_case_stacks:
+                                if diverges:
+                                    continue
                                 error_message += f"\n\t{listtostr(case_stack.negative)} -> {listtostr(case_stack.stack)} in case {case_name_str}"
                             self.abort(token, error_message)
-                    parameters = case_stacks[0][0].negative
-                    returns = case_stacks[0][0].stack
-                    stack.apply(case_stacks[0][0])
-                else:
+
+                if len(case_stacks) == 0:
                     parameters = []
                     returns = []
+                else:
+                    most_params = case_stacks[0][0]
+                    for i in range(1, len(case_stacks)):
+                        if len(most_params.negative) < len(case_stacks[i][0].negative):
+                            most_params = case_stacks[i][0]
+                    parameters = most_params.negative
+                    returns = list(reversed(parameters))
+                    if len(non_diverging_case_stacks) != 0:
+                        for _ in non_diverging_case_stacks[0][0].negative:
+                            returns.pop()
+                        returns.extend(non_diverging_case_stacks[0][0].stack)
+                    for _ in parameters:
+                        stack.pop()
+                    for t in returns:
+                        stack.append(t)
                 if len(remaining_cases) != 0 and default is None:
                     error_message = "missing case in match:"
                     for case_name_str in remaining_cases:

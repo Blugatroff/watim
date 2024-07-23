@@ -103,7 +103,7 @@ fn main "_start" () {
             0 @i
             loop {
                 $tokens.len $i = if { break }
-                1 &tokens $i Array:get<Lexer:Token> Lexer:Token-print IO:check
+                1 &tokens $i Array:get<Lexer:Token> Lexer:Token-print
                 1 IO:newline
                 $i 1 + #i
             }
