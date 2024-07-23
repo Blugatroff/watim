@@ -9,28 +9,28 @@ struct Formatter {
     user-data: i32
 }
 
-fn Formatter-new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
+fn new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
     make Formatter {
         $write @write
         $user-data @user-data
         0 @indent-level
     }
 }
-fn Formatter-write(self: .Formatter, ptr: .i32, len: i32) {
+fn write(self: .Formatter, ptr: .i32, len: i32) {
     $self.user-data $ptr $len $self.write ->
 }
-fn Formatter-write-indent(self: .Formatter) {
+fn write-indent(self: .Formatter) {
     0 @i
     loop {
         $i $self.indent-level = if { break }
-        $self "  " Formatter-write
+        $self "  " write
         $i 1 + #i
     }
 }
-fn Formatter-indent(self: .Formatter) {
+fn indent(self: .Formatter) {
     $self.indent-level 1 + #self.indent-level
 }
-fn Formatter-dedent(self: .Formatter) {
+fn dedent(self: .Formatter) {
     $self.indent-level 0 = if {
         "Formatter: tried to dedent below 0" IO:abort
     }
@@ -41,16 +41,16 @@ fn write-to-fd(fd: i32, ptr: .i32, len: i32) {
     $fd $ptr $len IO:write-all IO:check
 }
 
-fn Formatter-to-fd(fd: i32) -> Formatter {
-    \write-to-fd $fd Formatter-new
+fn to-fd(fd: i32) -> Formatter {
+    \write-to-fd $fd new
 }
 
-fn Formatter-stdout() -> Formatter {
-    1 Formatter-to-fd
+fn stdout() -> Formatter {
+    1 to-fd
 }
 
 fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
-    $fd Formatter-to-fd @formatter
+    $fd to-fd @formatter
     &formatter $item $fmt ->
 }
 
@@ -64,10 +64,10 @@ fn append-string(user-data: i32, ptr: .i32, len: i32) {
     $user-data.arena $user-data.string $ptr $len ByteArray:push
 }
 
-fn Formatter-into-string(arena: .Arena, target: .ByteArray) -> Formatter {
+fn into-string(arena: .Arena, target: .ByteArray) -> Formatter {
     $arena Arena:alloc<FormatterIntoStringUserData> @user-data
     $arena #user-data.arena
     $target #user-data.string
-    \append-string $user-data !i32 Formatter-new
+    \append-string $user-data !i32 new
 }
 

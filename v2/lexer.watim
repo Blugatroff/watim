@@ -1,10 +1,12 @@
 import "../std/core.watim" as Core
 import "../std/io.watim" as IO
+import "../std/util.watim" as Util
 import "../std/bytes.watim" as Bytes
 import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
+import "../std/fmt.watim" as Fmt (Formatter)
 
 variant TokenTy {
     case TOKEN_NUMBER
@@ -180,6 +182,17 @@ fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 {
         case TOKEN_IDENT -> { 0 !.i32 0 }
         case TOKEN_STRING -> { 0 !.i32 0 }
     }
+}
+fn Token-format(fmt: .Formatter, self: .Token) {
+    $fmt "(" Fmt:write
+    $fmt $self Token-ty TokenTy-name Fmt:write
+    $fmt " " Fmt:write
+    $fmt $self Token-lexeme Fmt:write
+    $fmt " " Fmt:write
+    $fmt $self Token-line Util:i32-format
+    $fmt " " Fmt:write
+    $fmt $self Token-column Util:i32-format
+    $fmt ")" Fmt:write
 }
 fn Token-print(fd: i32, self: .Token) -> i32 { block {
     $fd "(" IO:write-all Core:dup<i32> 0 /= if { break } drop

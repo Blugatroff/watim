@@ -1,6 +1,6 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
-import "./fmt.watim" as FMT
+import "./fmt.watim" as FMT (Formatter)
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
 import "./array.watim" as Array
 import "./arena.watim" as Arena (Arena)
@@ -27,9 +27,9 @@ fn parse(pt: .i32, len: i32) -> i32 {
     }
 }
 
-fn i32-format(self: i32, formatter: .FMT:Formatter) {
+fn i32-format(formatter: .Formatter, self: i32) {
     memory buf: i32 24
-    $formatter $buf $self $buf IO:print-i32-into FMT:Formatter-write
+    $formatter $buf $self $buf IO:print-i32-into FMT:write
 }
 
 fn split-bytes(arena: .Arena, bytes: ByteSlice, del: i32) -> Array:Array<ByteSlice> {

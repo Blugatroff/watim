@@ -1,7 +1,7 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./arena.watim" as A
-import "./fmt.watim" as FMT
+import "./fmt.watim" as FMT (Formatter)
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
 import "./byte-array.watim" as ByteArray (ByteArray)
 
@@ -111,30 +111,38 @@ fn pop<T>(self: .Array<T>) -> T {
 fn clone<T>(arena: .A:Arena, self: .Array<T>) -> Array<T> {
     $arena $self.ptr $self.len init<T>
 }
-fn format<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) {
-    $formatter "[" FMT:Formatter-write
+fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .Array<T>) {
+    $formatter "[" FMT:write
     0 @i
     loop {
         $i $self.len = if { break }
         $formatter $self $i get<T> $format-element ->
         $i 1 + #i
-        $i $self.len /= if { $formatter ", " FMT:Formatter-write }
+        $i $self.len /= if { $formatter ", " FMT:write }
     }
-    $formatter "]" FMT:Formatter-write
+    $formatter "]" FMT:write
 }
-fn format-multi-line<T>(formatter: .FMT:Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) {
-    $formatter "[" FMT:Formatter-write
+fn format-multi-line<T>(formatter: .Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) {
+    $formatter "[" FMT:write
     0 @i
-    $formatter FMT:Formatter-indent
+    $formatter FMT:indent
     loop {
         $i $self.len = if { break }
-        $formatter FMT:Formatter-write-indent
+        $formatter "\n" FMT:write
+        $formatter FMT:write-indent
         $formatter $self $i get<T> $format-element ->
         $i 1 + #i
-        $i $self.len /= if { $formatter "," FMT:Formatter-write }
+        $i $self.len /= if {
+            $formatter "," FMT:write
+        } else {
+            $formatter "\n" FMT:write
+            $formatter FMT:dedent
+            $formatter FMT:write-indent
+            $formatter FMT:indent
+        }
     }
-    $formatter FMT:Formatter-dedent
-    $formatter "]" FMT:Formatter-write
+    $formatter FMT:dedent
+    $formatter "]" FMT:write
 }
 fn print<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { block {
     $fd "[" IO:write-all @code

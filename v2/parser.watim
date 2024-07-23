@@ -5,36 +5,33 @@ import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
-import "../std/fmt.watim" as FMT (Formatter-to-fd)
+import "../std/fmt.watim" as Fmt (Formatter)
 
-import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, Token-print, Token-location, Token-column)
+import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-location, Token-column)
 
 struct Import {
     path: Token
     qualifier: Token
     items: Array<Token>
 }
-fn Import-print(fd: i32, self: .Import) -> i32 { block {
-    $fd "Import " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.path Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.qualifier Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd " [" IO:write-all Core:dup<i32> 0 /= if { break } drop
-    0 @i
-    loop {
-        $i $self.items.len = if { 0 break }
-        $fd &self.items $i Array:get<Token> Token-print Core:dup<i32> 0 /= if { break } drop
-        $i 1 + $self.items.len /= if {
-            $fd ", " IO:write-all Core:dup<i32> 0 /= if { break } drop
-        }
-        $i 1 + #i
-    } Core:dup<i32> 0 /= if { break } drop
-    $fd "]" IO:write-all
-} }
+fn Import-format(fmt: .Formatter, self: .Import) {
+    $fmt "(Import " Fmt:write
+    $fmt &self.path Token-format
+    $fmt " " Fmt:write
+    $fmt &self.qualifier Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.items Array:format<Token>
+    $fmt ")" Fmt:write
+}
 
 struct ForeignType {
     module: Token
     name: Token
+}
+fn ForeignType-format(fmt: .Formatter, self: .ForeignType) {
+    $fmt &self.module Token-lexeme Fmt:write
+    $fmt ":" Fmt:write
+    $fmt &self.name Token-lexeme Fmt:write
 }
 
 variant Type {
@@ -45,47 +42,80 @@ variant Type {
     case Complex -> Token
     case Foreign -> ForeignType
 }
+fn Type-format(fmt: .Formatter, self: .Type) { block {
+    $self match {
+        case Bool -> { "bool" }
+        case I32 -> { "i32" }
+        case I64 -> { "i64" }
+        case Ptr -> { $fmt "." Fmt:write ~ $fmt flip Type-format break }
+        case Complex -> { $fmt flip Token-format break }
+        case Foreign -> { $fmt flip ForeignType-format break }
+    } @len @ptr
+    $fmt $ptr $len Fmt:write
+} }
 
 struct NamedType {
     name: Token
     type: Type
+}
+fn NamedType-format(fmt: .Formatter, self: .NamedType) {
+    $fmt "(NamedType " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type-format
+    $fmt ")" Fmt:write
 }
 
 struct ForeignCall {
     module: Token
     name: Token
 }
-fn ForeignCall-print(fd: i32, self: .ForeignCall) -> i32 { block {
-    $fd "(ForeignCall " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.module Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.name Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd ")" IO:write-all
-} }
+fn ForeignCall-format(fmt: .Formatter, self: .ForeignCall) {
+    $fmt "(ForeignCall " Fmt:write
+    $fmt &self.module Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt ")" Fmt:write
+}
 
 struct RefLocal {
     ident: Token
     fields: Array<Token>
 }
-fn RefLocal-print(fd: i32, self: .RefLocal) -> i32 { block {
-    $fd "(RefLocal " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.ident Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd \Token-print &self.fields Array:print<Token> Core:dup<i32> 0 /= if { break } drop
-    $fd ")" IO:write-all
-} }
+fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
+    $fmt "(RefLocal " Fmt:write
+    $fmt &self.ident Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format<Token>
+    $fmt ")" Fmt:write
+}
 
 struct GetLocal {
     ident: Token
     fields: Array<Token>
 }
-fn GetLocal-print(fd: i32, self: .GetLocal) -> i32 { block {
-    $fd "(GetLocal " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.ident Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd \Token-print &self.fields Array:print<Token> Core:dup<i32> 0 /= if { break } drop
-    $fd ")" IO:write-all
-} }
+fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
+    $fmt "(GetLocal " Fmt:write
+    $fmt &self.ident Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format<Token>
+    $fmt ")" Fmt:write
+}
+
+struct If {
+    token: Token
+    true-words: Array<Word>
+    false-words: Array<Word>
+}
+fn If-format(fmt: .Formatter, self: .If) {
+    $fmt "(If " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Word-format &self.true-words Array:format-multi-line<Word>
+    $fmt " " Fmt:write
+    $fmt \Word-format &self.false-words Array:format-multi-line<Word>
+    $fmt ")" Fmt:write
+}
 
 variant Word {
     case Call -> Token
@@ -95,22 +125,24 @@ variant Word {
     case RefLocal -> RefLocal
     case GetLocal -> GetLocal
     case Number -> Token
+    case If -> If
 }
-fn Word-print(fd: i32, self: .Word) -> i32 { block {
+fn Word-format(fmt: .Formatter, self: .Word) { block {
     $self match {
         case Call -> { "Call" }
-        case ForeignCall -> { $fd flip ForeignCall-print break }
+        case ForeignCall -> { $fmt flip ForeignCall-format break }
         case String -> { "String" }
         case InitLocal -> { "InitLocal" }
-        case RefLocal -> { $fd flip RefLocal-print break }
-        case GetLocal -> { $fd flip GetLocal-print break }
+        case RefLocal -> { $fmt flip RefLocal-format break }
+        case GetLocal -> { $fmt flip GetLocal-format break }
         case Number -> { "Number" }
+        case If -> { $fmt flip If-format break }
     } @name-len @name-ptr
-    $fd "(" IO:write-all Core:dup<i32> 0 /= if { flip drop break } drop
-    $fd $name-ptr $name-len IO:write-all Core:dup<i32> 0 /= if { flip drop break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { flip drop break } drop
-    $fd flip Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd ")" IO:write-all
+    $fmt "(" Fmt:write
+    $fmt $name-ptr $name-len Fmt:write
+    $fmt " " Fmt:write
+    $fmt flip Token-format
+    $fmt ")" Fmt:write
 } }
 
 struct Signature {
@@ -118,10 +150,12 @@ struct Signature {
     parameters: Array<NamedType>
     returns: Array<Type>
 }
-fn Signature-print(fd: i32, self: .Signature) -> i32 { block {
-    $fd "Signature " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    0
-} }
+fn Signature-format(fmt: .Formatter, self: .Signature) {
+    $fmt "Signature " Fmt:write
+    $fmt \Token-format &self.generic-parameters Array:format<Token>
+    $fmt \NamedType-format &self.parameters Array:format<NamedType>
+    $fmt \Type-format &self.returns Array:format<Type>
+}
 
 struct Function {
     name: Token
@@ -129,36 +163,30 @@ struct Function {
     signature: Signature
     words: Array<Word>
 }
-fn Function-print(fd: i32, self: .Function) -> i32 { block {
-    $fd "Function " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.name Token-print Core:dup<i32> 0 /= if { break } drop
-    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+fn Function-format(fmt: .Formatter, self: .Function) {
+    $fmt "Function " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
     &self.export match {
         case None -> { }
         case Some -> {
-            $fd flip Token-print Core:dup<i32> 0 /= if { break } drop
-            $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fmt flip Token-format
+            $fmt " " Fmt:write
         }
     }
-    $fd &self.signature Signature-print Core:dup<i32> 0 /= if { break } drop
-    0 @i
-    loop {
-        $i $self.words.len = if { 0 break }
-        $fd "\n  " IO:write-all Core:dup<i32> 0 /= if { break } drop
-        $fd &self.words $i Array:get<Word> Word-print Core:dup<i32> 0 /= if { break } drop
-        $i 1 + #i
-    } Core:dup<i32> 0 /= if { break }
-} }
+    $fmt &self.signature Signature-format
+    $fmt \Word-format &self.words Array:format-multi-line<Word>
+}
 
 variant TopItem {
     case Import -> Import
     case Function -> Function
 }
-fn TopItem-print(fd: i32, self: .TopItem) -> i32 { block {
-    $fd $self match {
-        case Import -> { Import-print }
-        case Function -> { Function-print }
-    } }
+fn TopItem-format(fmt: .Formatter, self: .TopItem) {
+    $fmt $self match {
+        case Import -> { Import-format }
+        case Function -> { Function-format }
+    }
 }
 
 struct Parser {
@@ -406,7 +434,8 @@ fn words(parser: .Parser, token: .Token) -> Result<Array<Word>, ParseError> { bl
         }
         $parser $token word match {
             case Error -> {
-                2 \Word-print &words Array:print-multi-line<Word> IO:check
+                2 Fmt:to-fd @fmt
+                &fmt \Word-format &words Array:format-multi-line<Word>
                 2 IO:newline
                 make Result<Array<Word>, ParseError>.Error break
             }
@@ -423,11 +452,65 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_AMPERSAND -> { $parser ref-locl break }
         case TOKEN_DOLLAR -> { $parser get-locl break }
         case TOKEN_NUMBER -> { $token ~ make Word.Number }
+        case TOKEN_IF -> { $parser $token iff break }
         case _ -> {
             drop
             $parser "word TODO" abort<Word> break
         }
     } make Result<Word, ParseError>.Success
+} }
+
+fn expect-token(parser: .Parser, ty: TokenTy) -> Result<.Token, ParseError> {
+    $parser advance match {
+        case None -> {
+            $parser.arena Arena:temp @arena @save
+            $arena "expected `" ByteArray:copy @message
+            $arena &message $ty TokenTy-name ByteArray:push
+            $arena &message "`" ByteArray:push
+            $parser &message ByteArray:unpack abort<.Token>
+            $arena $save Arena:restore
+        }
+        case Some -> {
+            Core:dup<.Token> Token-ty $ty /= if {
+                drop
+                $parser.arena Arena:temp @arena @save
+                $arena "expected `" ByteArray:copy @message
+                $arena &message $ty TokenTy-name ByteArray:push
+                $arena &message "`" ByteArray:push
+                $parser &message ByteArray:unpack abort<.Token>
+                $arena $save Arena:restore
+            } else {
+                make Result<.Token, ParseError>.Success
+            }
+        }
+    }
+}
+
+fn iff(parser: .Parser, start: .Token) -> Result<Word, ParseError> { block {
+    $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } @brace
+    $parser $brace words match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } @if-words
+    $parser peek match {
+        case None -> { $start ~ $if-words Array:new<Word> make If make Word.If make Result<Word, ParseError>.Success break }
+        case Some -> {}
+    } Token-ty match {
+        case TOKEN_ELSE -> {}
+        case _ -> { drop $start ~ $if-words Array:new<Word> make If make Word.If make Result<Word, ParseError>.Success break }
+    }
+    $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } @brace
+    $parser $brace words match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    } @else-words
+    $start ~ $if-words $else-words make If make Word.If make Result<Word, ParseError>.Success
 } }
 
 fn call(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {

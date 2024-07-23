@@ -9,10 +9,11 @@ import "../std/bytes.watim" as Bytes
 import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
+import "../std/fmt.watim" as Fmt
 
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
-import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-print)
+import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -127,13 +128,8 @@ fn main "_start" () {
             2 "Successfully parsed " IO:write-all IO:check
             2 $items.len IO:print IO:check
             2 " TopItems\n" IO:write-all IO:check
-            0 @i
-            loop {
-                $i $items.len = if { break }
-                1 &items $i Array:get<TopItem> TopItem-print IO:check
-                1 IO:newline
-                $i 1 + #i
-            }
+            2 Fmt:to-fd @fmt
+            &fmt \TopItem-format &items Array:format-multi-line<TopItem>
         }
     }
     exit
