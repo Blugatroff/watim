@@ -12,12 +12,12 @@ struct Iov {
 struct OnStack<T> { value: T }
 
 fn write(file: i32, ptr: .i32, len: i32) -> i32 {
-    local iov: Iov
-    local written-ptr: OnStack<i32>
+    uninit<Iov> @iov
+    0 make OnStack<i32> @written
     $ptr #iov.ptr
     $len #iov.len
-    $file &iov 1 &written-ptr.value raw_write drop
-    $written-ptr.value @written
+    $file &iov 1 &written.value raw_write drop
+    $written.value @written
     $written $len = if {
         $len
     } else {
@@ -26,8 +26,8 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
 }
 
 fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
-    local iov: Iov
-    local nread: OnStack<i32>
+    0 make OnStack<i32> @nread
+    uninit<Iov> @iov
     $buf-addr #iov.ptr
     $buf-size #iov.len
     $file &iov 1 &nread.value raw_read drop
