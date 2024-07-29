@@ -16,7 +16,7 @@ fn main "_start" () {
 
     &arena FS:init IO:check @fs
 
-    $args.len 1 le if { 
+    $args.len 1 le if {
         2 "Expected path to a test file!\n" IO:write-all IO:check
         1 Core:exit
     }
@@ -75,7 +75,7 @@ fn write-nullable-number-json(fd: i32, n: .i32) -> i32 {
     }
 }
 fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
-    $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop 
+    $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.compiler-status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
@@ -154,7 +154,7 @@ fn parse-test-file(arena: .Arena:Arena, file: ByteSlice) -> Test {
         loop {
             $i $headers.len = if { break }
             &headers $i Array:get<ByteSlice> @header
-            $file.len $header.len ge if { 
+            $file.len $header.len ge if {
                 &file 0 $header.len ByteSlice:slice $header ~ ByteSlice:eq if {
                     $header #section-header
                     break

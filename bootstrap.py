@@ -30,6 +30,7 @@ class TokenType(str, Enum):
     TILDE = "TILDE"
     BACKSLASH = "BACKSLASH"
     MEMORY = "MEMORY"
+    GLOBAL = "GLOBAL"
     SIZEOF = "SIZEOF"
     AS = "AS"
     STRUCT = "STRUCT"
@@ -72,7 +73,7 @@ class Token:
         return TYPE_LEXEME_DICT[ty]
 
     def __str__(self) -> str:
-        return f"{self.ty.value} \"{self.lexeme}\" {str(self.line)} {str(self.column)}"
+        return f"({self.ty.value} {self.lexeme} {str(self.line)} {str(self.column)})"
 
 @dataclass
 class LexerException(Exception):
@@ -105,7 +106,7 @@ class Lexer:
         self.column += n
 
     def add_space(self):
-        if len(self.tokens) == 0 or self.tokens[-1].ty != "Foo":
+        if len(self.tokens) == 0 or self.tokens[-1].ty != TokenType.SPACE:
             self.tokens.append(Token.space(self.line, self.column))
         pass
 
@@ -213,6 +214,7 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "import": TokenType.IMPORT,
     "as":     TokenType.AS,
     "memory": TokenType.MEMORY,
+    "global": TokenType.GLOBAL,
     "struct": TokenType.STRUCT,
     "block":  TokenType.BLOCK,
     "break":  TokenType.BREAK,
@@ -464,6 +466,11 @@ class ParsedMemory:
     size: Token | None
 
 @dataclass
+class ParsedGlobal:
+    name: Token
+    taip: ParsedType
+
+@dataclass
 class ParsedFunction:
     signature: ParsedFunctionSignature
     memories: List[ParsedMemory]
@@ -494,7 +501,7 @@ class ParsedModule:
     file: str
     imports: List[ParsedImport]
     type_definitions: List[ParsedTypeDefinition]
-    memories: List[ParsedMemory]
+    globals: List[ParsedMemory | ParsedGlobal]
     functions: List[ParsedFunction]
     externs: List[ParsedExtern]
 
@@ -555,7 +562,7 @@ class Parser:
     def parse(self) -> ParsedModule:
         imports: List[ParsedImport] = []
         type_definitions: List[ParsedTypeDefinition] = []
-        memories: List[ParsedMemory] = []
+        globals: List[ParsedMemory | ParsedGlobal] = []
         functions: List[ParsedFunction] = []
         externs: List[ParsedExtern] = []
         while len(self.tokens) != 0:
@@ -665,11 +672,20 @@ class Parser:
 
             if token.ty == TokenType.MEMORY:
                 self.retreat(token)
-                memories.append(self.parse_memory([]))
+                globals.append(self.parse_memory([]))
+                continue
+
+            if token.ty == TokenType.GLOBAL:
+                name = self.advance(skip_ws=True)
+                colon = self.advance(skip_ws=True)
+                if colon is None or colon.ty != TokenType.COLON:
+                    self.abort("Expected `:`")
+                taip = self.parse_type([])
+                globals.append(ParsedGlobal(name, taip))
                 continue
 
             self.abort("Expected function import or struct definition")
-        return ParsedModule(self.file_path, self.file, imports, type_definitions, memories, functions, externs)
+        return ParsedModule(self.file_path, self.file, imports, type_definitions, globals, functions, externs)
 
     def parse_function(self) -> ParsedFunction:
         signature = self.parse_function_signature()
@@ -1267,9 +1283,14 @@ class ResolvedMemory:
     size: Token | None
 
 @dataclass
+class ResolvedGlobal:
+    taip: ResolvedNamedType
+    was_reffed: bool = False
+
+@dataclass
 class ResolvedFieldAccess:
     name: Token
-    source_taip: ResolvedStructType
+    source_taip: ResolvedStructType | ResolvedPtrType
     target_taip: ResolvedType
     field_index: int
 
@@ -1634,7 +1655,7 @@ class ResolvedModule:
     imports: List[Import]
     type_definitions: List[ResolvedTypeDefinition]
     externs: List[ResolvedExtern]
-    memories: List[ResolvedMemory]
+    globals: List[ResolvedMemory | ResolvedGlobal]
     functions: List[ResolvedFunction]
     data: bytes
 
@@ -2002,8 +2023,13 @@ class FunctionResolver:
                     remaining_stack = stack.make_child()
                     (remaining_resolved_words, remaining_words_diverge) = self.resolve_words(context.with_env(else_env), remaining_stack, remaining_words)
                     stack.apply(remaining_stack)
+                    remaining_words_parameters = list(remaining_stack.negative)
                     if_returns = remaining_stack.dump()
-                    return (ResolvedIfWord(token, if_parameters, if_returns, if_words, remaining_resolved_words, remaining_words_diverge), remaining_words_diverge)
+                    if len(if_parameters) >= len(remaining_words_parameters):
+                        parameters = if_parameters
+                    else:
+                        parameters = remaining_words_parameters
+                    return (ResolvedIfWord(token, parameters, if_returns, if_words, remaining_resolved_words, remaining_words_diverge), remaining_words_diverge)
                 if not if_words_diverge:
                     if_returns = if_stack.stack
                 elif not else_words_diverge:
@@ -2029,10 +2055,10 @@ class FunctionResolver:
                 loop_stack = stack.make_child()
                 loop_env = Env(context.env)
                 loop_break_stacks: List[BreakStack] = []
-                parameters = None if parsed_parameters is None else list(map(self.module_resolver.resolve_type, parsed_parameters))
-                (words, _) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks, parameters), loop_stack, parsed_words)
+                parameter_annotation = None if parsed_parameters is None else list(map(self.module_resolver.resolve_type, parsed_parameters))
+                (words, _) = self.resolve_words(context.with_env(loop_env).with_break_stacks(loop_break_stacks, parameter_annotation), loop_stack, parsed_words)
                 diverges = len(loop_break_stacks) == 0
-                parameters = loop_stack.negative
+                parameters = parameter_annotation or loop_stack.negative
                 if len(loop_break_stacks) != 0:
                     diverges = diverges or not loop_break_stacks[0].reachable
                     for i in range(1, len(loop_break_stacks)):
@@ -2117,8 +2143,16 @@ class FunctionResolver:
             case ParsedRefWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
-                if not isinstance(local, GlobalId) and not isinstance(var_type, ResolvedPtrType):
-                    context.env.mark_var_as_reffed(local)
+                if not isinstance(var_type, ResolvedPtrType):
+                    if isinstance(local, LocalId):
+                        context.env.mark_var_as_reffed(local)
+                    else:
+                        if self.module_resolver.id == local.module:
+                            globl = self.module_resolver.globals[local.index]
+                        else:
+                            globl = self.module_resolver.resolved_modules[local.module].globals[local.index]
+                        if not isinstance(globl, ResolvedMemory):
+                            globl.was_reffed = True
                 stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
             case ParsedSetWord(token, fields):
@@ -2265,7 +2299,8 @@ class FunctionResolver:
                         if by_ref:
                             taip = ResolvedPtrType(taip)
                         case_stack.append(FunctionResolver.resolve_generic(arg.generic_arguments)(taip))
-                    (resolved_words, diverges) = self.resolve_words(context, case_stack, parsed_case.words)
+                    case_context = context.with_env(Env(context.env))
+                    (resolved_words, diverges) = self.resolve_words(case_context, case_stack, parsed_case.words)
                     match_diverges = match_diverges and diverges
                     resolved_cases.append(ResolvedMatchCase(taip, tag, resolved_words))
                     if parsed_case.case.lexeme in visited_cases:
@@ -2279,7 +2314,8 @@ class FunctionResolver:
                 if default is not None:
                     default_case_stack = stack.make_child()
                     default_case_stack.append(arg if not by_ref else ResolvedPtrType(arg))
-                    (resolved_words, diverges) = self.resolve_words(context, default_case_stack, default)
+                    case_context = context.with_env(Env(context.env))
+                    (resolved_words, diverges) = self.resolve_words(case_context, default_case_stack, default)
                     match_diverges = match_diverges and diverges
                     default_case = resolved_words
                     case_stacks.append((default_case_stack, "_", diverges))
@@ -2544,9 +2580,9 @@ class FunctionResolver:
     def resolve_var_name(self, env: Env, name: Token) -> Tuple[ResolvedType, LocalId | GlobalId]:
         var = env.lookup(name)
         if var is None:
-            for index, memory in enumerate(self.module_resolver.memories):
-                if memory.taip.name.lexeme == name.lexeme:
-                    return (memory.taip.taip, GlobalId(self.module_resolver.id, index))
+            for index, globl in enumerate(self.module_resolver.globals):
+                if globl.taip.name.lexeme == name.lexeme:
+                    return (globl.taip.taip, GlobalId(self.module_resolver.id, index))
             self.abort(name, f"local {name.lexeme} not found")
         return (var[0].taip, var[1])
 
@@ -2554,13 +2590,19 @@ class FunctionResolver:
         resolved_fields: List[ResolvedFieldAccess] = []
         while len(fields) > 0:
             field_name = fields[0]
-            def inner(source_taip: ResolvedStructType, fields: List[Token]) -> ResolvedType:
-                struct = self.module_resolver.get_type_definition(source_taip.struct)
+            def inner(source_taip: ResolvedStructType | ResolvedPtrType, fields: List[Token]) -> ResolvedType:
+                if isinstance(source_taip, ResolvedStructType):
+                    struct = self.module_resolver.get_type_definition(source_taip.struct)
+                    generic_arguments = source_taip.generic_arguments
+                else:
+                    assert(isinstance(source_taip.child, ResolvedStructType))
+                    struct = self.module_resolver.get_type_definition(source_taip.child.struct)
+                    generic_arguments = source_taip.child.generic_arguments
                 if isinstance(struct, ResolvedVariant):
                     self.abort(field_name, "can not access fields of a variant")
                 for field_index, field in enumerate(struct.fields):
                     if field.name.lexeme == field_name.lexeme:
-                        target_taip = FunctionResolver.resolve_generic(source_taip.generic_arguments)(field.taip)
+                        target_taip = FunctionResolver.resolve_generic(generic_arguments)(field.taip)
                         resolved_fields.append(ResolvedFieldAccess(field_name, source_taip, target_taip, field_index))
                         fields.pop(0)
                         return target_taip
@@ -2569,7 +2611,7 @@ class FunctionResolver:
                 taip = inner(taip, fields)
                 continue
             if isinstance(taip, ResolvedPtrType) and not isinstance(taip.child, ResolvedPtrType):
-                taip = taip.child
+                taip = inner(taip, fields)
                 continue
             else:
                 self.abort(field_name, f"field not found {field_name.lexeme} WTF?")
@@ -2585,7 +2627,7 @@ class ModuleResolver:
     imports: List[Import] = field(default_factory=list)
     resolved_type_definitions: List[ResolvedTypeDefinition] = field(default_factory=list)
     externs: List[ResolvedExtern] = field(default_factory=list)
-    memories: List[ResolvedMemory] = field(default_factory=list)
+    globals: List[ResolvedMemory | ResolvedGlobal] = field(default_factory=list)
     data: bytearray = field(default_factory=bytearray)
     signatures: List[ResolvedFunctionSignature] = field(default_factory=list)
 
@@ -2612,13 +2654,13 @@ class ModuleResolver:
         self.imports = resolved_imports
         resolved_type_definitions = list(map(self.resolve_type_definition, self.module.type_definitions))
         self.resolved_type_definitions = resolved_type_definitions
-        self.memories = list(map(self.resolve_memory, self.module.memories))
+        self.globals = list(map(self.resolve_global, self.module.globals))
         resolved_externs = list(map(self.resolve_extern, self.module.externs))
         self.externs = resolved_externs
         resolved_signatures = list(map(lambda f: self.resolve_function_signature(f.signature), self.module.functions))
         self.signatures = resolved_signatures
         resolved_functions = list(map(lambda f: self.resolve_function(f[0], f[1]), zip(resolved_signatures, self.module.functions)))
-        return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_type_definitions, resolved_externs, self.memories, resolved_functions, self.data)
+        return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_type_definitions, resolved_externs, self.globals, resolved_functions, self.data)
 
     def resolve_function(self, signature: ResolvedFunctionSignature, function: ParsedFunction) -> ResolvedFunction:
         return FunctionResolver(self, self.externs, self.signatures, self.resolved_type_definitions, function, signature).resolve()
@@ -2638,6 +2680,15 @@ class ModuleResolver:
 
     def resolve_memory(self, memory: ParsedMemory) -> ResolvedMemory:
         return ResolvedMemory(ResolvedNamedType(memory.name, ResolvedPtrType(self.resolve_type(memory.taip))), memory.size)
+
+    def resolve_global(self, globl: ParsedMemory | ParsedGlobal) -> ResolvedMemory | ResolvedGlobal:
+        match globl:
+            case ParsedMemory():
+                return ResolvedMemory(ResolvedNamedType(globl.name, ResolvedPtrType(self.resolve_type(globl.taip))), globl.size)
+            case ParsedGlobal():
+                return ResolvedGlobal(ResolvedNamedType(globl.name, self.resolve_type(globl.taip)))
+            case other:
+                assert_never(other)
 
     def resolve_extern(self, extern: ParsedExtern) -> ResolvedExtern:
         return ResolvedExtern(extern.module, extern.name, self.resolve_function_signature(extern.signature))
@@ -2825,16 +2876,13 @@ class StructHandle:
 class StructType:
     name: Token
     struct: StructHandle
-    _size: int
+    size: Callable[[], int]
 
     def __str__(self) -> str:
         return f"StructType(name={str(self.name)}, struct={str(self.struct)})"
 
-    def size(self) -> int:
-        return self._size
-
     def can_live_in_reg(self) -> bool:
-        return self._size <= 4
+        return self.size() <= 4
 
 Type = PrimitiveType | PtrType | StructType | FunctionType
 
@@ -2940,6 +2988,11 @@ class Memory:
     size: Token | None
 
 @dataclass
+class Global:
+    taip: NamedType
+    was_reffed: bool
+
+@dataclass
 class Extern:
     module: Token
     name: Token
@@ -3029,7 +3082,7 @@ class SizeofWord:
 @dataclass
 class FieldAccess:
     name: Token
-    source_taip: StructType
+    source_taip: StructType | PtrType
     target_taip: Type
     offset: int
 
@@ -3221,7 +3274,7 @@ class Module:
     id: int
     type_definitions: Dict[int, List[TypeDefinition]]
     externs: List[Extern]
-    memories: List[Memory]
+    globals: List[Memory | Global]
     functions: Dict[int, Function]
     data: bytes
 
@@ -3230,7 +3283,7 @@ class Monomizer:
     modules: Dict[int, ResolvedModule]
     type_definitions: Dict[int, Dict[int, List[Tuple[List[Type], TypeDefinition]]]] = field(default_factory=dict)
     externs: Dict[int, List[Extern]] = field(default_factory=dict)
-    memories: Dict[int, List[Memory]] = field(default_factory=dict)
+    globals: Dict[int, List[Memory | Global]] = field(default_factory=dict)
     functions: Dict[int, Dict[int, Function]] = field(default_factory=dict)
     function_table: Dict[FunctionHandle | ExternHandle, int] = field(default_factory=dict)
     struct_word_copy_space_offset: int = 0
@@ -3240,7 +3293,7 @@ class Monomizer:
             module = self.modules[id]
             functions: List[Function] = []
             self.externs[id] = list(map(self.monomize_extern, module.externs))
-            self.memories[id] = list(map(lambda m: self.monomize_memory(m, []), module.memories))
+            self.globals[id] = list(map(lambda m: self.monomize_global(m, []), module.globals))
             for index, function in enumerate(module.functions):
                 if function.signature.export_name is not None:
                     assert(len(function.signature.generic_parameters) == 0)
@@ -3286,9 +3339,9 @@ class Monomizer:
                 self.functions[module_id] = {}
             module = self.modules[module_id]
             externs: List[Extern] = self.externs[module_id]
-            memories: List[Memory] = self.memories[module_id]
+            globals: List[Memory | Global] = self.globals[module_id]
             type_definitions: Dict[int, List[TypeDefinition]] = { k: [t[1] for t in v] for k, v in self.type_definitions[module_id].items() }
-            mono_modules[module_id] = Module(module_id, type_definitions, externs, memories, self.functions[module_id], self.modules[module_id].data)
+            mono_modules[module_id] = Module(module_id, type_definitions, externs, globals, self.functions[module_id], self.modules[module_id].data)
         return self.function_table, mono_modules
 
     def monomize_locals(self, locals: Dict[LocalId, ResolvedLocal], generics: List[Type]) -> Dict[LocalId, Local]:
@@ -3348,6 +3401,15 @@ class Monomizer:
     def monomize_memory(self, memory: ResolvedMemory, generics: List[Type]) -> Memory:
         return Memory(self.monomize_named_type(memory.taip, generics), memory.size)
 
+    def monomize_global(self, globl: ResolvedMemory | ResolvedGlobal, generics: List[Type]) -> Memory | Global:
+        match globl:
+            case ResolvedMemory():
+                return Memory(self.monomize_named_type(globl.taip, generics), globl.size)
+            case ResolvedGlobal():
+                return Global(self.monomize_named_type(globl.taip, generics), globl.was_reffed)
+            case other:
+                assert_never(other)
+
     def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local]) -> List[Word]:
         return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count, locals), words))
 
@@ -3373,17 +3435,20 @@ class Monomizer:
                     copy_space_offset.value += monomized_taip.size()
                 else:
                     offset = None
-                loads = determine_loads(fields)
+                lives_in_memory = self.does_var_live_in_memory(local_id, locals)
                 monomized_var_taip = self.monomize_type(var_taip, generics)
+                loads = determine_loads(fields, lives_in_memory)
                 target_taip = fields[-1].target_taip if len(fields) != 0 else monomized_var_taip
-                return GetWord(token, local_id, monomized_var_taip, target_taip, loads, offset, self.does_var_live_in_memory(local_id, locals))
+                return GetWord(token, local_id, monomized_var_taip, target_taip, loads, offset, lives_in_memory)
             case ResolvedInitWord(token, local_id, taip):
                 return InitWord(token, local_id, self.monomize_type(taip, generics), self.does_var_live_in_memory(local_id, locals))
             case ResolvedSetWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
-                loads = determine_loads(fields)
-                monomized_taip = fields[-1].target_taip if len(fields) != 0 else self.lookup_var_taip(local_id, locals)
-                return SetWord(token, local_id, monomized_taip, loads, self.does_var_live_in_memory(local_id, locals))
+                lives_in_memory = self.does_var_live_in_memory(local_id, locals)
+                monomized_var_taip = self.lookup_var_taip(local_id, locals)
+                loads = determine_loads(fields, lives_in_memory)
+                monomized_taip = fields[-1].target_taip if len(fields) != 0 else monomized_var_taip
+                return SetWord(token, local_id, monomized_taip, loads, lives_in_memory)
             case ResolvedRefWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 loads = determine_loads(fields)
@@ -3543,10 +3608,13 @@ class Monomizer:
     def lookup_var_taip(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> Type:
         if isinstance(local_id, LocalId):
             return locals[local_id].taip
-        return self.memories[local_id.module][local_id.index].taip.taip
+        return self.globals[local_id.module][local_id.index].taip.taip
 
     def does_var_live_in_memory(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> bool:
-        return isinstance(local_id, GlobalId) or locals[local_id].lives_in_memory()
+        if isinstance(local_id, LocalId):
+            return locals[local_id].lives_in_memory()
+        globl = self.globals[local_id.module][local_id.index]
+        return isinstance(globl, Memory) or globl.was_reffed or not globl.taip.taip.can_live_in_reg()
 
     def insert_function_into_table(self, function: FunctionHandle | ExternHandle) -> int:
         if function not in self.function_table:
@@ -3558,11 +3626,17 @@ class Monomizer:
             return []
 
         field = fields[0]
-        assert(isinstance(field.source_taip, ResolvedPtrType) or isinstance(field.source_taip, ResolvedStructType))
 
-        source_taip = self.monomize_struct_type(field.source_taip, generics)
-        handle_and_struct = self.monomize_struct(field.source_taip.struct, list(map(lambda t: self.monomize_type(t, generics), field.source_taip.generic_arguments)))
-        struct = handle_and_struct[1]
+        if isinstance(field.source_taip, ResolvedStructType):
+            source_taip: PtrType | StructType = self.monomize_struct_type(field.source_taip, generics)
+            resolved_struct = field.source_taip.struct
+            generic_arguments = field.source_taip.generic_arguments
+        else:
+            assert(isinstance(field.source_taip.child, ResolvedStructType))
+            source_taip = PtrType(self.monomize_type(field.source_taip.child, generics))
+            resolved_struct = field.source_taip.child.struct
+            generic_arguments = field.source_taip.child.generic_arguments
+        [_, struct] = self.monomize_struct(resolved_struct, list(map(lambda t: self.monomize_type(t, generics), generic_arguments)))
         assert(not isinstance(struct, Variant))
         target_taip = self.monomize_type(field.target_taip, struct.generic_parameters)
         offset = struct.field_offset(field.field_index)
@@ -3666,7 +3740,8 @@ class Monomizer:
     def monomize_struct_type(self, taip: ResolvedStructType, generics: List[Type]) -> StructType:
         this_generics = list(map(lambda t: self.monomize_type(t, generics), taip.generic_arguments))
         handle,struct = self.monomize_struct(taip.struct, this_generics)
-        return StructType(taip.name, handle, struct.size())
+        size = Lazy(lambda: struct.size())
+        return StructType(taip.name, handle, lambda: size.get())
 
     def monomize_function_type(self, taip: ResolvedFunctionType, generics: List[Type]) -> FunctionType:
         parameters = list(map(lambda t: self.monomize_type(t, generics), taip.parameters))
@@ -3680,11 +3755,14 @@ class Monomizer:
 def align_to(n: int, to: int) -> int:
     return n + (to - (n % to)) * ((n % to) > 0)
 
-def determine_loads(fields: List[FieldAccess]) -> List[int]:
+def determine_loads(fields: List[FieldAccess], lives_in_memory=True) -> List[int]:
     loads: List[int] = []
     i = 0
     while i < len(fields):
         taip = fields[i].source_taip
+        if taip.can_live_in_reg() and not (i == 0 and lives_in_memory) and not isinstance(taip, PtrType):
+            i += 1
+            continue
         assert(isinstance(taip, StructType) or (isinstance(taip, PtrType) and isinstance(taip.child, StructType)))
 
         offset = 0
@@ -3703,7 +3781,7 @@ class WatGenerator:
     function_table: Dict[FunctionHandle | ExternHandle, int]
     chunks: List[str] = field(default_factory=list)
     indentation: int = 0
-    globals: Dict[GlobalId, Memory]= field(default_factory=dict)
+    globals: Dict[GlobalId, Memory | Global]= field(default_factory=dict)
     module_data_offsets: Dict[int, int] = field(default_factory=dict)
 
     def write(self, s: str) -> None:
@@ -3744,8 +3822,8 @@ class WatGenerator:
             for extern in module.externs:
                 self.write_extern(module.id, extern)
                 self.write("\n")
-            for i, memory in enumerate(module.memories):
-                self.globals[GlobalId(module.id, i)] = memory
+            for i, globl in enumerate(module.globals):
+                self.globals[GlobalId(module.id, i)] = globl
 
         self.write_line("(memory 1 65536)")
         self.write_line("(export \"memory\" (memory 0))")
@@ -3870,11 +3948,6 @@ class WatGenerator:
                 self.write_line(f"i32.const {token.lexeme}")
             case GetWord(token, local_id, var_taip, target_taip, loads, copy_space_offset, var_lives_in_memory):
                 self.write_indent()
-                if not isinstance(var_taip, PtrType) and isinstance(local_id, LocalId) and not var_lives_in_memory:
-                    self.write("local.get ")
-                    self.write_local_ident(token.lexeme, local_id)
-                    self.write("\n")
-                    return
                 if not target_taip.can_live_in_reg():
                     # set up the address to store store the result in
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
@@ -3939,10 +4012,6 @@ class WatGenerator:
                         self.write(f" i32.load offset={load}")
                 self.write("\n")
             case SetWord(token, local_id, target_taip, loads, var_lives_in_memory):
-                if isinstance(local_id, GlobalId):
-                    print("SetWord on Global: TODO", file=sys.stderr)
-                    assert(False)
-                    return
                 self.write_set(local_id, locals, var_lives_in_memory, target_taip, loads)
             case InitWord(name, local_id, taip, var_lives_in_memory):
                 self.write_set(local_id, locals, var_lives_in_memory, taip, [])
@@ -3967,7 +4036,7 @@ class WatGenerator:
                 self.write(")")
                 self.write_return_struct_receiving(return_space_offset, taip.returns)
             case IntrinsicStore(token, taip):
-                if isinstance(taip, StructType):
+                if not taip.can_live_in_reg():
                     self.write_line(f"i32.const {taip.size()} memory.copy")
                 else:
                     self.write_line("i32.store")
@@ -4240,8 +4309,8 @@ class WatGenerator:
                         if default is None:
                             self.write("unreachable")
                             return
-                        self.write_indent()
-                        if variant.size() <= 4 and not by_ref:
+                        if variant.size() <= 4 and by_ref:
+                            self.write_indent()
                             self.write("i32.load")
                             self.write("\n")
                         self.write_words(module, locals, default)
@@ -4312,18 +4381,35 @@ class WatGenerator:
                 assert_never(other)
         return False
 
-    def write_set(self, local_id: LocalId, locals: Dict[LocalId, str], var_lives_in_memory: bool, target_taip: Type, loads: List[int]):
+    def write_set(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, str], var_lives_in_memory: bool, target_taip: Type, loads: List[int]):
         self.write_indent()
-        local = locals[local_id]
+        def write_ident():
+            match local_id:
+                case LocalId():
+                    local = locals[local_id]
+                    self.write_local_ident(local, local_id)
+                    return
+                case GlobalId():
+                    globl = self.globals[local_id]
+                    self.write(f"${globl.taip.name.lexeme}:{local_id.module}")
+                    return
+                case other:
+                    assert_never(other)
         if len(loads) == 0 and not var_lives_in_memory:
             # The local does not live in linear memory, so the target_taip must also already be on the stack unpacked.
             assert(target_taip.can_live_in_reg())
-            self.write(f"local.set ")
-            self.write_local_ident(local, local_id)
+            if isinstance(local_id, LocalId):
+                self.write("local.set ")
+            else:
+                self.write("global.set ")
+            write_ident()
             self.write("\n")
             return
-        self.write(f"local.get ")
-        self.write_local_ident(local, local_id)
+        if isinstance(local_id, LocalId):
+            self.write("local.get ")
+        else:
+            self.write("global.get ")
+        write_ident()
         if len(loads) == 0:
             if target_taip.can_live_in_reg():
                 self.write(f" call $intrinsic:flip i32.store\n")
@@ -4405,6 +4491,7 @@ class WatGenerator:
             return
         self.write_line("(table funcref (elem")
         self.indent()
+        self.write_indent()
         functions = list(self.function_table.items())
         functions.sort(key=lambda kv: kv[1])
         for handle, _ in functions:
@@ -4419,14 +4506,22 @@ class WatGenerator:
             else:
                 name = "TODO"
             self.write(f"{name} ")
+        self.write("\n")
         self.dedent()
         self.write_line("))")
 
     def write_globals(self, ptr: int) -> int:
         for global_id, globl in self.globals.items():
             self.write_indent()
-            self.write(f"(global ${globl.taip.name.lexeme}:{global_id.module} (mut i32) (i32.const {ptr}))\n")
-            ptr += globl.taip.taip.size() if globl.size is None else int(globl.size.lexeme)
+            lives_in_memory = isinstance(globl, Memory) or globl.was_reffed or not globl.taip.taip.can_live_in_reg()
+            initial_value = ptr if lives_in_memory else 0
+            self.write(f"(global ${globl.taip.name.lexeme}:{global_id.module} (mut i32) (i32.const {initial_value}))\n")
+            if not lives_in_memory:
+                continue
+            if isinstance(globl, Memory):
+                ptr += globl.taip.taip.size() if globl.size is None else int(globl.size.lexeme)
+            else:
+                ptr += globl.taip.taip.size()
         return ptr
 
     def write_data(self, data: bytes) -> None:
@@ -4495,7 +4590,7 @@ def run(path: str, mode: Mode, stdin: str | None = None) -> str:
 
 def main(argv: List[str], stdin: str | None = None) -> str:
     mode: Literal["compile"] | Literal["lex"] = "compile"
-    if len(argv) > 2 and argv[2] == "--lex":
+    if len(argv) > 2 and argv[2] == "lex":
         mode = "lex"
     return run(argv[1], mode, stdin)
 

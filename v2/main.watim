@@ -14,6 +14,7 @@ import "../std/fmt.watim" as Fmt
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
+import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -31,7 +32,7 @@ fn find-flag(args: .Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
     $args \ByteSlice:eq-by-ref &str Array:find<ByteSlice, .ByteSlice> if {
         $args flip Array:remove<ByteSlice> drop
         1 1 =
-    } else { 
+    } else {
         drop
         0 1 =
     }
@@ -130,9 +131,24 @@ fn main "_start" () {
             2 " TopItems\n" IO:write-all IO:check
             2 Fmt:to-fd @fmt
             &fmt \TopItem-format &items Array:format-multi-line<TopItem>
+
+            \write-stdout  PrettyPrinter-new @pp
+            0 @i
+            loop {
+                $items.len $i = if { break }
+                &items $i Array:get<TopItem> @item
+                $item &pp PrettyPrint:TopItem-pretty IO:check
+                $i 1 + #i
+            }
+            1 IO:newline
+            1 IO:newline
         }
     }
     exit
+}
+
+fn write-stdout(ptr: .i32, len: i32) -> i32 {
+    1 $ptr $len IO:write-all
 }
 
 fn exit() {

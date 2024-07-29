@@ -74,7 +74,7 @@ fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
             $new-buf #self.ptr
             $self $val push-assert-no-alloc<T>
         }
-    } 
+    }
 }
 fn push-assert-no-alloc<T>(self: .Array<T>, val: T) {
     $self.len 1 + $self.cap le if {
@@ -105,7 +105,7 @@ fn pop<T>(self: .Array<T>) -> T {
         2 "Cannot pop from empty Array" IO:write-all IO:check
         1 CORE:exit
     }
-    $self $self.len 1 - get<T> ~ 
+    $self $self.len 1 - get<T> ~
     $self.len 1 - #self.len
 }
 fn clone<T>(arena: .A:Arena, self: .Array<T>) -> Array<T> {
@@ -228,7 +228,7 @@ fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, 
         @i
         $self $i remove<T>
         $i 1 1 =
-    } else { 
+    } else {
         uninit<T> flip 0 1 =
     }
 }

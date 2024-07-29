@@ -1,0 +1,29 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+variant Type {
+    case Bool
+    case Ptr -> .Type
+}
+
+fn main "_start" () {
+    block () -> i32 {
+        make Type.Bool @b
+        &b make Type.Ptr match {
+            case Bool -> { "bool" }
+            case Ptr -> {
+                "." write dup<i32> 0 /= if { break } drop
+                drop 3 break
+            }
+            case _ -> { drop "TODO" }
+        } write
+    } proc_exit
+}
+
+fn dup<T>(a: T) -> T, T { $a $a }
+fn write(ptr: .i32, len: i32) -> i32 { 0 }
+
+[== Status Compiler ==]
+0
+[== Status ==]
+3

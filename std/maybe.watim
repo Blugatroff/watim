@@ -1,4 +1,5 @@
 import "./core.watim" as Core (unreachable)
+import "./fmt.watim" as Fmt (Formatter)
 
 variant Maybe<T> {
     case Some -> T
@@ -16,6 +17,17 @@ fn assert-some<T>(o: Maybe<T>) -> T {
     $o match {
         case Some -> {}
         case None -> { unreachable<T> }
+    }
+}
+
+fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>) {
+    $self match {
+        case None -> { $fmt "None" Fmt:write }
+        case Some -> {
+            $fmt "(Some " Fmt:write
+            $fmt flip $format-inner ->
+            $fmt ")" Fmt:write
+        }
     }
 }
 

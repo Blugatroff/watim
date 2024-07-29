@@ -7,15 +7,18 @@ import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/fmt.watim" as Fmt (Formatter)
 
-import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-location, Token-column)
+import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-print, Token-location, Token-column)
 
 struct Import {
+    start: Token
     path: Token
     qualifier: Token
     items: Array<Token>
 }
 fn Import-format(fmt: .Formatter, self: .Import) {
     $fmt "(Import " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
     $fmt &self.path Token-format
     $fmt " " Fmt:write
     $fmt &self.qualifier Token-format
@@ -30,10 +33,13 @@ struct ForeignCustomType {
     generic-arguments: Array<Type>
 }
 fn ForeignCustomType-format(fmt: .Formatter, self: .ForeignCustomType) {
-    $fmt &self.module Token-lexeme Fmt:write
-    $fmt ":" Fmt:write
-    $fmt &self.name Token-lexeme Fmt:write
+    $fmt "(ForeignCustomType " Fmt:write
+    $fmt &self.module Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
     $fmt \Type-format &self.generic-arguments Array:format<Type>
+    $fmt ")" Fmt:write
 }
 
 struct LocalCustomType {
@@ -41,8 +47,11 @@ struct LocalCustomType {
     generic-arguments: Array<Type>
 }
 fn LocalCustomType-format(fmt: .Formatter, self: .LocalCustomType) {
-    $fmt &self.name Token-lexeme Fmt:write
+    $fmt "(LocalCustomType " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
     $fmt \Type-format &self.generic-arguments Array:format<Type>
+    $fmt ")" Fmt:write
 }
 
 variant CustomType {
@@ -56,20 +65,42 @@ fn CustomType-format(fmt: .Formatter, self: .CustomType) {
     }
 }
 
+struct PtrType {
+    dot: Token
+    type: .Type
+}
+
+struct FunType {
+    token: Token
+    parameters: Array<Type>
+    returns: Array<Type>
+}
+fn FunType-format(fmt: .Formatter, self: .FunType) {
+    $fmt "(FunType " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.parameters Array:format<Type>
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.returns Array:format<Type>
+    $fmt ")" Fmt:write
+}
+
 variant Type {
-    case Bool
-    case I32
-    case I64
-    case Ptr -> .Type
+    case Bool -> Token
+    case I32 -> Token
+    case I64 -> Token
+    case Ptr -> PtrType
     case Custom -> CustomType
+    case Fun -> FunType
 }
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $self match {
-        case Bool -> { "bool" }
-        case I32 -> { "i32" }
-        case I64 -> { "i64" }
-        case Ptr -> { $fmt "." Fmt:write ~ $fmt flip Type-format break }
+        case Bool -> { drop "bool" }
+        case I32 -> { drop "i32" }
+        case I64 -> { drop "i64" }
+        case Ptr -> { .type $fmt "." Fmt:write ~ $fmt flip Type-format break }
         case Custom -> { $fmt flip CustomType-format break }
+        case Fun -> { $fmt flip FunType-format break }
     } @len @ptr
     $fmt $ptr $len Fmt:write
 } }
@@ -86,24 +117,54 @@ fn NamedType-format(fmt: .Formatter, self: .NamedType) {
     $fmt ")" Fmt:write
 }
 
+struct LocalCall {
+    name: Token
+    generic-arguments: Array<Type>
+}
+fn LocalCall-format(fmt: .Formatter, self: .LocalCall) {
+    $fmt "(LocalCall " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.generic-arguments Array:format-multi-line<Type>
+    $fmt ")" Fmt:write
+}
+
 struct ForeignCall {
     module: Token
     name: Token
+    generic-arguments: Array<Type>
 }
 fn ForeignCall-format(fmt: .Formatter, self: .ForeignCall) {
     $fmt "(ForeignCall " Fmt:write
     $fmt &self.module Token-format
     $fmt " " Fmt:write
     $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.generic-arguments Array:format-multi-line<Type>
+    $fmt ")" Fmt:write
+}
+
+struct InitLocal {
+    start: Token
+    ident: Token
+}
+fn InitLocal-format(fmt: .Formatter, self: .InitLocal) {
+    $fmt "(RefLocal " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
+    $fmt &self.ident Token-format
     $fmt ")" Fmt:write
 }
 
 struct RefLocal {
+    start: Token
     ident: Token
     fields: Array<Token>
 }
 fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
     $fmt "(RefLocal " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
     $fmt &self.ident Token-format
     $fmt " " Fmt:write
     $fmt \Token-format &self.fields Array:format<Token>
@@ -111,11 +172,14 @@ fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
 }
 
 struct GetLocal {
+    start: Token
     ident: Token
     fields: Array<Token>
 }
 fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt "(GetLocal " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
     $fmt &self.ident Token-format
     $fmt " " Fmt:write
     $fmt \Token-format &self.fields Array:format<Token>
@@ -123,53 +187,86 @@ fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
 }
 
 struct SetLocal {
+    start: Token
     ident: Token
     fields: Array<Token>
 }
 fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt "(SetLocal " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
     $fmt &self.ident Token-format
     $fmt " " Fmt:write
     $fmt \Token-format &self.fields Array:format<Token>
     $fmt ")" Fmt:write
 }
 
+struct Words {
+    words: Array<Word>
+    end: Token
+}
+fn Words-format(fmt: .Formatter, self: .Words) {
+    $fmt "(Words " Fmt:write
+    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt " " Fmt:write
+    $fmt &self.end Token-format
+    $fmt ")" Fmt:write
+}
+
 struct If {
     token: Token
-    true-words: Array<Word>
-    false-words: Array<Word>
+    true-words: Words
+    false-words: Maybe<Words>
 }
 fn If-format(fmt: .Formatter, self: .If) {
     $fmt "(If " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.true-words Array:format-multi-line<Word>
+    $fmt &self.true-words Words-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.false-words Array:format-multi-line<Word>
+    $fmt \Words-format &self.false-words Maybe:format<Words>
+    $fmt ")" Fmt:write
+}
+
+struct BlockAnnotation {
+    parameters: Array<Type>
+    returns: Array<Type>
+}
+fn BlockAnnotation-format(fmt: .Formatter, self: .BlockAnnotation) {
+    $fmt "(BlockAnnotation " Fmt:write
+    $fmt \Type-format &self.parameters Array:format<Type>
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.returns Array:format<Type>
     $fmt ")" Fmt:write
 }
 
 struct Block {
     token: Token
-    words: Array<Word>
+    annotation: Maybe<BlockAnnotation>
+    words: Words
 }
 fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt "(Block " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt \BlockAnnotation-format &self.annotation Maybe:format<BlockAnnotation>
+    $fmt " " Fmt:write
+    $fmt &self.words Words-format
     $fmt ")" Fmt:write
 }
 
 struct Loop {
     token: Token
-    words: Array<Word>
+    annotation: Maybe<BlockAnnotation>
+    words: Words
 }
 fn Loop-format(fmt: .Formatter, self: .Loop) {
     $fmt "(Loop " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt \BlockAnnotation-format &self.annotation Maybe:format<BlockAnnotation>
+    $fmt " " Fmt:write
+    $fmt &self.words Words-format
     $fmt ")" Fmt:write
 }
 
@@ -200,7 +297,7 @@ fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
 struct MakeStructNamed {
     token: Token
     type: CustomType
-    words: Array<Word>
+    body: Words
 }
 fn MakeStructNamed-format(fmt: .Formatter, self: .MakeStructNamed) {
     $fmt "(MakeStructNamed " Fmt:write
@@ -208,7 +305,7 @@ fn MakeStructNamed-format(fmt: .Formatter, self: .MakeStructNamed) {
     $fmt " " Fmt:write
     $fmt &self.type CustomType-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt \Word-format &self.body.words Array:format-multi-line<Word>
     $fmt ")" Fmt:write
 }
 
@@ -228,24 +325,102 @@ fn MakeVariant-format(fmt: .Formatter, self: .MakeVariant) {
 }
 
 variant Call {
-    case Local -> Token
+    case Local -> LocalCall
     case Foreign -> ForeignCall
 }
 fn Call-format(fmt: .Formatter, self: .Call) {
     $self match {
-        case Local -> {
-            $fmt "(Call " Fmt:write
-            $fmt flip Token-format
-            $fmt ")" Fmt:write
-        }
+        case Local -> { $fmt flip LocalCall-format }
         case Foreign -> { $fmt flip ForeignCall-format }
     }
+}
+
+struct FunRef {
+    start: Token
+    function: Call
+}
+fn FunRef-format(fmt: .Formatter, self: .FunRef) {
+    $fmt "(FunRef " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
+    $fmt &self.function Call-format
+    $fmt ")" Fmt:write
+}
+
+struct MatchCase {
+    token: Token
+    name: Token
+    body: Words
+}
+fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
+    $fmt "(MatchCase " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.body Words-format
+    $fmt ")" Fmt:write
+}
+
+struct Match {
+    token: Token
+    cases: Array<MatchCase>
+    default: Maybe<MatchCase>
+    end: Token
+}
+fn Match-format(fmt: .Formatter, self: .Match) {
+    $fmt "(Match " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \MatchCase-format &self.cases Array:format-multi-line<MatchCase>
+    $fmt " " Fmt:write
+    $fmt &self.end Token-format
+    $fmt ")" Fmt:write
+}
+
+struct GetField {
+    token: Token
+    fields: Array<Token>
+}
+fn GetField-format(fmt: .Formatter, self: .GetField) {
+    $fmt "(GetField " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format<Token>
+    $fmt ")" Fmt:write
+}
+
+struct Store {
+    start: Token
+    name: Token
+    fields: Array<Token>
+}
+fn Store-format(fmt: .Formatter, self: .Store) {
+    $fmt "(Store " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format<Token>
+    $fmt ")" Fmt:write
+}
+
+struct Sizeof {
+    token: Token
+    type: Type
+}
+fn Sizeof-format(fmt: .Formatter, self: .Sizeof) {
+    $fmt "(Sizeof " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type-format
+    $fmt ")" Fmt:write
 }
 
 variant Word {
     case Call -> Call
     case String -> Token
-    case InitLocal -> Token
+    case InitLocal -> InitLocal
     case RefLocal -> RefLocal
     case GetLocal -> GetLocal
     case SetLocal -> SetLocal
@@ -259,13 +434,18 @@ variant Word {
     case MakeStruct -> MakeStruct
     case MakeStructNamed -> MakeStructNamed
     case MakeVariant -> MakeVariant
-    case IndirectCall -> Call
+    case FunRef -> FunRef
+    case Match -> Match
+    case GetField -> GetField
+    case Sizeof -> Sizeof
+    case IndirectCall -> Token
+    case Store -> Store
 }
 fn Word-format(fmt: .Formatter, self: .Word) { block {
     $self match {
         case Call -> { $fmt flip Call-format break }
         case String -> { "String" }
-        case InitLocal -> { "InitLocal" }
+        case InitLocal -> { $fmt flip InitLocal-format break }
         case RefLocal -> { $fmt flip RefLocal-format break }
         case GetLocal -> { $fmt flip GetLocal-format break }
         case SetLocal -> { $fmt flip SetLocal-format break }
@@ -279,7 +459,12 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case MakeStruct -> { $fmt flip MakeStruct-format break }
         case MakeStructNamed -> { $fmt flip MakeStructNamed-format break }
         case MakeVariant -> { $fmt flip MakeVariant-format break }
-        case IndirectCall -> { $fmt "(Indirect " Fmt:write $fmt flip Call-format $fmt ")" Fmt:write break }
+        case FunRef -> { $fmt flip FunRef-format break }
+        case Match -> { $fmt flip Match-format break }
+        case GetField -> { $fmt flip GetField-format break }
+        case Sizeof -> { $fmt flip Sizeof-format break }
+        case Store -> { $fmt flip Store-format break }
+        case IndirectCall -> { "IndirectCall" }
     } @name-len @name-ptr
     $fmt "(" Fmt:write
     $fmt $name-ptr $name-len Fmt:write
@@ -304,13 +489,16 @@ fn Signature-format(fmt: .Formatter, self: .Signature) {
 }
 
 struct Function {
+    start: Token
     name: Token
     export: Maybe<Token>
     signature: Signature
-    words: Array<Word>
+    body: Words
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt "(Function " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     &self.export match {
@@ -322,17 +510,21 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     }
     $fmt &self.signature Signature-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt \Word-format &self.body.words Array:format-multi-line<Word>
     $fmt ")" Fmt:write
 }
 
 struct Struct {
+    start: Token
     name: Token
     generic-parameters: Array<Token>
     fields: Array<NamedType>
+    end: Token
 }
 fn Struct-format(fmt: .Formatter, self: .Struct) {
     $fmt "(Struct " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt \Token-format &self.generic-parameters Array:format<Token>
@@ -341,16 +533,90 @@ fn Struct-format(fmt: .Formatter, self: .Struct) {
     $fmt ")" Fmt:write
 }
 
+struct VariantCase {
+    token: Token
+    name: Token
+    type: Maybe<Type>
+}
+fn VariantCase-format(fmt: .Formatter, self: .VariantCase) {
+    $fmt "(VariantCase " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.type Maybe:format<Type>
+    $fmt ")" Fmt:write
+}
+
+struct Variant {
+    start: Token
+    name: Token
+    generic-parameters: Array<Token>
+    cases: Array<VariantCase>
+    end: Token
+}
+fn Variant-format(fmt: .Formatter, self: .Variant) {
+    $fmt "(Variant " Fmt:write
+    $fmt &self.start Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.generic-parameters Array:format<Token>
+    $fmt " " Fmt:write
+    $fmt \VariantCase-format &self.cases Array:format-multi-line<VariantCase>
+    $fmt ")" Fmt:write
+}
+
+struct Extern {
+    token: Token
+    extrn-module: Token
+    extrn-name: Token
+    name: Token
+    signature: Signature
+}
+fn Extern-format(fmt: .Formatter, self: .Extern) {
+    $fmt "(Extern " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.extrn-module Token-format
+    $fmt " " Fmt:write
+    $fmt &self.extrn-name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt ")" Fmt:write
+}
+
+struct Global {
+    token: Token
+    name: Token
+    type: Type
+}
+fn Global-format(fmt: .Formatter, self: .Global) {
+    $fmt "(Global " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type-format
+    $fmt ")" Fmt:write
+}
+
 variant TopItem {
     case Import -> Import
+    case Extern -> Extern
     case Function -> Function
     case Struct -> Struct
+    case Variant -> Variant
+    case Global -> Global
 }
 fn TopItem-format(fmt: .Formatter, self: .TopItem) {
     $fmt $self match {
         case Import -> { Import-format }
+        case Extern -> { Extern-format }
         case Function -> { Function-format }
         case Struct -> { Struct-format }
+        case Variant -> { Variant-format }
+        case Global -> { Global-format }
     }
 }
 
@@ -439,12 +705,7 @@ fn parse(arena: .Arena, tokens: Array<Token>) -> Result<Array<TopItem>, ParseErr
         }
         &parser flip top-item match {
             case Success -> { @top-item $arena &items $top-item Array:push<TopItem> }
-            case Error -> {
-                2 flip "DEBUG" ParseError-print IO:check
-                2 IO:newline
-                $items make Result<Array<TopItem>, ParseError>.Success break
-                // make Result<Array<TopItem>, ParseError>.Error break
-            }
+            case Error -> { make Result<Array<TopItem>, ParseError>.Error break }
         }
     }
 }
@@ -455,26 +716,26 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
             $parser advance match {
                 case None -> { $parser "expected a file path" abort<TopItem> break }
                 case Some -> {}
-            } @token
-            $token Token-ty match {
-                case TOKEN_STRING -> { $token }
-                case _ -> { drop $parser "expected a file path" abort<TopItem> break }
             } @path
+            $path Token-ty match {
+                case TOKEN_STRING -> {}
+                case _ -> { drop $parser "expected a file path" abort<TopItem> break }
+            }
 
             $parser advance match {
                 case None -> { $parser "expected `as`" abort<TopItem> break }
                 case Some -> {}
-            } @token
-            $token Token-ty match {
+            } @aes
+            $aes Token-ty match {
                 case TOKEN_AS -> { }
                 case _ -> { drop $parser "expected `as`" abort<TopItem> break }
             }
             $parser advance match {
                 case None -> { $parser "expected an identifier" abort<TopItem> break }
                 case Some -> {}
-            } @token
-            $token Token-ty match {
-                case TOKEN_IDENT -> { $token }
+            } @ident
+            $ident Token-ty match {
+                case TOKEN_IDENT -> { $ident }
                 case _ -> { drop $parser "expected an identifier" abort<TopItem> break }
             } @qualifier
 
@@ -483,6 +744,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case Some -> { Token-ty make TokenTy.TOKEN_LEFT_PAREN /= }
             } if {
                 make Import {
+                    $token ~ @start
                     $path ~ @path
                     $qualifier ~ @qualifier
                     Array:new<Token> @items
@@ -509,7 +771,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                         } @comma
                         $comma Token-ty match {
                             case TOKEN_COMMA -> { $parser advance drop }
-                            case TOKEN_RIGHT_PAREN -> { 
+                            case TOKEN_RIGHT_PAREN -> {
                                 $parser advance drop
                                 $items make Result<Array<Token>, ParseError>.Success break
                             }
@@ -526,6 +788,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case Success -> {
                     @items
                     make Import {
+                        $token ~ @start
                         $path ~ @path
                         $qualifier ~ @qualifier
                         $items @items
@@ -559,6 +822,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                     $paren-or-export ~ make Maybe<Token>.Some $paren
                 }
                 case TOKEN_LEFT_PAREN -> { make Maybe<Token>.None $paren-or-export }
+                case TOKEN_LEFT_TRIANGLE -> { make Maybe<Token>.None $paren-or-export }
                 case _ -> { drop $parser "expected `(` or a string" abort<TopItem> break }
             } @paren @export
             $parser $paren signature match {
@@ -574,7 +838,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case Error -> { make Result<TopItem, ParseError>.Error break }
                 case Success -> {}
             } @body
-            $name ~ $export $signature $body make Function make TopItem.Function make Result<TopItem, ParseError>.Success break
+            $token ~ $name ~ $export $signature $body make Function make TopItem.Function make Result<TopItem, ParseError>.Success break
         }
         case TOKEN_STRUCT -> {
             $parser make TokenTy.TOKEN_IDENT expect-token match {
@@ -601,7 +865,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
             } @generic-parameters
 
             Array:new<NamedType> @fields
-            loop () -> Result<Array<NamedType>, ParseError> {
+            loop () -> Result<TopItem, ParseError> {
                 $parser.arena &fields
                 $parser make TokenTy.TOKEN_IDENT expect-token match {
                     case Error -> { make Result<Array<NamedType>, ParseError>.Error break }
@@ -622,36 +886,159 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 $parser peek match {
                     case None -> { $parser "expected `}`" abort<Array<NamedType>> break }
                     case Some -> {}
-                } Token-ty match {
+                } @end
+                $end Token-ty match {
                     case TOKEN_RIGHT_BRACE -> {
                         $parser advance assert-some<.Token> drop
-                        $fields make Result<Array<NamedType>, ParseError>.Success break
+                        $token ~ $name ~ $generic-parameters $fields $end ~ make Struct
+                        make TopItem.Struct
+                        make Result<TopItem, ParseError>.Success break
                     }
                     case _ -> { drop }
                 }
-            } match {
+            }
+        }
+        case TOKEN_VARIANT -> {
+            $parser make TokenTy.TOKEN_IDENT expect-token match {
                 case Error -> { make Result<TopItem, ParseError>.Error break }
                 case Success -> {}
-            } @fields
-            $name ~ $generic-parameters $fields make Struct
-            make TopItem.Struct
-            make Result<TopItem, ParseError>.Success
-            break
+            } @name
+            $parser advance match {
+                case None -> { $parser "expected `<` or `{`" abort<TopItem> break }
+                case Some -> {}
+            } @left-triangle-or-brace
+            $left-triangle-or-brace Token-ty match {
+                case TOKEN_LEFT_TRIANGLE -> {
+                    $parser $left-triangle-or-brace generic-parameters match {
+                        case Error -> { make Result<TopItem, ParseError>.Error break }
+                        case Success -> {}
+                    }
+                    $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
+                        case Error -> { make Result<TopItem, ParseError>.Error break }
+                        case Success -> { drop }
+                    }
+                }
+                case TOKEN_LEFT_BRACE -> { Array:new<Token> }
+                case _ -> { drop $parser "expected `<` or `{`" abort<TopItem> break }
+            } @generic-parameters
+
+            Array:new<VariantCase> @cases
+            loop () -> Result<TopItem, ParseError> {
+                $parser.arena &cases
+                $parser advance match {
+                    case None -> { $parser "expected `}`" abort<TopItem> break }
+                    case Some -> {}
+                } Core:dup<.Token> Token-ty match {
+                    case TOKEN_CASE -> {}
+                    case _ -> { $parser "expected `case`" abort<TopItem> break }
+                } ~
+                $parser make TokenTy.TOKEN_IDENT expect-token match {
+                    case Error -> { make Result<TopItem, ParseError>.Error break }
+                    case Success -> {}
+                } ~
+                $parser peek match {
+                    case None -> { $parser "`}`" abort<TopItem> break }
+                    case Some -> {}
+                } @arrow
+                $arrow Token-ty match {
+                    case TOKEN_ARROW -> {
+                        $parser advance assert-some<.Token> drop
+                        $parser advance match {
+                            case None -> { $parser "expected type" abort<TopItem> break }
+                            case Some -> {}
+                        }
+                        $parser flip type match {
+                            case Error -> { make Result<TopItem, ParseError>.Error break }
+                            case Success -> { make Maybe<Type>.Some }
+                        }
+                    }
+                    case _ -> { drop make Maybe<Type>.None }
+                }
+                make VariantCase Array:push<VariantCase>
+                $parser peek match {
+                    case None -> { $parser "expected `}`" abort<TopItem> break }
+                    case Some -> {}
+                } @end
+                $end Token-ty match {
+                    case TOKEN_RIGHT_BRACE -> {
+                        $parser advance assert-some<.Token> drop
+                        $token ~ $name ~ $generic-parameters $cases $end ~ make Variant
+                        make TopItem.Variant
+                        make Result<TopItem, ParseError>.Success break
+                    }
+                    case _ -> { drop }
+                }
+            }
         }
-        case _ -> { drop $parser "TODO" abort<TopItem> }
+        case TOKEN_EXTERN -> {
+            $parser make TokenTy.TOKEN_STRING expect-token match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> {}
+            } @extrn-module
+
+            $parser make TokenTy.TOKEN_STRING expect-token match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> {}
+            } @extrn-name
+
+            $parser make TokenTy.TOKEN_FN expect-token match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> { drop }
+            }
+
+            $parser make TokenTy.TOKEN_IDENT expect-token match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> {}
+            } @name
+            $parser advance match {
+                case None -> { $parser "expected `(` or `<`" abort<TopItem> break }
+                case Some -> {}
+            } @paren
+            $parser $paren signature match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> {}
+            } @signature
+            $token ~ $extrn-module ~ $extrn-name ~ $name ~ $signature make Extern
+            make TopItem.Extern
+            make Result<TopItem, ParseError>.Success break
+        }
+        case TOKEN_GLOBAL -> {
+            $parser make TokenTy.TOKEN_IDENT expect-token match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> {}
+            } @name
+            $parser make TokenTy.TOKEN_COLON expect-token match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> { drop }
+            }
+            $parser advance match {
+                case None -> { $parser "expected a type" abort<TopItem> break }
+                case Some -> {}
+            } $parser flip type match {
+                case Error -> { make Result<TopItem, ParseError>.Error break }
+                case Success -> {}
+            } @type
+            $token ~
+            $name ~
+            $type
+            make Global
+            make TopItem.Global
+            make Result<TopItem, ParseError>.Success break
+        }
+        case _ -> { drop $parser "expected `extern`, `fn`, `struct`, `variant` or `global`" abort<TopItem> }
     }
 } }
 
-fn words(parser: .Parser, token: .Token) -> Result<Array<Word>, ParseError> { block {
+fn words(parser: .Parser, token: .Token) -> Result<Words, ParseError> { block {
     Array:new<Word> @words
     loop {
         $parser advance match {
-            case None -> { $parser "expected `}` or a word" abort<Array<Word>> break }
+            case None -> { $parser "expected `}` or a word" abort<Words> break }
             case Some -> {}
         } @token
         $token Token-ty match {
             case TOKEN_RIGHT_BRACE -> {
-                $words make Result<Array<Word>, ParseError>.Success break
+                $words $token ~ make Words make Result<Words, ParseError>.Success break
             }
             case _ -> { drop }
         }
@@ -660,7 +1047,7 @@ fn words(parser: .Parser, token: .Token) -> Result<Array<Word>, ParseError> { bl
                 2 Fmt:to-fd @fmt
                 &fmt \Word-format &words Array:format-multi-line<Word>
                 2 IO:newline
-                make Result<Array<Word>, ParseError>.Error break
+                make Result<Words, ParseError>.Error break
             }
             case Success -> {}
         } @word
@@ -671,10 +1058,10 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
     $token Token-ty match {
         case TOKEN_IDENT -> { $parser $token call match { case Error -> { make Result<Word, ParseError>.Error } case Success -> { make Word.Call make Result<Word, ParseError>.Success } } break }
         case TOKEN_STRING -> { $token ~ make Word.String }
-        case TOKEN_AT -> { $parser init-locl break }
-        case TOKEN_AMPERSAND -> { $parser ref-locl break }
-        case TOKEN_DOLLAR -> { $parser get-locl break }
-        case TOKEN_HASH -> { $parser set-locl break }
+        case TOKEN_AT -> { $parser $token init-locl break }
+        case TOKEN_AMPERSAND -> { $parser $token ref-locl break }
+        case TOKEN_DOLLAR -> { $parser $token get-locl break }
+        case TOKEN_HASH -> { $parser $token set-locl break }
         case TOKEN_NUMBER -> { $token ~ make Word.Number }
         case TOKEN_IF -> { $parser $token iff break }
         case TOKEN_BLOCK -> { $parser $token blok break }
@@ -683,12 +1070,97 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_BREAK -> { $token ~ make Word.Break }
         case TOKEN_LOOP -> { $parser $token lop break }
         case TOKEN_MAKE -> { $parser $token mayk break }
-        case TOKEN_BACKSLASH -> { $parser $token indirect-call break }
+        case TOKEN_BACKSLASH -> { $parser $token fun-ref break }
+        case TOKEN_MATCH -> { $parser $token matsh break }
+        case TOKEN_DOT -> { $parser $token get-field break }
+        case TOKEN_SIZEOF -> { $parser $token sizof break }
+        case TOKEN_ARROW -> { $token ~ make Word.IndirectCall }
+        case TOKEN_DOUBLE_ARROW -> { $parser $token stor break }
         case _ -> {
             drop
             $parser "word TODO" abort<Word> break
         }
     } make Result<Word, ParseError>.Success
+} }
+
+fn sizof(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
+    $parser make TokenTy.TOKEN_LEFT_PAREN expect-token match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> { drop }
+    }
+    $parser advance match {
+        case None -> { $parser "expected a type" abort<Word> break }
+        case Some -> {}
+    } $parser flip type match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    }
+    $parser make TokenTy.TOKEN_RIGHT_PAREN expect-token match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> { drop }
+    }
+    $token ~ flip make Sizeof make Word.Sizeof make Result<Word, ParseError>.Success
+} }
+
+fn matsh(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
+    $parser advance match {
+        case None -> { $parser "expected `{`" abort<Word> break }
+        case Some -> {}
+    } Token-ty match {
+        case TOKEN_LEFT_BRACE -> {}
+        case _ -> { drop $parser "expected `{`" abort<Word> break }
+    }
+    Array:new<MatchCase> @cases
+    make Maybe<MatchCase>.None @default
+    loop {
+        $parser advance match {
+            case None -> { $parser "expected `}`" abort<Word> break }
+            case Some -> {}
+        } @cays
+        $cays Token-ty match {
+            case TOKEN_RIGHT_BRACE -> {
+                $token ~ $cases $default $cays ~ make Match make Word.Match make Result<Word, ParseError>.Success break
+            }
+            case TOKEN_CASE -> {}
+            case _ -> { drop $parser "expected `}`" abort<Word> break }
+        }
+        $parser advance match {
+            case None -> {
+                $parser "expected variant name" abort<Word> break }
+            case Some -> {}
+        } @case-name
+        $case-name Token-ty match {
+            case TOKEN_IDENT -> { 0 1 = }
+            case TOKEN_UNDERSCORE -> {
+                &default match {
+                    case None -> {}
+                    case Some -> { drop $parser "cannot have two default cases" abort<Word> break }
+                }
+                1 1 =
+            }
+            case _ -> {
+                2 $case-name Token-print
+                0 0 / drop
+                drop $parser "expected variant name" abort<Word> break }
+        } @is-default
+        $parser make TokenTy.TOKEN_ARROW expect-token match {
+            case Error -> { make Result<Word, ParseError>.Error break }
+            case Success -> { drop }
+        }
+        $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
+            case Error -> { make Result<Word, ParseError>.Error break }
+            case Success -> { }
+        }
+        $parser flip words match {
+            case Error -> { make Result<Word, ParseError>.Error break }
+            case Success -> {}
+        } @body
+        $cays ~ $case-name ~ $body make MatchCase @cays
+        $is-default if {
+            $cays make Maybe<MatchCase>.Some @default
+        }
+        $parser.arena &cases $cays Array:push<MatchCase>
+    }
 } }
 
 fn mayk(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
@@ -776,11 +1248,11 @@ fn iff(parser: .Parser, start: .Token) -> Result<Word, ParseError> { block {
         case Success -> {}
     } @if-words
     $parser peek match {
-        case None -> { $start ~ $if-words Array:new<Word> make If make Word.If make Result<Word, ParseError>.Success break }
+        case None -> { $start ~ $if-words make Maybe<Words>.None make If make Word.If make Result<Word, ParseError>.Success break }
         case Some -> {}
     } Token-ty match {
         case TOKEN_ELSE -> { $parser advance assert-some<.Token> drop }
-        case _ -> { drop $start ~ $if-words Array:new<Word> make If make Word.If make Result<Word, ParseError>.Success break }
+        case _ -> { drop $start ~ $if-words make Maybe<Words>.None make If make Word.If make Result<Word, ParseError>.Success break }
     }
     $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
         case Error -> { make Result<Word, ParseError>.Error break }
@@ -790,22 +1262,135 @@ fn iff(parser: .Parser, start: .Token) -> Result<Word, ParseError> { block {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
     } @else-words
-    $start ~ $if-words $else-words make If make Word.If make Result<Word, ParseError>.Success
+    $start ~
+    $if-words
+    $else-words make Maybe<Words>.Some
+    make If
+    make Word.If
+    make Result<Word, ParseError>.Success
 } }
 
 fn lop(parser: .Parser, start: .Token) -> Result<Word, ParseError> { block {
+    $parser peek match {
+        case None -> { $parser "expected `{`" abort<Word> break }
+        case Some -> {}
+    } Token-ty match {
+        case TOKEN_LEFT_BRACE -> { make Maybe<BlockAnnotation>.None }
+        case TOKEN_LEFT_PAREN -> {
+            $parser blok-annotation match {
+                case Error -> { make Result<Word, ParseError>.Error break }
+                case Success -> {}
+            }
+        }
+        case _ -> { drop $parser "expected `{`" abort<Word> break }
+    } @annotation
     $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
-    } @brace
-    $parser $brace words match {
+    } $parser flip words match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
     } @words
-    $start ~ $words make Loop make Word.Loop make Result<Word, ParseError>.Success
+    $start ~ $annotation $words make Loop make Word.Loop make Result<Word, ParseError>.Success
+} }
+
+fn blok-annotation(parser: .Parser) -> Result<Maybe<BlockAnnotation>, ParseError> { block {
+    Array:new<Type> @parameters
+    Array:new<Type> @returns
+    $parser peek match {
+        case None -> {
+            make Maybe<BlockAnnotation>.None
+            make Result<Maybe<BlockAnnotation>, ParseError>.Success break
+        }
+        case Some -> {}
+    } Token-ty match {
+        case TOKEN_LEFT_BRACE -> {
+            make Maybe<BlockAnnotation>.None
+            make Result<Maybe<BlockAnnotation>, ParseError>.Success break
+        }
+        case TOKEN_LEFT_PAREN -> { $parser advance assert-some<.Token> drop }
+        case _ -> { drop $parser "expected `(`" abort<Maybe<BlockAnnotation>> break }
+    }
+    loop {
+        $parser peek match {
+            case None -> { $parser "expected `)`" abort<Array<Type>> break }
+            case Some -> {}
+        } Token-ty match {
+            case TOKEN_RIGHT_PAREN -> {
+                $parser advance assert-some<.Token> drop
+                $parameters make Result<Array<Type>, ParseError>.Success break
+            }
+            case _ -> { drop }
+        }
+        $parser $parser advance assert-some<.Token> type match {
+            case Error -> { make Result<Array<Type>, ParseError>.Error break }
+            case Success -> {}
+        } @parameter
+        $parser.arena &parameters $parameter Array:push<Type>
+        $parser advance match {
+            case None -> { $parser "expected `,` or `)`" abort<Array<Type>> break }
+            case Some -> {}
+        } @next
+        $next Token-ty match {
+            case TOKEN_RIGHT_PAREN -> { $parameters make Result<Array<Type>, ParseError>.Success break }
+            case TOKEN_COMMA -> {}
+            case _ -> { drop $parser "expected `,` or `)`" abort<Array<Type>> break }
+        }
+    } match {
+        case Error -> { make Result<Maybe<BlockAnnotation>, ParseError>.Error break }
+        case Success -> {}
+    } @parameters
+
+    $parser advance match {
+        case None -> { $parser "expected `->`" abort<Maybe<BlockAnnotation>> break }
+        case Some -> {}
+    } Token-ty match {
+        case TOKEN_ARROW -> {}
+        case _ -> { drop $parser "expected `->`" abort<Maybe<BlockAnnotation>> break }
+    }
+
+    loop {
+        $parser peek match {
+            case None -> { $parser "expected `{`" abort<Array<Type>> break }
+            case Some -> {}
+        } Token-ty match {
+            case TOKEN_LEFT_BRACE -> { $returns make Result<Array<Type>, ParseError>.Success break }
+            case _ -> { drop }
+        }
+        $parser $parser advance assert-some<.Token> type match {
+            case Error -> { make Result<Array<Type>, ParseError>.Error break }
+            case Success -> {}
+        } @return
+        $parser.arena &returns $return Array:push<Type>
+        $parser peek match {
+            case None -> { $parser "expected `,` or `{`" abort<Array<Type>> break }
+            case Some -> {}
+        } Token-ty match {
+            case TOKEN_LEFT_BRACE -> { $returns make Result<Array<Type>, ParseError>.Success break }
+            case TOKEN_COMMA -> { $parser advance assert-some<.Token> drop }
+            case _ -> { drop $parser "expected `,` or `{`" abort<Array<Type>> break }
+        }
+    } match {
+        case Error -> { make Result<Maybe<BlockAnnotation>, ParseError>.Error break }
+        case Success -> {}
+    } @returns
+    $parameters $returns make BlockAnnotation make Maybe<BlockAnnotation>.Some make Result<Maybe<BlockAnnotation>, ParseError>.Success
 } }
 
 fn blok(parser: .Parser, start: .Token) -> Result<Word, ParseError> { block {
+    $parser peek match {
+        case None -> { $parser "expected `{`" abort<Word> break }
+        case Some -> {}
+    } Token-ty match {
+        case TOKEN_LEFT_BRACE -> { make Maybe<BlockAnnotation>.None }
+        case TOKEN_LEFT_PAREN -> {
+            $parser blok-annotation match {
+                case Error -> { make Result<Word, ParseError>.Error break }
+                case Success -> {}
+            }
+        }
+        case _ -> { drop $parser "expected `{`" abort<Word> break }
+    } @annotation
     $parser make TokenTy.TOKEN_LEFT_BRACE expect-token match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
@@ -814,28 +1399,37 @@ fn blok(parser: .Parser, start: .Token) -> Result<Word, ParseError> { block {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
     } @words
-    $start ~ $words make Block make Word.Block make Result<Word, ParseError>.Success
+    $start ~ $annotation $words make Block make Word.Block make Result<Word, ParseError>.Success
 } }
 
-fn indirect-call(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
-    $parser peek match {
+fn fun-ref(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
+    $parser advance match {
         case None -> { $parser "expected a function name" abort<Word> break }
         case Some -> {}
     } @function
     $parser $function call match {
         case Error -> { make Result<Word, ParseError>.Error }
-        case Success -> { make Word.IndirectCall make Result<Word, ParseError>.Success }
+        case Success -> { $token ~ flip make FunRef make Word.FunRef make Result<Word, ParseError>.Success }
     }
 } }
 
 fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
     $parser peek match {
-        case None -> { $token ~ make Call.Local make Result<Call, ParseError>.Success break }
+        case None -> { $token ~ Array:new<Type> make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
         case Some -> {}
     } @colon
     $colon Token-ty match {
         case TOKEN_COLON -> { $parser advance assert-some<.Token> drop }
-        case _ -> { drop $token ~ make Call.Local make Result<Call, ParseError>.Success break }
+        case TOKEN_LEFT_TRIANGLE -> {
+            $parser advance assert-some<.Token> drop
+            $parser generic-arguments match {
+                case Error -> { make Result<Call, ParseError>.Error break }
+                case Success -> {
+                    $token ~ flip make LocalCall make Call.Local make Result<Call, ParseError>.Success break
+                }
+            }
+        }
+        case _ -> { drop $token ~ Array:new<Type> make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
     }
     $parser advance match {
         case Some -> {}
@@ -860,7 +1454,7 @@ fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
             }
         }
     } @generic-arguments
-    $token ~ $name ~ make ForeignCall make Call.Foreign make Result<Call, ParseError>.Success
+    $token ~ $name ~ $generic-arguments make ForeignCall make Call.Foreign make Result<Call, ParseError>.Success
 } }
 
 fn generic-arguments(parser: .Parser) -> Result<Array<Type>, ParseError> {
@@ -895,18 +1489,16 @@ fn generic-arguments(parser: .Parser) -> Result<Array<Type>, ParseError> {
 fn optional-generic-arguments(parser: .Parser) -> Result<Array<Type>, ParseError> { block {
     $parser peek match {
         case None -> { Array:new<Type> }
-        case Some -> { @t
-            $t Token-ty match {
-                case TOKEN_LEFT_TRIANGLE -> {
-                    $parser advance assert-some<.Token> drop
-                    $parser generic-arguments match {
-                        case Error -> { make Result<Array<Type>, ParseError>.Error break }
-                        case Success -> {}
-                    }
+        case Some -> { Token-ty match {
+            case TOKEN_LEFT_TRIANGLE -> {
+                $parser advance assert-some<.Token> drop
+                $parser generic-arguments match {
+                    case Error -> { make Result<Array<Type>, ParseError>.Error break }
+                    case Success -> {}
                 }
-                case _ -> { drop Array:new<Type> }
             }
-        }
+            case _ -> { drop Array:new<Type> }
+        } }
     }
     make Result<Array<Type>, ParseError>.Success
 } }
@@ -947,7 +1539,36 @@ fn ident(parser: .Parser) -> Result<Token, ParseError> { block {
     $ident ~ make Result<Token, ParseError>.Success
 } }
 
-fn ref-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+fn get-field(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
+    Array:new<Token> @fields
+    loop {
+        $parser advance-immediate match {
+            case None -> { $parser "expected an identifier" abort<Word> break }
+            case Some -> {}
+        } @field
+        $field Token-ty match {
+            case TOKEN_IDENT -> {}
+            case _ -> { drop $parser "expected an identifier" abort<Word> break }
+        }
+        $parser.arena &fields $field ~ Array:push<Token>
+        $parser peek-immediate match {
+            case None -> {
+                $token ~ $fields make GetField make Word.GetField make Result<Word, ParseError>.Success break
+            }
+            case Some -> {}
+        } @next
+        $next Token-ty match {
+            case TOKEN_DOT -> { $parser advance-immediate assert-some<.Token> drop }
+            case _ -> {
+                drop
+                $token ~ $fields make GetField make Word.GetField make Result<Word, ParseError>.Success break
+            }
+        }
+    }
+} }
+
+fn ref-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
+    $token ~
     $parser ident match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
@@ -960,7 +1581,8 @@ fn ref-locl(parser: .Parser) -> Result<Word, ParseError> { block {
     make Word.RefLocal make Result<Word, ParseError>.Success
 } }
 
-fn get-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+fn get-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
+    $token ~
     $parser ident match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
@@ -973,7 +1595,8 @@ fn get-locl(parser: .Parser) -> Result<Word, ParseError> { block {
     make Word.GetLocal make Result<Word, ParseError>.Success
 } }
 
-fn set-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+fn set-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
+    $token ~
     $parser ident match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
@@ -986,11 +1609,24 @@ fn set-locl(parser: .Parser) -> Result<Word, ParseError> { block {
     make Word.SetLocal make Result<Word, ParseError>.Success
 } }
 
-fn init-locl(parser: .Parser) -> Result<Word, ParseError> { block {
+fn init-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
     $parser ident match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
-    } make Word.InitLocal make Result<Word, ParseError>.Success
+    } $token ~ flip make InitLocal make Word.InitLocal make Result<Word, ParseError>.Success
+} }
+
+fn stor(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
+    $token ~
+    $parser ident match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    }
+    $parser fields match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> {}
+    }
+    make Store make Word.Store make Result<Word, ParseError>.Success
 } }
 
 fn generic-parameters(parser: .Parser, token: .Token) -> Result<Array<Token>, ParseError> { block {
@@ -1011,6 +1647,7 @@ fn generic-parameters(parser: .Parser, token: .Token) -> Result<Array<Token>, Pa
         $parser peek match {
             case Some -> { Token-ty match {
                 case TOKEN_COMMA -> { $parser advance drop }
+                case TOKEN_RIGHT_TRIANGLE -> {}
                 case _ -> { drop $parser "expected `,` or `>`" abort<Array<Token>> break }
             } }
             case None -> {}
@@ -1018,12 +1655,19 @@ fn generic-parameters(parser: .Parser, token: .Token) -> Result<Array<Token>, Pa
     }
 } }
 
-fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { block {
+fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { block () -> Result<Signature, ParseError> {
     $token Token-ty match {
         case TOKEN_LEFT_TRIANGLE -> {
             $parser $token generic-parameters match {
                 case Error -> { make Result<Signature, ParseError>.Error break }
                 case Success -> {}
+            }
+            $parser advance match {
+                case None -> { $parser "expected `(`" abort<Signature> break }
+                case Some -> {}
+            } Token-ty match {
+                case TOKEN_LEFT_PAREN -> {}
+                case _ -> { drop $parser "expected `(`" abort<Signature> break }
             }
         }
         case _ -> { drop Array:new<Token> }
@@ -1037,7 +1681,7 @@ fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { 
         } @paren-or-ident
         $paren-or-ident Token-ty match {
             case TOKEN_RIGHT_PAREN -> {
-                Array:new<NamedType> make Result<Array<NamedType>, ParseError>.Success break
+                $params make Result<Array<NamedType>, ParseError>.Success break
             }
             case TOKEN_IDENT -> { $paren-or-ident }
             case _ -> { drop $parser "expected `)` or an identifer" abort<Array<NamedType>> break }
@@ -1102,11 +1746,9 @@ fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { 
         } @next
         $next Token-ty match {
             case TOKEN_COMMA -> { $parser advance drop }
-            case TOKEN_LEFT_BRACE -> {
-                $returns make Result<Array<Type>, ParseError>.Success break
-            }
             case _ -> {
-                drop $parser "expected `,` or `{`" abort<Array<Type>> break
+                drop
+                $returns make Result<Array<Type>, ParseError>.Success break
             }
         }
     } match {
@@ -1136,7 +1778,8 @@ fn custom-type(parser: .Parser, token: .Token) -> Result<CustomType, ParseError>
                         make ForeignCustomType make CustomType.Foreign
                     }
                     case _ -> {
-                        drop $token ~
+                        drop
+                        $token ~
                         $parser optional-generic-arguments match {
                             case Error -> { make Result<CustomType, ParseError>.Error break }
                             case Success -> {}
@@ -1150,24 +1793,91 @@ fn custom-type(parser: .Parser, token: .Token) -> Result<CustomType, ParseError>
     }
 }
 
+fn fun-type(parser: .Parser, token: .Token) -> Result<FunType, ParseError> { block {
+    Array:new<Type> @parameters
+    loop {
+        $parser advance match {
+            case None -> { $parser "expected `->`" abort<Array<Type>> break }
+            case Some -> {}
+        } @next
+        $next Token-ty match {
+            case TOKEN_ARROW -> { $parameters make Result<Array<Type>, ParseError>.Success break }
+            case _ -> { drop }
+        }
+        $parser $next type match {
+            case Error -> { make Result<Array<Type>, ParseError>.Error break }
+            case Success -> {}
+        } @type
+        $parser.arena &parameters $type Array:push<Type>
+        $parser advance match {
+            case None -> { $parser "expected `->`" abort<Array<Type>> break }
+            case Some -> {}
+        } Token-ty match {
+            case TOKEN_ARROW -> { $parameters make Result<Array<Type>, ParseError>.Success break }
+            case TOKEN_COMMA -> {}
+            case _ -> { drop $parser "expected `,` or `->`" abort<Array<Type>> break }
+        }
+    } match {
+        case Error -> { make Result<FunType, ParseError>.Error break }
+        case Success -> {}
+    } @parameter
+
+    Array:new<Type> @returns
+    loop {
+        $parser advance match {
+            case None -> { $parser "expected `)`" abort<Array<Type>> break }
+            case Some -> {}
+        } @next
+        $next Token-ty match {
+            case TOKEN_RIGHT_PAREN -> { $returns make Result<Array<Type>, ParseError>.Success break }
+            case _ -> { drop }
+        }
+        $parser $next type match {
+            case Error -> { make Result<Array<Type>, ParseError>.Error break }
+            case Success -> {}
+        } @type
+        $parser.arena &returns $type Array:push<Type>
+        $parser advance match {
+            case None -> { $parser "expected `)`" abort<Array<Type>> break }
+            case Some -> {}
+        } Token-ty match {
+            case TOKEN_RIGHT_PAREN -> { $returns make Result<Array<Type>, ParseError>.Success break }
+            case TOKEN_COMMA -> {}
+            case _ -> { drop $parser "expected `,` or `)`" abort<Array<Type>> break }
+        }
+    } match {
+        case Error -> { make Result<FunType, ParseError>.Error break }
+        case Success -> {}
+    } @returns
+    $token ~ $parameters $returns make FunType make Result<FunType, ParseError>.Success
+} }
+
 fn type(parser: .Parser, token: .Token) -> Result<Type, ParseError> { block () -> Result<Type, ParseError> {
     $token Token-ty match {
-        case TOKEN_BOOL -> { make Type.Bool }
-        case TOKEN_I32 -> { make Type.I32 }
-        case TOKEN_I64 -> { make Type.I64 }
+        case TOKEN_BOOL -> { $token ~ make Type.Bool }
+        case TOKEN_I32 -> { $token ~ make Type.I32 }
+        case TOKEN_I64 -> { $token ~ make Type.I64 }
         case TOKEN_DOT -> {
             $parser advance match {
                 case None -> { $parser "expected a type" abort<Type> break }
                 case Some -> { $parser flip type match {
-                    case Success -> { $parser.arena flip Arena:push<Type> make Type.Ptr }
+                    case Success -> { $token ~ flip $parser.arena flip Arena:push<Type> make PtrType make Type.Ptr }
                     case _ -> { break }
                 } }
             }
         }
-        case TOKEN_IDENT -> { $parser $token custom-type match {
-            case Error -> { make Result<Type, ParseError>.Error break }
-            case Success -> { make Type.Custom }
-        } }
+        case TOKEN_IDENT -> {
+            $parser $token custom-type match {
+                case Error -> { make Result<Type, ParseError>.Error break }
+                case Success -> { make Type.Custom }
+            }
+        }
+        case TOKEN_LEFT_PAREN -> {
+            $parser $token fun-type match {
+                case Error -> { make Result<Type, ParseError>.Error break }
+                case Success -> { make Type.Fun }
+            }
+        }
         case _ -> { drop $parser "expected a type" abort<Type> break }
     } make Result<Type, ParseError>.Success
 } }

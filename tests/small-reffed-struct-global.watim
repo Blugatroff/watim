@@ -1,0 +1,44 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+global FOO: Foo
+
+struct Foo {
+	value: i32
+}
+
+fn set(foo: .Foo) {
+	42 #foo.value
+}
+
+fn main "_start" () {
+	&FOO set
+	$FOO.value proc_exit
+}
+[== Status Compiler ==]
+0
+[== Status ==]
+42
+[== Stdout Compiler ==]
+(module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $FOO:0 (mut i32) (i32.const 0))
+	(global $stac:k (mut i32) (i32.const 4))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		global.get $FOO:0
+		call $0:set
+		global.get $FOO:0 i32.load offset=0
+		call $0:proc_exit
+	)
+	(func $0:set (param $foo i32)
+		i32.const 42
+		local.get $foo i32.const 0 i32.add call $intrinsic:flip i32.store
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)

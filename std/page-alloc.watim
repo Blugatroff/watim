@@ -12,7 +12,7 @@ fn current-number-of-pages() -> i32 {
     0 mem-grow
 }
 
-memory ALLOCATOR: PageAllocator 4
+global ALLOCATOR: PageAllocator
 
 struct Page {
     next: .Page
@@ -23,8 +23,7 @@ struct PageAllocator {
 }
 
 fn init() {
-    $ALLOCATOR @self
-    0 !.Page #self.free-list
+    0 !.Page #ALLOCATOR.free-list
 }
 
 fn do-the-mem-grow() -> .i32 {
@@ -36,10 +35,9 @@ fn do-the-mem-grow() -> .i32 {
 }
 
 fn alloc-page() -> .i32 {
-    $ALLOCATOR @self
-    $self.free-list 0 !.Page /= if {
-        $self.free-list !.i32
-        $self.free-list.next #self.free-list
+    $ALLOCATOR.free-list 0 !.Page /= if {
+        $ALLOCATOR.free-list !.i32
+        $ALLOCATOR.free-list.next #ALLOCATOR.free-list
     } else {
         do-the-mem-grow
     }
@@ -77,10 +75,9 @@ fn search-free-list-for-contiguous(list: .Page, n: i32) -> .Page { block {
     }
 } }
 fn contiguous-pages(n: i32) -> .i32 { block {
-    $ALLOCATOR @self
-    $self.free-list $n search-free-list-for-contiguous @contiguous-free
+    $ALLOCATOR.free-list $n search-free-list-for-contiguous @contiguous-free
     $contiguous-free 0!.Page /= if {
-        $self.free-list @list
+        $ALLOCATOR.free-list @list
         $list $contiguous-free = if {
             loop {
                 $n 0 = if { break }
@@ -92,7 +89,7 @@ fn contiguous-pages(n: i32) -> .i32 { block {
                 $list.next #list
                 $n 1 - #n
             }
-            $list #self.free-list
+            $list #ALLOCATOR.free-list
         } else {
             loop {
                 $list.next $contiguous-free = if {
@@ -122,10 +119,9 @@ fn contiguous-pages(n: i32) -> .i32 { block {
     $first
 } }
 fn discard-page(page: .i32) {
-    $ALLOCATOR @self
     $page !.Page @page
-    $self.free-list #page.next
-    $page #self.free-list
+    $ALLOCATOR.free-list #page.next
+    $page #ALLOCATOR.free-list
 
     // There is currently no way to deallocate pages in wasm.
     // But there is a proposal for the `memory.discard` instruction: https://github.com/WebAssembly/memory-control/issues/6

@@ -8,12 +8,12 @@ struct Iov {
 }
 
 fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
-    memory space: Iov 8
+    uninit<Iov> @space
     uninit<CORE:I32> @writ
     0 #writ.inner
     $pt #space.ptr
     $len #space.len
-    $fd $space 1 &writ.inner raw_write
+    $fd &space 1 &writ.inner raw_write
     $writ.inner flip
 }
 
@@ -23,9 +23,9 @@ fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
         $written $len = if {
             $written $code
         } else {
-            $fd 
-            $pt $written + 
-            $len $written - 
+            $fd
+            $pt $written +
+            $len $written -
             write-all-inner
             flip $written + flip
         }
@@ -39,9 +39,9 @@ fn write-all(fd: i32, pt: .i32, len: i32) -> i32 {
 }
 
 fn write-byte(file: i32, b: i32) -> i32 {
-    memory buf: i32 1
-    $buf $b store8
-    $file $buf 1 write-all
+    uninit<CORE:I32> @buf
+    &buf.inner $b store8
+    $file &buf.inner 1 write-all
 }
 
 fn newline(fd: i32) {
@@ -49,11 +49,11 @@ fn newline(fd: i32) {
 }
 
 fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
-    memory iov: Iov 8
+    uninit<Iov> @iov
     uninit<CORE:I32> @read
-    $buf_addr #iov.ptr 
-    $buf_size #iov.len 
-    $file $iov 1 &read.inner raw_read
+    $buf_addr #iov.ptr
+    $buf_size #iov.len
+    $file &iov 1 &read.inner raw_read
     $read.inner flip
 }
 
@@ -73,12 +73,15 @@ fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
     }
 }
 
+struct Buf32 { a: i32 b: i32 c: i32 d: i32 e: i32 f: i32 g: i32 h: i32 }
+
 fn print(fd: i32, n: i32) -> i32 {
-    memory buf-reversed: i32 24
-    $fd $buf-reversed $n $buf-reversed print-i32-into write-all
+    uninit<Buf32> @buf-reversed
+    $fd &buf-reversed.a $n &buf-reversed.a print-i32-into write-all
 }
 fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
-    memory buf: i32 24
+    uninit<Buf32> @buf
+    &buf.a @buf
     0 @l
     $n 0 = if {
         1 #l // length = 1
@@ -130,11 +133,11 @@ fn abort(msg-ptr: .i32, msg-len: i32) {
 }
 
 fn write-escaped(fd: i32, ptr: .i32, len: i32) -> i32 {
-    memory escaped-char: i32 4
+    uninit<CORE:I32> @escaped-char
     0 @i
     loop {
         $i $len = if { 0 break }
-        $fd $escaped-char $ptr $i + load8 $escaped-char CORE:escape write-all @code
+        $fd &escaped-char.inner $ptr $i + load8 &escaped-char.inner CORE:escape write-all @code
         $code 0 /= if { $code break }
         $i 1 + #i
     }

@@ -35,7 +35,7 @@ def run_native_compiler(args: List[str], stdin: str):
         already_compiled = True
         if subprocess.run(f"python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
             exit(1)
-    compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat", "-"] + args, input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat"] + args + ["-"], input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 def run_bootstrap_compiler(args: List[str], stdin: str):
@@ -49,7 +49,13 @@ def run_bootstrap_compiler(args: List[str], stdin: str):
     except ResolverException as e:
         return CompilerOutput(1, "", e.display().strip())
 
-tests = glob.glob(sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "--native" else './tests/*.watim')
+if len(sys.argv) > 2 and sys.argv[1] == "--native":
+    pattern = sys.argv[2]
+elif len(sys.argv) > 1:
+    pattern = sys.argv[1]
+else:
+    pattern = "./tests/*.watim"
+tests = glob.glob(pattern)
 failed = False
 for path in tests:
     test = parse_test_file(path)

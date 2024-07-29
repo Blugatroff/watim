@@ -1,0 +1,45 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+variant Foo {
+	case A
+	case B
+}
+
+fn main "_start" () {
+	make Foo.B match {
+		case A -> { 3 }
+		case _ -> { !i32 proc_exit 0 }
+	} proc_exit
+}
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		i32.const 1 ;; store tag
+		;; match on Foo
+		call $intrinsic:dupi32 i32.const 0 i32.eq (if (param i32) (result i32)
+		(then
+			drop
+			i32.const 3
+		)
+		(else
+			;; cast to i32
+			call $0:proc_exit
+			i32.const 0
+		))
+		call $0:proc_exit
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)
+[== Status ==]
+1
+

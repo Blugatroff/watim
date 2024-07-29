@@ -14,6 +14,7 @@ variant TokenTy {
     case TOKEN_IMPORT
     case TOKEN_IDENT
     case TOKEN_STRING
+
     case TOKEN_LEFT_TRIANGLE
     case TOKEN_RIGHT_TRIANGLE
     case TOKEN_LEFT_PAREN
@@ -30,10 +31,13 @@ variant TokenTy {
     case TOKEN_BANG
     case TOKEN_TILDE
     case TOKEN_BACKSLASH
+    case TOKEN_UNDERSCORE
+
     case TOKEN_MEMORY
     case TOKEN_LOCAL
     case TOKEN_AS
     case TOKEN_STRUCT
+    case TOKEN_VARIANT
     case TOKEN_BLOCK
     case TOKEN_BREAK
     case TOKEN_LOOP
@@ -49,7 +53,9 @@ variant TokenTy {
     case TOKEN_SIZEOF
     case TOKEN_SPACE
     case TOKEN_MAKE
-    case TOKEN_UNDERSCORE
+    case TOKEN_CASE
+    case TOKEN_MATCH
+    case TOKEN_GLOBAL
 }
 
 fn TokenTy-name(self: TokenTy) -> .i32, i32 {
@@ -79,6 +85,7 @@ fn TokenTy-name(self: TokenTy) -> .i32, i32 {
         case TOKEN_LOCAL -> { "LOCAL" }
         case TOKEN_AS -> { "AS" }
         case TOKEN_STRUCT -> { "STRUCT" }
+        case TOKEN_VARIANT -> { "VARIANT" }
         case TOKEN_BLOCK -> { "BLOCK" }
         case TOKEN_BREAK -> { "BREAK" }
         case TOKEN_LOOP -> { "LOOP" }
@@ -94,6 +101,9 @@ fn TokenTy-name(self: TokenTy) -> .i32, i32 {
         case TOKEN_SIZEOF -> { "SIZEOF" }
         case TOKEN_SPACE -> { "SPACE" }
         case TOKEN_MAKE -> { "MAKE" }
+        case TOKEN_CASE -> { "CASE" }
+        case TOKEN_MATCH -> { "MATCH" }
+        case TOKEN_GLOBAL -> { "GLOBAL" }
         case TOKEN_UNDERSCORE -> { "UNDERSCORE" }
     }
 }
@@ -143,6 +153,7 @@ fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 {
         case TOKEN_FN -> { "fn" }
         case TOKEN_IMPORT -> { "import" }
         case TOKEN_STRUCT -> { "struct" }
+        case TOKEN_VARIANT -> { "variant" }
         case TOKEN_LOOP -> { "loop" }
         case TOKEN_BREAK -> { "break" }
         case TOKEN_BLOCK -> { "block" }
@@ -161,6 +172,9 @@ fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 {
         case TOKEN_SIZEOF -> { "sizeof" }
         case TOKEN_SPACE -> { " " }
         case TOKEN_MAKE -> { "make" }
+        case TOKEN_CASE -> { "case" }
+        case TOKEN_MATCH -> { "match" }
+        case TOKEN_GLOBAL -> { "global" }
         case TOKEN_LEFT_TRIANGLE -> { "<" }
         case TOKEN_RIGHT_TRIANGLE -> { ">" }
         case TOKEN_LEFT_PAREN -> { "(" }
@@ -255,11 +269,9 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
 
             $code $cursor ByteSlice:get-byte @char
 
-            $char "/" drop load8 = if {
-                $cursor 1 + #cursor
-                $cursor $code.len = if { $done break }
-                $code $cursor ByteSlice:get-byte "/" drop load8 = if {
-                    $cursor 1 + #cursor
+            $char "/" drop load8 = $cursor 1 + $code.len /= and if {
+                $code $cursor 1 + ByteSlice:get-byte "/" drop load8 = if {
+                    $cursor 2 + #cursor
                     loop {
                         $cursor $code.len = if { break }
                         $code $cursor ByteSlice:get-byte "\n" drop load8 = if { break }
@@ -339,7 +351,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
                     $code $cursor ByteSlice:get-byte @char
                     $cursor 1 + #cursor
                     $column 1 + #column
-                    $char "\"" drop load8 = if { 
+                    $char "\"" drop load8 = if {
                         break
                     }
                     $char "\\" drop load8 = if {
@@ -403,6 +415,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
                     $lexeme-ptr $lexeme-len "memory" Bytes:eq if { make TokenTy.TOKEN_MEMORY $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "local" Bytes:eq if { make TokenTy.TOKEN_LOCAL $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "struct" Bytes:eq if { make TokenTy.TOKEN_STRUCT $start-line $start-column Token-new-keyword break }
+                    $lexeme-ptr $lexeme-len "variant" Bytes:eq if { make TokenTy.TOKEN_VARIANT $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "block" Bytes:eq if { make TokenTy.TOKEN_BLOCK $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "break" Bytes:eq if { make TokenTy.TOKEN_BREAK $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "loop" Bytes:eq if { make TokenTy.TOKEN_LOOP $start-line $start-column Token-new-keyword break }
@@ -416,11 +429,14 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
                     $lexeme-ptr $lexeme-len "->" Bytes:eq if { make TokenTy.TOKEN_ARROW $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "sizeof" Bytes:eq if { make TokenTy.TOKEN_SIZEOF $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "make" Bytes:eq if { make TokenTy.TOKEN_MAKE $start-line $start-column Token-new-keyword break }
+                    $lexeme-ptr $lexeme-len "case" Bytes:eq if { make TokenTy.TOKEN_CASE $start-line $start-column Token-new-keyword break }
+                    $lexeme-ptr $lexeme-len "match" Bytes:eq if { make TokenTy.TOKEN_MATCH $start-line $start-column Token-new-keyword break }
+                    $lexeme-ptr $lexeme-len "global" Bytes:eq if { make TokenTy.TOKEN_GLOBAL $start-line $start-column Token-new-keyword break }
                     $arena sizeof(i32) $lexeme-len + Arena:alloc-bytes !.ImmediateString @lexeme
                     $lexeme !.i32 $lexeme-len store
                     $lexeme-ptr $lexeme sizeof(i32) + !.i32 $lexeme-len Core:copy-bytes
                     make TokenTy.TOKEN_IDENT $start-line $start-column $lexeme Token-new break
-                } @token 
+                } @token
                 $arena &tokens $token Array:push<Token>
                 $done not break
             }
@@ -441,7 +457,7 @@ fn allowed-in-ident(char: i32) -> bool {
     0 @i
     loop {
         $i $disallowed-len = if { 1 1 = break }
-        $disallowed $i + load8 $char = if { 
+        $disallowed $i + load8 $char = if {
             0 1 = break
         }
         $i 1 + #i

@@ -2,16 +2,16 @@ import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./page-alloc.watim" as PA
 
-memory ON_NEW: (.Arena ->) 4
-memory ON_ALLOC: (.Arena, i32 ->) 4
-memory ON_RESTORE: (.Arena ->) 4
-memory ON_CLEAR: (.Arena ->) 4
+global ON_NEW: (.Arena ->)
+global ON_ALLOC: (.Arena, i32 ->)
+global ON_RESTORE: (.Arena ->)
+global ON_CLEAR: (.Arena ->)
 
 fn set-callbacks(on-new: (.Arena ->), on-alloc: (.Arena, i32 ->), on-restore: (.Arena ->), on-clear: (.Arena ->)) {
-    $ON_NEW $on-new store
-    $ON_ALLOC $on-alloc store
-    $ON_RESTORE $on-restore store
-    $ON_CLEAR $on-clear store
+    $on-new #ON_NEW
+    $on-alloc #ON_ALLOC
+    $on-restore #ON_RESTORE
+    $on-clear #ON_CLEAR
 }
 
 fn SINGLE_PAGE() -> i32 { 1 }
@@ -86,7 +86,7 @@ fn new(name-ptr: .i32, name-len: i32) -> Arena {
         $name-len @name-len
         0 @size
     } @self
-    $ON_NEW ~ 0 !(.Arena ->) /= if { &self $ON_NEW ~ -> }
+    $ON_NEW 0 !(.Arena ->) /= if { &self $ON_NEW -> }
     $self
 }
 fn clear(self: .Arena) {
@@ -98,7 +98,7 @@ fn clear(self: .Arena) {
     }
     0 !.Page #self.used-pages
     0 #self.size
-    $ON_CLEAR ~ 0 !(.Arena ->) /= if { $self $ON_CLEAR ~ -> }
+    $ON_CLEAR 0 !(.Arena ->) /= if { $self $ON_CLEAR -> }
 }
 fn visit-mem(self: .Arena, f: (.i32, i32 ->)) {
     $self.used-pages @cursor
@@ -141,7 +141,7 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
         $page.pos sizeof(Page) + $size + PA:page-size le if { // there is enough space in this page
             $page sizeof(Page) + $page.pos + !.i32
             $page.pos $size + #page.pos
-            $ON_ALLOC ~ 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC ~ -> }
+            $ON_ALLOC 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC -> }
             break
         }
         $page.next #page
@@ -200,32 +200,25 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
         $point.pos #self.used-pages.pos
         $point.size #self.size
     }
-    $ON_RESTORE ~ 0 !(.Arena ->) /= if { $self $ON_RESTORE ~ -> }
+    $ON_RESTORE 0 !(.Arena ->) /= if { $self $ON_RESTORE -> }
 }
 fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
     $self.size $point.size -
 }
 
-memory TEMP1: Arena 20
-memory TEMP2: Arena 20
+global TEMP1: Arena
+global TEMP2: Arena
 
 fn init-temp() {
-    $TEMP1 @temp
-    "Temp1"
-    new
-    =>temp
-
-    $TEMP2 @temp
-    "Temp2"
-    new
-    =>temp
+    "Temp1" new @TEMP1
+    "Temp2" new @TEMP2
 }
 fn clear-temp() {
-    $TEMP1 clear
-    $TEMP2 clear
+    &TEMP1 clear
+    &TEMP2 clear
 }
 fn temp(persistent: .Arena) -> ArenaRestorePoint, .Arena {
-    $persistent $TEMP1 = if { $TEMP2 } else { $TEMP1 } @arena
+    $persistent &TEMP1 = if { &TEMP2 } else { &TEMP1 } @arena
     $arena save
     $arena
 }
