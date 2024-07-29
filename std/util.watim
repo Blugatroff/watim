@@ -28,8 +28,8 @@ fn parse(pt: .i32, len: i32) -> i32 {
 }
 
 fn i32-format(formatter: .Formatter, self: i32) {
-    memory buf: i32 24
-    $formatter $buf $self $buf IO:print-i32-into FMT:write
+    uninit<IO:Buf32> @buf
+    $formatter &buf.a $self &buf.a IO:print-i32-into FMT:write
 }
 
 fn split-bytes(arena: .Arena, bytes: ByteSlice, del: i32) -> Array:Array<ByteSlice> {

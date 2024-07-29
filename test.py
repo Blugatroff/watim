@@ -89,7 +89,6 @@ for path in tests:
         continue
     with open('./out.wat', 'wb') as outwat:
         outwat.write(compiler.stdout.encode("UTF-8"))
-        cmd = 'wasmtime ./out.wat'
     if compiler.returncode == 0 and test['status'] is not None:
         program = subprocess.run(["wasmtime", "./out.wat"], input=bytes(test["stdin"] or "", 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if test['stderr'] is not None and program.stderr.strip() != test['stderr'].encode('UTF-8').strip():

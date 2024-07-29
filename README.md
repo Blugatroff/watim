@@ -69,7 +69,6 @@ Just copy it into one of the directories listed [here](https://docs.kde.org/stab
 This program exits with the exit code read from stdin.
 ```
 extern "wasi_snapshot_preview1" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
-extern "wasi_snapshot_preview1" "proc_exit" fn raw_exit(code: i32)
 extern "wasi_snapshot_preview1" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
 extern "wasi_snapshot_preview1" "proc_exit" fn exit(code: i32)
 
@@ -83,12 +82,12 @@ struct Iov {
 struct OnStack<T> { value: T }
 
 fn write(file: i32, ptr: .i32, len: i32) -> i32 {
-    local iov: Iov
-    local written-ptr: OnStack<i32>
+    uninit<Iov> @iov
+    0 make OnStack<i32> @written
     $ptr #iov.ptr
     $len #iov.len
-    $file &iov 1 &written-ptr.value raw_write drop
-    $written-ptr.value @written
+    $file &iov 1 &written.value raw_write drop
+    $written.value @written
     $written $len = if {
         $len
     } else {
@@ -97,17 +96,19 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
 }
 
 fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
-    local iov: Iov
-    local nread: OnStack<i32>
+    0 make OnStack<i32> @nread
+    uninit<Iov> @iov
     $buf-addr #iov.ptr
     $buf-size #iov.len
     $file &iov 1 &nread.value raw_read drop
     $nread.value
 }
 
+struct Buf { a: i32 b: i32 c: i32 d: i32 e: i32 f: i32 g: i32 h: i32 }
+
 fn print(n: i32) {
-    memory buf: i32 16
-    memory buf-reversed: i32 16
+    uninit<Buf> @buf &buf.a @buf
+    uninit<Buf> @buf-reversed &buf-reversed.a @buf-reversed
     0 @l
     $n 0 = if {
         1 #l // length = 1
@@ -135,9 +136,9 @@ fn print(n: i32) {
 }
 
 fn write_byte(file: i32, b: i32) {
-    memory buf: i32 1
-    $buf $b store8
-    $file $buf 1 write drop
+    uninit<OnStack<i32>> @buf
+    &buf.value $b store8
+    $file &buf.value 1 write drop
 }
 
 fn parse(pt: .i32, len: i32) -> i32 {
@@ -166,12 +167,14 @@ fn parse(pt: .i32, len: i32) -> i32 {
 fn dup<T>(a: T) -> T, T { $a $a }
 
 fn main "_start" () {
-    memory buf: i32 32
+    uninit<Buf> @buf &buf.a @buf
     0 $buf 32 read @nread
-    $buf $nread 1 - parse
+    $nread 0 /= if {
+        $buf $nread 1 - + ~ "\n" drop = if { $nread 1 - #nread }
+    }
+    $buf $nread parse
     dup<i32> print 
     1 "\n" write drop
     exit
 }
-
 ```
