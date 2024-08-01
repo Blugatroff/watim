@@ -11,10 +11,11 @@ import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
 import "../std/fmt.watim" as Fmt
+import "../std/map.watim" as Map (Map)
 
 import "./active-memory.watim" as ActiveMemory
 import "./logging.watim" as Logging
-import "./lexer.watim" as Lexer (Token)
+import "./lexer.watim" as Lexer (Token, Token-lexeme)
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 
@@ -85,7 +86,7 @@ fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice
     }
 }
 
-fn lex(arena: .Arena, fs: .FileSystem, watim-code: ByteSlice) -> Array<Token> {
+fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
     $arena Arena:temp @tmp-arena @save
     "Lexer" Arena:new @lexer-arena
     $tmp-arena &watim-code Lexer:lex @tokens
@@ -95,6 +96,8 @@ fn lex(arena: .Arena, fs: .FileSystem, watim-code: ByteSlice) -> Array<Token> {
 }
 
 fn main "_start" () {
+    1 mem-grow drop
+    PA:page-size 2 * set-stack-size
     Logging:enable
     ActiveMemory:init
     Arena:init-temp
@@ -116,7 +119,7 @@ fn main "_start" () {
             &files-arena FS:init IO:check @fs
             &files-arena &fs $file-path read-file-or-stdin @watim-code
             "Tokens" Arena:new @tokens-arena
-            &tokens-arena &fs $watim-code lex @tokens
+            &tokens-arena $watim-code lex @tokens
             &files-arena Arena:shred
             0 @i
             loop {
@@ -137,7 +140,7 @@ fn main "_start" () {
             "Files" Arena:new @files-arena
             &files-arena FS:init IO:check @fs
             &files-arena &fs $file-path read-file-or-stdin @watim-code
-            &arena &fs $watim-code lex @tokens
+            &arena $watim-code lex @tokens
             &files-arena Arena:shred
             &arena $tokens parse match {
                 case Error -> {
@@ -169,13 +172,80 @@ fn main "_start" () {
             1 IO:newline
             1 IO:newline
         }
-        case Check -> { drop
+        case Check -> {
+            @file-path
+            \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena &fs $file-path &modules load-modules-recursively
             2 "TODO\n" IO:write-all IO:check
         }
     }
     &arena Arena:clear
     exit
 }
+
+fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>, modules: .Map<ByteSlice, Array<TopItem>>) { block {
+    $file-path match {
+        case None -> { "-" make ByteSlice }
+        case Some -> {}
+    } @file-path-or-dash
+    $modules &file-path-or-dash Map:get<ByteSlice, Array<TopItem>> match {
+        case None -> {}
+        case Some -> { drop break }
+    }
+    Logging:enabled if {
+        2 "Loading module: " IO:write-all IO:check
+        2 $file-path-or-dash ByteSlice:unpack IO:write-all IO:check
+        2 IO:newline
+    }
+    $arena Arena:temp @temp-arena @save
+    $temp-arena $fs $file-path read-file-or-stdin @watim-code
+    $arena $watim-code lex @tokens
+    $arena $tokens parse match {
+        case Error -> {
+            2 flip $file-path-or-dash ByteSlice:unpack ParseError-print drop
+            2 IO:newline
+            exit
+            Core:unreachable<Array<TopItem>>
+        }
+        case Success -> {}
+    } @top-items
+
+    $arena
+    $modules
+    $file-path match { case Some -> {} case None -> { "-" make ByteSlice } }
+    $top-items
+    Map:insert<ByteSlice, Array<TopItem>> match {
+        case None -> {}
+        case Some -> { drop 0 0 / drop }
+    }
+
+    0 @i
+    loop {
+        $top-items.len $i = if { break }
+        &top-items $i Array:get<TopItem> match {
+            case Import -> {
+                @imp
+                &imp.path Token-lexeme 2 - flip 1 + flip make ByteSlice @imp-path
+                $file-path match {
+                    case None -> {
+                        $arena $fs $imp-path make Maybe<ByteSlice>.Some $modules load-modules-recursively
+                    }
+                    case Some -> {
+                        ByteSlice:unpack FS:path-dir ByteArray:init @path
+                        $temp-arena &path $imp-path ByteSlice:unpack ByteArray:push
+                        $temp-arena &path ByteArray:unpack FS:normalize make ByteSlice @absolute-imp-path
+                        $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
+                        $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some $modules load-modules-recursively
+                    }
+                }
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+
+    $temp-arena $save Arena:restore
+} }
 
 fn write-stdout(ptr: .i32, len: i32) -> i32 {
     1 $ptr $len IO:write-all
