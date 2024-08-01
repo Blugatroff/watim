@@ -3731,6 +3731,7 @@ def determine_loads(fields: List[FieldAccess], lives_in_memory=True) -> List[int
 class WatGenerator:
     modules: Dict[int, Module]
     function_table: Dict[FunctionHandle | ExternHandle, int]
+    guard_stack: bool
     chunks: List[str] = field(default_factory=list)
     indentation: int = 0
     globals: Dict[GlobalId, Global]= field(default_factory=dict)
@@ -3791,7 +3792,8 @@ class WatGenerator:
         global_mem = self.write_globals(data_end)
         stack_start = align_to(global_mem, 4)
         self.write_line(f"(global $stac:k (mut i32) (i32.const {stack_start}))")
-        self.write_line(f"(global $stack-siz:e (mut i32) (i32.const 65536))")
+        if self.guard_stack:
+            self.write_line(f"(global $stack-siz:e (mut i32) (i32.const 65536))")
 
         self.write_data(all_data)
 
@@ -3843,11 +3845,11 @@ class WatGenerator:
         if body.locals_copy_space != 0:
             self.write_mem("locl-copy-spac:e", body.locals_copy_space, 0, 0)
         self.write_structs(body.locals)
+        if uses_stack and self.guard_stack:
+            self.write_line("call $stack-overflow-guar:d")
         self.write_body(module, body)
         if uses_stack:
-            self.write_indent()
-            self.write("local.get $stac:k global.set $stac:k\n")
-            self.write_stack_overflow_guard()
+            self.write_line("local.get $stac:k global.set $stac:k")
         self.dedent()
         self.write_line(")")
 
@@ -3857,10 +3859,6 @@ class WatGenerator:
         if scope != 0 or shadow != 0:
             self.write(f":{scope}:{shadow}")
         self.write("\n")
-
-    def write_stack_overflow_guard(self) -> None:
-        self.write_indent()
-        self.write(f"i32.const 1 global.get $stac:k global.get $stack-siz:e i32.lt_u i32.div_u drop ;; divide by zero in case of stack overflow\n")
 
     def write_structs(self, locals: Dict[LocalId, Local]) -> None:
         for local_id, local in locals.items():
@@ -4122,7 +4120,8 @@ class WatGenerator:
             case IntrinsicMemGrow():
                 self.write_line("memory.grow")
             case IntrinsicSetStackSize():
-                self.write_line("global.set $stack-siz:e")
+                if self.guard_stack:
+                    self.write_line("global.set $stack-siz:e")
             case IntrinsicUninit(_, taip, copy_space_offset):
                 if taip.can_live_in_reg():
                     self.write_line("i32.const 0")
@@ -4444,6 +4443,8 @@ class WatGenerator:
         self.write_line("(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)")
         self.write_line("(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)")
         self.write_line("(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)")
+        if self.guard_stack:
+            self.write_line("(func $stack-overflow-guar:d i32.const 1 global.get $stac:k global.get $stack-siz:e i32.lt_u i32.div_u drop)")
 
     def write_function_table(self) -> None:
         if len(self.function_table) == 0:
@@ -4521,7 +4522,7 @@ class WatGenerator:
 
 Mode = Literal["lex"] | Literal["compile"]
 
-def run(path: str, mode: Mode, stdin: str | None = None) -> str:
+def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> str:
     if mode == "lex":
         if path == "-":
             file = stdin if stdin is not None else sys_stdin.get()
@@ -4543,13 +4544,13 @@ def run(path: str, mode: Mode, stdin: str | None = None) -> str:
         resolved_modules[id] = resolved_module
         resolved_modules_by_path[module.path] = resolved_module
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
-    return WatGenerator(mono_modules, function_table).write_wat_module()
+    return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
 def main(argv: List[str], stdin: str | None = None) -> str:
     mode: Literal["compile"] | Literal["lex"] = "compile"
     if len(argv) > 2 and argv[2] == "lex":
         mode = "lex"
-    return run(argv[1], mode, stdin)
+    return run(argv[1], mode, "--guard-stack" in argv, stdin)
 
 if __name__ == "__main__":
     try:

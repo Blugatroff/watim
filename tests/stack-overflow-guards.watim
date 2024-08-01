@@ -1,0 +1,70 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+struct Large<T> {
+	a: T
+	b: T
+	c: T
+	d: T
+}
+
+fn main "_start" () {
+	uninit<Large<Large<Large<Large<Large<i32>>>>>> drop
+	main
+}
+[== Args Compiler ==]
+--guard-stack
+[== Status Compiler ==]
+0
+[== Status ==]
+134
+[== Stdout Compiler ==]
+(module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(global $stack-siz:e (mut i32) (i32.const 65536))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		(local $locl-copy-spac:e i32)
+		(local $stac:k i32)
+		global.get $stac:k local.set $stac:k
+		global.get $stac:k global.get $stac:k i32.const 4096 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		call $stack-overflow-guar:d
+		local.get $locl-copy-spac:e i32.const 0 i32.add
+		drop
+		call $0:main
+		local.get $stac:k global.set $stac:k
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+	(func $stack-overflow-guar:d i32.const 1 global.get $stac:k global.get $stack-siz:e i32.lt_u i32.div_u drop)
+)
+[== Stderr ==]
+Error: failed to run main module `./out.wat`
+
+Caused by:
+    0: failed to invoke command default
+    1: error while executing at wasm backtrace:
+           0:   0xd7 - <unknown>!stack-overflow-guar:d
+           1:   0xa8 - <unknown>!0:main
+           2:   0xb0 - <unknown>!0:main
+           3:   0xb0 - <unknown>!0:main
+           4:   0xb0 - <unknown>!0:main
+           5:   0xb0 - <unknown>!0:main
+           6:   0xb0 - <unknown>!0:main
+           7:   0xb0 - <unknown>!0:main
+           8:   0xb0 - <unknown>!0:main
+           9:   0xb0 - <unknown>!0:main
+          10:   0xb0 - <unknown>!0:main
+          11:   0xb0 - <unknown>!0:main
+          12:   0xb0 - <unknown>!0:main
+          13:   0xb0 - <unknown>!0:main
+          14:   0xb0 - <unknown>!0:main
+          15:   0xb0 - <unknown>!0:main
+          16:   0xb0 - <unknown>!0:main
+    2: wasm trap: integer divide by zero
+

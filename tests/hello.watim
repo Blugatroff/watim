@@ -115,7 +115,7 @@ fn main "_start" () {
 	(memory 1 65536)
 	(export "memory" (memory 0))
 	(table funcref (elem))
-	(global $stac:k (mut i32) (i32.const 48))
+	(global $stac:k (mut i32) (i32.const 24))
 	(data (i32.const 0) "Failed to parse: ''\n\n")
 	(func $0:main (export "_start")
 		(local $buf i32)
