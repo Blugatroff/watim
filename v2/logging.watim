@@ -1,7 +1,7 @@
-memory LOGGING: bool 4
+global LOGGING: bool
 
-fn set(v: bool) { $LOGGING $v store }
-fn enable() { $LOGGING 0 0 = store }
-fn disable() { $LOGGING 0 1 = store }
-fn enabled() -> bool { $LOGGING ~ }
+fn set(v: bool) { $v #LOGGING }
+fn enable() { 0 0 = #LOGGING }
+fn disable() { 0 1 = #LOGGING }
+fn enabled() -> bool { $LOGGING }
 

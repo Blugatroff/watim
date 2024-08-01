@@ -1,0 +1,11 @@
+[== Stdin Compiler ==]
+struct Foo {
+	foo: Foo
+}
+fn main "_start" () {
+    sizeof(Foo) proc_exit
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:1:8 structs and variants cannot be directly recursive

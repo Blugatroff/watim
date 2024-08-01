@@ -2604,6 +2604,10 @@ class ModuleResolver:
         self.imports = resolved_imports
         resolved_type_definitions = list(map(self.resolve_type_definition, self.module.type_definitions))
         self.resolved_type_definitions = resolved_type_definitions
+        for i, type_definition in enumerate(self.resolved_type_definitions):
+            if isinstance(type_definition, ResolvedStruct) or isinstance(type_definition, ResolvedVariant):
+                if self.is_struct_directly_recursive(ResolvedStructHandle(self.id, i)):
+                    raise self.abort(type_definition.name, "structs and variants cannot be directly recursive")
         self.globals = list(map(self.resolve_global, self.module.globals))
         resolved_externs = list(map(self.resolve_extern, self.module.externs))
         self.externs = resolved_externs
@@ -2730,6 +2734,14 @@ class ModuleResolver:
     def resolve_struct(self, struct: ParsedStruct) -> ResolvedStruct:
         return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)), struct.generic_parameters)
 
+    def is_struct_directly_recursive(self, struct_handle: ResolvedStructHandle) -> bool:
+        struct = self.get_type_definition(struct_handle)
+        if isinstance(struct, ResolvedStruct):
+            return any(isinstance(field.taip, ResolvedStructType) and field.taip.struct == struct_handle for field in struct.fields)
+        if isinstance(struct, ResolvedVariant):
+            return any(isinstance(case.taip, ResolvedStructType) and case.taip == struct_handle for case in struct.cases)
+        assert_never(struct)
+
     def resolve_variant(self, variant: ParsedVariant) -> ResolvedVariant:
         return ResolvedVariant(variant.name, list(map(lambda t: ResolvedVariantCase(t.name, self.resolve_type(t.taip) if t.taip is not None else None), variant.cases)), variant.generic_parameters)
 
@@ -2773,17 +2785,15 @@ class FunctionType:
 @dataclass
 class Struct:
     name: Token
-    fields: List['NamedType']
+    fields: List[NamedType]
     generic_parameters: List['Type']
+    _size: int
 
     def __str__(self) -> str:
         return f"Struct(name={str(self.name)})"
 
     def size(self) -> int:
-        size = 0
-        for field in self.fields:
-            size += field.taip.size()
-        return size
+        return self._size
 
     def field_offset(self, field_index: int) -> int:
         return sum(self.fields[i].taip.size() for i in range(0, field_index))
@@ -2798,9 +2808,10 @@ class Variant:
     name: Token
     cases: List[VariantCase]
     generic_arguments: List['Type']
+    _size: int
 
     def size(self) -> int:
-        return 4 + max((t.taip.size() for t in self.cases if t.taip is not None), default=0)
+        return self._size
 
 TypeDefinition = Struct | Variant
 
@@ -2817,13 +2828,16 @@ class StructHandle:
 class StructType:
     name: Token
     struct: StructHandle
-    size: Callable[[], int]
+    _size: int
 
     def __str__(self) -> str:
         return f"StructType(name={str(self.name)}, struct={str(self.struct)})"
 
     def can_live_in_reg(self) -> bool:
         return self.size() <= 4
+
+    def size(self):
+        return self._size
 
 Type = PrimitiveType | PtrType | StructType | FunctionType
 
@@ -3622,16 +3636,18 @@ class Monomizer:
         s = self.modules[struct.module].type_definitions[struct.index]
         if isinstance(s, ResolvedVariant):
             cases: List[VariantCase] = []
-            variant_instance = Variant(s.name, cases, generics)
+            variant_instance = Variant(s.name, cases, generics, 69)
             handle = self.add_struct(struct.module, struct.index, variant_instance, generics)
             for case in map(lambda c: VariantCase(c.name, self.monomize_type(c.taip, generics) if c.taip is not None else None), s.cases):
                 cases.append(case)
+            variant_instance._size = 4 + max((t.taip.size() for t in cases if t.taip is not None), default=0)
             return handle, variant_instance
         fields: List[NamedType] = []
-        struct_instance = Struct(s.name, fields, generics)
+        struct_instance = Struct(s.name, fields, generics, 69)
         handle = self.add_struct(struct.module, struct.index, struct_instance, generics)
         for field in map(lambda t: self.monomize_named_type(t, generics), s.fields):
             fields.append(field)
+        struct_instance._size = sum(field.taip.size() for field in fields)
         return handle, struct_instance
 
     def monomize_named_type(self, taip: ResolvedNamedType, generics: List[Type]) -> NamedType:
@@ -3664,8 +3680,7 @@ class Monomizer:
     def monomize_struct_type(self, taip: ResolvedStructType, generics: List[Type]) -> StructType:
         this_generics = list(map(lambda t: self.monomize_type(t, generics), taip.generic_arguments))
         handle,struct = self.monomize_struct(taip.struct, this_generics)
-        size = Lazy(lambda: struct.size())
-        return StructType(taip.name, handle, lambda: size.get())
+        return StructType(taip.name, handle, struct.size())
 
     def monomize_function_type(self, taip: ResolvedFunctionType, generics: List[Type]) -> FunctionType:
         parameters = list(map(lambda t: self.monomize_type(t, generics), taip.parameters))
