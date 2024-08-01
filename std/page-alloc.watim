@@ -12,6 +12,7 @@ fn current-number-of-pages() -> i32 {
     0 mem-grow
 }
 
+global ACTIVE_PAGES: i32
 global ALLOCATOR: PageAllocator
 
 struct Page {
@@ -41,6 +42,7 @@ fn alloc-page() -> .i32 {
     } else {
         do-the-mem-grow
     }
+    $ACTIVE_PAGES 1 + #ACTIVE_PAGES
 }
 fn search-free-list-for-contiguous(list: .Page, n: i32) -> .Page { block {
     // TODO: This function only finds contiguous free pages which are also contguous in the free-list.
@@ -74,7 +76,8 @@ fn search-free-list-for-contiguous(list: .Page, n: i32) -> .Page { block {
         }
     }
 } }
-fn contiguous-pages(n: i32) -> .i32 { block {
+fn contiguous-pages(n: i32) -> .i32 {
+    $ACTIVE_PAGES $n + #ACTIVE_PAGES
     $ALLOCATOR.free-list $n search-free-list-for-contiguous @contiguous-free
     $contiguous-free 0!.Page /= if {
         $ALLOCATOR.free-list @list
@@ -108,22 +111,28 @@ fn contiguous-pages(n: i32) -> .i32 { block {
                 $list.next #list
             }
         }
-        $contiguous-free !.i32 break
+        $contiguous-free !.i32
+    } else {
+        do-the-mem-grow @first
+        loop {
+            $n 1 = if { break }
+            do-the-mem-grow drop
+            $n 1 - #n
+        }
+        $first
     }
-    do-the-mem-grow @first
-    loop {
-        $n 1 = if { break }
-        do-the-mem-grow drop
-        $n 1 - #n
-    }
-    $first
-} }
+}
 fn discard-page(page: .i32) {
     $page !.Page @page
     $ALLOCATOR.free-list #page.next
     $page #ALLOCATOR.free-list
+    $ACTIVE_PAGES 1 - #ACTIVE_PAGES
 
     // There is currently no way to deallocate pages in wasm.
     // But there is a proposal for the `memory.discard` instruction: https://github.com/WebAssembly/memory-control/issues/6
+}
+
+fn active-pages() -> i32 {
+    $ACTIVE_PAGES
 }
 

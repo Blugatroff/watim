@@ -4,10 +4,10 @@ import "./page-alloc.watim" as PA
 
 global ON_NEW: (.Arena ->)
 global ON_ALLOC: (.Arena, i32 ->)
-global ON_RESTORE: (.Arena ->)
-global ON_CLEAR: (.Arena ->)
+global ON_RESTORE: (.Arena, i32 ->)
+global ON_CLEAR: (.Arena, i32 ->)
 
-fn set-callbacks(on-new: (.Arena ->), on-alloc: (.Arena, i32 ->), on-restore: (.Arena ->), on-clear: (.Arena ->)) {
+fn set-callbacks(on-new: (.Arena ->), on-alloc: (.Arena, i32 ->), on-restore: (.Arena, i32 ->), on-clear: (.Arena, i32 ->)) {
     $on-new #ON_NEW
     $on-alloc #ON_ALLOC
     $on-restore #ON_RESTORE
@@ -97,8 +97,9 @@ fn clear(self: .Arena) {
         #self.used-pages
     }
     0 !.Page #self.used-pages
+    $self.size @bytes-cleared
     0 #self.size
-    $ON_CLEAR 0 !(.Arena ->) /= if { $self $ON_CLEAR -> }
+    $ON_CLEAR 0 !(.Arena, i32 ->) /= if { $self $bytes-cleared $ON_CLEAR -> }
 }
 fn visit-mem(self: .Arena, f: (.i32, i32 ->)) {
     $self.used-pages @cursor
@@ -114,6 +115,7 @@ fn shred(self: .Arena) {
     $self clear
 }
 fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
+    $ON_ALLOC 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC -> }
     $size 0 = if {
         $self.used-pages 0 !.Page = if {
             // Cannot request the current cursor when no page has been allocated yet.
@@ -141,7 +143,6 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
         $page.pos sizeof(Page) + $size + PA:page-size le if { // there is enough space in this page
             $page sizeof(Page) + $page.pos + !.i32
             $page.pos $size + #page.pos
-            $ON_ALLOC 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC -> }
             break
         }
         $page.next #page
@@ -186,6 +187,7 @@ fn save(self: .Arena) -> ArenaRestorePoint {
     }
 }
 fn restore(self: .Arena, point: ArenaRestorePoint) {
+    $self.size $point.size - @bytes-restored
     $self.size $point.size lt if {
         0 0 / drop
     }
@@ -200,7 +202,7 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
         $point.pos #self.used-pages.pos
         $point.size #self.size
     }
-    $ON_RESTORE 0 !(.Arena ->) /= if { $self $ON_RESTORE -> }
+    $ON_RESTORE 0 !(.Arena, i32 ->) /= if { $self $bytes-restored $ON_RESTORE -> }
 }
 fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
     $self.size $point.size -

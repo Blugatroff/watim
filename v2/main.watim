@@ -1,18 +1,20 @@
 import "../std/core.watim" as Core
 import "../std/maybe.watim" as Maybe (Maybe, or-default)
+import "../std/page-alloc.watim" as PageAlloc
 import "../std/arena.watim" as Arena (Arena)
 import "../std/args.watim" as Args
 import "../std/array.watim" as Array (Array)
 import "../std/io.watim" as IO
-import "../std/fs.watim" as FS
+import "../std/fs.watim" as FS (FileSystem)
 import "../std/bytes.watim" as Bytes
 import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
 import "../std/fmt.watim" as Fmt
 
+import "./active-memory.watim" as ActiveMemory
 import "./logging.watim" as Logging
-import "./lexer.watim" as Lexer
+import "./lexer.watim" as Lexer (Token)
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 
@@ -41,6 +43,7 @@ fn find-flag(args: .Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
 variant CliCommand {
     case Lex -> Maybe<ByteSlice>
     case Parse -> Maybe<ByteSlice>
+    case Check -> Maybe<ByteSlice>
 }
 struct CliArgs {
     command: CliCommand
@@ -63,44 +66,58 @@ fn parse-args(arena: .Arena) -> CliArgs {
         $command ByteSlice:unpack "parse" Bytes:eq if {
             $path make CliCommand.Parse break
         }
+        $command ByteSlice:unpack "check" Bytes:eq if {
+            $path make CliCommand.Check break
+        }
         print-usage-and-exit loop { }
     }
     &args "-q" find-flag &args "--quiet" find-flag or
     make CliArgs
 }
 
+fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>) -> ByteSlice {
+    $file-path match {
+        case None -> { $arena 0 FS:read-all IO:check }
+        case Some -> {
+            @file-path
+            $arena $fs $file-path ByteSlice:unpack FS:read-file IO:check
+        }
+    }
+}
+
+fn lex(arena: .Arena, fs: .FileSystem, watim-code: ByteSlice) -> Array<Token> {
+    $arena Arena:temp @tmp-arena @save
+    "Lexer" Arena:new @lexer-arena
+    $tmp-arena &watim-code Lexer:lex @tokens
+    "Tokens" Arena:new @tokens-arena
+    $arena &tokens Lexer:Tokens-copy
+    $tmp-arena $save Arena:restore
+}
+
 fn main "_start" () {
+    Logging:enable
+    ActiveMemory:init
     Arena:init-temp
     "Main" Arena:new @arena
-
+    &arena FS:init IO:check @fs
     &arena parse-args @args
-    $args.quiet Logging:set
-
-    "Files" Arena:new @files-arena
-    &files-arena FS:init IO:check @fs
+    $args.quiet if { Logging:disable }
 
     $args.command match {
         case Lex -> { "-" make ByteSlice or-default<ByteSlice> }
         case Parse -> { "-" make ByteSlice or-default<ByteSlice> }
+        case Check -> { "-" make ByteSlice or-default<ByteSlice> }
     } @file-path
 
-    $file-path ByteSlice:unpack "-" Bytes:eq if {
-        &files-arena 0 FS:read-all IO:check
-    } else {
-        &files-arena &fs $file-path ByteSlice:unpack FS:read-file IO:check
-    } @file-content
-    &file-content ByteArray:to-slice @file-content
-
-    "Lexer" Arena:new @lexer-arena
-    &lexer-arena &file-content Lexer:lex @tokens
-    &files-arena Arena:shred
-    "Tokens" Arena:new @tokens-arena
-    &tokens-arena &tokens Lexer:Tokens-copy @tokens
-    &lexer-arena Arena:shred
-
-    &args.command match {
+    $args.command match {
         case Lex -> {
-            drop
+            @file-path
+            "Files" Arena:new @files-arena
+            &files-arena FS:init IO:check @fs
+            &files-arena &fs $file-path read-file-or-stdin @watim-code
+            "Tokens" Arena:new @tokens-arena
+            &tokens-arena &fs $watim-code lex @tokens
+            &files-arena Arena:shred
             0 @i
             loop {
                 $tokens.len $i = if { break }
@@ -113,12 +130,21 @@ fn main "_start" () {
                 2 &tokens-arena Arena:usage IO:print IO:check
                 2 IO:newline
             }
+            &tokens-arena Arena:clear
         }
         case Parse -> {
-            drop
+            @file-path
+            "Files" Arena:new @files-arena
+            &files-arena FS:init IO:check @fs
+            &files-arena &fs $file-path read-file-or-stdin @watim-code
+            &arena &fs $watim-code lex @tokens
+            &files-arena Arena:shred
             &arena $tokens parse match {
                 case Error -> {
-                    2 flip $file-path ByteSlice:unpack ParseError-print drop
+                    2 flip $file-path match {
+                        case None -> { "-" }
+                        case Some -> { ByteSlice:unpack }
+                    } ParseError-print drop
                     2 IO:newline
                     1 Core:exit
                     Core:unreachable<Array<TopItem>>
@@ -129,8 +155,8 @@ fn main "_start" () {
             2 "Successfully parsed " IO:write-all IO:check
             2 $items.len IO:print IO:check
             2 " TopItems\n" IO:write-all IO:check
-            2 Fmt:to-fd @fmt
-            &fmt \TopItem-format &items Array:format-multi-line<TopItem>
+            // 2 Fmt:to-fd @fmt
+            // &fmt \TopItem-format &items Array:format-multi-line<TopItem>
 
             \write-stdout  PrettyPrinter-new @pp
             0 @i
@@ -143,7 +169,11 @@ fn main "_start" () {
             1 IO:newline
             1 IO:newline
         }
+        case Check -> { drop
+            2 "TODO\n" IO:write-all IO:check
+        }
     }
+    &arena Arena:clear
     exit
 }
 
@@ -157,7 +187,16 @@ fn exit() {
         2 0 mem-grow IO:print IO:check
         2 " 64KiB pages of memory = " IO:write-all IO:check
         2 0 mem-grow PA:page-size * 1 20 rotl 1 - + 1 20 rotl / IO:print IO:check
-        2 "MiB\n" IO:write-all IO:check
+        2 "MiB" IO:write-all IO:check
+        2 ", " IO:write-all IO:check
+        2 PageAlloc:active-pages IO:print IO:check
+        2 " pages active" IO:write-all IO:check
+        ActiveMemory:is-tracking if {
+            2 ", " IO:write-all IO:check
+            2 ActiveMemory:get IO:print IO:check
+            2 " bytes leaked" IO:write-all IO:check
+        }
+        2 "\n" IO:write-all IO:check
     }
     0 Core:exit
 }

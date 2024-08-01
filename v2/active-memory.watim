@@ -1,0 +1,32 @@
+import "../std/io.watim" as IO
+import "../std/arena.watim" as Arena (Arena)
+
+global IS_TRACKING: bool
+global ACTIVE_MEMORY: i32
+
+fn on-alloc(arena: .Arena, bytes-alloced: i32) {
+    $ACTIVE_MEMORY $bytes-alloced + #ACTIVE_MEMORY
+}
+fn on-dealloc(arena: .Arena, bytes-dealloced: i32) {
+    $ACTIVE_MEMORY $bytes-dealloced - #ACTIVE_MEMORY
+}
+
+fn init() {
+    0 !(.Arena ->) \on-alloc \on-dealloc \on-dealloc Arena:set-callbacks
+    1 1 = #IS_TRACKING
+}
+
+fn print() {
+    2 "ACTIVE_MEMORY: " IO:write-all IO:check
+    2 $ACTIVE_MEMORY IO:print IO:check
+    2 "\n" IO:write-all IO:check
+}
+
+fn get() -> i32 {
+    $ACTIVE_MEMORY
+}
+
+fn is-tracking() -> bool {
+    $IS_TRACKING
+}
+
