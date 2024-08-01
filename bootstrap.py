@@ -1440,6 +1440,7 @@ class IntrinsicType(str, Enum):
     MEM_COPY = "MEM_COPY"
     FLIP = "FLIP"
     UNINIT = "UNINIT"
+    SET_STACK_SIZE = "SET_STACK_SIZE"
 
 @dataclass
 class ParsedIntrinsicWord:
@@ -1471,6 +1472,7 @@ INTRINSICS: dict[str, IntrinsicType] = {
         "or": IntrinsicType.OR,
         "store": IntrinsicType.STORE,
         "uninit": IntrinsicType.UNINIT,
+        "set-stack-size": IntrinsicType.SET_STACK_SIZE,
 }
 INTRINSIC_TO_LEXEME: dict[IntrinsicType, str] = {v: k for k, v in INTRINSICS.items()}
 
@@ -1574,6 +1576,10 @@ class IntrinsicMemGrow:
     token: Token
 
 @dataclass
+class IntrinsicSetStackSize:
+    token: Token
+
+@dataclass
 class ResolvedIntrinsicStore:
     token: Token
     taip: ResolvedType
@@ -1588,7 +1594,7 @@ class ResolvedIntrinsicUninit:
     token: Token
     taip: ResolvedType
 
-ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit
+ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit | IntrinsicSetStackSize
 
 ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord
 
@@ -2460,6 +2466,9 @@ class FunctionResolver:
                     self.abort(token, "uninit only accepts one generic argument")
                 stack.append(generic_arguments[0])
                 return ResolvedIntrinsicUninit(token, generic_arguments[0])
+            case IntrinsicType.SET_STACK_SIZE:
+                self.expect_stack(token, stack, [PrimitiveType.I32])
+                return IntrinsicSetStackSize(token)
             case _:
                 assert_never(intrinsic)
 
@@ -3216,7 +3225,7 @@ class MatchWord:
     parameters: List[Type]
     returns: List[Type]
 
-IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit
+IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit | IntrinsicSetStackSize
 
 Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord
 
@@ -3448,6 +3457,8 @@ class Monomizer:
             case IntrinsicMemCopy():
                 return word
             case IntrinsicMemGrow():
+                return word
+            case IntrinsicSetStackSize():
                 return word
             case ResolvedIntrinsicUninit(token, taip):
                 monomized_taip = self.monomize_type(taip, generics)
@@ -3778,8 +3789,9 @@ class WatGenerator:
 
         data_end = align_to(len(all_data), 4)
         global_mem = self.write_globals(data_end)
-        stack_start = align_to(data_end + global_mem, 4)
+        stack_start = align_to(global_mem, 4)
         self.write_line(f"(global $stac:k (mut i32) (i32.const {stack_start}))")
+        self.write_line(f"(global $stack-siz:e (mut i32) (i32.const 65536))")
 
         self.write_data(all_data)
 
@@ -3835,6 +3847,7 @@ class WatGenerator:
         if uses_stack:
             self.write_indent()
             self.write("local.get $stac:k global.set $stac:k\n")
+            self.write_stack_overflow_guard()
         self.dedent()
         self.write_line(")")
 
@@ -3844,6 +3857,10 @@ class WatGenerator:
         if scope != 0 or shadow != 0:
             self.write(f":{scope}:{shadow}")
         self.write("\n")
+
+    def write_stack_overflow_guard(self) -> None:
+        self.write_indent()
+        self.write(f"i32.const 1 global.get $stac:k global.get $stack-siz:e i32.lt_u i32.div_u drop ;; divide by zero in case of stack overflow\n")
 
     def write_structs(self, locals: Dict[LocalId, Local]) -> None:
         for local_id, local in locals.items():
@@ -4104,6 +4121,8 @@ class WatGenerator:
                 self.write_line("memory.copy")
             case IntrinsicMemGrow():
                 self.write_line("memory.grow")
+            case IntrinsicSetStackSize():
+                self.write_line("global.set $stack-siz:e")
             case IntrinsicUninit(_, taip, copy_space_offset):
                 if taip.can_live_in_reg():
                     self.write_line("i32.const 0")
