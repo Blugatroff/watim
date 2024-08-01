@@ -2606,8 +2606,8 @@ class ModuleResolver:
         self.resolved_type_definitions = resolved_type_definitions
         for i, type_definition in enumerate(self.resolved_type_definitions):
             if isinstance(type_definition, ResolvedStruct) or isinstance(type_definition, ResolvedVariant):
-                if self.is_struct_directly_recursive(ResolvedStructHandle(self.id, i)):
-                    raise self.abort(type_definition.name, "structs and variants cannot be directly recursive")
+                if self.is_struct_recursive(ResolvedStructHandle(self.id, i)):
+                    raise self.abort(type_definition.name, "structs and variants cannot be recursive")
         self.globals = list(map(self.resolve_global, self.module.globals))
         resolved_externs = list(map(self.resolve_extern, self.module.externs))
         self.externs = resolved_externs
@@ -2734,12 +2734,14 @@ class ModuleResolver:
     def resolve_struct(self, struct: ParsedStruct) -> ResolvedStruct:
         return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)), struct.generic_parameters)
 
-    def is_struct_directly_recursive(self, struct_handle: ResolvedStructHandle) -> bool:
+    def is_struct_recursive(self, struct_handle: ResolvedStructHandle, stack: List[ResolvedStruct | ResolvedVariant] = []) -> bool:
         struct = self.get_type_definition(struct_handle)
+        if struct in stack:
+            return True
         if isinstance(struct, ResolvedStruct):
-            return any(isinstance(field.taip, ResolvedStructType) and field.taip.struct == struct_handle for field in struct.fields)
+            return any(isinstance(field.taip, ResolvedStructType) and self.is_struct_recursive(field.taip.struct, stack + [struct]) for field in struct.fields)
         if isinstance(struct, ResolvedVariant):
-            return any(isinstance(case.taip, ResolvedStructType) and case.taip == struct_handle for case in struct.cases)
+            return any(isinstance(case.taip, ResolvedStructType) and self.is_struct_recursive(case.taip.struct, stack + [struct]) for case in struct.cases)
         assert_never(struct)
 
     def resolve_variant(self, variant: ParsedVariant) -> ResolvedVariant:

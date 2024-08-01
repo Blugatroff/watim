@@ -1,6 +1,15 @@
 [== Stdin Compiler ==]
-struct List {
-    next: .List
+struct Bar {
+	foo: Foo
+}
+struct Foo {
+	bar: Bar
+}
+fn main "_start" () {
+    sizeof(Foo) drop
 }
 [== Status Compiler ==]
-0
+1
+[== Stderr Compiler ==]
+-:1:8 structs and variants cannot be recursive
+
