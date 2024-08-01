@@ -15,7 +15,7 @@ endif
 syntax keyword watimTodos TODO FIXME NOTE
 
 " Language keywords
-syntax keyword watimKeywords struct if extern loop local fn memory break else import as block variant match make case
+syntax keyword watimKeywords struct if extern loop fn break else import as block variant match make case global
 
 " Comments
 syntax region watimCommentLine start="//" end="$" contains=watimTodos

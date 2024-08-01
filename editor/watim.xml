@@ -29,8 +29,7 @@
       <item>bool</item>
     </list>
     <list name="locals">
-      <item>local</item>
-      <item>memory</item>
+      <item>global</item>
     </list>
     <contexts>
       <context attribute="Normal" lineEndContext="#pop" name="normal">
