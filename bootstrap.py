@@ -4122,6 +4122,8 @@ class WatGenerator:
             case IntrinsicSetStackSize():
                 if self.guard_stack:
                     self.write_line("global.set $stack-siz:e")
+                else:
+                    self.write_line("drop")
             case IntrinsicUninit(_, taip, copy_space_offset):
                 if taip.can_live_in_reg():
                     self.write_line("i32.const 0")
@@ -4247,10 +4249,10 @@ class WatGenerator:
                     field_offset -= field.taip.size()
                     self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + field_offset} i32.add call $intrinsic:flip ")
-                    if isinstance(field.taip, StructType):
-                        self.write(f"i32.const {field.taip.size()} memory.copy\n")
-                    else:
+                    if field.taip.can_live_in_reg():
                         self.write("i32.store\n")
+                    else:
+                        self.write(f"i32.const {field.taip.size()} memory.copy\n")
                 self.dedent()
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
@@ -4520,7 +4522,7 @@ class WatGenerator:
         else:
             self.write("i32")
 
-Mode = Literal["lex"] | Literal["compile"]
+Mode = Literal["lex"] | Literal["check"] | Literal["compile"]
 
 def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> str:
     if mode == "lex":
@@ -4543,13 +4545,17 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
         resolved_module = ModuleResolver(resolved_modules, resolved_modules_by_path, module, id).resolve()
         resolved_modules[id] = resolved_module
         resolved_modules_by_path[module.path] = resolved_module
+    if mode == "check":
+        return ""
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
 def main(argv: List[str], stdin: str | None = None) -> str:
-    mode: Literal["compile"] | Literal["lex"] = "compile"
+    mode: Mode = "compile"
     if len(argv) > 2 and argv[2] == "lex":
         mode = "lex"
+    elif len(argv) > 2 and argv[2] == "check":
+        mode = "check"
     return run(argv[1], mode, "--guard-stack" in argv, stdin)
 
 if __name__ == "__main__":

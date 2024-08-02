@@ -1,0 +1,10 @@
+[== Stdin Compiler ==]
+import "./std/core.watim" as Core (eexit)
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:1:36 not found

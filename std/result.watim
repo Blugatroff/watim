@@ -1,0 +1,4 @@
+variant Result<T, E> {
+    case Success -> T
+    case Error -> E
+}

@@ -29,13 +29,17 @@ fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
     }
 }
 fn get<K, V>(self: .Map<K, V>, key: .K) -> Maybe<.V> {
+    $self $key get-index<K, V> match {
+        case None -> { make Maybe<.V>.None }
+        case Some -> { $self flip get-value<K, V> make Maybe<.V>.Some }
+    }
+}
+fn get-index<K, V>(self: .Map<K, V>, key: .K) -> Maybe<i32> {
     0 @i
     loop {
-        $i $self size<K, V> = if {
-            make Maybe<.V>.None break
-        }
+        $i $self size<K, V> = if { make Maybe<i32>.None break }
         $self $i get-key<K, V> $key $self.compare -> if {
-            $self $i get-value<K, V> make Maybe<.V>.Some break
+            $i make Maybe<i32>.Some break
         }
         $i 1 + #i
     }

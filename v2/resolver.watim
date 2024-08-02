@@ -1,0 +1,191 @@
+import "../std/core.watim" as Core
+import "../std/result.watim" as Result (Result)
+import "../std/bytes.watim" as Bytes
+import "../std/io.watim" as IO
+import "../std/maybe.watim" as Maybe (Maybe, assert-some)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../std/byte-array.watim" as ByteArray (ByteArray)
+import "../std/array.watim" as Array (Array)
+import "../std/map.watim" as Map (Map)
+import "../std/arena.watim" as Arena (Arena)
+import "../std/fs.watim" as FS
+
+import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location)
+import "./parser.watim" as Parser (TopItem)
+
+struct ModuleId { index: i32 }
+
+struct FunctionHandle { module: ModuleId index: i32 }
+struct ExternHandle { module: ModuleId index: i32 }
+struct UserTypeHandle { module: ModuleId index: i32 }
+
+variant ImportItemItem {
+    case Function -> FunctionHandle
+    case ExternHandle -> ExternHandle
+    case UserType -> UserTypeHandle
+}
+
+struct ImportItem {
+    name: Token
+    handle: ImportItemItem
+}
+
+struct Import {
+    token: Token
+    module: ModuleId
+    path: ByteSlice
+    items: Array<ImportItem>
+}
+
+struct Struct {
+
+}
+struct Variant {
+
+}
+
+variant UserType {
+    case Struct -> Struct
+    case Variant -> Variant
+}
+
+struct Module {
+    imports: Import
+    user-types: Array<UserType>
+}
+
+struct ResolveError {
+    module: ModuleId
+    line: i32
+    column: i32
+    message: ByteArray
+}
+fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, Array<TopItem>>) -> i32 { block {
+    &modules.keys $self.module.index Array:get<ByteSlice> @file-path
+    $fd $file-path ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.line IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.column IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd &self.message ByteArray:unpack IO:write-all
+} }
+fn abort<T>(arena: .Arena, module: ModuleId, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
+    $module $token Token-location $arena $message-ptr $message-len ByteArray:copy make ResolveError
+    make Result<T, ResolveError>.Error
+}
+
+fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> Result<Map<ByteSlice, Module>, ResolveError> {
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @resolved-modules
+    0 @id
+    loop {
+        $modules.values.len $id = if { $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success break }
+        &modules.keys $id Array:get<ByteSlice> @module-path
+        &modules.values $id Array:get<Array<TopItem>> @top-items
+
+        $arena $modules $id make ModuleId resolve-imports match {
+            case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
+            case Success -> {}
+        } @imports
+        $arena $top-items &imports resolve-structs @structs
+
+        $id 1 + #id
+    }
+}
+
+fn resolve-imports(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>, module-id: ModuleId) -> Result<Array<Import>, ResolveError> {
+    $arena Arena:temp @temp-arena @save
+    Array:new<Import> @resolved-imports
+    &modules.values $module-id.index Array:get<Array<TopItem>> @top-items
+    &modules.keys $module-id.index Array:get<ByteSlice> @module-path
+    0 @i
+    loop {
+        $top-items.len $i = if { $resolved-imports make Result<Array<Import>, ResolveError>.Success break }
+        $top-items $i Array:get<TopItem> match {
+            case Import -> {
+                @imp
+                $module-path ~ ByteSlice:unpack "-" Bytes:eq if {
+                    "" ByteArray:init
+                } else {
+                    $module-path ~ ByteSlice:unpack FS:path-dir ByteArray:init
+                } @path
+                $temp-arena &path &imp.path Token-lexeme 2 - flip 1 + flip ByteArray:push
+                $temp-arena $path ByteSlice:unpack FS:normalize make ByteSlice @path
+                $modules &path Map:get-index<ByteSlice, Array<TopItem>> assert-some<i32> make ModuleId @imported-module-id
+                $arena $path ByteSlice:copy @path
+
+                $arena $module-id
+                $modules $imported-module-id.index Map:get-value<ByteSlice, Array<TopItem>>
+                $imported-module-id &imp.items resolve-import-items match {
+                    case Error -> { make Result<Array<Import>, ResolveError>.Error break }
+                    case Success -> {}
+                } @items
+
+                $arena &resolved-imports $imp.start $imported-module-id $path $items make Import Array:push<Import>
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+    $temp-arena $save Arena:restore
+}
+
+fn resolve-import-items(arena: .Arena, module-id: ModuleId, imported-module: .Array<TopItem>, imported-module-id: ModuleId, items: .Array<Token>) -> Result<Array<ImportItem>, ResolveError> {
+    Array:new<ImportItem> @resolved-items
+    0 @i
+    loop {
+        $items.len $i = if { $resolved-items make Result<Array<ImportItem>, ResolveError>.Success break }
+        $items $i Array:get<Token> @item
+        $imported-module $imported-module-id $item lookup-item-in-module match {
+            case None -> {
+                $arena $module-id $item "not found" abort<Array<ImportItem>> break
+            }
+            case Some -> {}
+        } @item
+        $arena &resolved-items $item Array:push<ImportItem>
+        $i 1 + #i
+    }
+}
+
+fn lookup-item-in-module(module: .Array<TopItem>, module-id: ModuleId, name: .Token) -> Maybe<ImportItem> {
+    0 @i
+    loop {
+        $i $module.len = if { make Maybe<ImportItem>.None break }
+        $module $i Array:get<TopItem> match {
+            case Struct -> {
+                .name Token-lexeme $name Token-lexeme Bytes:eq if {
+                    $name ~ $module-id $i make UserTypeHandle make ImportItemItem.UserType make ImportItem make Maybe<ImportItem>.Some break
+                }
+            }
+            case Variant -> {
+                .name Token-lexeme $name Token-lexeme Bytes:eq if {
+                    $name ~ $module-id $i make UserTypeHandle make ImportItemItem.UserType make ImportItem make Maybe<ImportItem>.Some break
+                }
+            }
+            case Function -> {
+                .name Token-lexeme $name Token-lexeme Bytes:eq if {
+                    $name ~ $module-id $i make FunctionHandle make ImportItemItem.Function make ImportItem make Maybe<ImportItem>.Some break
+                }
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+}
+
+fn resolve-structs(arena: .Arena, top-items: .Array<TopItem>, imports: .Array<Import>) -> Array<Struct> {
+    Array:new<Struct> @resolved-structs
+    0 @i
+    loop {
+        $top-items.len $i = if { break }
+        $top-items $i Array:get<TopItem> match {
+            case Struct -> {
+                @struc
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+    $resolved-structs
+}
+

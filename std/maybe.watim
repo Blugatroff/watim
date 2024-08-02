@@ -1,4 +1,5 @@
 import "./core.watim" as Core (unreachable)
+import "./io.watim" as IO
 import "./fmt.watim" as Fmt (Formatter)
 
 variant Maybe<T> {
@@ -30,4 +31,15 @@ fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>
         }
     }
 }
+
+fn print<T>(fd: i32, print-inner: (i32, .T -> i32), self: .Maybe<T>) -> i32 { block () -> i32 {
+    $self match {
+        case None -> { $fd "None" IO:write-all }
+        case Some -> {
+            $fd "(Some " IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fd flip $print-inner -> Core:dup<i32> 0 /= if { break } drop
+            $fd ")" IO:write-all
+        }
+    }
+} }
 

@@ -1,5 +1,6 @@
 import "../std/core.watim" as Core (exit)
 import "../std/maybe.watim" as Maybe (Maybe, assert-some)
+import "../std/result.watim" as Result (Result)
 import "../std/io.watim" as IO
 import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
@@ -675,11 +676,6 @@ fn abort<T>(parser: .Parser, message-ptr: .i32, message-len: i32) -> Result<T, P
     make Result<T, ParseError>.Error
 }
 
-variant Result<T, E> {
-    case Success -> T
-    case Error -> E
-}
-
 struct ParseError {
     line: i32
     column: i32
@@ -866,6 +862,19 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
 
             Array:new<NamedType> @fields
             loop () -> Result<TopItem, ParseError> {
+                $parser peek match {
+                    case None -> { $parser "expected `}`" abort<Array<NamedType>> break }
+                    case Some -> {}
+                } @end
+                $end Token-ty match {
+                    case TOKEN_RIGHT_BRACE -> {
+                        $parser advance assert-some<.Token> drop
+                        $token ~ $name ~ $generic-parameters $fields $end ~ make Struct
+                        make TopItem.Struct
+                        make Result<TopItem, ParseError>.Success break
+                    }
+                    case _ -> { drop }
+                }
                 $parser.arena &fields
                 $parser make TokenTy.TOKEN_IDENT expect-token match {
                     case Error -> { make Result<Array<NamedType>, ParseError>.Error break }

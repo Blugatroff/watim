@@ -18,6 +18,7 @@ import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme)
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
+import "./resolver.watim" as Resolver (resolve-modules, ResolveError-print)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -59,7 +60,12 @@ fn parse-args(arena: .Arena) -> CliArgs {
     block {
         &args 1 Array:remove<ByteSlice> @command
         $args.len 1 gt if {
-            &args 1 Array:remove<ByteSlice> make Maybe<ByteSlice>.Some
+            &args 1 Array:remove<ByteSlice> @path
+            $path ByteSlice:unpack "-" Bytes:eq if {
+                make Maybe<ByteSlice>.None
+            } else {
+                $path make Maybe<ByteSlice>.Some
+            }
         } else { make Maybe<ByteSlice>.None } @path
         $command ByteSlice:unpack "lex" Bytes:eq if {
             $path make CliCommand.Lex break
@@ -176,7 +182,15 @@ fn main "_start" () {
             @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
             &arena &fs $file-path &modules load-modules-recursively
-            2 "TODO\n" IO:write-all IO:check
+            &arena &modules resolve-modules match {
+                case Error -> {
+                    2 flip &modules ResolveError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Map<ByteSlice, Resolver:Module>>
+                }
+                case Success -> {}
+            } @modules
         }
     }
     &arena Arena:clear

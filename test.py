@@ -29,13 +29,13 @@ class CompilerOutput:
     stderr: str
 
 already_compiled = False
-def run_native_compiler(args: List[str], stdin: str):
+def run_native_compiler(args: List[str] | None, stdin: str):
     global already_compiled
     if not already_compiled:
         already_compiled = True
         if subprocess.run(f"python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
             exit(1)
-    compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat"] + args + ["-"], input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat"] + (args or ["-"]), input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 def run_bootstrap_compiler(args: List[str], stdin: str):
@@ -51,6 +51,8 @@ def run_bootstrap_compiler(args: List[str], stdin: str):
 
 if len(sys.argv) > 2 and sys.argv[1] == "--native":
     pattern = sys.argv[2]
+elif len(sys.argv) == 2 and sys.argv[1] == "--native":
+    pattern = "./tests/*.watim"
 elif len(sys.argv) > 1:
     pattern = sys.argv[1]
 else:
@@ -68,9 +70,9 @@ for path in tests:
         print(f"{path}: compiler-stdin ist missing", file=sys.stderr)
         continue
     if "--native" in sys.argv:
-        compiler = run_native_compiler(test['compiler-args'] if test['compiler-args'] is not None else [], test['compiler-stdin'])
+        compiler = run_native_compiler(test['compiler-args'], test['compiler-stdin'])
     else:
-        compiler = run_bootstrap_compiler(test['compiler-args'] if test['compiler-args'] is not None else [], test['compiler-stdin'])
+        compiler = run_bootstrap_compiler(test['compiler-args'], test['compiler-stdin'])
     if test['compiler-status'] is not None and compiler.returncode != test['compiler-status']:
         print(f"{path}: expected different compiler status:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)
