@@ -1,5 +1,8 @@
 [== Stdin Compiler ==]
-import "./std/core.watim" as Core (exit)
+struct Foo {}
+struct Bar {
+	foo: Foo
+}
 [== Args Compiler ==]
 check
 -
@@ -8,17 +11,12 @@ check
 0
 [== Stdout Compiler ==]
 (Map
-  "./std/core.watim"=(Module
+  "-"=(Module
     imports=(Map),
     user-types=[
+      (Struct),
       (Struct)
     ]
-  ),
-  "-"=(Module
-    imports=(Map
-      "Core"=[(Import)]
-    ),
-    user-types=[]
   )
 )
 

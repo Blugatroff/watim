@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, asdict, field
 from enum import Enum
-from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, assert_never
+from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, assert_never
+from functools import reduce
 import subprocess
 import glob
 import sys
@@ -440,7 +441,7 @@ class ParsedNamedType:
 @dataclass
 class ParsedImport:
     file_path: Token
-    module_qualifier: Token
+    qualifier: Token
     items: List[Token]
 
 @dataclass
@@ -1093,6 +1094,9 @@ class Import:
     module: int
     items: List[ImportItem]
 
+    def __str__(self) -> str:
+        return "(Import)"
+
 @dataclass
 class ResolvedPtrType:
     child: 'ResolvedType'
@@ -1100,16 +1104,15 @@ class ResolvedPtrType:
     def __str__(self) -> str:
         return f".{str(self.child)}"
 
-def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None) -> str:
+def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
     if len(l) == 0:
         return "[]"
-    s = "["
+    s = "[\n" if multi_line else "["
     for e in l:
-        if tostr is None:
-            s += str(e) + ", "
-        else:
-            s += tostr(e) + ", "
-    return s[0:-2] + "]"
+        v = str(e) if tostr is None else tostr(e)
+        s += indent(v) if multi_line else v
+        s += ",\n" if multi_line else ", "
+    return s[0:-2] + "\n]" if multi_line else s[0:-2] + "]"
 
 @dataclass
 class ResolvedStructHandle:
@@ -1147,6 +1150,9 @@ class ResolvedStruct:
     name: Token
     fields: List['ResolvedNamedType']
     generic_parameters: List[Token]
+
+    def __str__(self) -> str:
+        return "(Struct)"
 
 @dataclass
 class ResolvedVariantCase:
@@ -1613,12 +1619,15 @@ class ResolvedExtern:
 class ResolvedModule:
     path: str
     id: int
-    imports: List[Import]
+    imports: Dict[str, List[Import]]
     type_definitions: List[ResolvedTypeDefinition]
     externs: List[ResolvedExtern]
     globals: List[ResolvedGlobal]
     functions: List[ResolvedFunction]
     data: bytes
+
+    def __str__(self):
+        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  user-types={indent_non_first(listtostr(self.type_definitions, multi_line=True))}\n)"
 
 @dataclass
 class Lazy(Generic[T]):
@@ -2109,6 +2118,8 @@ class FunctionResolver:
                         else:
                             globl = self.module_resolver.resolved_modules[local.module].globals[local.index]
                         globl.was_reffed = True
+                if not isinstance(var_type, ResolvedStructType) and not isinstance(var_type, ResolvedPtrType):
+                    self.abort(token, "can only reference struct types")
                 stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
             case ParsedSetWord(token, fields):
@@ -2520,19 +2531,20 @@ class FunctionResolver:
 
     def resolve_foreign_call_word(self, env: Env, word: ParsedForeignCallWord) -> ResolvedCallWord:
         resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
-        for imp in self.module_resolver.imports:
-            if imp.qualifier.lexeme == word.module.lexeme:
-                module = self.module_resolver.resolved_modules[imp.module]
-                for index, f in enumerate(module.functions):
-                    if f.signature.name.lexeme == word.name.lexeme:
-                        if len(word.generic_arguments) != len(f.signature.generic_parameters):
-                            self.module_resolver.abort(word.name, f"expected {len(f.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
-                        return ResolvedCallWord(word.name, ResolvedFunctionHandle(module.id, index), resolved_generic_arguments)
-                for index, extern in enumerate(module.externs):
-                    if extern.signature.name.lexeme == word.name.lexeme:
-                        if len(word.generic_arguments) != len(extern.signature.generic_parameters):
-                            self.module_resolver.abort(word.name, f"expected {len(extern.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
-                        return ResolvedCallWord(word.name, ResolvedExternHandle(module.id, index), resolved_generic_arguments)
+        for (qualifier, imps) in self.module_resolver.imports.items():
+            if qualifier == word.module.lexeme:
+                for imp in imps:
+                    module = self.module_resolver.resolved_modules[imp.module]
+                    for index, f in enumerate(module.functions):
+                        if f.signature.name.lexeme == word.name.lexeme:
+                            if len(word.generic_arguments) != len(f.signature.generic_parameters):
+                                self.module_resolver.abort(word.name, f"expected {len(f.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
+                            return ResolvedCallWord(word.name, ResolvedFunctionHandle(module.id, index), resolved_generic_arguments)
+                    for index, extern in enumerate(module.externs):
+                        if extern.signature.name.lexeme == word.name.lexeme:
+                            if len(word.generic_arguments) != len(extern.signature.generic_parameters):
+                                self.module_resolver.abort(word.name, f"expected {len(extern.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
+                            return ResolvedCallWord(word.name, ResolvedExternHandle(module.id, index), resolved_generic_arguments)
                 self.abort(word.name, f"function {word.name.lexeme} not found")
         self.abort(word.name, f"module {word.module.lexeme} not found")
 
@@ -2576,6 +2588,16 @@ class FunctionResolver:
                 self.abort(field_name, f"field not found {field_name.lexeme} WTF?")
         return resolved_fields
 
+K = TypeVar('K')
+V = TypeVar('V')
+def bag(items: Iterator[Tuple[K, V]]) -> Dict[K, List[V]]:
+    bag: Dict[K, List[V]] = {}
+    for k,v in items:
+        if k in bag:
+            bag[k].append(v)
+        else:
+            bag[k] = [v]
+    return bag
 
 @dataclass
 class ModuleResolver:
@@ -2583,7 +2605,7 @@ class ModuleResolver:
     resolved_modules_by_path: Dict[str, ResolvedModule]
     module: ParsedModule
     id: int
-    imports: List[Import] = field(default_factory=list)
+    imports: Dict[str, List[Import]] = field(default_factory=dict)
     resolved_type_definitions: List[ResolvedTypeDefinition] = field(default_factory=list)
     externs: List[ResolvedExtern] = field(default_factory=list)
     globals: List[ResolvedGlobal] = field(default_factory=list)
@@ -2609,7 +2631,7 @@ class ModuleResolver:
         return self.resolved_modules[struct.module].type_definitions[struct.index]
 
     def resolve(self) -> ResolvedModule:
-        resolved_imports = list(map(self.resolve_import, self.module.imports))
+        resolved_imports = bag(map(lambda imp: (imp.qualifier.lexeme, self.resolve_import(imp)), self.module.imports))
         self.imports = resolved_imports
         resolved_type_definitions = list(map(self.resolve_type_definition, self.module.type_definitions))
         self.resolved_type_definitions = resolved_type_definitions
@@ -2635,10 +2657,11 @@ class ModuleResolver:
         for index, extern in enumerate(self.externs):
             if extern.signature.name.lexeme == name.lexeme:
                 return ResolvedExternHandle(self.id, index)
-        for imp in self.imports:
-            for item in imp.items:
-                if item.name == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
-                    return item.handle
+        for qualifier, imps in self.imports.items():
+            for imp in imps:
+                for item in imp.items:
+                    if item.name == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
+                        return item.handle
         self.abort(name, f"function {name.lexeme} not found")
 
     def resolve_global(self, globl: ParsedGlobal) -> ResolvedGlobal:
@@ -2678,7 +2701,7 @@ class ModuleResolver:
                 resolved_items.append(resolved_item)
                 continue
             self.abort(item, "not found")
-        return Import(imp.file_path, imp.module_qualifier, imported_module.id, resolved_items)
+        return Import(imp.file_path, imp.qualifier, imported_module.id, resolved_items)
 
     def resolve_named_type(self, named_type: ParsedNamedType) -> ResolvedNamedType:
         return ResolvedNamedType(named_type.name, self.resolve_type(named_type.taip))
@@ -2712,11 +2735,12 @@ class ModuleResolver:
                 return ResolvedStructType(name, struct_handle, resolved_generic_arguments)
             case ParsedForeignType(module, name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
-                for imp in self.imports:
-                    if imp.qualifier.lexeme == taip.module.lexeme:
-                        for index, struct in enumerate(self.resolved_modules[imp.module].type_definitions):
-                            if struct.name.lexeme == name.lexeme:
-                                return ResolvedStructType(taip.name, ResolvedStructHandle(imp.module, index), resolved_generic_arguments)
+                for qualifier, imps in self.imports.items():
+                    if qualifier == taip.module.lexeme:
+                        for imp in imps:
+                            for index, struct in enumerate(self.resolved_modules[imp.module].type_definitions):
+                                if struct.name.lexeme == name.lexeme:
+                                    return ResolvedStructType(taip.name, ResolvedStructHandle(imp.module, index), resolved_generic_arguments)
                 self.abort(taip.module, f"struct {module.lexeme}:{name.lexeme} not found")
             case other:
                 assert_never(other)
@@ -2725,10 +2749,11 @@ class ModuleResolver:
         for index, struct in enumerate(self.module.type_definitions):
             if struct.name.lexeme == name.lexeme:
                 return ResolvedStructHandle(self.id, index)
-        for imp in self.imports:
-            for item in imp.items:
-                if item.name == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
-                    return item.handle
+        for qualifier, imps in self.imports.items():
+            for imp in imps:
+                for item in imp.items:
+                    if item.name == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
+                        return item.handle
         self.abort(name, f"struct {name.lexeme} not found")
 
     def resolve_type_definition(self, definition: ParsedTypeDefinition) -> ResolvedTypeDefinition:
@@ -3187,7 +3212,7 @@ class StoreWord:
 @dataclass
 class StructWord:
     token: Token
-    taip: Type
+    taip: StructType
     words: List['Word']
     copy_space_offset: int
 
@@ -3509,7 +3534,7 @@ class Monomizer:
                 loads = determine_loads(fields)
                 return GetFieldWord(token, source_taip, target_taip, loads, on_ptr, offset)
             case ResolvedStructWord(token, taip, resolved_words):
-                monomized_taip = self.monomize_type(taip, generics)
+                monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
                 if not monomized_taip.can_live_in_reg():
                     copy_space_offset.value += monomized_taip.size()
@@ -4230,6 +4255,13 @@ class WatGenerator:
                     self.write_line("unreachable")
             case StructWord(_, taip, words, copy_space_offset):
                 self.write_indent()
+                struct = self.lookup_type_definition(taip.struct)
+                assert(not isinstance(struct, Variant))
+                if taip.size() == 0:
+                    for field in struct.fields:
+                        self.write("drop ")
+                    self.write(f"i32.const 0 ;; make {format_type(taip)}\n")
+                    return
                 self.write(f";; make {format_type(taip)}\n")
                 self.indent()
                 self.write_words(module, locals, words)
@@ -4238,11 +4270,16 @@ class WatGenerator:
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
             case UnnamedStructWord(_, taip, copy_space_offset):
                 self.write_indent()
-                self.write(f";; make {format_type(taip)}\n")
-                if taip.can_live_in_reg():
-                    return
                 struct = self.lookup_type_definition(taip.struct)
                 assert(not isinstance(struct, Variant))
+                if taip.can_live_in_reg():
+                    if taip.size() == 0:
+                        for field in struct.fields:
+                            self.write("drop ")
+                        self.write("i32.const 0 ")
+                    self.write(f";; make {format_type(taip)}\n")
+                    return
+                self.write(f";; make {format_type(taip)}\n")
                 field_offset = taip.size()
                 self.indent()
                 for field in reversed(struct.fields):
@@ -4279,7 +4316,7 @@ class WatGenerator:
                     case = cases[0]
                     assert(isinstance(variant, Variant))
                     case_taip = variant.cases[case.tag].taip
-                    if variant.size() > 4:
+                    if variant.size() > 4 or by_ref:
                         self.write(f"call $intrinsic:dupi32 i32.load i32.const {case.tag} i32.eq (if (param i32)")
                     else:
                         self.write(f"call $intrinsic:dupi32 i32.const {case.tag} i32.eq (if (param i32)")
@@ -4290,12 +4327,12 @@ class WatGenerator:
                     self.indent()
                     if case_taip is None:
                         self.write_line("drop")
-                    else:
+                    elif case_taip.size() != 0:
                         self.write_indent()
                         self.write("i32.const 4 i32.add")
                         if case_taip == PrimitiveType.I64 and not by_ref:
                             self.write(" i64.load")
-                        elif not isinstance(case_taip, StructType) and not by_ref:
+                        elif case_taip.can_live_in_reg() and not by_ref:
                             self.write(" i32.load")
                         self.write("\n")
                     self.write_words(module, locals, case.words)
@@ -4324,7 +4361,9 @@ class WatGenerator:
                 self.write_indent()
                 if variant.size() <= 4:
                     assert(variant.size() == 4)
-                    self.write(f"i32.const {tag} ;; store tag\n")
+                    if case_taip is not None:
+                        self.write("drop ")
+                    self.write(f"i32.const {tag} ;; store tag {variant.name.lexeme}.{variant.cases[tag].name.lexeme}\n")
                     return
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add i32.const {tag} i32.store ;; store tag\n")
                 if case_taip is not None:
@@ -4522,6 +4561,22 @@ class WatGenerator:
         else:
             self.write("i32")
 
+def fmt(a: object) -> str:
+    if isinstance(a, str):
+        return f"\"{a}\""
+    if isinstance(a, list):
+        return listtostr(a)
+    return str(a)
+def format_dict(dictionary: dict) -> str:
+    if len(dictionary) == 0: return "(Map)"
+    return "(Map\n" + indent(reduce(lambda a,b: a+",\n"+b, map(lambda kv: f"{fmt(kv[0])}={fmt(kv[1])}", dictionary.items()))) + "\n)"
+
+def indent_non_first(s: str) -> str:
+    return reduce(lambda a,b: f"{a}  {b}", map(lambda s: f"{s}", s.splitlines(keepends=True)))
+
+def indent(s: str) -> str:
+    return reduce(lambda a,b: f"{a}{b}", map(lambda s: f"  {s}", s.splitlines(keepends=True)))
+
 Mode = Literal["lex"] | Literal["check"] | Literal["compile"]
 
 def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> str:
@@ -4546,17 +4601,21 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
         resolved_modules[id] = resolved_module
         resolved_modules_by_path[module.path] = resolved_module
     if mode == "check":
-        return ""
+        return format_dict({ (f"./{k}" if k != "-" else k): v for k,v in resolved_modules_by_path.items() })
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
 def main(argv: List[str], stdin: str | None = None) -> str:
     mode: Mode = "compile"
-    if len(argv) > 2 and argv[2] == "lex":
+    if len(argv) >= 2 and argv[1] == "lex":
         mode = "lex"
-    elif len(argv) > 2 and argv[2] == "check":
+        path = argv[2] if len(argv) > 2 else "-"
+    elif len(argv) > 2 and argv[1] == "check":
         mode = "check"
-    return run(argv[1], mode, "--guard-stack" in argv, stdin)
+        path = argv[2]
+    else:
+        path = argv[1]
+    return run(path, mode, "--guard-stack" in argv, stdin)
 
 if __name__ == "__main__":
     try:

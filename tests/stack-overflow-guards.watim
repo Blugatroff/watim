@@ -13,6 +13,7 @@ fn main "_start" () {
 	main
 }
 [== Args Compiler ==]
+-
 --guard-stack
 [== Status Compiler ==]
 0

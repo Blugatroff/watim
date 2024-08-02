@@ -13,7 +13,7 @@ from termcolor import colored
 
 from bootstrap import main, ParserException, ResolverException
 
-if subprocess.run(f"python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
+if not os.path.isfile("test.wat") and subprocess.run(f"python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
     exit(1)
 
 def parse_test_file(path: str):
@@ -38,11 +38,11 @@ def run_native_compiler(args: List[str] | None, stdin: str):
     compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat"] + (args or ["-"]), input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
-def run_bootstrap_compiler(args: List[str], stdin: str):
+def run_bootstrap_compiler(args: List[str] | None, stdin: str):
     # compiler = subprocess.run(["python", "./bootstrap.py", "-"] + args, input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
     try:
-        stdout = main([sys.argv[0], "-"] + args, stdin)
+        stdout = main([sys.argv[0]] + (args or ["-"]), stdin)
         return CompilerOutput(0, stdout.strip(), "")
     except ParserException as e:
         return CompilerOutput(1, "", e.display().strip())

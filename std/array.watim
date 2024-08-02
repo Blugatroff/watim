@@ -111,6 +111,11 @@ fn pop<T>(self: .Array<T>) -> T {
 fn clone<T>(arena: .A:Arena, self: .Array<T>) -> Array<T> {
     $arena $self.ptr $self.len init<T>
 }
+fn singleton<T>(arena: .A:Arena, item: T) -> Array<T> {
+    $arena 1 new-with-capacity<T> @self
+    &self $item push-assert-no-alloc<T>
+    $self
+}
 fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .Array<T>) {
     $formatter "[" FMT:write
     0 @i

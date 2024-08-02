@@ -1,5 +1,6 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
+import "./byte-slice.watim" as ByteSlice (ByteSlice)
 import "./byte-array.watim" as ByteArray (ByteArray)
 import "./arena.watim" as Arena (Arena)
 
@@ -69,5 +70,17 @@ fn into-string(arena: .Arena, target: .ByteArray) -> Formatter {
     $arena #user-data.arena
     $target #user-data.string
     \append-string $user-data !i32 new
+}
+
+fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
+    $fmt "\"" write
+    uninit<CORE:I32> @escaped-char
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $fmt &escaped-char.inner $self.ptr $i + load8 &escaped-char.inner CORE:escape write
+        $i 1 + #i
+    }
+    $fmt "\"" write
 }
 

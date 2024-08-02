@@ -10,7 +10,7 @@ import "../std/bytes.watim" as Bytes
 import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
-import "../std/fmt.watim" as Fmt
+import "../std/fmt.watim" as Fmt (ByteSlice-format)
 import "../std/map.watim" as Map (Map)
 
 import "./active-memory.watim" as ActiveMemory
@@ -191,6 +191,8 @@ fn main "_start" () {
                 }
                 case Success -> {}
             } @modules
+            1 Fmt:to-fd @fmt
+            &fmt \ByteSlice-format \Resolver:Module-format &modules Map:format-multi-line<ByteSlice, Resolver:Module>
         }
     }
     &arena Arena:clear

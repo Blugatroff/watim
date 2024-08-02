@@ -9,9 +9,10 @@ import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/fs.watim" as FS
+import "../std/fmt.watim" as Fmt (Formatter)
 
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location)
-import "./parser.watim" as Parser (TopItem)
+import "./parser.watim" as P (TopItem)
 
 struct ModuleId { index: i32 }
 
@@ -34,24 +35,59 @@ struct Import {
     token: Token
     module: ModuleId
     path: ByteSlice
+    qualifier: Token
     items: Array<ImportItem>
+}
+fn Import-format(fmt: .Formatter, self: .Import) {
+    $fmt "(Import)" Fmt:write
 }
 
 struct Struct {
 
 }
+fn Struct-format(fmt: .Formatter, self: .Struct) {
+    $fmt "(Struct)" Fmt:write
+}
+
 struct Variant {
 
+}
+fn Variant-format(fmt: .Formatter, self: .Variant) {
+    $fmt "(Variant)" Fmt:write
 }
 
 variant UserType {
     case Struct -> Struct
     case Variant -> Variant
 }
+fn UserType-format(fmt: .Formatter, self: .UserType) {
+    $fmt $self match {
+        case Struct -> { Struct-format }
+        case Variant -> { Variant-format }
+    }
+}
 
 struct Module {
-    imports: Import
+    imports: Map<ByteSlice, Array<Import>>
     user-types: Array<UserType>
+}
+fn format-import-array(fmt: .Formatter, self: .Array<Import>) {
+    $fmt \Import-format $self Array:format<Import>
+}
+fn Module-format(fmt: .Formatter, self: .Module) {
+    $fmt "(Module\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "imports=" Fmt:write
+    $fmt \Fmt:ByteSlice-format \format-import-array &self.imports Map:format-multi-line<ByteSlice, Array<Import>>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "user-types=" Fmt:write
+    $fmt \UserType-format &self.user-types Array:format-multi-line<UserType>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:dedent
+    $fmt Fmt:write-indent
+    $fmt ")" Fmt:write
 }
 
 struct ResolveError {
@@ -70,38 +106,51 @@ fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, Arra
     $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd &self.message ByteArray:unpack IO:write-all
 } }
-fn abort<T>(arena: .Arena, module: ModuleId, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
-    $module $token Token-location $arena $message-ptr $message-len ByteArray:copy make ResolveError
+fn abort<T>(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
+    $ctx.module-id $token Token-location $ctx.arena $message-ptr $message-len ByteArray:copy make ResolveError
     make Result<T, ResolveError>.Error
+}
+
+struct Ctx {
+    arena: .Arena
+    parsed-modules: .Map<ByteSlice, Array<TopItem>>
+    top-items: .Array<TopItem>
+    module-id: ModuleId
 }
 
 fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> Result<Map<ByteSlice, Module>, ResolveError> {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @resolved-modules
-    0 @id
+    $modules.keys.len @id
     loop {
-        $modules.values.len $id = if { $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success break }
-        &modules.keys $id Array:get<ByteSlice> @module-path
-        &modules.values $id Array:get<Array<TopItem>> @top-items
+        $id 0 = if { $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success break }
+        &modules.keys $id 1 - Array:get<ByteSlice> @module-path
+        &modules.values $id 1 - Array:get<Array<TopItem>> @top-items
 
-        $arena $modules $id make ModuleId resolve-imports match {
+        $arena $modules $top-items $id 1 - make ModuleId make Ctx @ctx
+        &ctx resolve-imports match {
             case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
             case Success -> {}
         } @imports
-        $arena $top-items &imports resolve-structs @structs
+        &ctx &imports resolve-user-types match {
+            case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
+            case Success -> {}
+        } @user-types
 
-        $id 1 + #id
+        $arena &resolved-modules $module-path ~
+        $imports $user-types make Module
+        Map:insert<ByteSlice, Module> drop
+        $id 1 - #id
     }
 }
 
-fn resolve-imports(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>, module-id: ModuleId) -> Result<Array<Import>, ResolveError> {
-    $arena Arena:temp @temp-arena @save
-    Array:new<Import> @resolved-imports
-    &modules.values $module-id.index Array:get<Array<TopItem>> @top-items
-    &modules.keys $module-id.index Array:get<ByteSlice> @module-path
+fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveError> {
+    $ctx.arena Arena:temp @temp-arena @save
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<Import>> @resolved-imports
+    &ctx.parsed-modules.keys $ctx.module-id.index Array:get<ByteSlice> @module-path
     0 @i
     loop {
-        $top-items.len $i = if { $resolved-imports make Result<Array<Import>, ResolveError>.Success break }
-        $top-items $i Array:get<TopItem> match {
+        $ctx.top-items.len $i = if { $resolved-imports make Result<Map<ByteSlice, Array<Import>>, ResolveError>.Success break }
+        $ctx.top-items $i Array:get<TopItem> match {
             case Import -> {
                 @imp
                 $module-path ~ ByteSlice:unpack "-" Bytes:eq if {
@@ -111,17 +160,22 @@ fn resolve-imports(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>, modu
                 } @path
                 $temp-arena &path &imp.path Token-lexeme 2 - flip 1 + flip ByteArray:push
                 $temp-arena $path ByteSlice:unpack FS:normalize make ByteSlice @path
-                $modules &path Map:get-index<ByteSlice, Array<TopItem>> assert-some<i32> make ModuleId @imported-module-id
-                $arena $path ByteSlice:copy @path
+                $ctx.parsed-modules &path Map:get-index<ByteSlice, Array<TopItem>> assert-some<i32> make ModuleId @imported-module-id
+                $ctx.arena $path ByteSlice:copy @path
 
-                $arena $module-id
-                $modules $imported-module-id.index Map:get-value<ByteSlice, Array<TopItem>>
-                $imported-module-id &imp.items resolve-import-items match {
-                    case Error -> { make Result<Array<Import>, ResolveError>.Error break }
+                $ctx $imported-module-id &imp.items resolve-import-items match {
+                    case Error -> { make Result<Map<ByteSlice, Array<Import>>, ResolveError>.Error break }
                     case Success -> {}
                 } @items
 
-                $arena &resolved-imports $imp.start $imported-module-id $path $items make Import Array:push<Import>
+                &imp.qualifier Token-lexeme make ByteSlice @qualifier
+                $imp.start $imported-module-id $path $imp.qualifier $items make Import @imp
+                &resolved-imports &qualifier Map:get<ByteSlice, Array<Import>> match {
+                    case None -> {
+                        $ctx.arena &resolved-imports $qualifier $ctx.arena $imp Array:singleton<Import> Map:insert<ByteSlice, Array<Import>> drop
+                    }
+                    case Some -> { $ctx.arena flip $imp Array:push<Import> }
+                }
             }
             case _ -> { drop }
         }
@@ -130,19 +184,20 @@ fn resolve-imports(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>, modu
     $temp-arena $save Arena:restore
 }
 
-fn resolve-import-items(arena: .Arena, module-id: ModuleId, imported-module: .Array<TopItem>, imported-module-id: ModuleId, items: .Array<Token>) -> Result<Array<ImportItem>, ResolveError> {
+fn resolve-import-items(ctx: .Ctx, imported-module-id: ModuleId, items: .Array<Token>) -> Result<Array<ImportItem>, ResolveError> {
     Array:new<ImportItem> @resolved-items
+    $ctx.parsed-modules $imported-module-id.index Map:get-value<ByteSlice, Array<TopItem>> @imported-module
     0 @i
     loop {
         $items.len $i = if { $resolved-items make Result<Array<ImportItem>, ResolveError>.Success break }
         $items $i Array:get<Token> @item
         $imported-module $imported-module-id $item lookup-item-in-module match {
             case None -> {
-                $arena $module-id $item "not found" abort<Array<ImportItem>> break
+                $ctx $item "not found" abort<Array<ImportItem>> break
             }
             case Some -> {}
         } @item
-        $arena &resolved-items $item Array:push<ImportItem>
+        $ctx.arena &resolved-items $item Array:push<ImportItem>
         $i 1 + #i
     }
 }
@@ -173,19 +228,25 @@ fn lookup-item-in-module(module: .Array<TopItem>, module-id: ModuleId, name: .To
     }
 }
 
-fn resolve-structs(arena: .Arena, top-items: .Array<TopItem>, imports: .Array<Import>) -> Array<Struct> {
-    Array:new<Struct> @resolved-structs
+fn resolve-user-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Array<UserType>, ResolveError> {
+    Array:new<UserType> @resolved-user-types
     0 @i
     loop {
-        $top-items.len $i = if { break }
-        $top-items $i Array:get<TopItem> match {
+        $ctx.top-items.len $i = if { $resolved-user-types make Result<Array<UserType>, ResolveError>.Success break }
+        $ctx.top-items $i Array:get<TopItem> match {
             case Struct -> {
-                @struc
+                $ctx flip $imports flip resolve-struct match {
+                    case Error -> { make Result<Array<UserType>, ResolveError>.Error break }
+                    case Success -> { $ctx.arena flip &resolved-user-types flip make UserType.Struct Array:push<UserType> }
+                }
             }
             case _ -> { drop }
         }
         $i 1 + #i
     }
-    $resolved-structs
 }
+
+fn resolve-struct(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, struc: .P:Struct) -> Result<Struct, ResolveError> { block {
+    make Struct make Result<Struct, ResolveError>.Success
+} }
 
