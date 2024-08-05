@@ -127,28 +127,26 @@ fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .
     }
     $formatter "]" FMT:write
 }
-fn format-multi-line<T>(formatter: .Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) {
-    $formatter "[" FMT:write
+fn format-multi-line<T>(formatter: .Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) { block {
+    $self.len 0 = if {
+        $formatter "[]" FMT:write
+        break
+    }
+    $formatter "[\n" FMT:write
     0 @i
     $formatter FMT:indent
     loop {
         $i $self.len = if { break }
-        $formatter "\n" FMT:write
         $formatter FMT:write-indent
         $formatter $self $i get<T> $format-element ->
         $i 1 + #i
         $i $self.len /= if {
-            $formatter "," FMT:write
-        } else {
-            $formatter "\n" FMT:write
-            $formatter FMT:dedent
-            $formatter FMT:write-indent
-            $formatter FMT:indent
+            $formatter ",\n" FMT:write
         }
     }
     $formatter FMT:dedent
     $formatter "]" FMT:write
-}
+} }
 fn print<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { block {
     $fd "[" IO:write-all @code
     $code 0 /= if { $code break }

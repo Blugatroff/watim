@@ -1,5 +1,8 @@
 [== Stdin Compiler ==]
-import "./std/core.watim" as Core (exit)
+import "./std/core.watim" as Core (I32)
+struct Foo {
+	n: I32
+}
 [== Args Compiler ==]
 check
 -
@@ -19,5 +22,9 @@ check
   "-"=(Module
     imports=(Map
       "Core"=[(Import)]),
-    user-types=[]))
-
+    user-types=[
+      (Struct
+        name=(IDENT Foo 2 8),
+        generic-parameters=[],
+        fields=[
+          (NamedType (IDENT n 3 2) (CustomType 0 0 []))])]))

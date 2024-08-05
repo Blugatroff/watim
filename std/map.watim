@@ -72,12 +72,10 @@ fn format-multi-line<K, V>(fmt: .Formatter, format-key: (.Formatter, .K ->), for
         $fmt &self.values $i Array:get<V> $format-value ->
         $i 1 + #i
         $i $self.keys.len /= if {
-            $fmt "," Fmt:write
+            $fmt ",\n" Fmt:write
         }
-        $fmt "\n" Fmt:write
     }
     $fmt Fmt:dedent
-    $fmt Fmt:write-indent
     $fmt ")" Fmt:write
 } }
 

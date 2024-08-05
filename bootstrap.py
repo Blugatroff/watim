@@ -260,6 +260,14 @@ class PrimitiveType(str, Enum):
 
     def __str__(self) -> str:
         if self == PrimitiveType.I32:
+            return "I32"
+        if self == PrimitiveType.I64:
+            return "I64"
+        if self == PrimitiveType.BOOL:
+            return "Bool"
+
+    def pretty(self) -> str:
+        if self == PrimitiveType.I32:
             return "i32"
         if self == PrimitiveType.I64:
             return "i64"
@@ -1102,7 +1110,7 @@ class ResolvedPtrType:
     child: 'ResolvedType'
 
     def __str__(self) -> str:
-        return f".{str(self.child)}"
+        return f"(Ptr {str(self.child)})"
 
 def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
     if len(l) == 0:
@@ -1112,7 +1120,7 @@ def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None, multi_lin
         v = str(e) if tostr is None else tostr(e)
         s += indent(v) if multi_line else v
         s += ",\n" if multi_line else ", "
-    return s[0:-2] + "\n]" if multi_line else s[0:-2] + "]"
+    return s[0:-2] + "]" if multi_line else s[0:-2] + "]"
 
 @dataclass
 class ResolvedStructHandle:
@@ -1120,7 +1128,7 @@ class ResolvedStructHandle:
     index: int
 
     def __str__(self) -> str:
-        return f"ResolvedStructHandle(module={str(self.module)}, index={str(self.index)})"
+        return f"( CustomTypeHandle {str(self.module)} {str(self.index)})"
 
 @dataclass
 class ResolvedStructType:
@@ -1129,6 +1137,9 @@ class ResolvedStructType:
     generic_arguments: List['ResolvedType']
 
     def __str__(self) -> str:
+        return f"(CustomType {self.struct.module} {self.struct.index} {listtostr(self.generic_arguments)})"
+
+    def pretty(self) -> str:
         s = self.name.lexeme
         if len(self.generic_arguments) == 0:
             return s
@@ -1145,6 +1156,9 @@ class ResolvedFunctionType:
     parameters: List['ResolvedType']
     returns: List['ResolvedType']
 
+    def __str__(self) -> str:
+        return f"(FunType {self.token} {listtostr(self.parameters)} {listtostr(self.returns)})"
+
 @dataclass
 class ResolvedStruct:
     name: Token
@@ -1152,18 +1166,27 @@ class ResolvedStruct:
     generic_parameters: List[Token]
 
     def __str__(self) -> str:
-        return "(Struct)"
+        return "(Struct\n" + indent(f"name={self.name},\ngeneric-parameters={listtostr(self.generic_parameters)},\nfields={listtostr(self.fields, multi_line=True)}") + ")"
+
+def format_maybe(v) -> str:
+    return "None" if v is None else f"(Some {v})"
 
 @dataclass
 class ResolvedVariantCase:
     name: Token
     taip: 'ResolvedType | None'
 
+    def __str__(self) -> str:
+        return f"(VariantCase {self.name} {format_maybe(self.taip)})"
+
 @dataclass
 class ResolvedVariant:
     name: Token
     cases: List[ResolvedVariantCase]
     generic_parameters: List[Token]
+
+    def __str__(self) -> str:
+        return "(Variant\n" + indent(f"name={self.name},\ngeneric-parameters={indent_non_first(listtostr(self.generic_parameters))},\ncases={listtostr(self.cases, multi_line=True)}") + ")"
 
 ResolvedTypeDefinition = ResolvedStruct | ResolvedVariant
 
@@ -1201,7 +1224,7 @@ def resolved_types_eq(a: List[ResolvedType], b: List[ResolvedType]) -> bool:
 def format_resolved_type(a: ResolvedType) -> str:
     match a:
         case PrimitiveType():
-            return str(a)
+            return a.pretty()
         case ResolvedPtrType(child):
             return f".{format_resolved_type(a.child)}"
         case ResolvedStructType(name, _, generic_arguments):
@@ -1234,7 +1257,7 @@ class ResolvedNamedType:
     taip: ResolvedType
 
     def __str__(self) -> str:
-        return f"ResolvedNamedType(name={str(self.name)}, taip={str(self.taip)})"
+        return f"(NamedType {str(self.name)} {str(self.taip)})"
 
 @dataclass
 class ResolvedFunctionSignature:
@@ -1627,7 +1650,7 @@ class ResolvedModule:
     data: bytes
 
     def __str__(self):
-        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  user-types={indent_non_first(listtostr(self.type_definitions, multi_line=True))}\n)"
+        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  user-types={indent_non_first(listtostr(self.type_definitions, multi_line=True))})"
 
 @dataclass
 class Lazy(Generic[T]):
@@ -1846,6 +1869,15 @@ class Stack:
         for added in other.stack:
             self.append(added)
 
+    def lift(self, n: int):
+        popped = []
+        for _ in range(n):
+            taip = self.pop()
+            assert(taip is not None)
+            popped.append(taip)
+        for taip in reversed(popped):
+            self.append(taip)
+
     def __len__(self) -> int:
         return len(self.stack) + (len(self.parent) if self.parent is not None else 0)
 
@@ -1987,10 +2019,11 @@ class FunctionResolver:
                 if len(else_words) == 0 and if_words_diverge:
                     remaining_words.reverse()
                     remaining_stack = stack.make_child()
+                    remaining_stack.lift(len(if_parameters))
                     (remaining_resolved_words, remaining_words_diverge) = self.resolve_words(context.with_env(else_env), remaining_stack, remaining_words)
                     stack.apply(remaining_stack)
                     remaining_words_parameters = list(remaining_stack.negative)
-                    if_returns = remaining_stack.dump()
+                    if_returns = remaining_stack.stack
                     if len(if_parameters) >= len(remaining_words_parameters):
                         parameters = if_parameters
                     else:
@@ -2004,7 +2037,7 @@ class FunctionResolver:
                     if_returns = []
                 if not if_words_diverge and not else_words_diverge:
                     if if_stack != else_stack:
-                        error_message = f"stack mismatch between if and else branch:\n\tif   {listtostr(if_stack.stack)}\n\telse {listtostr(else_stack.stack)}"
+                        error_message = f"stack mismatch between if and else branch:\n\tif   {listtostr(if_stack.stack, format_resolved_type)}\n\telse {listtostr(else_stack.stack, format_resolved_type)}"
                         self.abort(word.token, error_message)
                     stack.apply(if_stack)
                 elif if_words_diverge and else_words_diverge:
@@ -2031,7 +2064,7 @@ class FunctionResolver:
                         if not resolved_types_eq(loop_break_stacks[0].types, loop_break_stacks[i].types):
                             error_message = "break stack mismatch:"
                             for break_stack in loop_break_stacks:
-                                error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types)}"
+                                error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types, format_resolved_type)}"
                             self.abort(token, error_message)
                 if not resolved_types_eq(parameters, loop_stack.stack):
                     self.abort(token, "unexpected items remaining on stack at the end of loop")
@@ -2057,8 +2090,8 @@ class FunctionResolver:
                     def on_error():
                         error_message = "break stack mismatch:"
                         for break_stack in block_break_stacks:
-                            error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types)}"
-                        error_message += f"\n\t{end_token.line}:{end_token.column} {listtostr(block_stack.stack)}"
+                            error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types, format_resolved_type)}"
+                        error_message += f"\n\t{end_token.line}:{end_token.column} {listtostr(block_stack.stack, format_resolved_type)}"
                         self.abort(token, error_message)
                     for i in range(1, len(block_break_stacks)):
                         if not resolved_types_eq(block_break_stacks[0].types, block_break_stacks[i].types):
@@ -2297,9 +2330,7 @@ class FunctionResolver:
                         if not negative_is_fine or not positive_is_fine:
                             error_message = "arms of match case have different types:"
                             for case_stack, case_name_str in non_diverging_case_stacks:
-                                if diverges:
-                                    continue
-                                error_message += f"\n\t{listtostr(case_stack.negative)} -> {listtostr(case_stack.stack)} in case {case_name_str}"
+                                error_message += f"\n\t{listtostr(case_stack.negative, format_resolved_type)} -> {listtostr(case_stack.stack, format_resolved_type)} in case {case_name_str}"
                             self.abort(token, error_message)
 
                 if len(case_stacks) == 0:
@@ -2899,7 +2930,7 @@ def types_eq(a: List[Type], b: List[Type]) -> bool:
 def format_type(a: Type) -> str:
     match a:
         case PrimitiveType():
-            return str(a)
+            return a.pretty()
         case PtrType(child):
             return f".{format_type(child)}"
         case StructType(name):
@@ -4038,7 +4069,7 @@ class WatGenerator:
                     return
                 assert_never(word.taip)
             case IntrinsicMul(_, taip):
-                self.write_line(f"{str(taip)}.mul")
+                self.write_line(f"{'i64' if taip == PrimitiveType.I64 else 'i32'}.mul")
             case IntrinsicDrop():
                 self.write_line("drop")
             case IntrinsicOr(_, taip):
@@ -4569,7 +4600,7 @@ def fmt(a: object) -> str:
     return str(a)
 def format_dict(dictionary: dict) -> str:
     if len(dictionary) == 0: return "(Map)"
-    return "(Map\n" + indent(reduce(lambda a,b: a+",\n"+b, map(lambda kv: f"{fmt(kv[0])}={fmt(kv[1])}", dictionary.items()))) + "\n)"
+    return "(Map\n" + indent(reduce(lambda a,b: a+",\n"+b, map(lambda kv: f"{fmt(kv[0])}={fmt(kv[1])}", dictionary.items()))) + ")"
 
 def indent_non_first(s: str) -> str:
     return reduce(lambda a,b: f"{a}  {b}", map(lambda s: f"{s}", s.splitlines(keepends=True)))

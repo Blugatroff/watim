@@ -2,6 +2,11 @@
 struct Foo {}
 struct Bar {
 	foo: Foo
+	baz: .Baz
+	fun: (i32, Foo -> .Baz)
+}
+variant Baz {
+	case Foo -> Bar
 }
 [== Args Compiler ==]
 check
@@ -14,9 +19,20 @@ check
   "-"=(Module
     imports=(Map),
     user-types=[
-      (Struct),
-      (Struct)
-    ]
-  )
-)
+      (Struct
+        name=(IDENT Foo 1 8),
+        generic-parameters=[],
+        fields=[]),
+      (Struct
+        name=(IDENT Bar 2 8),
+        generic-parameters=[],
+        fields=[
+          (NamedType (IDENT foo 3 2) (CustomType 0 0 [])),
+          (NamedType (IDENT baz 4 2) (Ptr (CustomType 0 2 []))),
+          (NamedType (IDENT fun 5 2) (FunType (LEFT_PAREN ( 5 7) [I32, (CustomType 0 0 [])] [(Ptr (CustomType 0 2 []))]))]),
+      (Variant
+        name=(IDENT Baz 7 9),
+        generic-parameters=[],
+        cases=[
+          (VariantCase (IDENT Foo 8 7) (Some (CustomType 0 1 [])))])]))
 

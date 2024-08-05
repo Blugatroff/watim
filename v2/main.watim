@@ -26,6 +26,7 @@ fn print-usage-and-exit() {
     2 "Commands:\n" IO:write-all IO:check
     2 "  lex   [path]   Lex watim code and print the Tokens.\n" IO:write-all IO:check
     2 "  parse [path]   Parse watim code and print the AST\n" IO:write-all IO:check
+    2 "  check [path]   Typecheck watim code and print the AST\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
     1 Core:exit
@@ -220,7 +221,7 @@ fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<Byt
         case Error -> {
             2 flip $file-path-or-dash ByteSlice:unpack ParseError-print drop
             2 IO:newline
-            exit
+            2 Core:exit
             Core:unreachable<Array<TopItem>>
         }
         case Success -> {}
