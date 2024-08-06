@@ -48,6 +48,8 @@ def run_bootstrap_compiler(args: List[str] | None, stdin: str):
         return CompilerOutput(1, "", e.display().strip())
     except ResolverException as e:
         return CompilerOutput(1, "", e.display().strip())
+    except Exception as e:
+        return CompilerOutput(1, "", str(e))
 
 if len(sys.argv) > 2 and sys.argv[1] == "--native":
     pattern = sys.argv[2]
@@ -88,6 +90,7 @@ for path in tests:
         print(f"{path}: expected different compiler stdout:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-stdout']}", file=sys.stderr)
         print(f"Actual:\n{compiler.stdout}", file=sys.stderr)
+        print(f"stderr was: {compiler.stderr}", file=sys.stderr)
         continue
     with open('./out.wat', 'wb') as outwat:
         outwat.write(compiler.stdout.encode("UTF-8"))

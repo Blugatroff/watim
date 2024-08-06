@@ -10,15 +10,31 @@ import "../std/map.watim" as Map (Map)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/fs.watim" as FS
 import "../std/util.watim" as Util (i32-format)
-import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 
+import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format)
 import "./parser.watim" as P (TopItem)
 
 struct ModuleId { index: i32 }
 
 struct FunctionHandle { module: ModuleId index: i32 }
+fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
+    $fmt "(FunctionHandle " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+
 struct ExternHandle { module: ModuleId index: i32 }
+fn ExternHandle-format(fmt: .Formatter, self: .ExternHandle) {
+    $fmt "(ExternHandle " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
 
 struct CustomTypeHandle { module: ModuleId index: i32 }
 fn CustomTypeHandle-format(fmt: .Formatter, self: .CustomTypeHandle) {
@@ -31,13 +47,24 @@ fn CustomTypeHandle-format(fmt: .Formatter, self: .CustomTypeHandle) {
 
 variant ImportItemItem {
     case Function -> FunctionHandle
-    case ExternHandle -> ExternHandle
+    case Extern -> ExternHandle
     case CustomType -> CustomTypeHandle
 }
 
 struct ImportItem {
     name: Token
     handle: ImportItemItem
+}
+fn ImportItem-format(fmt: .Formatter, self: .ImportItem) {
+    $fmt "(ImportItem " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.handle match {
+        case Function -> { FunctionHandle-format }
+        case Extern -> { ExternHandle-format }
+        case CustomType -> { CustomTypeHandle-format }
+    }
+    $fmt ")" Fmt:write
 }
 
 struct Import {
@@ -48,7 +75,17 @@ struct Import {
     items: Array<ImportItem>
 }
 fn Import-format(fmt: .Formatter, self: .Import) {
-    $fmt "(Import)" Fmt:write
+    $fmt "(Import " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt &self.path ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt &self.qualifier Token-format
+    $fmt " " Fmt:write
+    $fmt \ImportItem-format &self.items Array:format-multi-line<ImportItem>
+    $fmt ")" Fmt:write
 }
 
 struct FunType {
@@ -88,6 +125,7 @@ variant Type {
     case Ptr -> .Type
     case Custom -> CustomTypeType
     case Fun -> FunType
+    case Generic -> P:GenericType
 }
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $fmt $self match {
@@ -102,6 +140,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         }
         case Custom -> { CustomTypeType-format break }
         case Fun -> { FunType-format break }
+        case Generic -> { P:GenericType-format break }
     } Fmt:write
 } }
 
@@ -238,14 +277,18 @@ struct Ctx {
 }
 
 fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> Result<Map<ByteSlice, Module>, ResolveError> {
-    &modules.keys Array:reverse<ByteSlice>
-    &modules.values Array:reverse<Array<TopItem>>
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @resolved-modules
     0 @id
     loop {
         $id $modules.keys.len = if { $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success break }
         &modules.keys $id Array:get<ByteSlice> @module-path
         &modules.values $id Array:get<Array<TopItem>> @top-items
+
+        Logging:enabled if {
+            2 "Checking module: " IO:write-all IO:check
+            2 $module-path ~ ByteSlice:unpack IO:write-all IO:check
+            2 "\n" IO:write-all IO:check
+        }
 
         $arena $modules &resolved-modules.values $top-items $id make ModuleId make Ctx @ctx
         &ctx resolve-imports match {
@@ -433,6 +476,7 @@ fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Typ
         case Bool -> { drop make Type.Bool }
         case I32 -> { drop make Type.I32 }
         case I64 -> { drop make Type.I64 }
+        case Generic -> { ~ make Type.Generic }
         case Ptr -> {
             .type ~ $ctx flip $imports flip resolve-type match {
                 case Error -> { make Result<Type, ResolveError>.Error break }
@@ -485,7 +529,8 @@ fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Typ
                                 $i 1 + #i
                             } break
                         }
-                        $ctx.top-items $i Array:get<TopItem> match {
+                        $ctx.top-items $i Array:get<TopItem> 
+                        match {
                             case Struct -> {
                                 .name Token-lexeme &type.name Token-lexeme Bytes:eq if {
                                     $ctx.module-id $i make CustomTypeHandle
@@ -516,17 +561,17 @@ fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Typ
                         case Success -> {}
                     } @generic-arguments
                     &type.module Token-lexeme make ByteSlice @module-lexeme
-                    $imports &module-lexeme Map:get-index<ByteSlice, Array<Import>> match {
+                    $imports &module-lexeme Map:get<ByteSlice, Array<Import>> match {
                         case None -> {
                             $ctx &type.module "not found" abort<Type> break
                         }
                         case Some -> {
-                            @module-id
-                            $imports $module-id Map:get-value<ByteSlice, Array<Import>> @imports
+                            @imports
                             0 @i
                             loop {
                                 $i $imports.len = if { $ctx &type.name "not found" abort<Type> break }
-                                $ctx.resolved-modules $i Array:get<Module> @module
+                                $imports $i Array:get<Import> @imp
+                                $ctx.resolved-modules $imp.module.index Array:get<Module> @module
                                 0 @j
                                 loop {
                                     $j $module.custom-types.len = if { make Maybe<Type>.None break }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, asdict, field
 from enum import Enum
-from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, assert_never
+from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
 from functools import reduce
 import subprocess
 import glob
@@ -294,6 +294,9 @@ class GenericType:
     token: Token
     generic_index: int
 
+    def __str__(self) -> str:
+        return f"(GenericType {self.token} {self.generic_index})"
+
 @dataclass
 class ParsedForeignType:
     module: Token
@@ -446,8 +449,12 @@ class ParsedNamedType:
     name: Token
     taip: ParsedType
 
+    def __str__(self) -> str:
+        return f"(NamedType {self.name} {self.taip})"
+
 @dataclass
 class ParsedImport:
+    token: Token
     file_path: Token
     qualifier: Token
     items: List[Token]
@@ -478,9 +485,13 @@ class ParsedFunction:
 
 @dataclass
 class ParsedStruct:
+    token: Token
     name: Token
     fields: List[ParsedNamedType]
     generic_parameters: List[Token]
+
+    def __str__(self) -> str:
+        return f"(Struct {self.token} {self.name} {listtostr(self.generic_parameters)} {listtostr(self.fields, multi_line=True)})"
 
 @dataclass
 class ParsedVariantCase:
@@ -499,11 +510,15 @@ ParsedTypeDefinition = ParsedStruct | ParsedVariant
 class ParsedModule:
     path: str
     file: str
+    top_items: List[ParsedImport | ParsedTypeDefinition | ParsedGlobal | ParsedFunction | ParsedExtern]
     imports: List[ParsedImport]
     type_definitions: List[ParsedTypeDefinition]
     globals: List[ParsedGlobal]
     functions: List[ParsedFunction]
     externs: List[ParsedExtern]
+
+    def __str__(self) -> str:
+        return listtostr(self.top_items, multi_line=True)
 
 @dataclass
 class ParserException(Exception):
@@ -560,11 +575,7 @@ class Parser:
         raise ParserException(self.file_path, self.file, self.tokens[self.cursor] if self.cursor < len(self.tokens) else None, message)
 
     def parse(self) -> ParsedModule:
-        imports: List[ParsedImport] = []
-        type_definitions: List[ParsedTypeDefinition] = []
-        globals: List[ParsedGlobal] = []
-        functions: List[ParsedFunction] = []
-        externs: List[ParsedExtern] = []
+        top_items: List[ParsedImport | ParsedTypeDefinition | ParsedGlobal | ParsedFunction | ParsedExtern] = []
         while len(self.tokens) != 0:
             token = self.advance(skip_ws=True)
             if token is None:
@@ -574,8 +585,8 @@ class Parser:
                 if file_path is None or file_path.ty != TokenType.STRING:
                     self.abort("Expected file path")
 
-                token = self.advance(skip_ws=True)
-                if token is None or token.ty != TokenType.AS:
+                ass = self.advance(skip_ws=True)
+                if ass is None or ass.ty != TokenType.AS:
                     self.abort("Expected `as`")
 
                 module_qualifier = self.advance(skip_ws=True)
@@ -598,11 +609,11 @@ class Parser:
                             break
                         if comma.ty != TokenType.COMMA:
                             self.abort("expected `)`")
-                imports.append(ParsedImport(file_path, module_qualifier, items))
+                top_items.append(ParsedImport(token, file_path, module_qualifier, items))
                 continue
 
             if token.ty == TokenType.FN:
-                functions.append(self.parse_function())
+                top_items.append(self.parse_function())
                 continue
 
             if token.ty == TokenType.EXTERN:
@@ -616,7 +627,7 @@ class Parser:
                 if fn is None or fn.ty != TokenType.FN:
                     self.abort("Expected `fn`")
                 signature = self.parse_function_signature()
-                externs.append(ParsedExtern(module, name, signature))
+                top_items.append(ParsedExtern(module, name, signature))
                 continue
 
             if token.ty == TokenType.STRUCT:
@@ -640,7 +651,7 @@ class Parser:
                         self.abort("Expected `:` after field name")
                     taip = self.parse_type(generic_parameters)
                     fields.append(ParsedNamedType(field_name, taip))
-                type_definitions.append(ParsedStruct(name, fields, generic_parameters))
+                top_items.append(ParsedStruct(token, name, fields, generic_parameters))
                 continue
 
             if token.ty == TokenType.VARIANT:
@@ -667,7 +678,7 @@ class Parser:
                         continue
                     self.advance(skip_ws=True)
                     cases.append(ParsedVariantCase(ident, self.parse_type(generic_parameters)))
-                type_definitions.append(ParsedVariant(name, generic_parameters, cases))
+                top_items.append(ParsedVariant(name, generic_parameters, cases))
                 continue
 
             if token.ty == TokenType.GLOBAL:
@@ -676,11 +687,26 @@ class Parser:
                 if colon is None or colon.ty != TokenType.COLON:
                     self.abort("Expected `:`")
                 taip = self.parse_type([])
-                globals.append(ParsedGlobal(name, taip))
+                top_items.append(ParsedGlobal(name, taip))
                 continue
 
             self.abort("Expected function import or struct definition")
-        return ParsedModule(self.file_path, self.file, imports, type_definitions, globals, functions, externs)
+        def is_import(obj: object) -> TypeGuard[ParsedImport]:
+            return isinstance(obj, ParsedImport)
+        def is_type_definition(obj: object) -> TypeGuard[ParsedTypeDefinition]:
+            return isinstance(obj, ParsedStruct) or isinstance(obj, ParsedVariant)
+        def is_global(obj: object) -> TypeGuard[ParsedGlobal]:
+           return isinstance(obj, ParsedGlobal)
+        def is_function(obj: object) -> TypeGuard[ParsedFunction]:
+           return isinstance(obj, ParsedFunction)
+        def is_extern(obj: object) -> TypeGuard[ParsedExtern]:
+           return isinstance(obj, ParsedExtern)
+        imports: List[ParsedImport] = list(filter(is_import, top_items))
+        type_definitions: List[ParsedTypeDefinition] = list(filter(is_type_definition, top_items))
+        globals: List[ParsedGlobal] = list(filter(is_global, top_items))
+        functions: List[ParsedFunction] = list(filter(is_function, top_items))
+        externs: List[ParsedExtern] = list(filter(is_extern, top_items))
+        return ParsedModule(self.file_path, self.file, top_items, imports, type_definitions, globals, functions, externs)
 
     def parse_function(self) -> ParsedFunction:
         signature = self.parse_function_signature()
@@ -1092,18 +1118,22 @@ class Parser:
 
 @dataclass
 class ImportItem:
-    name: str
+    name: Token
     handle: 'ResolvedFunctionHandle | ResolvedExternHandle | ResolvedStructHandle'
+
+    def __str__(self) -> str:
+        return f"(ImportItem {self.name} {self.handle})"
 
 @dataclass
 class Import:
-    file_path: Token
+    token: Token
+    file_path: str
     qualifier: Token
     module: int
     items: List[ImportItem]
 
     def __str__(self) -> str:
-        return "(Import)"
+        return f"(Import {self.token} {self.module} {self.file_path} {self.qualifier} {listtostr(self.items, multi_line=True)})"
 
 @dataclass
 class ResolvedPtrType:
@@ -1128,7 +1158,7 @@ class ResolvedStructHandle:
     index: int
 
     def __str__(self) -> str:
-        return f"( CustomTypeHandle {str(self.module)} {str(self.index)})"
+        return f"(CustomTypeHandle {str(self.module)} {str(self.index)})"
 
 @dataclass
 class ResolvedStructType:
@@ -1349,10 +1379,16 @@ class ResolvedFunctionHandle:
     module: int
     index: int
 
+    def __str__(self) -> str:
+        return f"(FunctionHandle {self.module} {self.index})"
+
 @dataclass
 class ResolvedExternHandle:
     module: int
     index: int
+
+    def __str__(self) -> str:
+        return f"(ExternHandle {self.module} {self.index})"
 
 @dataclass
 class ResolvedFunRefWord:
@@ -2691,7 +2727,7 @@ class ModuleResolver:
         for qualifier, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
-                    if item.name == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
+                    if item.name.lexeme == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
                         return item.handle
         self.abort(name, f"function {name.lexeme} not found")
 
@@ -2712,27 +2748,27 @@ class ModuleResolver:
             resolved_item = None
             for struct_id, type_definition in enumerate(imported_module.type_definitions):
                 if type_definition.name.lexeme == item.lexeme:
-                    resolved_item = ImportItem(item.lexeme, ResolvedStructHandle(imported_module.id, struct_id))
+                    resolved_item = ImportItem(item, ResolvedStructHandle(imported_module.id, struct_id))
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
                 continue
             for fun_id, function in enumerate(imported_module.functions):
                 if function.signature.name.lexeme == item.lexeme:
-                    resolved_item = ImportItem(item.lexeme, ResolvedFunctionHandle(imported_module.id, fun_id))
+                    resolved_item = ImportItem(item, ResolvedFunctionHandle(imported_module.id, fun_id))
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
                 continue
             for extern_id, extern in enumerate(imported_module.externs):
                 if extern.signature.name.lexeme == item.lexeme:
-                    resolved_item = ImportItem(item.lexeme, ResolvedExternHandle(imported_module.id, extern_id))
+                    resolved_item = ImportItem(item, ResolvedExternHandle(imported_module.id, extern_id))
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
                 continue
             self.abort(item, "not found")
-        return Import(imp.file_path, imp.qualifier, imported_module.id, resolved_items)
+        return Import(imp.token, imp.file_path.lexeme, imp.qualifier, imported_module.id, resolved_items)
 
     def resolve_named_type(self, named_type: ParsedNamedType) -> ResolvedNamedType:
         return ResolvedNamedType(named_type.name, self.resolve_type(named_type.taip))
@@ -2783,7 +2819,7 @@ class ModuleResolver:
         for qualifier, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
-                    if item.name == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
+                    if item.name.lexeme == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
                         return item.handle
         self.abort(name, f"struct {name.lexeme} not found")
 
@@ -4608,20 +4644,23 @@ def indent_non_first(s: str) -> str:
 def indent(s: str) -> str:
     return reduce(lambda a,b: f"{a}{b}", map(lambda s: f"  {s}", s.splitlines(keepends=True)))
 
-Mode = Literal["lex"] | Literal["check"] | Literal["compile"]
+Mode = Literal["lex"] | Literal["parse"] | Literal["check"] | Literal["compile"]
 
 def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> str:
+    if path == "-":
+        file = stdin if stdin is not None else sys_stdin.get()
+    else:
+        with open(path, 'r') as reader:
+            file = reader.read()
+    tokens = Lexer(file).lex()
     if mode == "lex":
-        if path == "-":
-            file = stdin if stdin is not None else sys_stdin.get()
-        else:
-            with open(path, 'r') as reader:
-                file = reader.read()
-        tokens = Lexer(file).lex()
         out = ""
         for token in tokens:
             out += str(token) + "\n"
         return out
+    if mode == "parse":
+        module = Parser(path, file, tokens).parse()
+        return str(module)
     modules: Dict[str, ParsedModule] = {}
     load_recursive(modules, os.path.normpath(path), stdin)
 
@@ -4640,6 +4679,9 @@ def main(argv: List[str], stdin: str | None = None) -> str:
     mode: Mode = "compile"
     if len(argv) >= 2 and argv[1] == "lex":
         mode = "lex"
+        path = argv[2] if len(argv) > 2 else "-"
+    elif len(argv) >= 2 and argv[1] == "parse":
+        mode = "parse"
         path = argv[2] if len(argv) > 2 else "-"
     elif len(argv) > 2 and argv[1] == "check":
         mode = "check"

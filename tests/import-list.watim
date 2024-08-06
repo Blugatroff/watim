@@ -18,6 +18,7 @@ check
           (NamedType (IDENT inner 3 14) I32)])]),
   "-"=(Module
     imports=(Map
-      "Core"=[(Import)]),
+      "Core"=[(Import (IMPORT import 1 1) 0 "./std/core.watim" (IDENT Core 1 30) [
+        (ImportItem (IDENT exit 1 36) (FunctionHandle 0 7))])]),
     user-types=[]))
 

@@ -1,0 +1,14 @@
+[== Stdin Compiler ==]
+struct Foo<A> {
+    a: A
+}
+[== Args Compiler ==]
+parse
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+[
+  (Struct (STRUCT struct 1 1) (IDENT Foo 1 8) [(IDENT A 1 12)] [
+    (NamedType (IDENT a 2 5) (GenericType (IDENT A 2 8) 0))])]

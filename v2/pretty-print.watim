@@ -446,6 +446,7 @@ fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block () -> i32 {
         }
         case Custom -> { flip CustomType-pretty break }
         case Fun -> { flip FunType-pretty break }
+        case Generic -> { .name }
     } write-token
 } }
 

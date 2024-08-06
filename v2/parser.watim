@@ -7,8 +7,9 @@ import "../std/array.watim" as Array (Array)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/util.watim" as Util (i32-format)
 
-import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-print, Token-location, Token-column)
+import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-print, Token-location, Token-column, Token-eq-by-lexeme)
 
 struct Import {
     start: Token
@@ -86,6 +87,18 @@ fn FunType-format(fmt: .Formatter, self: .FunType) {
     $fmt ")" Fmt:write
 }
 
+struct GenericType {
+    name: Token
+    index: i32
+}
+fn GenericType-format(fmt: .Formatter, self: .GenericType) {
+    $fmt "(GenericType " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+
 variant Type {
     case Bool -> Token
     case I32 -> Token
@@ -93,6 +106,7 @@ variant Type {
     case Ptr -> PtrType
     case Custom -> CustomType
     case Fun -> FunType
+    case Generic -> GenericType
 }
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $self match {
@@ -102,6 +116,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Ptr -> { .type $fmt "." Fmt:write ~ $fmt flip Type-format break }
         case Custom -> { $fmt flip CustomType-format break }
         case Fun -> { $fmt flip FunType-format break }
+        case Generic -> { $fmt flip GenericType-format break }
     } @len @ptr
     $fmt $ptr $len Fmt:write
 } }
@@ -625,6 +640,7 @@ struct Parser {
     arena: .Arena
     tokens: Array<Token>
     cursor: i32
+    generic-parameters: Array<Token>
 }
 fn eof(parser: .Parser) -> bool {
     $parser.cursor $parser.tokens.len ge
@@ -693,7 +709,7 @@ fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i32, file-path: i
 
 fn parse(arena: .Arena, tokens: Array<Token>) -> Result<Array<TopItem>, ParseError> {
     Array:new<TopItem> @items
-    $arena $tokens 0 make Parser @parser
+    $arena $tokens 0 Array:new<Token> make Parser @parser
     loop {
         &parser advance match {
             case None -> { $items make Result<Array<TopItem>, ParseError>.Success break }
@@ -825,6 +841,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case Error -> { make Result<TopItem, ParseError>.Error break }
                 case Success -> {}
             } @signature
+            $signature.generic-parameters #parser.generic-parameters
 
             $parser advance match {
                 case None -> { $parser "expected `{`" abort<TopItem> break }
@@ -834,6 +851,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case Error -> { make Result<TopItem, ParseError>.Error break }
                 case Success -> {}
             } @body
+            Array:new<Token> #parser.generic-parameters
             $token ~ $name ~ $export $signature $body make Function make TopItem.Function make Result<TopItem, ParseError>.Success break
         }
         case TOKEN_STRUCT -> {
@@ -859,7 +877,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case TOKEN_LEFT_BRACE -> { Array:new<Token> }
                 case _ -> { drop $parser "expected `<` or `{`" abort<TopItem> break }
             } @generic-parameters
-
+            $generic-parameters #parser.generic-parameters
             Array:new<NamedType> @fields
             loop () -> Result<TopItem, ParseError> {
                 $parser peek match {
@@ -906,6 +924,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                     case _ -> { drop }
                 }
             }
+            Array:new<Token> #parser.generic-parameters
         }
         case TOKEN_VARIANT -> {
             $parser make TokenTy.TOKEN_IDENT expect-token match {
@@ -930,7 +949,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 case TOKEN_LEFT_BRACE -> { Array:new<Token> }
                 case _ -> { drop $parser "expected `<` or `{`" abort<TopItem> break }
             } @generic-parameters
-
+            $generic-parameters #parser.generic-parameters
             Array:new<VariantCase> @cases
             loop () -> Result<TopItem, ParseError> {
                 $parser.arena &cases
@@ -978,6 +997,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                     case _ -> { drop }
                 }
             }
+            Array:new<Token> #parser.generic-parameters
         }
         case TOKEN_EXTERN -> {
             $parser make TokenTy.TOKEN_STRING expect-token match {
@@ -1179,7 +1199,13 @@ fn mayk(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -
         case Some -> {}
     } $parser flip custom-type match {
         case Error -> { make Result<Word, ParseError>.Error break }
-        case Success -> {}
+        case Success -> { match {
+            case Custom -> {}
+            case _ -> {
+                drop
+                $parser "can only `make` struct types" abort<Word> break
+            }
+        } }
     }
     $parser peek match {
         case None -> { make MakeStruct make Word.MakeStruct make Result<Word, ParseError>.Success break }
@@ -1767,38 +1793,41 @@ fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { 
     $generic-params $params $returns make Signature make Result<Signature, ParseError>.Success
 } }
 
-fn custom-type(parser: .Parser, token: .Token) -> Result<CustomType, ParseError> {
+fn custom-type(parser: .Parser, token: .Token) -> Result<Type, ParseError> {
     block () -> Result<CustomType, ParseError> {
         $parser peek match {
-            case None -> { $token ~ make CustomType.Local }
+            case None -> { $token ~ make CustomType.Local make Type.Custom }
             case Some -> {
                 Token-ty match {
                     case TOKEN_COLON -> {
                         $token ~
                         $parser advance assert-some<.Token> drop // skip `:`
                         $parser make TokenTy.TOKEN_IDENT expect-token match {
-                            case Error -> { make Result<CustomType, ParseError>.Error break }
+                            case Error -> { make Result<Type, ParseError>.Error break }
                             case Success -> {}
                         } ~
                         $parser optional-generic-arguments match {
-                            case Error -> { make Result<CustomType, ParseError>.Error break }
+                            case Error -> { make Result<Type, ParseError>.Error break }
                             case Success -> {}
                         }
-                        make ForeignCustomType make CustomType.Foreign
+                        make ForeignCustomType make CustomType.Foreign make Type.Custom
                     }
                     case _ -> {
                         drop
+                        &parser.generic-parameters \Token-eq-by-lexeme $token Array:find<Token, .Token> if {
+                            $token ~ flip make GenericType make Type.Generic make Result<Type, ParseError>.Success break
+                        } else { drop }
                         $token ~
                         $parser optional-generic-arguments match {
-                            case Error -> { make Result<CustomType, ParseError>.Error break }
+                            case Error -> { make Result<Type, ParseError>.Error break }
                             case Success -> {}
                         }
-                        make LocalCustomType make CustomType.Local
+                        make LocalCustomType make CustomType.Local make Type.Custom
                     }
                 }
             }
         }
-        make Result<CustomType, ParseError>.Success break
+        make Result<Type, ParseError>.Success
     }
 }
 
@@ -1878,7 +1907,7 @@ fn type(parser: .Parser, token: .Token) -> Result<Type, ParseError> { block () -
         case TOKEN_IDENT -> {
             $parser $token custom-type match {
                 case Error -> { make Result<Type, ParseError>.Error break }
-                case Success -> { make Type.Custom }
+                case Success -> {}
             }
         }
         case TOKEN_LEFT_PAREN -> {
