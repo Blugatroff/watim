@@ -18,6 +18,7 @@ check
 (Map
   "-"=(Module
     imports=(Map),
+    externs=(Map),
     custom-types=(Map
       "Foo"=(Struct
         name=(IDENT Foo 1 8),

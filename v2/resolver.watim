@@ -238,8 +238,42 @@ fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt ")" Fmt:write
 }
 
+struct Signature {
+    generic-parameters: Array<Token>
+    parameters: Array<NamedType>
+    returns: Array<Type>
+}
+fn Signature-format(fmt: .Formatter, self: .Signature) {
+    $fmt "(Signature " Fmt:write
+    $fmt \Token-format &self.generic-parameters Array:format<Token>
+    $fmt " " Fmt:write
+    $fmt \NamedType-format &self.parameters Array:format<NamedType>
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.returns Array:format<Type>
+    $fmt ")" Fmt:write
+}
+
+struct Extern {
+    name: Token
+    extrn-module: ByteSlice
+    extrn-name: ByteSlice
+    signature: Signature
+}
+fn Extern-format(fmt: .Formatter, self: .Extern) {
+    $fmt "(Extern " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.extrn-module ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt &self.extrn-name ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt ")" Fmt:write
+}
+
 struct Module {
     imports: Map<ByteSlice, Array<Import>>
+    externs: Map<ByteSlice, Extern>
     custom-types: Map<ByteSlice, CustomType>
     globals: Map<ByteSlice, Global>
 }
@@ -252,6 +286,10 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt Fmt:write-indent
     $fmt "imports=" Fmt:write
     $fmt \Fmt:ByteSlice-format \format-import-array &self.imports Map:format-multi-line<ByteSlice, Array<Import>>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "externs=" Fmt:write
+    $fmt \Fmt:ByteSlice-format \Extern-format &self.externs Map:format-multi-line<ByteSlice, Extern>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "custom-types=" Fmt:write
@@ -316,19 +354,23 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
             case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
             case Success -> {}
         } @custom-types
-        &ctx &imports &custom-types resolve-globals match {
+        &ctx &imports resolve-globals match {
             case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
             case Success -> {}
         } @globals
+        &ctx &imports resolve-externs match {
+            case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
+            case Success -> {}
+        } @externs
 
         $arena &resolved-modules $module-path ~
-        $imports $custom-types $globals make Module
+        $imports $externs $custom-types $globals make Module
         Map:insert<ByteSlice, Module> drop
         $id 1 + #id
     }
 }
 
-fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custom-types: .Map<ByteSlice, CustomType>) -> Result<Map<ByteSlice, Global>, ResolveError> {
+fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Map<ByteSlice, Global>, ResolveError> {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Global> @globals
     0 @i
     loop () -> Result<Map<ByteSlice, Global>, ResolveError> {
@@ -477,6 +519,47 @@ fn resolve-custom-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> R
     }
 }
 
+fn resolve-externs(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Map<ByteSlice, Extern>, ResolveError> {
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Extern> @externs
+    0 @i
+    loop () -> Result<Map<ByteSlice, Extern>, ResolveError> {
+        $ctx.top-items.len $i = if { $externs make Result<Map<ByteSlice, Extern>, ResolveError>.Success break }
+        $ctx.top-items $i Array:get<TopItem> match {
+            case Extern -> {
+                @extrn
+                $ctx.arena
+                &externs
+                &extrn.name Token-lexeme make ByteSlice
+                $extrn.name
+                &extrn.extrn-module Token-lexeme 2 - flip 1 + flip make ByteSlice
+                &extrn.extrn-name Token-lexeme 2 - flip 1 + flip make ByteSlice
+                $ctx $imports &extrn.signature resolve-signature match {
+                    case Error -> { make Result<Map<ByteSlice, Extern>, ResolveError>.Error break }
+                    case Success -> {}
+                }
+                make Extern
+                Map:insert<ByteSlice, Extern> drop
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+}
+
+fn resolve-signature(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, signature: .P:Signature) -> Result<Signature, ResolveError> { block () -> Result<Signature, ResolveError> {
+    $signature.generic-parameters
+    $ctx $imports &signature.parameters resolve-named-types match {
+        case Error -> { make Result<Signature, ResolveError>.Error break }
+        case Success -> {}
+    }
+    $ctx $imports &signature.returns resolve-types match {
+        case Error -> { make Result<Signature, ResolveError>.Error break }
+        case Success -> {}
+    }
+    make Signature
+    make Result<Signature, ResolveError>.Success
+} }
+
 fn resolve-struct(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, struc: .P:Struct) -> Result<Struct, ResolveError> { block () -> Result<Struct, ResolveError> {
     $struc.name $struc.generic-parameters
     Array:new<NamedType> @fields
@@ -485,12 +568,10 @@ fn resolve-struct(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, struc: .P:
         $i $struc.fields.len = if { $fields make Result<Array<NamedType>, ResolveError>.Success break }
         &struc.fields $i Array:get<P:NamedType> @field
         $ctx.arena &fields
-        $field.name
-        $ctx $imports &field.type resolve-type match {
+        $ctx $imports $field resolve-named-type match {
             case Error -> { make Result<Array<NamedType>, ResolveError>.Error break }
             case Success -> {}
         }
-        make NamedType
         Array:push<NamedType>
         $i 1 + #i
     } match {
@@ -524,6 +605,26 @@ fn resolve-variant(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, varant: .
         case Success -> {}
     }
     make Variant make Result<Variant, ResolveError>.Success
+} }
+
+fn resolve-named-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:NamedType) -> Result<NamedType, ResolveError> {
+    $type.name
+    $ctx $imports &type.type resolve-type match {
+        case Error -> { flip drop make Result<NamedType, ResolveError>.Error }
+        case Success -> { make NamedType make Result<NamedType, ResolveError>.Success }
+    }
+}
+fn resolve-named-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, named-types: .Array<P:NamedType>) -> Result<Array<NamedType>, ResolveError> { block {
+    Array:new<NamedType> @resolved-named-types
+    0 @i
+    loop {
+        $i $named-types.len = if { $resolved-named-types make Result<Array<NamedType>, ResolveError>.Success break }
+        $ctx $imports $named-types $i Array:get<P:NamedType> resolve-named-type match {
+            case Error -> { make Result<Array<NamedType>, ResolveError>.Error break }
+            case Success -> { $ctx.arena flip &resolved-named-types flip Array:push<NamedType> }
+        }
+        $i 1 + #i
+    }
 } }
 
 fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Type) -> Result<Type, ResolveError> { block () -> Result<Type, ResolveError> {

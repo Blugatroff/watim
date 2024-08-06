@@ -1,0 +1,22 @@
+[== Stdin Compiler ==]
+struct Foo {}
+extern "abc" "def" fn ext(foo: Foo) -> Foo
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "-"=(Module
+    imports=(Map),
+    externs=(Map
+      "ext"=(Extern (IDENT ext 2 23) "abc" "def" (Signature [] [(NamedType (IDENT foo 2 27) (CustomType 0 0 []))] [(CustomType 0 0 [])]))),
+    custom-types=(Map
+      "Foo"=(Struct
+        name=(IDENT Foo 1 8),
+        generic-parameters=[],
+        fields=[])),
+    globals=(Map)))
+

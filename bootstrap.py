@@ -1298,6 +1298,9 @@ class ResolvedFunctionSignature:
     parameters: List[ResolvedNamedType]
     returns: List[ResolvedType]
 
+    def __str__(self) -> str:
+        return f"(Signature {listtostr(self.generic_parameters)} {listtostr(self.parameters)} {listtostr(self.returns)})"
+
 @dataclass
 class ResolvedGlobal:
     taip: ResolvedNamedType
@@ -1678,6 +1681,9 @@ class ResolvedExtern:
     name: Token
     signature: ResolvedFunctionSignature
 
+    def __str__(self) -> str:
+        return f"(Extern {self.signature.name} {self.module.lexeme} {self.name.lexeme} {str(self.signature)})"
+
 @dataclass
 class ResolvedModule:
     path: str
@@ -1692,7 +1698,8 @@ class ResolvedModule:
     def __str__(self):
         type_definitions = { d.name.lexeme: d for d in self.type_definitions }
         globals = { g.taip.name.lexeme: g for g in self.globals }
-        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))})"
+        externs = { e.signature.name.lexeme: e for e in self.externs }
+        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  externs={indent_non_first(format_dict(externs))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))})"
 
 @dataclass
 class Lazy(Generic[T]):

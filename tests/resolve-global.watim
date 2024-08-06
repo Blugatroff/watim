@@ -10,6 +10,7 @@ check
 (Map
   "-"=(Module
     imports=(Map),
+    externs=(Map),
     custom-types=(Map),
     globals=(Map
       "FOO"=(Global (IDENT FOO 1 8) I32))))

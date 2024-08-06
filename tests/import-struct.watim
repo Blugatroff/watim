@@ -13,6 +13,8 @@ check
 (Map
   "./std/core.watim"=(Module
     imports=(Map),
+    externs=(Map
+      "raw_exit"=(Extern (IDENT raw_exit 1 48) "wasi_snapshot_preview1" "proc_exit" (Signature [] [(NamedType (IDENT code 1 57) I32)] []))),
     custom-types=(Map
       "I32"=(Struct
         name=(IDENT I32 3 8),
@@ -24,6 +26,7 @@ check
     imports=(Map
       "Core"=[(Import (IMPORT import 1 1) 0 "./std/core.watim" (IDENT Core 1 30) [
         (ImportItem (IDENT I32 1 36) (CustomTypeHandle 0 0))])]),
+    externs=(Map),
     custom-types=(Map
       "Foo"=(Struct
         name=(IDENT Foo 2 8),
