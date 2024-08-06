@@ -13,19 +13,21 @@ check
 (Map
   "./std/core.watim"=(Module
     imports=(Map),
-    user-types=[
-      (Struct
+    custom-types=(Map
+      "I32"=(Struct
         name=(IDENT I32 3 8),
         generic-parameters=[],
         fields=[
-          (NamedType (IDENT inner 3 14) I32)])]),
+          (NamedType (IDENT inner 3 14) I32)])),
+    globals=(Map)),
   "-"=(Module
     imports=(Map
       "Core"=[(Import (IMPORT import 1 1) 0 "./std/core.watim" (IDENT Core 1 30) [
         (ImportItem (IDENT I32 1 36) (CustomTypeHandle 0 0))])]),
-    user-types=[
-      (Struct
+    custom-types=(Map
+      "Foo"=(Struct
         name=(IDENT Foo 2 8),
         generic-parameters=[],
         fields=[
-          (NamedType (IDENT n 3 2) (CustomType 0 0 []))])]))
+          (NamedType (IDENT n 3 2) (CustomType 0 0 []))])),
+    globals=(Map)))

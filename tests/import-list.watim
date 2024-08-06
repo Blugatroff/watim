@@ -10,15 +10,17 @@ check
 (Map
   "./std/core.watim"=(Module
     imports=(Map),
-    user-types=[
-      (Struct
+    custom-types=(Map
+      "I32"=(Struct
         name=(IDENT I32 3 8),
         generic-parameters=[],
         fields=[
-          (NamedType (IDENT inner 3 14) I32)])]),
+          (NamedType (IDENT inner 3 14) I32)])),
+    globals=(Map)),
   "-"=(Module
     imports=(Map
       "Core"=[(Import (IMPORT import 1 1) 0 "./std/core.watim" (IDENT Core 1 30) [
         (ImportItem (IDENT exit 1 36) (FunctionHandle 0 7))])]),
-    user-types=[]))
+    custom-types=(Map),
+    globals=(Map)))
 

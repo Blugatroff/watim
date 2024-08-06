@@ -475,6 +475,7 @@ class ParsedExtern:
 
 @dataclass
 class ParsedGlobal:
+    token: Token
     name: Token
     taip: ParsedType
 
@@ -687,7 +688,7 @@ class Parser:
                 if colon is None or colon.ty != TokenType.COLON:
                     self.abort("Expected `:`")
                 taip = self.parse_type([])
-                top_items.append(ParsedGlobal(name, taip))
+                top_items.append(ParsedGlobal(token, name, taip))
                 continue
 
             self.abort("Expected function import or struct definition")
@@ -1302,6 +1303,9 @@ class ResolvedGlobal:
     taip: ResolvedNamedType
     was_reffed: bool = False
 
+    def __str__(self) -> str:
+        return f"(Global {self.taip.name} {self.taip.taip})"
+
 @dataclass
 class ResolvedFieldAccess:
     name: Token
@@ -1686,7 +1690,9 @@ class ResolvedModule:
     data: bytes
 
     def __str__(self):
-        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  user-types={indent_non_first(listtostr(self.type_definitions, multi_line=True))})"
+        type_definitions = { d.name.lexeme: d for d in self.type_definitions }
+        globals = { g.taip.name.lexeme: g for g in self.globals }
+        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))})"
 
 @dataclass
 class Lazy(Generic[T]):

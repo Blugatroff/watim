@@ -1,0 +1,16 @@
+[== Stdin Compiler ==]
+global FOO: i32
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "-"=(Module
+    imports=(Map),
+    custom-types=(Map),
+    globals=(Map
+      "FOO"=(Global (IDENT FOO 1 8) I32))))
+

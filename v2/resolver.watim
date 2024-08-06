@@ -226,9 +226,22 @@ fn CustomType-format(fmt: .Formatter, self: .CustomType) {
     }
 }
 
+struct Global {
+    name: Token
+    type: Type
+}
+fn Global-format(fmt: .Formatter, self: .Global) {
+    $fmt "(Global " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type-format
+    $fmt ")" Fmt:write
+}
+
 struct Module {
     imports: Map<ByteSlice, Array<Import>>
-    custom-types: Array<CustomType>
+    custom-types: Map<ByteSlice, CustomType>
+    globals: Map<ByteSlice, Global>
 }
 fn format-import-array(fmt: .Formatter, self: .Array<Import>) {
     $fmt \Import-format $self Array:format<Import>
@@ -241,8 +254,12 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt \Fmt:ByteSlice-format \format-import-array &self.imports Map:format-multi-line<ByteSlice, Array<Import>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "user-types=" Fmt:write
-    $fmt \CustomType-format &self.custom-types Array:format-multi-line<CustomType>
+    $fmt "custom-types=" Fmt:write
+    $fmt \ByteSlice-format \CustomType-format &self.custom-types Map:format-multi-line<ByteSlice, CustomType>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "globals=" Fmt:write
+    $fmt \ByteSlice-format \Global-format &self.globals Map:format-multi-line<ByteSlice, Global>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -299,11 +316,38 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
             case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
             case Success -> {}
         } @custom-types
+        &ctx &imports &custom-types resolve-globals match {
+            case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
+            case Success -> {}
+        } @globals
 
         $arena &resolved-modules $module-path ~
-        $imports $custom-types make Module
+        $imports $custom-types $globals make Module
         Map:insert<ByteSlice, Module> drop
         $id 1 + #id
+    }
+}
+
+fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custom-types: .Map<ByteSlice, CustomType>) -> Result<Map<ByteSlice, Global>, ResolveError> {
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Global> @globals
+    0 @i
+    loop () -> Result<Map<ByteSlice, Global>, ResolveError> {
+        $ctx.top-items.len $i = if { $globals make Result<Map<ByteSlice, Global>, ResolveError>.Success break }
+        $ctx.top-items $i Array:get<TopItem> match {
+            case Global -> {
+                @globl
+                $ctx.arena &globals &globl.name Token-lexeme make ByteSlice
+                $globl.name
+                $ctx $imports &globl.type resolve-type match {
+                    case Error -> { make Result<Map<ByteSlice, Global>, ResolveError>.Error break }
+                    case Success -> {}
+                }
+                make Global
+                Map:insert<ByteSlice, Global> drop
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
     }
 }
 
@@ -398,22 +442,33 @@ fn lookup-item-in-module(module: .Array<TopItem>, module-id: ModuleId, name: .To
     }
 }
 
-fn resolve-custom-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Array<CustomType>, ResolveError> {
-    Array:new<CustomType> @resolved-custom-types
+fn resolve-custom-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Map<ByteSlice, CustomType>, ResolveError> {
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, CustomType> @resolved-custom-types
     0 @i
     loop {
-        $ctx.top-items.len $i = if { $resolved-custom-types make Result<Array<CustomType>, ResolveError>.Success break }
+        $ctx.top-items.len $i = if { $resolved-custom-types make Result<Map<ByteSlice, CustomType>, ResolveError>.Success break }
         $ctx.top-items $i Array:get<TopItem> match {
             case Struct -> {
-                $ctx flip $imports flip resolve-struct match {
-                    case Error -> { make Result<Array<CustomType>, ResolveError>.Error break }
-                    case Success -> { $ctx.arena flip &resolved-custom-types flip make CustomType.Struct Array:push<CustomType> }
+                @struc
+                $ctx $imports $struc resolve-struct match {
+                    case Error -> { make Result<Map<ByteSlice, CustomType>, ResolveError>.Error break }
+                    case Success -> {
+                        $ctx.arena flip
+                        &resolved-custom-types flip
+                        &struc.name Token-lexeme make ByteSlice flip
+                        make CustomType.Struct Map:insert<ByteSlice, CustomType> drop }
                 }
             }
             case Variant -> {
-                $ctx flip $imports flip resolve-variant match {
-                    case Error -> { make Result<Array<CustomType>, ResolveError>.Error break }
-                    case Success -> { $ctx.arena flip &resolved-custom-types flip make CustomType.Variant Array:push<CustomType> }
+                @varant
+                $ctx $imports $varant resolve-variant match {
+                    case Error -> { make Result<Map<ByteSlice, CustomType>, ResolveError>.Error break }
+                    case Success -> {
+                        $ctx.arena flip
+                        &resolved-custom-types flip
+                        &varant.name Token-lexeme make ByteSlice flip
+                        make CustomType.Variant Map:insert<ByteSlice, CustomType> drop
+                    }
                 }
             }
             case _ -> { drop }
@@ -574,8 +629,8 @@ fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Typ
                                 $ctx.resolved-modules $imp.module.index Array:get<Module> @module
                                 0 @j
                                 loop {
-                                    $j $module.custom-types.len = if { make Maybe<Type>.None break }
-                                    &module.custom-types $j Array:get<CustomType> match {
+                                    $j $module.custom-types.keys.len = if { make Maybe<Type>.None break }
+                                    &module.custom-types $j Map:get-value<ByteSlice, CustomType> match {
                                         case Struct -> {
                                             .name Token-lexeme &type.name Token-lexeme Bytes:eq if {
                                                 $ctx.module-id $i make CustomTypeHandle
