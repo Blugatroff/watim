@@ -1,5 +1,6 @@
 import "./maybe.watim" as Maybe (Maybe)
 import "./io.watim" as IO
+import "./byte-array.watim" as ByteArray (ByteArray)
 import "./array.watim" as Array (Array)
 import "./arena.watim" as Arena (Arena)
 import "./fmt.watim" as Fmt (Formatter)
@@ -78,4 +79,9 @@ fn format-multi-line<K, V>(fmt: .Formatter, format-key: (.Formatter, .K ->), for
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 } }
+
+fn get-ba<V>(self: .Map<ByteArray, V>, key-ptr: .i32, key-len: i32) -> Maybe<.V> {
+    $key-ptr $key-len ByteArray:init @key
+    $self &key get<ByteArray, V>
+}
 

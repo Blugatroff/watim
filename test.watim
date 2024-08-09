@@ -1,12 +1,18 @@
+import "./std/maybe.watim" as Maybe (Maybe, assert-some)
 import "./std/args.watim" as Args
+import "./std/bytes.watim" as Bytes
 import "./std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "./std/byte-array.watim" as ByteArray (ByteArray)
+import "./std/array.watim" as Array (Array)
 import "./std/io.watim" as IO
 import "./std/fs.watim" as FS
 import "./std/core.watim" as Core
-import "./std/arena.watim" as Arena
+import "./std/arena.watim" as Arena (Arena)
 import "./std/array.watim" as Array
+import "./std/map.watim" as Map (Map)
 import "./std/util.watim" as Util
+import "./std/json.watim" as Json (Value)
+import "./std/fmt.watim" as Fmt
 
 fn main "_start" () {
     Arena:init-temp
@@ -16,30 +22,133 @@ fn main "_start" () {
 
     &arena FS:init IO:check @fs
 
-    $args.len 1 le if {
+    $args.len 1 = if {
+        2 "Expected command and path to test file!\n" IO:write-all IO:check
+        1 Core:exit
+    }
+    $args.len 2 le if {
         2 "Expected path to a test file!\n" IO:write-all IO:check
         1 Core:exit
     }
 
-    block {
-        &fs &args 1 Array:get<ByteSlice> ~ ByteSlice:unpack
-        1 1 = 0 1 = FS:create-rights
-        0 1 = 0 1 = FS:create-rights
-        FS:open-file IO:check @fd
+    &args 1 Array:get<ByteSlice> ~ ByteSlice:unpack "read" Bytes:eq if {
+        block {
+            &fs &args 2 Array:get<ByteSlice> ~ ByteSlice:unpack
+            1 1 = 0 1 = FS:create-rights
+            0 1 = 0 1 = FS:create-rights
+            0 1 = FS:create-oflags
+            FS:open-file IO:check @fd
 
-        &arena Arena:temp @temp @save
-        $temp $fd FS:read-all IO:check @file
-        &file ByteArray:to-slice @file
+            &arena Arena:temp @temp @save
+            $temp $fd FS:read-all IO:check @file
+            &file ByteArray:to-slice @file
 
-        $temp $file parse-test-file @test
-        1 &test Test-write-json IO:check
+            $temp $file parse-test-file @test
+            1 &test Test-write-json IO:check
 
-        $temp $save Arena:restore
+            $temp $save Arena:restore
 
-        $fd FS:close IO:check
+            $fd FS:close IO:check
+        }
+        &arena Arena:clear
+        0 Core:exit
     }
+    &args 1 Array:get<ByteSlice> ~ ByteSlice:unpack "write" Bytes:eq if {
+        &arena 0 FS:read-all IO:check @json
+        &arena $json ByteArray:unpack Json:parse match {
+            case Error -> {
+                drop
+                2 "Failed to parse JSON\n" IO:write-all IO:check
+                1 Core:exit Core:unreachable<Value>
+            }
+            case Success -> {}
+        } match {
+            case Object -> {}
+            case _ -> { drop 2 "Expected an object\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Map<ByteArray, Value>> }
+        } @test
 
+        make Test {
+            &test "compiler-stdin" get-optional-string @compiler-stdin
+            &test "compiler-stdout" get-optional-string @compiler-stdout
+            &test "compiler-stderr" get-optional-string @compiler-stderr
+            &test "compiler-status" get-optional-number @compiler-status
+            &test "compiler-args" get-optional-array &arena flip is-string-array @compiler-args
+            &test "stdin" get-optional-string @stdin
+            &test "stdout" get-optional-string @stdout
+            &test "stderr" get-optional-string @stderr
+            &test "status" get-optional-number @status
+        } @test
+
+
+        &fs &args 2 Array:get<ByteSlice> ~ ByteSlice:unpack
+        0 1 = 1 1 = FS:create-rights
+        0 1 = 0 1 = FS:create-rights
+        1 1 = FS:create-oflags
+        FS:open-file IO:check @fd
+        // 2 &arena $fd FS:read-all IO:check ByteArray:unpack IO:write-all IO:check
+        // 2 $fd IO:print IO:check
+        $fd &arena &test serialize-test ByteArray:unpack IO:write-all IO:check
+
+        &arena Arena:clear
+        0 Core:exit
+    }
+    2 "unrecognized command, use `read` or `write`\n" IO:write-all IO:check
     &arena Arena:clear
+    0 Core:exit
+}
+
+fn is-string-array(arena: .Arena, array: Array<Value>) -> Array<ByteSlice> {
+    Array:new<ByteSlice> @strings
+    loop {
+        $array.len 0 = if { $strings break }
+        &array Array:pop<Value> match {
+            case String -> { @b &b ByteArray:to-slice $arena flip &strings flip Array:push<ByteSlice> }
+            case _ -> {
+                drop
+                2 "Expected a string\n" IO:write-all IO:check 1 Core:exit
+            }
+        }
+    }
+    &strings Array:reverse<ByteSlice>
+}
+
+fn get-optional-string(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: i32) -> Maybe<ByteSlice> {
+    $object $name-ptr $name-len Map:get-ba<Value> match {
+        case Some -> { match {
+            case String -> { ByteArray:to-slice make Maybe<ByteSlice>.Some }
+            case Null -> { make Maybe<ByteSlice>.None }
+            case _ -> { drop 2 "Expected a string\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Maybe<ByteSlice>> }
+        } }
+        case None -> {
+            // 2 "\"" IO:write-all IO:check
+            // 2 $name-ptr $name-len IO:write-all IO:check
+            // 2 "\" is missing" IO:write-all IO:check
+            // 1 Core:exit Core:unreachable<.ByteArray>
+            make Maybe<ByteSlice>.None
+        }
+    }
+}
+
+fn get-optional-number(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: i32) -> Maybe<i32> {
+    $object $name-ptr $name-len Map:get-ba<Value> match {
+        case Some -> { match {
+            case Number -> { ~ make Maybe<i32>.Some }
+            case Null -> { make Maybe<i32>.None }
+            case _ -> { drop 2 "Expected a number\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Maybe<i32>> }
+        } }
+        case None -> { make Maybe<i32>.None }
+    }
+}
+
+fn get-optional-array(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: i32) -> Array<Value> {
+    $object $name-ptr $name-len Map:get-ba<Value> match {
+        case Some -> { match {
+            case Array -> { ~ }
+            case Null -> { Array:new<Value> }
+            case _ -> { drop 2 "Expected an array\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Array<Value>> }
+        } }
+        case None -> { Array:new<Value> }
+    }
 }
 
 fn is-whitespace(char: i32) -> bool {
@@ -49,42 +158,44 @@ fn is-whitespace(char: i32) -> bool {
 }
 
 struct Test {
-    compiler-args: .Array:Array<ByteSlice>
-    compiler-stdin: .ByteSlice
-    compiler-status: .i32
-    compiler-stdout: .ByteSlice
-    compiler-stderr: .ByteSlice
-    stdin: .ByteSlice
-    status: .i32
-    stdout: .ByteSlice
-    stderr: .ByteSlice
+    compiler-args: Array<ByteSlice>
+    compiler-stdin: Maybe<ByteSlice>
+    compiler-status: Maybe<i32>
+    compiler-stdout: Maybe<ByteSlice>
+    compiler-stderr: Maybe<ByteSlice>
+    stdin: Maybe<ByteSlice>
+    status: Maybe<i32>
+    stdout: Maybe<ByteSlice>
+    stderr: Maybe<ByteSlice>
 }
-fn write-nullable-string-json(fd: i32, str: .ByteSlice) -> i32 { block {
-    $str 0!.ByteSlice = if {
-        $fd "null" IO:write-all break
+fn write-nullable-string-json(fd: i32, str: .Maybe<ByteSlice>) -> i32 { block {
+    $str match {
+        case None -> { $fd "null" IO:write-all break }
+        case Some -> {
+            @str
+            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fd $str ~ ByteSlice:unpack IO:write-escaped Core:dup<i32> 0 /= if { break } drop
+            $fd "\"" IO:write-all
+        }
     }
-    $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $str ~ ByteSlice:unpack IO:write-escaped Core:dup<i32> 0 /= if { break } drop
-    $fd "\"" IO:write-all
 } }
-fn write-nullable-number-json(fd: i32, n: .i32) -> i32 {
-    $n 0!.i32 = if {
-        $fd "null" IO:write-all
-    } else {
-        $fd $n ~ IO:print
+fn write-nullable-number-json(fd: i32, n: Maybe<i32>) -> i32 {
+    $n match {
+        case None -> { $fd "null" IO:write-all }
+        case Some -> { $fd flip IO:print }
     }
 }
 fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
     $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd &self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.compiler-status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.compiler-stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd &self.compiler-stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd $self.compiler-stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd &self.compiler-stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"compiler-args\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $self.compiler-args 0!.Array:Array<ByteSlice> = if {
+    $self.compiler-args.len 0 = if {
         $fd "null" IO:write-all Core:dup<i32> 0 /= if { break } drop
     } else {
         0 @i
@@ -92,7 +203,7 @@ fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
         loop {
             $i $self.compiler-args.len = if { 0 break }
             $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
-            $fd &self.compiler-args ~ $i Array:get<ByteSlice> ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fd &self.compiler-args $i Array:get<ByteSlice> ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
             $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
             $i 1 + $self.compiler-args.len /= if {
                 $fd ", " IO:write-all Core:dup<i32> 0 /= if { break } drop
@@ -102,31 +213,31 @@ fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
         $fd "]" IO:write-all Core:dup<i32> 0 /= if { break } drop
     }
     $fd ", \"stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd &self.stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd &self.stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd ", \"stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd &self.stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
     $fd " }" IO:write-all
 } }
 
-fn parse-test-file(arena: .Arena:Arena, file: ByteSlice) -> Test {
+fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
     make Test {
-        0 !.Array:Array<ByteSlice> @compiler-args
-        0 !.ByteSlice @compiler-stdin
-        0 !.i32 @compiler-status
-        0 !.ByteSlice @compiler-stdout
-        0 !.ByteSlice @compiler-stderr
-        0 !.i32 @status
-        0 !.ByteSlice @stdin
-        0 !.ByteSlice @stdout
-        0 !.ByteSlice @stderr
+        Array:new<ByteSlice> @compiler-args
+        make Maybe<ByteSlice>.None @compiler-stdin
+        make Maybe<i32>.None @compiler-status
+        make Maybe<ByteSlice>.None @compiler-stdout
+        make Maybe<ByteSlice>.None @compiler-stderr
+        make Maybe<i32>.None @status
+        make Maybe<ByteSlice>.None @stdin
+        make Maybe<ByteSlice>.None @stdout
+        make Maybe<ByteSlice>.None @stderr
     } @test
 
-    "[== Args Compiler ==]" make ByteSlice @compiler-args-header
     "[== Stdin Compiler ==]" make ByteSlice @compiler-stdin-header
+    "[== Args Compiler ==]" make ByteSlice @compiler-args-header
     "[== Status Compiler ==]" make ByteSlice @compiler-status-header
     "[== Stdout Compiler ==]" make ByteSlice @compiler-stdout-header
     "[== Stderr Compiler ==]" make ByteSlice @compiler-stderr-header
@@ -136,8 +247,8 @@ fn parse-test-file(arena: .Arena:Arena, file: ByteSlice) -> Test {
     "[== Stderr ==]" make ByteSlice @stderr-header
 
     Array:new<ByteSlice> @headers
-    $arena &headers $compiler-args-header Array:push<ByteSlice>
     $arena &headers $compiler-stdin-header Array:push<ByteSlice>
+    $arena &headers $compiler-args-header Array:push<ByteSlice>
     $arena &headers $compiler-status-header Array:push<ByteSlice>
     $arena &headers $compiler-stdout-header Array:push<ByteSlice>
     $arena &headers $compiler-stderr-header Array:push<ByteSlice>
@@ -191,21 +302,76 @@ fn parse-test-file(arena: .Arena:Arena, file: ByteSlice) -> Test {
         $file $closest-index ByteSlice:drop #file
         &value 0 $closest-index ByteSlice:slice \is-whitespace ByteSlice:trim-with @value
 
+        $section-header $compiler-stdin-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.compiler-stdin }
         $section-header $compiler-args-header ByteSlice:eq if {
             $arena $value 10 Util:split-bytes @args
             $arena &args \ByteSlice:is-not-empty Array:filter<ByteSlice> @args
-            $arena $args Arena:push<Array:Array<ByteSlice>> #test.compiler-args
+            $args #test.compiler-args
         }
-        $section-header $compiler-stdin-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.compiler-stdin }
-        $section-header $compiler-status-header ByteSlice:eq if { $arena $value ByteSlice:unpack Util:parse Arena:push<i32> #test.compiler-status }
-        $section-header $compiler-stdout-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.compiler-stdout }
-        $section-header $compiler-stderr-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.compiler-stderr }
-        $section-header $stdin-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.stdin }
-        $section-header $status-header ByteSlice:eq if { $arena $value ByteSlice:unpack Util:parse Arena:push<i32> #test.status }
-        $section-header $stdout-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.stdout }
-        $section-header $stderr-header ByteSlice:eq if { $arena $value Arena:push<ByteSlice> #test.stderr }
+        $section-header $compiler-status-header ByteSlice:eq if { $value ByteSlice:unpack Util:parse make Maybe<i32>.Some #test.compiler-status }
+        $section-header $compiler-stdout-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.compiler-stdout }
+        $section-header $compiler-stderr-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.compiler-stderr }
+        $section-header $stdin-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.stdin }
+        $section-header $status-header ByteSlice:eq if { $value ByteSlice:unpack Util:parse make Maybe<i32>.Some #test.status }
+        $section-header $stdout-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.stdout }
+        $section-header $stderr-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.stderr }
     }
 
     $test
+}
+
+fn serialize-test(arena: .Arena, test: .Test) -> ByteArray {
+    ByteArray:new @out
+    $arena &out "[== Stdin Compiler ==]" &test.compiler-stdin serialize-field
+    $test.compiler-args.len 0 /= if {
+        $arena &out "[== Args Compiler ==]\n" ByteArray:push
+        0 @i
+        loop {
+            $i $test.compiler-args.len = if { break }
+            $arena &out &test.compiler-args $i Array:get<ByteSlice> ~ ByteSlice:unpack ByteArray:push
+            $arena &out "\n" ByteArray:push
+            $i 1 + #i
+        }
+    }
+    $arena &out "[== Status Compiler ==]" $test.compiler-status serialize-number-field
+    $arena &out "[== Stdout Compiler ==]" &test.compiler-stdout serialize-field
+    $arena &out "[== Stderr Compiler ==]" &test.compiler-stderr serialize-field
+    $arena &out "[== Stdin ==]" &test.stdin serialize-field
+    $arena &out "[== Status ==]" $test.status serialize-number-field
+    $arena &out "[== Stdout ==]" &test.stdout serialize-field
+    $arena &out "[== Stderr ==]" &test.stderr serialize-field
+    $out
+}
+
+fn serialize-field(arena: .Arena, out: .ByteArray, name-ptr: .i32, name-len: i32, value: .Maybe<ByteSlice>) {
+    $value match {
+        case Some -> {
+            @val
+            $arena $out $name-ptr $name-len ByteArray:push
+            $arena $out "\n" ByteArray:push
+            $arena $out $val ~ ByteSlice:unpack ByteArray:push
+            $arena $out perhaps-append-newline
+        }
+        case None -> {}
+    }
+}
+
+fn serialize-number-field(arena: .Arena, out: .ByteArray, name-ptr: .i32, name-len: i32, value: Maybe<i32>) {
+    $value match {
+        case Some -> {
+            @val
+            $arena $out $name-ptr $name-len ByteArray:push
+            $arena $out "\n" ByteArray:push
+            $arena $out Fmt:into-string @fmt
+            &fmt $val Util:i32-format
+            $arena $out perhaps-append-newline
+        }
+        case None -> {}
+    }
+}
+
+fn perhaps-append-newline(arena: .Arena, out: .ByteArray) {
+    1 $out.len 0 /= !i32 / drop // out.len 0 /= assert
+    $out.ptr $out.len 1 - + load8 10 /= if { $arena $out "\n" ByteArray:push }
 }
 

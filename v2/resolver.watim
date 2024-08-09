@@ -316,7 +316,7 @@ fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, Arra
     $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.column IO:print Core:dup<i32> 0 /= if { break } drop
     $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.message ByteArray:unpack IO:write-all
+    $fd $self.message ByteArray:unpack IO:write-all
 } }
 fn abort<T>(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
     $ctx.module-id $token Token-location $ctx.arena $message-ptr $message-len ByteArray:copy make ResolveError

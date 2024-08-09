@@ -24,8 +24,12 @@ extern "wasi_snapshot_preview1" "fd_close" fn close(fd: i32) -> i32
 
 fn create-rights(read: bool, write: bool) -> i64 {
     $read !i64 1 rotl // 1 << 1
-    $write !i64 5 rotl
+    $write !i64 6 rotl
     or
+}
+
+fn create-oflags(truncate: bool) -> i32 {
+    $truncate !i32 3 rotl
 }
 
 struct PreopenedFd {
@@ -124,7 +128,7 @@ fn str-replace(arena: .Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len:
         $replacement-len
         str-replace @new-next
 
-        $arena &new &new-next ByteArray:unpack ByteArray:push
+        $arena &new $new-next ByteArray:unpack ByteArray:push
         $new
     } else {
         drop $ptr $len ByteArray:init
@@ -140,9 +144,9 @@ fn normalize(arena: .Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     }
     $temp &out $path-ptr $path-len ByteArray:push
 
-    $temp &out ByteArray:unpack "//" "/" str-replace #out
-    $temp &out ByteArray:unpack "/./" "/" str-replace #out
-    $temp &out ByteArray:unpack "./." "." str-replace #out
+    $temp $out ByteArray:unpack "//" "/" str-replace #out
+    $temp $out ByteArray:unpack "/./" "/" str-replace #out
+    $temp $out ByteArray:unpack "./." "." str-replace #out
 
     $temp &out ByteArray:to-slice "/" drop load8 Util:split-bytes @splits
     Array:new<ByteSlice> @outsplits
@@ -163,21 +167,21 @@ fn normalize(arena: .Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
         $i 1 + #i
     }
     $temp &outsplits "/" Array:join-with @out
-    $path-ptr $path-len &out ByteArray:unpack Bytes:eq if {
-        $arena &out ByteArray:unpack Arena:push-bytes $out.len
+    $path-ptr $path-len $out ByteArray:unpack Bytes:eq if {
+        $arena $out ByteArray:unpack Arena:push-bytes $out.len
     } else {
-        $arena &out ByteArray:unpack normalize
+        $arena $out ByteArray:unpack normalize
     }
     $temp $temp-save Arena:restore
 }
 
-fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting_rights: i64) -> i32, i32 {
+fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting_rights: i64, oflags: i32) -> i32, i32 {
     $fs find-current-dir @code @parent-fd
     $code 0 /= if {
         0 $code
     } else {
         uninit<CORE:I32> @fd
-        $parent-fd 0 $path $path_len 0 $rights $inheriting_rights 0 &fd.inner path_open #code
+        $parent-fd 0 $path $path_len $oflags $rights $inheriting_rights 0 &fd.inner path_open #code
         $fd.inner $code
     }
 }
@@ -187,6 +191,7 @@ fn read-file(arena: .Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteA
     $path $path-len
     0 0 = 0 1 = create-rights
     0 1 = 0 1 = create-rights
+    0 1 = create-oflags
     open-file @code @fd
     $code 0 /= if {
         $fd close drop

@@ -271,7 +271,7 @@ fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<Byt
                     case Some -> {
                         ByteSlice:unpack FS:path-dir ByteArray:init @path
                         $temp-arena &path $imp-path ByteSlice:unpack ByteArray:push
-                        $temp-arena &path ByteArray:unpack FS:normalize make ByteSlice @absolute-imp-path
+                        $temp-arena $path ByteArray:unpack FS:normalize make ByteSlice @absolute-imp-path
                         $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
                         $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some $modules load-modules-recursively
                     }
@@ -318,7 +318,7 @@ fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<Top
                             ByteArray:new @absolute-path
                             $temp &absolute-path $module-file-path ~ ByteSlice:unpack FS:path-dir ByteArray:push
                             $temp &absolute-path $imp-path-ptr $imp-path-len ByteArray:push
-                            $temp &absolute-path ByteArray:unpack FS:normalize make ByteSlice
+                            $temp $absolute-path ByteArray:unpack FS:normalize make ByteSlice
                         } @absolute-path
 
                         // Is this an import of an already `ordered` module?

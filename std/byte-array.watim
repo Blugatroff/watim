@@ -1,6 +1,7 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./arena.watim" as Arena (Arena)
+import "./bytes.watim" as Bytes
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
 
 struct ByteArray {
@@ -90,11 +91,15 @@ fn get(self: .ByteArray, index: i32) -> i32 {
     $self.ptr $index + load8
 }
 
-fn unpack(self: .ByteArray) -> .i32, i32 {
+fn unpack(self: ByteArray) -> .i32, i32 {
     $self.ptr $self.len
 }
 
 fn to-slice(self: .ByteArray) -> ByteSlice {
-    $self unpack make ByteSlice
+    $self ~ unpack make ByteSlice
+}
+
+fn eq(self: .ByteArray, other: .ByteArray) -> bool {
+    $self.ptr $self.len $other.ptr $other.len Bytes:eq
 }
 

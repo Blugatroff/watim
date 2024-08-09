@@ -1,0 +1,35 @@
+import "../std/page-alloc.watim" as PA
+import "../std/io.watim" as IO
+
+fn crash(ptr: .i32, len: i32) {
+    2 $ptr $len IO:write-all IO:check
+    0 0 / drop
+}
+
+fn main "_start" () {
+    PA:current-number-of-pages 1 /= if {
+        "Expected only one page at launch" crash
+    }
+    PA:init
+
+    PA:alloc-page 65536 !.i32 /= if { "Expected the first alloced page to be at 65536" crash }
+    PA:current-number-of-pages 2 /= if { "Expected two pages after allocating the first one" crash }
+
+    PA:alloc-page 131072 !.i32 /= if { "Expected the second alloced page to be at 131072" crash }
+    PA:current-number-of-pages 3 /= if { "Expected three pages after allocating the second one" crash }
+
+    65536 !.i32 PA:discard-page
+    PA:current-number-of-pages 3 /= if { "discarding a page doesn't change the total page count" crash }
+
+    PA:alloc-page 65536 !.i32 /= if { "can reuse previously discarded page" crash }
+
+    65536 !.i32 PA:discard-page
+    PA:current-number-of-pages 3 /= if { "discarding a page doesn't change the total page count" crash }
+
+    3 PA:contiguous-pages 131072 65536 + !.i32 /= if { "allocating multiple contiguous pages will find a gap" crash }
+
+    PA:alloc-page 65536 !.i32 /= if { "can reuse page which was too smal for contiguous" crash }
+
+    PA:alloc-page 65536 6 * !.i32 /= if { "alloc-page skips pages occupied by contiguous-pages" crash }
+}
+

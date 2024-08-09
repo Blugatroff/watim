@@ -1,0 +1,120 @@
+import "../std/core.watim" as Core
+import "../std/maybe.watim" as Maybe (assert-some)
+import "../std/result.watim" as Result (Result)
+import "../std/io.watim" as IO
+import "../std/bytes.watim" as Bytes
+import "../std/byte-array.watim" as ByteArray (ByteArray)
+import "../std/array.watim" as Array
+import "../std/map.watim" as Map
+import "../std/arena.watim" as Arena (Arena)
+import "../std/json.watim" as Json (Value)
+
+fn crash(ptr: .i32, len: i32) {
+    2 $ptr $len IO:write-all IO:check
+    0 0 / drop
+}
+
+fn assert-success<T>(res: Result<T, Json:ParseError>) -> T {
+    $res match {
+        case Error -> { drop "assert-success failed" crash Core:unreachable<T> }
+        case Success -> {}
+    }
+}
+
+fn assert(b: bool) {
+    $b not if { "assert failed" crash }
+}
+
+fn main "_start" () {
+    Arena:init-temp
+    "Main" Arena:new @arena
+    &arena "null" Json:parse assert-success<Value> match {
+        case Null -> {}
+        case _ -> { drop "expected `null`" crash }
+    }
+
+    &arena " null" Json:parse assert-success<Value> match {
+        case Null -> {}
+        case _ -> { drop "expected `null`" crash }
+    }
+
+    &arena "234" Json:parse assert-success<Value> match {
+        case Number -> { 234 /= if { "expected 234" crash } }
+        case _ -> { drop "expected a number" crash }
+    }
+
+    &arena "-234" Json:parse assert-success<Value> match {
+        case Number -> { 0 234 - /= if { "expected -234" crash } }
+        case _ -> { drop "expected a number" crash }
+    }
+
+    &arena "\"hello\"" Json:parse assert-success<Value> match {
+        case String -> { ByteArray:unpack "hello" Bytes:eq not if { "expected \"hello\"" crash } }
+        case _ -> { drop "expected a string" crash }
+    }
+
+    &arena "\"he\nllo\"" Json:parse assert-success<Value> match {
+        case String -> { ByteArray:unpack "he\nllo" Bytes:eq not if { "expected \"he\nllo\"" crash } }
+        case _ -> { drop "expected a string" crash }
+    }
+
+    &arena "[]" Json:parse assert-success<Value> match {
+        case Array -> { .len 0 /= if { "expected []" crash } }
+        case _ -> { drop "expected an array" crash }
+    }
+
+    &arena "[1, \"two\", 3, []]" Json:parse assert-success<Value> match {
+        case Array -> {
+            @arr
+            $arr.len 4 /= if { "expected 4 elements" crash }
+            &arr 0 Array:get<Value> match {
+                case Number -> { ~ 1 /= if { "expected 1" crash } }
+                case _ -> { drop "expected a number" crash }
+            }
+            &arr 1 Array:get<Value> match {
+                case String -> { ~ ByteArray:unpack "two" Bytes:eq not if { "expected \"two\"" crash } }
+                case _ -> { drop "expected a string" crash }
+            }
+            &arr 2 Array:get<Value> match {
+                case Number -> { ~ 3 /= if { "expected 3" crash } }
+                case _ -> { drop "expected a number" crash }
+            }
+            &arr 3 Array:get<Value> match {
+                case Array -> { .len ~ 0 = assert }
+                case _ -> { drop "expected an array" crash }
+            }
+        }
+        case _ -> { drop "expected an array" crash }
+    }
+
+    &arena "{}" Json:parse assert-success<Value> match {
+        case Object -> { .values.len 0 /= if { "expected {}" crash } }
+        case _ -> { drop "expected an object" crash }
+    }
+
+    &arena "{ \"label\": \"Foo\", \"value\": 982 }" Json:parse assert-success<Value> match {
+        case Object -> {
+            @object
+            $object.values.len 2 /= if { "expected two entries" crash }
+
+            &object "label" Map:get-ba<Value> assert-some<.Value> match {
+                case String -> { ~ ByteArray:unpack "Foo" Bytes:eq not if { "expected \"Foo\"" crash } }
+                case _ -> { drop "expected a string" crash }
+            }
+
+            &object "value" Map:get-ba<Value> assert-some<.Value> match {
+                case Number -> { ~ 982 /= if { "expected 982" crash } }
+                case _ -> { drop "expected a number" crash }
+            }
+        }
+        case _ -> { drop "expected an object" crash }
+    }
+
+    &arena "{\"compiler-stdout\": \"(Map\\n  \\\"-\\\"=(Module\\n    imports=(Map),\\n    externs=(Map),\\n    custom-types=(Map),\\n    globals=(Map\\n      \\\"FOO\\\"=(Global (IDENT FOO 1 8) I32))))\"}" Json:parse assert-success<Value> match {
+        case Object -> {
+            @object
+        }
+        case _ -> { drop "expected an object" crash }
+    }
+}
+

@@ -704,7 +704,7 @@ fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i32, file-path: i
     $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.column IO:print Core:dup<i32> 0 /= if { break } drop
     $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.message ByteArray:unpack IO:write-all
+    $fd $self.message ByteArray:unpack IO:write-all
 } }
 
 fn parse(arena: .Arena, tokens: Array<Token>) -> Result<Array<TopItem>, ParseError> {
@@ -1251,7 +1251,7 @@ fn expect-token(parser: .Parser, ty: TokenTy) -> Result<.Token, ParseError> {
             $arena "expected `" ByteArray:copy @message
             $arena &message $ty TokenTy-name ByteArray:push
             $arena &message "`" ByteArray:push
-            $parser &message ByteArray:unpack abort<.Token>
+            $parser $message ByteArray:unpack abort<.Token>
             $arena $save Arena:restore
         }
         case Some -> {
@@ -1264,7 +1264,7 @@ fn expect-token(parser: .Parser, ty: TokenTy) -> Result<.Token, ParseError> {
                 $arena &message "`" ByteArray:push
                 $arena &message $actual TokenTy-name ByteArray:push
                 $arena &message "`" ByteArray:push
-                $parser &message ByteArray:unpack abort<.Token>
+                $parser $message ByteArray:unpack abort<.Token>
                 $arena $save Arena:restore
             } else {
                 make Result<.Token, ParseError>.Success
