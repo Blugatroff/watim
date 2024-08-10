@@ -1707,6 +1707,7 @@ fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { 
         }
         case _ -> { drop Array:new<Token> }
     } @generic-params
+    $generic-params #parser.generic-parameters
 
     Array:new<NamedType> @params
     loop {

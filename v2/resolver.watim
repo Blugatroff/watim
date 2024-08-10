@@ -15,8 +15,8 @@ import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format)
 import "./parser.watim" as P (TopItem)
-
-struct ModuleId { index: i32 }
+import "./type.watim" as Type (Type, Type-format, ModuleId, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, FunType)
+import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
 fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
@@ -30,15 +30,6 @@ fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
 struct ExternHandle { module: ModuleId index: i32 }
 fn ExternHandle-format(fmt: .Formatter, self: .ExternHandle) {
     $fmt "(ExternHandle " Fmt:write
-    $fmt $self.module.index i32-format
-    $fmt " " Fmt:write
-    $fmt $self.index i32-format
-    $fmt ")" Fmt:write
-}
-
-struct CustomTypeHandle { module: ModuleId index: i32 }
-fn CustomTypeHandle-format(fmt: .Formatter, self: .CustomTypeHandle) {
-    $fmt "(CustomTypeHandle " Fmt:write
     $fmt $self.module.index i32-format
     $fmt " " Fmt:write
     $fmt $self.index i32-format
@@ -87,62 +78,6 @@ fn Import-format(fmt: .Formatter, self: .Import) {
     $fmt \ImportItem-format &self.items Array:format-multi-line<ImportItem>
     $fmt ")" Fmt:write
 }
-
-struct FunType {
-    token: Token
-    parameters: Array<Type>
-    returns: Array<Type>
-}
-fn FunType-format(fmt: .Formatter, self: .FunType) {
-    $fmt "(FunType " Fmt:write
-    $fmt &self.token Token-format
-    $fmt " " Fmt:write
-    $fmt \Type-format &self.parameters Array:format<Type>
-    $fmt " " Fmt:write
-    $fmt \Type-format &self.returns Array:format<Type>
-    $fmt ")" Fmt:write
-}
-
-struct CustomTypeType {
-    type-definition: CustomTypeHandle
-    generic-arguments: Array<Type>
-}
-
-fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
-    $fmt "(CustomType " Fmt:write
-    $fmt $self.type-definition.module.index i32-format
-    $fmt " " Fmt:write
-    $fmt $self.type-definition.index i32-format
-    $fmt " " Fmt:write
-    $fmt \Type-format &self.generic-arguments Array:format<Type>
-    $fmt ")" Fmt:write
-}
-
-variant Type {
-    case Bool
-    case I32
-    case I64
-    case Ptr -> .Type
-    case Custom -> CustomTypeType
-    case Fun -> FunType
-    case Generic -> P:GenericType
-}
-fn Type-format(fmt: .Formatter, self: .Type) { block {
-    $fmt $self match {
-        case Bool -> { "Bool" }
-        case I32 -> { "I32" }
-        case I64 -> { "I64" }
-        case Ptr -> {
-            $fmt "(Ptr " Fmt:write
-            ~ Type-format
-            $fmt ")" Fmt:write
-            break
-        }
-        case Custom -> { CustomTypeType-format break }
-        case Fun -> { FunType-format break }
-        case Generic -> { P:GenericType-format break }
-    } Fmt:write
-} }
 
 struct NamedType {
     name: Token
@@ -244,13 +179,21 @@ struct Signature {
     returns: Array<Type>
 }
 fn Signature-format(fmt: .Formatter, self: .Signature) {
-    $fmt "(Signature " Fmt:write
+    $fmt "(Signature\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "generic-parameters=" Fmt:write
     $fmt \Token-format &self.generic-parameters Array:format<Token>
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
     $fmt \NamedType-format &self.parameters Array:format<NamedType>
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
     $fmt \Type-format &self.returns Array:format<Type>
     $fmt ")" Fmt:write
+    $fmt Fmt:dedent
 }
 
 struct Extern {
@@ -271,11 +214,115 @@ fn Extern-format(fmt: .Formatter, self: .Extern) {
     $fmt ")" Fmt:write
 }
 
+struct GlobalId {
+    name: Token
+    module: ModuleId
+    index: i32
+}
+fn GlobalId-format(fmt: .Formatter, self: .GlobalId) {
+    $fmt "(GlobalId " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+
+variant VarId {
+    case Local -> LocalId
+    case Global -> GlobalId
+}
+fn VarId-format(fmt: .Formatter, self: .VarId) {
+    $self match {
+        case Local -> { $fmt flip LocalId-format }
+        case Global -> { $fmt flip GlobalId-format }
+    }
+}
+
+struct FieldAccess {
+    name: Token
+    source-taip: Type
+    target-taip: Type
+    field-index: i32
+}
+fn FieldAccess-format(fmt: .Formatter, self: .FieldAccess) {
+    $fmt "(FieldAccess " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.source-taip Type-format
+    $fmt " " Fmt:write
+    $fmt &self.target-taip Type-format
+    $fmt " " Fmt:write
+    $fmt $self.field-index i32-format
+    $fmt ")" Fmt:write
+}
+
+struct GetLocal {
+    name: Token
+    var: VarId
+    var-taip: Type
+    fields: Array<FieldAccess>
+    result-taip: Type
+}
+fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
+    $fmt "(GetLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt &self.var-taip Type-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format<FieldAccess>
+    $fmt " " Fmt:write
+    $fmt &self.result-taip Type-format
+    $fmt ")" Fmt:write
+}
+
+variant Word {
+    case Number -> Token
+    case GetLocal -> GetLocal
+}
+fn Word-format(fmt: .Formatter, self: .Word) {
+    $self match {
+        case Number -> { $fmt "(Number " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+        case GetLocal -> { $fmt flip GetLocal-format }
+    }
+}
+
+struct Function {
+    name: Token
+    export: Maybe<Token>
+    signature: Signature
+    words: Array<Word>
+}
+fn Function-format(fmt: .Formatter, self: .Function) {
+    $fmt "(Function\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "export=" Fmt:write
+    $fmt \Token-format &self.export Maybe:format<Token>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "signature=" Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "words=" Fmt:write
+    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt ")" Fmt:write
+}
+
 struct Module {
     imports: Map<ByteSlice, Array<Import>>
     externs: Map<ByteSlice, Extern>
     custom-types: Map<ByteSlice, CustomType>
     globals: Map<ByteSlice, Global>
+    functions: Map<ByteSlice, Function>
 }
 fn format-import-array(fmt: .Formatter, self: .Array<Import>) {
     $fmt \Import-format $self Array:format<Import>
@@ -298,6 +345,10 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt Fmt:write-indent
     $fmt "globals=" Fmt:write
     $fmt \ByteSlice-format \Global-format &self.globals Map:format-multi-line<ByteSlice, Global>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "functions=" Fmt:write
+    $fmt \ByteSlice-format \Function-format &self.functions Map:format-multi-line<ByteSlice, Function>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -362,9 +413,13 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
             case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
             case Success -> {}
         } @externs
+        &ctx &imports &custom-types.values resolve-functions match {
+            case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
+            case Success -> {}
+        } @functions
 
         $arena &resolved-modules $module-path ~
-        $imports $externs $custom-types $globals make Module
+        $imports $externs $custom-types $globals $functions make Module
         Map:insert<ByteSlice, Module> drop
         $id 1 + #id
     }
@@ -391,6 +446,206 @@ fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result
         }
         $i 1 + #i
     }
+}
+
+fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custom-types: .Array<CustomType>) -> Result<Map<ByteSlice, Function>, ResolveError> {
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Function> @functions
+    0 @i
+    loop () -> Result<Map<ByteSlice, Function>, ResolveError> {
+        $ctx.top-items.len $i = if { $functions make Result<Map<ByteSlice, Function>, ResolveError>.Success break }
+        $ctx.top-items $i Array:get<TopItem> match {
+            case Function -> {
+                @fun
+                $ctx.arena &functions &fun.name Token-lexeme make ByteSlice
+                $fun.name $fun.export
+                $ctx $imports &fun.signature resolve-signature match {
+                    case Error -> { make Result<Map<ByteSlice, Function>, ResolveError>.Error break }
+                    case Success -> {}
+                }
+                $ctx.arena Env:new @env
+                0 @i
+                loop () -> Maybe<ResolveError> {
+                    $fun.signature.parameters.len $i = if { make Maybe<ResolveError>.None break }
+                    &fun.signature.parameters $i Array:get<P:NamedType> @type
+                    $type.name @name
+                    $ctx $imports &type.type resolve-type match {
+                        case Error -> { make Maybe<ResolveError>.Some break }
+                        case Success -> {}
+                    } @type
+                    $ctx.arena &env make Local {
+                        $type @type
+                        $name @name
+                        0 1 = @reffed
+                        1 1 = @is-parameter
+                    } Env:insert drop
+                    $i 1 + #i
+                } match {
+                    case Some -> { make Result<Map<ByteSlice, Function>, ResolveError>.Error break }
+                    case None -> {}
+                }
+                make Stack @stack
+                $ctx.arena $ctx $imports $env $custom-types &stack make WordCtx @ctx
+                &ctx &fun.body.words resolve-words match {
+                    case Error -> { make Result<Map<ByteSlice, Function>, ResolveError>.Error break }
+                    case Success -> {}
+                }
+                make Function
+                Map:insert<ByteSlice, Function> drop
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+}
+
+struct WordCtx {
+    arena: .Arena
+    ctx: .Ctx
+    imports: .Map<ByteSlice, Array<Import>>
+    env: Env
+    types: .Array<CustomType>
+    stack: .Stack
+}
+
+fn get-type-definition(ctx: .WordCtx, handle: CustomTypeHandle) -> .CustomType {
+    $handle.module $ctx.ctx.module-id = if {
+        $ctx.types $handle.index Array:get<CustomType>
+    } else {
+        $ctx.ctx.resolved-modules $handle.module.index Array:get<Module> .custom-types.values $handle.index Array:get<CustomType>
+    }
+}
+
+fn resolve-words(ctx: .WordCtx, words: .Array<P:Word>) -> Result<Array<Word>, ResolveError> {
+    Array:new<Word> @resolved
+    0 @i
+    loop () -> Result<Array<Word>, ResolveError> {
+        $words.len $i = if { $resolved make Result<Array<Word>, ResolveError>.Success break }
+        $ctx.arena &resolved
+        $ctx $words $i Array:get<P:Word> resolve-word match {
+            case Error -> { make Result<Array<Word>, ResolveError>.Error break }
+            case Success -> {}
+        }
+        Array:push<Word>
+        $i 1 + #i
+    }
+}
+
+fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<Word, ResolveError> { block {
+    $word match {
+        case Number -> { ~ make Word.Number }
+        case GetLocal -> { $ctx flip resolve-get-locl break }
+        case _ -> { drop make Lexer:TokenTy.TOKEN_MAKE 0 0 Lexer:Token-new-keyword make Word.Number }
+    } make Result<Word, ResolveError>.Success
+} }
+
+struct Stack {
+
+}
+fn push(ctx: .WordCtx, type: Type) {
+
+}
+
+fn resolve-get-locl(ctx: .WordCtx, word: .P:GetLocal) -> Result<Word, ResolveError> { block {
+    &ctx.env &word.ident Env:lookup match {
+        case None -> { $ctx.ctx &word.ident "var not found" abort<Word> break }
+        case Some -> {}
+    } @local
+    $ctx &local.local.type &word.fields resolve-field-accesses match {
+        case Error -> { make Result<Word, ResolveError>.Error break }
+        case Success -> {}
+    } @fields
+    $fields.len 0 = if {
+        $local.local.type
+    } else {
+        &fields $fields.len 1 - Array:get<FieldAccess> .target-taip ~
+    } @resolved-type
+    $ctx $resolved-type push
+    $word.ident $local.id make VarId.Local $local.local.type $fields $resolved-type make GetLocal
+    make Word.GetLocal
+    make Result<Word, ResolveError>.Success
+} }
+
+fn resolve-field-accesses(ctx: .WordCtx, type: .Type, fields: .Array<Token>) -> Result<Array<FieldAccess>, ResolveError> { block {
+    Array:new<FieldAccess> @resolved
+    $fields.len 0 = if { $resolved make Result<Array<FieldAccess>, ResolveError>.Success break }
+    $fields.len 1 - @i
+    loop {
+        $fields $i Array:get<Token> @field-name
+        $type match {
+            case Custom -> {
+                @custom-type
+                $ctx $custom-type.type-definition get-type-definition match {
+                    case Variant -> {
+                        drop $ctx.ctx $field-name "can not access fields of a variant" abort<Array<FieldAccess>> break
+                    }
+                    case Struct -> {
+                        @struc
+                        0 @field-index
+                        loop {
+                            $field-index $struc.fields.len = if {
+                                $ctx.ctx $field-name "field not found" abort<i32> break
+                            }
+                            &struc.fields $field-index Array:get<NamedType> @field
+                            &field.name Token-lexeme $field-name Token-lexeme Bytes:eq if {
+                                $ctx.arena &resolved
+                                $ctx &custom-type.generic-arguments &field.type resolve-generic @target-type
+                                $field-name ~ $type ~ $target-type $field-index make FieldAccess
+                                Array:push<FieldAccess>
+                                0 make Result<i32, ResolveError>.Success break
+                            }
+                            $field-index 1 + #field-index
+                        } match {
+                            case Error -> { make Result<Array<FieldAccess>, ResolveError>.Error break }
+                            case Success -> { drop }
+                        }
+                    }
+                }
+            }
+            // case Ptr -> {}
+            case _ -> {
+                drop
+            }
+        }
+        $i 0 = if { $resolved make Result<Array<FieldAccess>, ResolveError>.Success break }
+        $i 1 - #i
+    }
+} }
+
+fn resolve-generic(ctx: .WordCtx, generics: .Array<Type>, type: .Type) -> Type {
+    $type match {
+        case Generic -> { .index ~ $generics flip Array:get<Type> ~ }
+        case Ptr -> {
+            ~ $ctx flip $generics flip resolve-generic $ctx.arena flip Arena:push<Type> make Type.Ptr
+        }
+        case Custom -> {
+            @type
+            $type.type-definition
+            $ctx $generics &type.generic-arguments resolve-generic-many
+            make CustomTypeType
+            make Type.Custom
+        }
+        case Fun -> {
+            @type
+            $type.token
+            $ctx $generics &type.parameters resolve-generic-many
+            $ctx $generics &type.returns resolve-generic-many
+            make FunType
+            make Type.Fun
+        }
+        case Bool -> { make Type.Bool }
+        case I32 -> { make Type.I32 }
+        case I64 -> { make Type.I64 }
+    }
+}
+fn resolve-generic-many(ctx: .WordCtx, generics: .Array<Type>, types: .Array<Type>) -> Array<Type> {
+    Array:new<Type> @resolved
+    0 @i
+    loop {
+        $i $types.len = if { break }
+        $ctx.arena &resolved $ctx $generics $types $i Array:get<Type> resolve-generic Array:push<Type>
+        $i 1 + #i
+    }
+    $resolved
 }
 
 fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveError> {

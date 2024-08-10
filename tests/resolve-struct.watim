@@ -36,5 +36,5 @@ check
         generic-parameters=[],
         cases=[
           (VariantCase (IDENT Foo 8 7) (Some (CustomType 0 1 [])))])),
-    globals=(Map)))
-
+    globals=(Map),
+    functions=(Map)))

@@ -1299,7 +1299,11 @@ class ResolvedFunctionSignature:
     returns: List[ResolvedType]
 
     def __str__(self) -> str:
-        return f"(Signature {listtostr(self.generic_parameters)} {listtostr(self.parameters)} {listtostr(self.returns)})"
+        s = "(Signature\n"
+        s += f"  generic-parameters={listtostr(self.generic_parameters)},\n"
+        s += f"  parameters={listtostr(self.parameters)},\n"
+        s += f"  returns={listtostr(self.returns)}"
+        return s + ")"
 
 @dataclass
 class ResolvedGlobal:
@@ -1343,6 +1347,9 @@ class LocalId:
     scope: int
     shadow: int
 
+    def __str__(self) -> str:
+        return f"(LocalId \"{self.name}\" {self.scope} {self.shadow})"
+
 @dataclass
 class ResolvedInitWord:
     name: Token
@@ -1356,6 +1363,9 @@ class ResolvedGetWord:
     var_taip: ResolvedType
     fields: List[ResolvedFieldAccess]
     taip: ResolvedType
+
+    def __str__(self) -> str:
+        return f"(GetLocal {self.token} {self.local_id} {self.var_taip} {listtostr(self.fields)} {self.taip})"
 
 @dataclass
 class ResolvedRefWord:
@@ -1675,6 +1685,14 @@ class ResolvedFunction:
     signature: ResolvedFunctionSignature
     body: ResolvedBody
 
+    def __str__(self) -> str:
+        s = "(Function\n"
+        s += f"  name={self.signature.name},\n"
+        s += f"  export={format_maybe(self.signature.export_name)},\n"
+        s += f"  signature={indent_non_first(str(self.signature))},\n"
+        s += f"  words={indent_non_first(listtostr(self.body.words, multi_line=True))}"
+        return s + ")"
+
 @dataclass
 class ResolvedExtern:
     module: Token
@@ -1699,7 +1717,8 @@ class ResolvedModule:
         type_definitions = { d.name.lexeme: d for d in self.type_definitions }
         globals = { g.taip.name.lexeme: g for g in self.globals }
         externs = { e.signature.name.lexeme: e for e in self.externs }
-        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  externs={indent_non_first(format_dict(externs))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))})"
+        functions = { f.signature.name.lexeme: f for f in self.functions }
+        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  externs={indent_non_first(format_dict(externs))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))},\n  functions={indent_non_first(format_dict(functions))})"
 
 @dataclass
 class Lazy(Generic[T]):
@@ -1797,13 +1816,6 @@ class ResolvedParameterLocal:
         return ResolvedParameterLocal(taip.name, taip.taip)
 
 @dataclass
-class ResolvedMemoryLocal:
-    name: Token
-    taip: ResolvedType
-    size: int | None
-    was_reffed: bool = True
-
-@dataclass
 class ResolvedInitLocal:
     name: Token
     taip: ResolvedType
@@ -1813,7 +1825,7 @@ class ResolvedInitLocal:
     def make(taip: ResolvedNamedType) -> 'ResolvedInitLocal':
         return ResolvedInitLocal(taip.name, taip.taip)
 
-ResolvedLocal = ResolvedParameterLocal | ResolvedMemoryLocal | ResolvedInitLocal
+ResolvedLocal = ResolvedParameterLocal | ResolvedInitLocal
 
 @dataclass
 class Ref(Generic[T]):
@@ -3416,9 +3428,6 @@ class Monomizer:
                 case ResolvedParameterLocal(name, _, was_reffed):
                     lives_in_memory = was_reffed or not taip.can_live_in_reg()
                     res[id] = ParameterLocal(local.name, taip, lives_in_memory)
-                    continue
-                case ResolvedMemoryLocal(name):
-                    res[id] = MemoryLocal(local.name, taip, local.size)
                     continue
                 case ResolvedInitLocal(name, _, was_reffed):
                     lives_in_memory = was_reffed or not taip.can_live_in_reg()

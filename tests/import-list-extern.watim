@@ -1,8 +1,8 @@
 [== Stdin Compiler ==]
-import "./std/core.watim" as Core (raw_exit)
+import "./exit.watim" as Core (exit)
 
 fn main "_start" () {
-    42 raw_exit
+    42 exit
 }
 [== Status Compiler ==]
 0

@@ -13,5 +13,5 @@ check
     externs=(Map),
     custom-types=(Map),
     globals=(Map
-      "FOO"=(Global (IDENT FOO 1 8) I32))))
-
+      "FOO"=(Global (IDENT FOO 1 8) I32)),
+    functions=(Map)))

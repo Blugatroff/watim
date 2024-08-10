@@ -1,6 +1,7 @@
 import "./maybe.watim" as Maybe (Maybe)
 import "./io.watim" as IO
 import "./byte-array.watim" as ByteArray (ByteArray)
+import "./byte-slice.watim" as ByteSlice (ByteSlice)
 import "./array.watim" as Array (Array)
 import "./arena.watim" as Arena (Arena)
 import "./fmt.watim" as Fmt (Formatter)
@@ -83,5 +84,10 @@ fn format-multi-line<K, V>(fmt: .Formatter, format-key: (.Formatter, .K ->), for
 fn get-ba<V>(self: .Map<ByteArray, V>, key-ptr: .i32, key-len: i32) -> Maybe<.V> {
     $key-ptr $key-len ByteArray:init @key
     $self &key get<ByteArray, V>
+}
+fn get-bs<V>(self: .Map<ByteSlice, V>, key-ptr: .i32, key-len: i32) -> Maybe<.V> {
+    $key-ptr $key-len make ByteSlice @key
+    $self &key get<ByteSlice, V>
+    // TODO: this fails to be rejected: $self &key get<ByteArray, V>
 }
 

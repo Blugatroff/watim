@@ -18,8 +18,10 @@ jobs:
         curl https://wasmtime.dev/install.sh -sSf | bash
     - name: Bootstrap
       run: python ./bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wat
-    - name: Run tests
+    - name: Run tests on bootstrap compiler
       run: |
-        $HOME/.wasmtime/bin/wasmtime --version
         PATH="$HOME/.wasmtime/bin:$PATH" ./test.py
+    - name: Run tests on native compiler
+      run: |
+        PATH="$HOME/.wasmtime/bin:$PATH" ./test.py --native
 

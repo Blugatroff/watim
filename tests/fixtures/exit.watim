@@ -1,0 +1,2 @@
+extern "wasi_snapshot_preview1" "proc_exit" fn exit(code: i32)
+

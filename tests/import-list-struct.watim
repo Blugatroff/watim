@@ -1,8 +1,8 @@
 [== Stdin Compiler ==]
-import "./std/core.watim" as Core (I32)
+import "./struct.watim" as S (Struct)
 
 fn main "_start" () {
-    uninit<I32> drop
+    uninit<Struct> drop
 }
 [== Status Compiler ==]
 0

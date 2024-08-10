@@ -1,5 +1,5 @@
 [== Stdin Compiler ==]
-import "./std/core.watim" as Core (exit)
+import "./exit.watim" as Core (exit)
 
 fn main "_start" () {
     3 exit

@@ -33,17 +33,14 @@ class CompilerOutput:
     stdout: str
     stderr: str
 
-already_compiled = False
-def compile_native_compiler():
-    global already_compiled
-    if not already_compiled:
-        already_compiled = True
-        if subprocess.run(f"python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
-            exit(1)
+watim_bin_path = None
+if "--native" in sys.argv:
+    if subprocess.run(f"python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
+        exit(1)
+    watim_bin_path = os.path.realpath("./watim.wat")
 
 def run_native_compiler(args: List[str] | None, stdin: str):
-    compile_native_compiler()
-    compiler = subprocess.run(["wasmtime", "--dir=.", "--", "./watim.wat"] + (args or ["-"]), input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["-"]), input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 def run_bootstrap_compiler(args: List[str] | None, stdin: str):
@@ -59,13 +56,15 @@ def run_bootstrap_compiler(args: List[str] | None, stdin: str):
     except Exception as e:
         return CompilerOutput(1, "", str(e))
 
-if len(sys.argv) > 2 and sys.argv[1] == "write":
+if len(sys.argv) > 2 and sys.argv[1] == "accept":
     path = sys.argv[2]
     test = parse_test_file(path)
+    os.chdir("./tests/fixtures")
     if "--native" in sys.argv:
         compiler = run_native_compiler(test['compiler-args'], test['compiler-stdin'])
     else:
         compiler = run_bootstrap_compiler(test['compiler-args'], test['compiler-stdin'])
+    os.chdir("../..")
     stdout = None
     stderr = None
     status = None
@@ -114,8 +113,22 @@ class Test:
     stdout: str | None
     stderr: str | None
 
+native_tests = list(map(lambda p: f"./tests/{p}.watim", [
+    "lex-make",
+    "import-struct",
+    "import-list",
+    "resolve-struct",
+    "resolve-global",
+    "resolve-extern",
+    "import-list-unnamed",
+    "parse-generic-type",
+    "resolve-function",
+]))
+
 failed = False
 for path in tests:
+    if "--native" in sys.argv and path not in native_tests:
+        continue
     test = parse_test_file(path)
     previous_failed = failed
     failed = True
@@ -125,10 +138,12 @@ for path in tests:
     if test["compiler-stdin"] is None:
         print(f"{path}: compiler-stdin ist missing", file=sys.stderr)
         continue
+    os.chdir("./tests/fixtures")
     if "--native" in sys.argv:
         compiler = run_native_compiler(test['compiler-args'], test['compiler-stdin'])
     else:
         compiler = run_bootstrap_compiler(test['compiler-args'], test['compiler-stdin'])
+    os.chdir("../..")
     if test['compiler-status'] is not None and compiler.returncode != test['compiler-status']:
         print(f"{path}: expected different compiler status:", file=sys.stderr)
         print(f"Expected:\n{test['compiler-status']}", file=sys.stderr)

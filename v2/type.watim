@@ -1,0 +1,74 @@
+import "../std/array.watim" as Array (Array)
+import "../std/util.watim" as Util (i32-format)
+import "../std/fmt.watim" as Fmt (Formatter)
+
+import "./lexer.watim" as Lexer (Token, Token-format, Token-lexeme)
+import "./parser.watim" as P
+
+struct ModuleId { index: i32 }
+
+variant Type {
+    case Bool
+    case I32
+    case I64
+    case Ptr -> .Type
+    case Custom -> CustomTypeType
+    case Fun -> FunType
+    case Generic -> P:GenericType
+}
+fn Type-format(fmt: .Formatter, self: .Type) { block {
+    $fmt $self match {
+        case Bool -> { "Bool" }
+        case I32 -> { "I32" }
+        case I64 -> { "I64" }
+        case Ptr -> {
+            $fmt "(Ptr " Fmt:write
+            ~ Type-format
+            $fmt ")" Fmt:write
+            break
+        }
+        case Custom -> { CustomTypeType-format break }
+        case Fun -> { FunType-format break }
+        case Generic -> { P:GenericType-format break }
+    } Fmt:write
+} }
+
+struct FunType {
+    token: Token
+    parameters: Array<Type>
+    returns: Array<Type>
+}
+fn FunType-format(fmt: .Formatter, self: .FunType) {
+    $fmt "(FunType " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.parameters Array:format<Type>
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.returns Array:format<Type>
+    $fmt ")" Fmt:write
+}
+
+struct CustomTypeType {
+    type-definition: CustomTypeHandle
+    generic-arguments: Array<Type>
+}
+
+fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
+    $fmt "(CustomType " Fmt:write
+    $fmt $self.type-definition.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.type-definition.index i32-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.generic-arguments Array:format<Type>
+    $fmt ")" Fmt:write
+}
+
+struct CustomTypeHandle { module: ModuleId index: i32 }
+fn CustomTypeHandle-format(fmt: .Formatter, self: .CustomTypeHandle) {
+    $fmt "(CustomTypeHandle " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+

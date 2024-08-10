@@ -12,11 +12,14 @@ check
   "-"=(Module
     imports=(Map),
     externs=(Map
-      "ext"=(Extern (IDENT ext 2 23) "abc" "def" (Signature [] [(NamedType (IDENT foo 2 27) (CustomType 0 0 []))] [(CustomType 0 0 [])]))),
+      "ext"=(Extern (IDENT ext 2 23) "abc" "def" (Signature
+        generic-parameters=[],
+        parameters=[(NamedType (IDENT foo 2 27) (CustomType 0 0 []))],
+        returns=[(CustomType 0 0 [])]))),
     custom-types=(Map
       "Foo"=(Struct
         name=(IDENT Foo 1 8),
         generic-parameters=[],
         fields=[])),
-    globals=(Map)))
-
+    globals=(Map),
+    functions=(Map)))
