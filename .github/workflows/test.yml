@@ -19,5 +19,7 @@ jobs:
     - name: Bootstrap
       run: python ./bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wat
     - name: Run tests
-      run: ./test.py
+      run: |
+        $HOME/.wasmtime/bin/wasmtime --version
+        PATH="$HOME/.wasmtime/bin:$PATH" ./test.py
 
