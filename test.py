@@ -10,8 +10,6 @@ import sys
 import os
 import difflib
 
-from termcolor import colored
-
 from bootstrap import main, ParserException, ResolverException
 
 if not os.path.isfile("test.wat") and subprocess.run(f"python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
@@ -24,7 +22,6 @@ def parse_test_file(path: str):
     return json.loads(output.stdout)
 
 def write_test_file(path: str, test: dict):
-    print(json.dumps(test))
     output = subprocess.run(["wasmtime", "--dir=.", "--", "./test.wat", "write", path], input=bytes(json.dumps(test), 'UTF-8'))
     if output.returncode != 0:
         print(output, file=sys.stderr)
