@@ -12,8 +12,12 @@ jobs:
       run: pip install mypy
     - name: Run mypy
       run: mypy ./bootstrap.py
+    - name: Install wabt and wasmtime
+      run: |
+        sudo apt-get install wabt
+        curl https://wasmtime.dev/install.sh -sSf | bash
     - name: Bootstrap
-      run: python ./bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wasm
+      run: python ./bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wat
     - name: Run tests
       run: ./test.py
 
