@@ -26,7 +26,7 @@
                 inherit nativeBuildInputs buildInputs;
                 name = "watim";
                 src = ./.;
-                buildPhase = ''bash ./recompile-compiler.sh'';
+                buildPhase = ''python bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wat'';
                 installPhase = ''
                     mkdir -p $out/bin
                     cp ./watim.wasm $out/bin/
