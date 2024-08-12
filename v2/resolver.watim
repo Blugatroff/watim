@@ -483,9 +483,9 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custom-
                     case Some -> { make Result<Map<ByteSlice, Function>, ResolveError>.Error break }
                     case None -> {}
                 }
-                make Stack @stack
-                $ctx.arena $ctx $imports $env $custom-types &stack make WordCtx @ctx
-                &ctx &fun.body.words resolve-words match {
+                Stack-new-root @stack
+                $ctx.arena $ctx $imports $env $custom-types make WordCtx @ctx
+                &ctx &stack &fun.body.words resolve-words match {
                     case Error -> { make Result<Map<ByteSlice, Function>, ResolveError>.Error break }
                     case Success -> {}
                 }
@@ -504,7 +504,6 @@ struct WordCtx {
     imports: .Map<ByteSlice, Array<Import>>
     env: Env
     types: .Array<CustomType>
-    stack: .Stack
 }
 
 fn get-type-definition(ctx: .WordCtx, handle: CustomTypeHandle) -> .CustomType {
@@ -515,13 +514,13 @@ fn get-type-definition(ctx: .WordCtx, handle: CustomTypeHandle) -> .CustomType {
     }
 }
 
-fn resolve-words(ctx: .WordCtx, words: .Array<P:Word>) -> Result<Array<Word>, ResolveError> {
+fn resolve-words(ctx: .WordCtx, stack: .Stack, words: .Array<P:Word>) -> Result<Array<Word>, ResolveError> {
     Array:new<Word> @resolved
     0 @i
     loop () -> Result<Array<Word>, ResolveError> {
         $words.len $i = if { $resolved make Result<Array<Word>, ResolveError>.Success break }
         $ctx.arena &resolved
-        $ctx $words $i Array:get<P:Word> resolve-word match {
+        $ctx $stack $words $i Array:get<P:Word> resolve-word match {
             case Error -> { make Result<Array<Word>, ResolveError>.Error break }
             case Success -> {}
         }
@@ -530,22 +529,81 @@ fn resolve-words(ctx: .WordCtx, words: .Array<P:Word>) -> Result<Array<Word>, Re
     }
 }
 
-fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<Word, ResolveError> { block {
+fn resolve-word(ctx: .WordCtx, stack: .Stack, word: .P:Word) -> Result<Word, ResolveError> { block {
     $word match {
         case Number -> { ~ make Word.Number }
-        case GetLocal -> { $ctx flip resolve-get-locl break }
+        case GetLocal -> { $ctx flip $stack flip resolve-get-locl break }
         case _ -> { drop make Lexer:TokenTy.TOKEN_MAKE 0 0 Lexer:Token-new-keyword make Word.Number }
     } make Result<Word, ResolveError>.Success
 } }
 
 struct Stack {
-
+    parent: Maybe<.Stack>
+    positive: Array<Type>
+    negative: Array<Type>
 }
-fn push(ctx: .WordCtx, type: Type) {
-
+fn Stack-new-root() -> Stack {
+    make Maybe<.Stack>.None Array:new<Type> Array:new<Type> make Stack
+}
+fn Stack-clone(arena: .Arena, self: .Stack) -> Stack {
+    $self.parent match {
+        case None -> { make Maybe<.Stack>.None }
+        case Some -> { $arena flip Stack-clone $arena flip Arena:push<Stack> make Maybe<.Stack>.Some }
+    }
+    $arena &self.positive Array:clone<Type>
+    $arena &self.negative Array:clone<Type>
+    make Stack
+}
+fn push(ctx: .WordCtx, self: .Stack, type: Type) {
+    $ctx.arena &self.positive $type Array:push<Type>
+}
+fn pop(ctx: .WordCtx, self: .Stack) -> Maybe<Type> {
+    $self.positive.len 0 = if {
+        $self.parent match {
+            case None -> { make Maybe<Type>.None }
+            case Some -> {
+                $ctx flip pop match {
+                    case None -> { make Maybe<Type>.None }
+                    case Some -> {
+                        @type
+                        $ctx.arena &self.negative $type Array:push<Type>
+                        $type make Maybe<Type>.Some
+                    }
+                }
+            }
+        }
+    } else {
+        &self.positive Array:pop<Type> make Maybe<Type>.Some
+    }
+}
+fn child(ctx: .WordCtx, self: .Stack) -> Stack {
+    $ctx.arena $ctx.arena $self Stack-clone Arena:push<Stack> make Maybe<.Stack>.Some
+    Array:new<Type>
+    Array:new<Type>
+    make Stack
+}
+fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
+    $ctx.arena Arena:temp @temp @save
+    Array:new<Type> @popped
+    loop () -> bool {
+        $popped.len $n = if { 1 1 = break }
+        $temp &popped $ctx $self pop match {
+            case None -> { 0 1 = break }
+            case Some -> {}
+        } Array:push<Type>
+    } @b // TODO leaving this value on the stack instead of a local results in an erroneous type error
+    &popped Array:reverse<Type>
+    loop {
+        $popped.len 0 = if { break }
+        $ctx.arena &self.positive
+        &popped Array:pop<Type>
+        Array:push<Type>
+    }
+    $temp $save Arena:restore
+    $b
 }
 
-fn resolve-get-locl(ctx: .WordCtx, word: .P:GetLocal) -> Result<Word, ResolveError> { block {
+fn resolve-get-locl(ctx: .WordCtx, stack: .Stack, word: .P:GetLocal) -> Result<Word, ResolveError> { block {
     &ctx.env &word.ident Env:lookup match {
         case None -> { $ctx.ctx &word.ident "var not found" abort<Word> break }
         case Some -> {}
@@ -559,7 +617,7 @@ fn resolve-get-locl(ctx: .WordCtx, word: .P:GetLocal) -> Result<Word, ResolveErr
     } else {
         &fields $fields.len 1 - Array:get<FieldAccess> .target-taip ~
     } @resolved-type
-    $ctx $resolved-type push
+    $ctx $stack $resolved-type push
     $word.ident $local.id make VarId.Local $local.local.type $fields $resolved-type make GetLocal
     make Word.GetLocal
     make Result<Word, ResolveError>.Success
