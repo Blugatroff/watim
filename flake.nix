@@ -19,6 +19,7 @@
                 pkgs.gnuplot
                 pkgs.hyperfine
                 python
+                pkgs.ruff
             ];
             buildInputs = [ pkgs.wasmtime ];
 

@@ -1,10 +1,8 @@
 #!/usr/bin/env python
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Any, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
+from typing import Optional, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
 from functools import reduce
-import subprocess
-import glob
 import sys
 import os
 
@@ -198,7 +196,7 @@ class Lexer:
                 lexeme = self.input[start:self.cursor]
                 try:
                     self.tokens.append(Token(LEXEME_TYPE_DICT[lexeme], self.line, start_column, lexeme))
-                except:
+                except KeyError:
                     self.tokens.append(Token(TokenType.IDENT, self.line, start_column, lexeme))
                 continue
             raise LexerException("Unexpected character encountered: " + self.current(), self.line, self.column)
@@ -1172,11 +1170,11 @@ class ResolvedPtrType:
     def __str__(self) -> str:
         return f"(Ptr {str(self.child)})"
 
-def listtostr(l: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
-    if len(l) == 0:
+def listtostr(seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
+    if len(seq) == 0:
         return "[]"
     s = "[\n" if multi_line else "["
-    for e in l:
+    for e in seq:
         v = str(e) if tostr is None else tostr(e)
         s += indent(v) if multi_line else v
         s += ",\n" if multi_line else ", "
@@ -1286,7 +1284,7 @@ def format_resolved_type(a: ResolvedType) -> str:
         case PrimitiveType():
             return a.pretty()
         case ResolvedPtrType(child):
-            return f".{format_resolved_type(a.child)}"
+            return f".{format_resolved_type(child)}"
         case ResolvedStructType(name, _, generic_arguments):
             if len(generic_arguments) == 0:
                 return name.lexeme
@@ -2205,7 +2203,7 @@ class FunctionResolver:
                     returns = block_stack.stack
                     stack.apply(block_stack)
                 return (ResolvedBlockWord(token, words, parameters, returns), diverges)
-            case ParsedCallWord(name, generic_arguments):
+            case ParsedCallWord(name):
                 if name.lexeme in INTRINSICS:
                     intrinsic = INTRINSICS[name.lexeme]
                     resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
@@ -2214,7 +2212,7 @@ class FunctionResolver:
                 signature = self.module_resolver.get_signature(resolved_call_word.function)
                 self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_call_word, False)
-            case ParsedForeignCallWord(module, name, generic_arguments):
+            case ParsedForeignCallWord(name):
                 resolved_word = self.resolve_foreign_call_word(context.env, word)
                 signature = self.module_resolver.get_signature(resolved_word.function)
                 self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
@@ -2521,7 +2519,7 @@ class FunctionResolver:
                         popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                     case PrimitiveType.BOOL:
                         popped = self.expect_stack(token, stack, [PrimitiveType.BOOL, PrimitiveType.BOOL])
-                    case other:
+                    case _:
                         self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` can only add i32, i64 and bool")
                 stack.append(popped[0])
                 if intrinsic == IntrinsicType.AND:
@@ -2706,9 +2704,9 @@ class FunctionResolver:
                     generic_arguments = source_taip.child.generic_arguments
                 if isinstance(struct, ResolvedVariant):
                     self.abort(field_name, "can not access fields of a variant")
-                for field_index, field in enumerate(struct.fields):
-                    if field.name.lexeme == field_name.lexeme:
-                        target_taip = FunctionResolver.resolve_generic(generic_arguments)(field.taip)
+                for field_index, struct_field in enumerate(struct.fields):
+                    if struct_field.name.lexeme == field_name.lexeme:
+                        target_taip = FunctionResolver.resolve_generic(generic_arguments)(struct_field.taip)
                         resolved_fields.append(ResolvedFieldAccess(field_name, source_taip, target_taip, field_index))
                         fields.pop(0)
                         return target_taip
@@ -3234,7 +3232,6 @@ class InitWord:
 class GetWord:
     token: Token
     local_id: LocalId | GlobalId
-    var_taip: Type
     target_taip: Type
     loads: List[int]
     copy_space_offset: int | None
@@ -3411,7 +3408,6 @@ class Monomizer:
     def monomize(self) -> Tuple[Dict[FunctionHandle | ExternHandle, int], Dict[int, Module]]:
         for id in sorted(self.modules):
             module = self.modules[id]
-            functions: List[Function] = []
             self.externs[id] = list(map(self.monomize_extern, module.externs))
             self.globals[id] = list(map(lambda m: self.monomize_global(m, []), module.globals))
             for index, function in enumerate(module.functions):
@@ -3468,11 +3464,11 @@ class Monomizer:
         for id, local in locals.items():
             taip = self.monomize_type(local.taip, generics)
             match local:
-                case ResolvedParameterLocal(name, _, was_reffed):
+                case ResolvedParameterLocal(_, _, was_reffed):
                     lives_in_memory = was_reffed or not taip.can_live_in_reg()
                     res[id] = ParameterLocal(local.name, taip, lives_in_memory)
                     continue
-                case ResolvedInitLocal(name, _, was_reffed):
+                case ResolvedInitLocal(_, _, was_reffed):
                     lives_in_memory = was_reffed or not taip.can_live_in_reg()
                     res[id] = InitLocal(local.name, taip, lives_in_memory)
                     continue
@@ -3545,7 +3541,7 @@ class Monomizer:
                 monomized_var_taip = self.monomize_type(var_taip, generics)
                 loads = determine_loads(fields, lives_in_memory)
                 target_taip = fields[-1].target_taip if len(fields) != 0 else monomized_var_taip
-                return GetWord(token, local_id, monomized_var_taip, target_taip, loads, offset, lives_in_memory)
+                return GetWord(token, local_id, target_taip, loads, offset, lives_in_memory)
             case ResolvedInitWord(token, local_id, taip):
                 return InitWord(token, local_id, self.monomize_type(taip, generics), self.does_var_live_in_memory(local_id, locals))
             case ResolvedSetWord(token, local_id, resolved_fields):
@@ -3815,8 +3811,7 @@ class Monomizer:
         fields: List[NamedType] = []
         struct_instance = Struct(s.name, fields, generics, 69)
         handle = self.add_struct(struct.module, struct.index, struct_instance, generics)
-        for field in map(lambda t: self.monomize_named_type(t, generics), s.fields):
-            fields.append(field)
+        fields.extend(map(lambda t: self.monomize_named_type(t, generics), s.fields))
         struct_instance._size = sum(field.taip.size() for field in fields)
         return handle, struct_instance
 
@@ -3950,7 +3945,7 @@ class WatGenerator:
         stack_start = align_to(global_mem, 4)
         self.write_line(f"(global $stac:k (mut i32) (i32.const {stack_start}))")
         if self.guard_stack:
-            self.write_line(f"(global $stack-siz:e (mut i32) (i32.const 65536))")
+            self.write_line("(global $stack-siz:e (mut i32) (i32.const 65536))")
 
         self.write_data(all_data)
 
@@ -4059,7 +4054,7 @@ class WatGenerator:
         match word:
             case NumberWord(token):
                 self.write_line(f"i32.const {token.lexeme}")
-            case GetWord(token, local_id, var_taip, target_taip, loads, copy_space_offset, var_lives_in_memory):
+            case GetWord(token, local_id, target_taip, loads, copy_space_offset, var_lives_in_memory):
                 self.write_indent()
                 if not target_taip.can_live_in_reg():
                     # set up the address to store store the result in
@@ -4075,7 +4070,7 @@ class WatGenerator:
                         self.write(f" i32.const {target_taip.size()} memory.copy\n")
                         return
                     if isinstance(local_id, LocalId) and target_taip.can_live_in_reg() and var_lives_in_memory:
-                        self.write(f" i32.load\n")
+                        self.write(" i32.load\n")
                         return
                 for i, load in enumerate(loads):
                     if i + 1 < len(loads) or not isinstance(target_taip, StructType):
@@ -4116,7 +4111,7 @@ class WatGenerator:
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 if isinstance(local_id, LocalId):
-                    self.write(f"local.get ")
+                    self.write("local.get ")
                     self.write_local_ident(token.lexeme, local_id)
                 for i, load in enumerate(loads):
                     if i + 1 == len(loads):
@@ -4155,18 +4150,18 @@ class WatGenerator:
                     self.write_line("i32.store")
             case IntrinsicAdd(token, taip):
                 if isinstance(taip, PtrType) or taip == PrimitiveType.I32:
-                    self.write_line(f"i32.add")
+                    self.write_line("i32.add")
                     return
                 if taip == PrimitiveType.I64:
-                    self.write_line(f"i64.add")
+                    self.write_line("i64.add")
                     return
                 assert_never(word.taip)
             case IntrinsicSub(token, taip):
                 if isinstance(taip, PtrType) or taip == PrimitiveType.I32:
-                    self.write_line(f"i32.sub")
+                    self.write_line("i32.sub")
                     return
                 if taip == PrimitiveType.I64:
-                    self.write_line(f"i64.sub")
+                    self.write_line("i64.sub")
                     return
                 assert_never(word.taip)
             case IntrinsicMul(_, taip):
@@ -4310,7 +4305,7 @@ class WatGenerator:
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 else:
-                    self.write(f"local.get ")
+                    self.write("local.get ")
                     self.write_local_ident(token.lexeme, local_id)
                 for offset in loads:
                     self.write(f" i32.load offset={offset}")
@@ -4504,9 +4499,9 @@ class WatGenerator:
                     if isinstance(case_taip, StructType):
                         self.write(f"i32.const {case_taip.size()} memory.copy ;; store value\n")
                     elif case_taip == PrimitiveType.I64:
-                        self.write(f"i64.store ;; store value\n")
+                        self.write("i64.store ;; store value\n")
                     else:
-                        self.write(f"i32.store ;; store value\n")
+                        self.write("i32.store ;; store value\n")
                 self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add")
             case other:
                 print(other, file=sys.stderr)
@@ -4544,7 +4539,7 @@ class WatGenerator:
         write_ident()
         if len(loads) == 0:
             if target_taip.can_live_in_reg():
-                self.write(f" call $intrinsic:flip i32.store\n")
+                self.write(" call $intrinsic:flip i32.store\n")
                 return
             self.write(f" call $intrinsic:flip i32.const {target_taip.size()} memory.copy\n")
             return
@@ -4602,13 +4597,13 @@ class WatGenerator:
                 self.write_type(parameter.taip)
                 self.write(")")
                 continue
-            self.write(f" (param ")
+            self.write(" (param ")
             self.write_type(parameter)
             self.write(")")
 
     def write_returns(self, returns: List[Type]) -> None:
         for taip in returns:
-            self.write(f" (result ")
+            self.write(" (result ")
             self.write_type(taip)
             self.write(")")
 
@@ -4700,7 +4695,8 @@ def fmt(a: object) -> str:
         return listtostr(a)
     return str(a)
 def format_dict(dictionary: dict) -> str:
-    if len(dictionary) == 0: return "(Map)"
+    if len(dictionary) == 0:
+        return "(Map)"
     return "(Map\n" + indent(reduce(lambda a,b: a+",\n"+b, map(lambda kv: f"{fmt(kv[0])}={fmt(kv[1])}", dictionary.items()))) + ")"
 
 def indent_non_first(s: str) -> str:

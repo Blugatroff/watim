@@ -1,18 +1,16 @@
 #!/usr/bin/env python
-from dataclasses import dataclass, asdict
-from typing import Any, TypeVar, Callable, List
-from shutil import copyfile
+from dataclasses import dataclass
+from typing import List
 import subprocess
 import glob
 import json
-import pathlib
 import sys
 import os
 import difflib
 
 from bootstrap import main, ParserException, ResolverException
 
-if not os.path.isfile("test.wat") and subprocess.run(f"python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
+if not os.path.isfile("test.wat") and subprocess.run("python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
     exit(1)
 
 def parse_test_file(path: str):
@@ -35,7 +33,7 @@ class CompilerOutput:
 
 watim_bin_path = None
 if "--native" in sys.argv:
-    if subprocess.run(f"python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
+    if subprocess.run("python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
         exit(1)
     watim_bin_path = os.path.realpath("./watim.wat")
 
