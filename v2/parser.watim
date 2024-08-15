@@ -111,8 +111,8 @@ variant Type {
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $self match {
         case Bool -> { drop "bool" }
-        case I32 -> { drop "i32" }
-        case I64 -> { drop "i64" }
+        case I32 -> { drop "I32" }
+        case I64 -> { drop "I64" }
         case Ptr -> { .type $fmt "." Fmt:write ~ $fmt flip Type-format break }
         case Custom -> { $fmt flip CustomType-format break }
         case Fun -> { $fmt flip FunType-format break }
@@ -881,7 +881,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
             Array:new<NamedType> @fields
             loop () -> Result<TopItem, ParseError> {
                 $parser peek match {
-                    case None -> { $parser "expected `}`" abort<Array<NamedType>> break }
+                    case None -> { $parser "expected `}`" abort<TopItem> break }
                     case Some -> {}
                 } @end
                 $end Token-ty match {
@@ -895,23 +895,23 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                 }
                 $parser.arena &fields
                 $parser make TokenTy.TOKEN_IDENT expect-token match {
-                    case Error -> { make Result<Array<NamedType>, ParseError>.Error break }
+                    case Error -> { make Result<TopItem, ParseError>.Error break }
                     case Success -> {}
                 } ~
                 $parser make TokenTy.TOKEN_COLON expect-token match {
-                    case Error -> { make Result<Array<NamedType>, ParseError>.Error break }
+                    case Error -> { make Result<TopItem, ParseError>.Error break }
                     case Success -> { drop }
                 }
                 $parser advance match {
-                    case None -> { $parser "expected a type" abort<Array<NamedType>> break }
+                    case None -> { $parser "expected a type" abort<TopItem> break }
                     case Some -> {}
                 } $parser flip type match {
-                    case Error -> { make Result<Array<NamedType>, ParseError>.Error break }
+                    case Error -> { make Result<TopItem, ParseError>.Error break }
                     case Success -> {}
                 }
                 make NamedType Array:push<NamedType>
                 $parser peek match {
-                    case None -> { $parser "expected `}`" abort<Array<NamedType>> break }
+                    case None -> { $parser "expected `}`" abort<TopItem> break }
                     case Some -> {}
                 } @end
                 $end Token-ty match {

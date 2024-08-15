@@ -591,16 +591,15 @@ fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
             case None -> { 0 1 = break }
             case Some -> {}
         } Array:push<Type>
-    } @b // TODO leaving this value on the stack instead of a local results in an erroneous type error
+    }
     &popped Array:reverse<Type>
-    loop {
+    loop () -> {
         $popped.len 0 = if { break }
         $ctx.arena &self.positive
         &popped Array:pop<Type>
         Array:push<Type>
     }
     $temp $save Arena:restore
-    $b
 }
 
 fn resolve-get-locl(ctx: .WordCtx, stack: .Stack, word: .P:GetLocal) -> Result<Word, ResolveError> { block {
@@ -906,7 +905,7 @@ fn resolve-variant(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, varant: .
         &cays.type match {
             case None -> { make Maybe<Type>.None }
             case Some -> { $ctx flip $imports flip resolve-type match {
-                case Error -> { make Result<Array<NamedType>, ResolveError>.Error break }
+                case Error -> { make Result<Array<VariantCase>, ResolveError>.Error break }
                 case Success -> { make Maybe<Type>.Some }
             } }
         }
