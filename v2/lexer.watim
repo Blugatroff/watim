@@ -34,7 +34,6 @@ variant TokenTy {
     case TOKEN_UNDERSCORE
 
     case TOKEN_MEMORY
-    case TOKEN_LOCAL
     case TOKEN_AS
     case TOKEN_STRUCT
     case TOKEN_VARIANT
@@ -82,7 +81,6 @@ fn TokenTy-name(self: TokenTy) -> .i32, i32 {
         case TOKEN_TILDE -> { "TILDE" }
         case TOKEN_BACKSLASH -> { "BACKSLASH" }
         case TOKEN_MEMORY -> { "MEMORY" }
-        case TOKEN_LOCAL -> { "LOCAL" }
         case TOKEN_AS -> { "AS" }
         case TOKEN_STRUCT -> { "STRUCT" }
         case TOKEN_VARIANT -> { "VARIANT" }
@@ -160,7 +158,6 @@ fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 {
         case TOKEN_IF -> { "if" }
         case TOKEN_AS -> { "as" }
         case TOKEN_MEMORY -> { "memory" }
-        case TOKEN_LOCAL -> { "local" }
         case TOKEN_ELSE -> { "else" }
         case TOKEN_EXTERN -> { "extern" }
         case TOKEN_BOOL -> { "bool" }
@@ -413,7 +410,6 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
                     $lexeme-ptr $lexeme-len "import" Bytes:eq if { make TokenTy.TOKEN_IMPORT $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "as" Bytes:eq if { make TokenTy.TOKEN_AS $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "memory" Bytes:eq if { make TokenTy.TOKEN_MEMORY $start-line $start-column Token-new-keyword break }
-                    $lexeme-ptr $lexeme-len "local" Bytes:eq if { make TokenTy.TOKEN_LOCAL $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "struct" Bytes:eq if { make TokenTy.TOKEN_STRUCT $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "variant" Bytes:eq if { make TokenTy.TOKEN_VARIANT $start-line $start-column Token-new-keyword break }
                     $lexeme-ptr $lexeme-len "block" Bytes:eq if { make TokenTy.TOKEN_BLOCK $start-line $start-column Token-new-keyword break }
