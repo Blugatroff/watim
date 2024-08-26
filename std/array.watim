@@ -116,6 +116,20 @@ fn singleton<T>(arena: .A:Arena, item: T) -> Array<T> {
     &self $item push-assert-no-alloc<T>
     $self
 }
+fn eq<T>(compare: (.T, .T -> bool), a: .Array<T>, b: .Array<T>) -> bool {
+    $a.len $b.len /= if {
+        0 1 =
+    } else {
+        0 @i
+        loop {
+            $i $a.len = if { 1 1 = break }
+            $a $i get<T> $b $i get<T> $compare -> not if {
+                0 1 = break
+            }
+            $i 1 + #i
+        }
+    }
+}
 fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .Array<T>) {
     $formatter "[" FMT:write
     0 @i

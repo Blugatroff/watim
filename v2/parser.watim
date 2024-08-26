@@ -98,6 +98,21 @@ fn GenericType-format(fmt: .Formatter, self: .GenericType) {
     $fmt $self.index i32-format
     $fmt ")" Fmt:write
 }
+fn GenericType-pretty(fmt: .Formatter, self: .GenericType) {
+    $fmt &self.name Token-lexeme Fmt:write
+}
+
+struct TupleType {
+    token: Token
+    items: Array<Type>
+}
+fn TupleType-format(fmt: .Formatter, self: .TupleType) {
+    $fmt "(TupleType " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.items Array:format<Type>
+    $fmt ")" Fmt:write
+}
 
 variant Type {
     case Bool -> Token
@@ -106,6 +121,7 @@ variant Type {
     case Ptr -> PtrType
     case Custom -> CustomType
     case Fun -> FunType
+    case Tuple -> TupleType
     case Generic -> GenericType
 }
 fn Type-format(fmt: .Formatter, self: .Type) { block {
@@ -116,6 +132,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Ptr -> { .type $fmt "." Fmt:write ~ $fmt flip Type-format break }
         case Custom -> { $fmt flip CustomType-format break }
         case Fun -> { $fmt flip FunType-format break }
+        case Tuple -> { $fmt flip TupleType-format break }
         case Generic -> { $fmt flip GenericType-format break }
     } @len @ptr
     $fmt $ptr $len Fmt:write
@@ -433,6 +450,18 @@ fn Sizeof-format(fmt: .Formatter, self: .Sizeof) {
     $fmt ")" Fmt:write
 }
 
+struct MakeTuple {
+    token: Token
+    items: Token
+}
+fn MakeTuple-format(fmt: .Formatter, self: .MakeTuple) {
+    $fmt "(MakeTuple " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.items Token-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Call -> Call
     case String -> Token
@@ -456,6 +485,8 @@ variant Word {
     case Sizeof -> Sizeof
     case IndirectCall -> Token
     case Store -> Store
+    case MakeTuple -> MakeTuple
+    case UnpackTuple -> Token
 }
 fn Word-format(fmt: .Formatter, self: .Word) { block {
     $self match {
@@ -481,6 +512,8 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Sizeof -> { $fmt flip Sizeof-format break }
         case Store -> { $fmt flip Store-format break }
         case IndirectCall -> { "IndirectCall" }
+        case MakeTuple -> { $fmt flip MakeTuple-format break }
+        case UnpackTuple -> { "UnpackTuple" }
     } @name-len @name-ptr
     $fmt "(" Fmt:write
     $fmt $name-ptr $name-len Fmt:write
@@ -1105,11 +1138,35 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_SIZEOF -> { $parser $token sizof break }
         case TOKEN_ARROW -> { $token ~ make Word.IndirectCall }
         case TOKEN_DOUBLE_ARROW -> { $parser $token stor break }
+        case TOKEN_LEFT_BRACKET -> { $parser $token tuple break }
         case _ -> {
             drop
             $parser "word TODO" abort<Word> break
         }
     } make Result<Word, ParseError>.Success
+} }
+
+fn tuple(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
+    $parser make TokenTy.TOKEN_COMMA expect-token match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> { drop }
+    }
+    $parser advance match {
+        case None -> { $parser "expected `,` or `]`" abort<Word> break }
+        case Some -> {}
+    } @number-or-close
+    $number-or-close Token-ty make TokenTy.TOKEN_RIGHT_BRACKET = if {
+        $token ~ make Word.UnpackTuple make Result<Word, ParseError>.Success break
+    }
+    $number-or-close Token-ty make TokenTy.TOKEN_NUMBER = if {
+        $token ~ $number-or-close ~ make MakeTuple make Word.MakeTuple
+        $parser make TokenTy.TOKEN_RIGHT_BRACKET expect-token match {
+            case Error -> { make Result<Word, ParseError>.Error break }
+            case Success -> { drop }
+        }
+        make Result<Word, ParseError>.Success break
+    }
+    $parser "expected `]`" abort<Word>
 } }
 
 fn sizof(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
@@ -1891,6 +1948,31 @@ fn fun-type(parser: .Parser, token: .Token) -> Result<FunType, ParseError> { blo
     $token ~ $parameters $returns make FunType make Result<FunType, ParseError>.Success
 } }
 
+fn tuple-type(parser: .Parser, token: .Token) -> Result<TupleType, ParseError> { block {
+    Array:new<Type> @items
+    loop () -> Result<TupleType, ParseError> {
+        $parser advance match {
+            case None -> { $parser "expected a type or `]`" abort<TupleType> break }
+            case Some -> {}
+        } @next
+        $parser.arena &items $parser $next type match {
+            case Error -> { make Result<TupleType, ParseError>.Error break }
+            case Success -> {}
+        } Array:push<Type>
+        $parser advance match {
+            case None -> { $parser "expected `]` or `,`" abort<TupleType> break }
+            case Some -> {}
+        } @comma-or-closing
+        $comma-or-closing Token-ty make TokenTy.TOKEN_RIGHT_BRACKET = if {
+            $token ~ $items make TupleType
+            make Result<TupleType, ParseError>.Success break
+        }
+        $comma-or-closing Token-ty make TokenTy.TOKEN_COMMA /= if {
+            $parser "expected `,` in tuple type" abort<TupleType> break
+        }
+    }
+} }
+
 fn type(parser: .Parser, token: .Token) -> Result<Type, ParseError> { block () -> Result<Type, ParseError> {
     $token Token-ty match {
         case TOKEN_BOOL -> { $token ~ make Type.Bool }
@@ -1915,6 +1997,12 @@ fn type(parser: .Parser, token: .Token) -> Result<Type, ParseError> { block () -
             $parser $token fun-type match {
                 case Error -> { make Result<Type, ParseError>.Error break }
                 case Success -> { make Type.Fun }
+            }
+        }
+        case TOKEN_LEFT_BRACKET -> {
+            $parser $token tuple-type match {
+                case Error -> { make Result<Type, ParseError>.Error break }
+                case Success -> { make Type.Tuple }
             }
         }
         case _ -> { drop $parser "expected a type" abort<Type> break }

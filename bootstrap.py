@@ -28,6 +28,8 @@ class TokenType(str, Enum):
     BANG = "BANG"
     TILDE = "TILDE"
     BACKSLASH = "BACKSLASH"
+    LEFT_BRACKET = "LEFT_BRACKET"
+    RIGHT_BRACKET = "RIGHT_BRACKET"
     GLOBAL = "GLOBAL"
     SIZEOF = "SIZEOF"
     AS = "AS"
@@ -149,7 +151,7 @@ class Lexer:
                     self.advance(2)
                     continue
 
-            one_char_tokens = "<>(){}:.,$&#@!~\\_"
+            one_char_tokens = "<>(){}:.,$&#@!~\\_[]"
             if self.current() in one_char_tokens:
                 ty = TokenType(LEXEME_TYPE_DICT[self.current()])
                 self.tokens.append(Token(ty, self.line, self.column, self.current()))
@@ -205,7 +207,7 @@ class Lexer:
 
     @staticmethod
     def allowed_in_ident(char: str) -> bool:
-        return char not in "#${}()<> \t\n:&~,."
+        return char not in "#${}()<> \t\n:&~,.[]"
 
 LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "fn":     TokenType.FN,
@@ -233,6 +235,8 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
     ")":      TokenType.RIGHT_PAREN,
     "{":      TokenType.LEFT_BRACE,
     "}":      TokenType.RIGHT_BRACE,
+    "[":      TokenType.LEFT_BRACKET,
+    "]":      TokenType.RIGHT_BRACKET,
     ":":      TokenType.COLON,
     ".":      TokenType.DOT,
     ",":      TokenType.COMMA,
@@ -312,8 +316,12 @@ class ParsedFunctionType:
     args: List['ParsedType']
     rets: List['ParsedType']
 
-ParsedType = PrimitiveType | ParsedPtrType | GenericType | ParsedForeignType | ParsedStructType | ParsedFunctionType
+@dataclass
+class ParsedTupleType:
+    token: Token
+    items: List['ParsedType']
 
+ParsedType = PrimitiveType | ParsedPtrType | ParsedTupleType | GenericType | ParsedForeignType | ParsedStructType | ParsedFunctionType
 
 @dataclass
 class NumberWord:
@@ -459,7 +467,16 @@ class ParsedMatchWord:
     cases: List[ParsedMatchCase]
     default: List['ParsedWord'] | None
 
-ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord | ParsedUnnamedStructWord | ParsedMatchWord | ParsedVariantWord
+@dataclass
+class ParsedTupleUnpackWord:
+    token: Token
+
+@dataclass
+class ParsedTupleMakeWord:
+    token: Token
+    item_count: Token
+
+ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord | ParsedUnnamedStructWord | ParsedMatchWord | ParsedVariantWord | ParsedTupleUnpackWord | ParsedTupleMakeWord
 
 @dataclass
 class ParsedNamedType:
@@ -539,8 +556,7 @@ class ParsedModule:
     imports: List[ParsedImport]
     type_definitions: List[ParsedTypeDefinition]
     globals: List[ParsedGlobal]
-    functions: List[ParsedFunction]
-    externs: List[ParsedExtern]
+    functions: List[ParsedFunction | ParsedExtern]
 
     def __str__(self) -> str:
         return listtostr(self.top_items, multi_line=True)
@@ -729,9 +745,8 @@ class Parser:
         imports: List[ParsedImport] = list(filter(is_import, top_items))
         type_definitions: List[ParsedTypeDefinition] = list(filter(is_type_definition, top_items))
         globals: List[ParsedGlobal] = list(filter(is_global, top_items))
-        functions: List[ParsedFunction] = list(filter(is_function, top_items))
-        externs: List[ParsedExtern] = list(filter(is_extern, top_items))
-        return ParsedModule(self.file_path, self.file, top_items, imports, type_definitions, globals, functions, externs)
+        functions: List[ParsedFunction | ParsedExtern] = [f for f in top_items if isinstance(f, ParsedFunction) or isinstance(f, ParsedExtern)]
+        return ParsedModule(self.file_path, self.file, top_items, imports, type_definitions, globals, functions)
 
     def parse_function(self, start: Token) -> ParsedFunction:
         signature = self.parse_function_signature()
@@ -953,9 +968,22 @@ class Parser:
                 if case_name.ty == TokenType.UNDERSCORE:
                     brace = self.advance(skip_ws=True)
                     if brace is None or brace.ty != TokenType.RIGHT_BRACE:
-                        self.abort("Expectec `}`")
+                        self.abort("Expected `}`")
                     return ParsedMatchWord(token, cases, words)
                 cases.append(ParsedMatchCase(next, case_name, words))
+        if token.ty == TokenType.LEFT_BRACKET:
+            comma = self.advance(skip_ws=True)
+            if comma is None or comma.ty != TokenType.COMMA:
+                self.abort("Expected `,`")
+            number_or_close = self.advance(skip_ws=True)
+            if number_or_close is None or (number_or_close.ty != TokenType.NUMBER and number_or_close.ty != TokenType.RIGHT_BRACKET):
+                self.abort("Expected `,` or `]`")
+            if number_or_close.ty == TokenType.RIGHT_BRACKET:
+                return ParsedTupleUnpackWord(token)
+            close = self.advance(skip_ws=True)
+            if close is None or close.ty != TokenType.RIGHT_BRACKET:
+                self.abort("Expected `]`")
+            return ParsedTupleMakeWord(token, number_or_close)
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: List[Token], token: Token) -> ParsedCallWord | ParsedForeignCallWord:
@@ -1142,12 +1170,27 @@ class Parser:
                 if comma is None or comma.ty != TokenType.COMMA:
                     self.abort("Expected `,` in return list of function type.")
             return ParsedFunctionType(token, args, rets)
+        if token.ty == TokenType.LEFT_BRACKET:
+            items = []
+            while True:
+                next = self.peek(skip_ws=True)
+                if next is not None and next.ty == TokenType.RIGHT_BRACKET:
+                    self.advance(skip_ws=True) # skip `]`
+                    break
+                items.append(self.parse_type(generic_parameters))
+                next = self.advance(skip_ws=True)
+                if next is None or next.ty == TokenType.RIGHT_BRACKET:
+                    break
+                comma = next
+                if comma is None or comma.ty != TokenType.COMMA:
+                    self.abort("Expected `,` in tuple type.")
+            return ParsedTupleType(token, items)
         self.abort("Expected type")
 
 @dataclass
 class ImportItem:
     name: Token
-    handle: 'ResolvedFunctionHandle | ResolvedExternHandle | ResolvedStructHandle'
+    handle: 'ResolvedFunctionHandle | ResolvedStructHandle'
 
     def __str__(self) -> str:
         return f"(ImportItem {self.name} {self.handle})"
@@ -1209,6 +1252,14 @@ class ResolvedStructType:
         return s + ">"
 
 @dataclass
+class ResolvedTupleType:
+    token: Token
+    items: List['ResolvedType']
+
+    def __str__(self) -> str:
+        return f"(TupleType {self.token} {listtostr(self.items)})"
+
+@dataclass
 class ResolvedFunctionType:
     token: Token
     parameters: List['ResolvedType']
@@ -1248,7 +1299,7 @@ class ResolvedVariant:
 
 ResolvedTypeDefinition = ResolvedStruct | ResolvedVariant
 
-ResolvedType = PrimitiveType | ResolvedPtrType | GenericType | ResolvedStructType | ResolvedFunctionType
+ResolvedType = PrimitiveType | ResolvedPtrType | ResolvedTupleType | GenericType | ResolvedStructType | ResolvedFunctionType
 
 def resolved_type_eq(a: ResolvedType, b: ResolvedType):
     if isinstance(a, PrimitiveType):
@@ -1267,6 +1318,8 @@ def resolved_type_eq(a: ResolvedType, b: ResolvedType):
             if not resolved_type_eq(c, d):
                 return False
         return True
+    if isinstance(a, ResolvedTupleType) and isinstance(b, ResolvedTupleType):
+        return resolved_types_eq(a.items, b.items)
     if isinstance(a, GenericType) and isinstance(b, GenericType):
         return a.generic_index == b.generic_index
     return False
@@ -1304,6 +1357,8 @@ def format_resolved_type(a: ResolvedType) -> str:
             for ret in returns:
                 s += format_resolved_type(ret) + ", "
             return s[:-2] + ")"
+        case ResolvedTupleType(token, items):
+            return listtostr(items, format_resolved_type)
         case GenericType(token, _):
             return token.lexeme
         case other:
@@ -1415,7 +1470,7 @@ class ResolvedStoreWord:
 @dataclass
 class ResolvedCallWord:
     name: Token
-    function: 'ResolvedFunctionHandle | ResolvedExternHandle'
+    function: 'ResolvedFunctionHandle'
     generic_arguments: List[ResolvedType]
 
 @dataclass
@@ -1425,14 +1480,6 @@ class ResolvedFunctionHandle:
 
     def __str__(self) -> str:
         return f"(FunctionHandle {self.module} {self.index})"
-
-@dataclass
-class ResolvedExternHandle:
-    module: int
-    index: int
-
-    def __str__(self) -> str:
-        return f"(ExternHandle {self.module} {self.index})"
 
 @dataclass
 class ResolvedFunRefWord:
@@ -1523,6 +1570,16 @@ class ResolvedMatchWord:
     default: List['ResolvedWord'] | None
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
+
+@dataclass
+class ResolvedTupleMakeWord:
+    token: Token
+    taip: ResolvedTupleType
+
+@dataclass
+class ResolvedTupleUnpackWord:
+    token: Token
+    items: List[ResolvedType]
 
 class IntrinsicType(str, Enum):
     ADD = "ADD"
@@ -1705,7 +1762,7 @@ class ResolvedIntrinsicUninit:
 
 ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit | IntrinsicSetStackSize
 
-ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord
+ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord | ResolvedTupleMakeWord | ResolvedTupleUnpackWord
 
 @dataclass
 class ResolvedFunction:
@@ -1735,17 +1792,15 @@ class ResolvedModule:
     id: int
     imports: Dict[str, List[Import]]
     type_definitions: List[ResolvedTypeDefinition]
-    externs: List[ResolvedExtern]
     globals: List[ResolvedGlobal]
-    functions: List[ResolvedFunction]
+    functions: List[ResolvedFunction | ResolvedExtern]
     data: bytes
 
     def __str__(self):
         type_definitions = { d.name.lexeme: d for d in self.type_definitions }
         globals = { g.taip.name.lexeme: g for g in self.globals }
-        externs = { e.signature.name.lexeme: e for e in self.externs }
         functions = { f.signature.name.lexeme: f for f in self.functions }
-        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  externs={indent_non_first(format_dict(externs))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))},\n  functions={indent_non_first(format_dict(functions))})"
+        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))},\n  functions={indent_non_first(format_dict(functions))})"
 
 @dataclass
 class Lazy(Generic[T]):
@@ -2048,7 +2103,6 @@ class BlockAnnotation:
 @dataclass
 class FunctionResolver:
     module_resolver: 'ModuleResolver'
-    externs: List[ResolvedExtern]
     signatures: List[ResolvedFunctionSignature]
     type_definitions: List[ResolvedTypeDefinition]
     function: ParsedFunction
@@ -2454,6 +2508,23 @@ class FunctionResolver:
                     self.abort(token, error_message)
                 match_diverges = match_diverges
                 return (ResolvedMatchWord(token, arg, by_ref, resolved_cases, default_case, parameters, returns), match_diverges)
+            case ParsedTupleMakeWord(token, num_items_token):
+                num_items = int(num_items_token.lexeme)
+                items = []
+                for _ in range(num_items):
+                    item = stack.pop()
+                    if item is None:
+                        self.abort(token, f"expected {num_items} of values")
+                    items.append(item)
+                items.reverse()
+                stack.append(ResolvedTupleType(token, items))
+                return (ResolvedTupleMakeWord(token, ResolvedTupleType(token, items)), False)
+            case ParsedTupleUnpackWord(token):
+                tupl = stack.pop()
+                if tupl is None or not isinstance(tupl, ResolvedTupleType):
+                    self.abort(token, "expected a tuple on the stack")
+                stack.extend(tupl.items)
+                return (ResolvedTupleUnpackWord(token, tupl.items), False)
             case other:
                 assert_never(other)
 
@@ -2658,6 +2729,8 @@ class FunctionResolver:
                     return ResolvedStructType(name, struct, list(map(inner, gen_args)))
                 case ResolvedFunctionType(token, parameters, returns):
                     return ResolvedFunctionType(token, list(map(inner, parameters)), list(map(inner, returns)))
+                case ResolvedTupleType(token, items):
+                    return ResolvedTupleType(token, list(map(inner, items)))
                 case other:
                     return other
         return inner
@@ -2673,11 +2746,6 @@ class FunctionResolver:
                             if len(word.generic_arguments) != len(f.signature.generic_parameters):
                                 self.module_resolver.abort(word.name, f"expected {len(f.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
                             return ResolvedCallWord(word.name, ResolvedFunctionHandle(module.id, index), resolved_generic_arguments)
-                    for index, extern in enumerate(module.externs):
-                        if extern.signature.name.lexeme == word.name.lexeme:
-                            if len(word.generic_arguments) != len(extern.signature.generic_parameters):
-                                self.module_resolver.abort(word.name, f"expected {len(extern.signature.generic_parameters)} generic arguments, not {len(word.generic_arguments)}")
-                            return ResolvedCallWord(word.name, ResolvedExternHandle(module.id, index), resolved_generic_arguments)
                 self.abort(word.name, f"function {word.name.lexeme} not found")
         self.abort(word.name, f"module {word.module.lexeme} not found")
 
@@ -2740,7 +2808,6 @@ class ModuleResolver:
     id: int
     imports: Dict[str, List[Import]] = field(default_factory=dict)
     resolved_type_definitions: List[ResolvedTypeDefinition] = field(default_factory=list)
-    externs: List[ResolvedExtern] = field(default_factory=list)
     globals: List[ResolvedGlobal] = field(default_factory=list)
     data: bytearray = field(default_factory=bytearray)
     signatures: List[ResolvedFunctionSignature] = field(default_factory=list)
@@ -2748,15 +2815,11 @@ class ModuleResolver:
     def abort(self, token: Token, message: str) -> NoReturn:
         raise ResolverException(self.module.path, self.module.file, token, message)
 
-    def get_signature(self, function: ResolvedFunctionHandle | ResolvedExternHandle) -> ResolvedFunctionSignature:
-        if isinstance(function, ResolvedFunctionHandle):
-            if self.id == function.module:
-                return self.signatures[function.index]
-            else:
-                return self.resolved_modules[function.module].functions[function.index].signature
+    def get_signature(self, function: ResolvedFunctionHandle) -> ResolvedFunctionSignature:
         if self.id == function.module:
-            return self.externs[function.index].signature
-        return self.resolved_modules[function.module].externs[function.index].signature
+            return self.signatures[function.index]
+        else:
+            return self.resolved_modules[function.module].functions[function.index].signature
 
     def get_type_definition(self, struct: ResolvedStructHandle) -> ResolvedTypeDefinition:
         if struct.module == self.id:
@@ -2773,23 +2836,20 @@ class ModuleResolver:
                 if self.is_struct_recursive(ResolvedStructHandle(self.id, i)):
                     raise self.abort(type_definition.name, "structs and variants cannot be recursive")
         self.globals = list(map(self.resolve_global, self.module.globals))
-        resolved_externs = list(map(self.resolve_extern, self.module.externs))
-        self.externs = resolved_externs
         resolved_signatures = list(map(lambda f: self.resolve_function_signature(f.signature), self.module.functions))
         self.signatures = resolved_signatures
         resolved_functions = list(map(lambda f: self.resolve_function(f[0], f[1]), zip(resolved_signatures, self.module.functions)))
-        return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_type_definitions, resolved_externs, self.globals, resolved_functions, self.data)
+        return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_type_definitions, self.globals, resolved_functions, self.data)
 
-    def resolve_function(self, signature: ResolvedFunctionSignature, function: ParsedFunction) -> ResolvedFunction:
-        return FunctionResolver(self, self.externs, self.signatures, self.resolved_type_definitions, function, signature).resolve()
+    def resolve_function(self, signature: ResolvedFunctionSignature, function: ParsedFunction | ParsedExtern) -> ResolvedFunction | ResolvedExtern:
+        if isinstance(function, ParsedExtern):
+            return ResolvedExtern(function.module, function.name, self.resolve_function_signature(function.signature))
+        return FunctionResolver(self, self.signatures, self.resolved_type_definitions, function, signature).resolve()
 
-    def resolve_function_name(self, name: Token) -> ResolvedFunctionHandle | ResolvedExternHandle:
+    def resolve_function_name(self, name: Token) -> ResolvedFunctionHandle:
         for index, signature in enumerate(self.signatures):
             if signature.name.lexeme == name.lexeme:
                 return ResolvedFunctionHandle(self.id, index)
-        for index, extern in enumerate(self.externs):
-            if extern.signature.name.lexeme == name.lexeme:
-                return ResolvedExternHandle(self.id, index)
         for qualifier, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
@@ -2799,9 +2859,6 @@ class ModuleResolver:
 
     def resolve_global(self, globl: ParsedGlobal) -> ResolvedGlobal:
         return ResolvedGlobal(ResolvedNamedType(globl.name, self.resolve_type(globl.taip)))
-
-    def resolve_extern(self, extern: ParsedExtern) -> ResolvedExtern:
-        return ResolvedExtern(extern.module, extern.name, self.resolve_function_signature(extern.signature))
 
     def resolve_import(self, imp: ParsedImport) -> Import:
         if os.path.dirname(self.module.path) != "":
@@ -2826,10 +2883,6 @@ class ModuleResolver:
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
                 continue
-            for extern_id, extern in enumerate(imported_module.externs):
-                if extern.signature.name.lexeme == item.lexeme:
-                    resolved_item = ImportItem(item, ResolvedExternHandle(imported_module.id, extern_id))
-                    break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
                 continue
@@ -2851,6 +2904,8 @@ class ModuleResolver:
                 args = list(map(self.resolve_type, parsed_args))
                 rets = list(map(self.resolve_type, parsed_rets))
                 return ResolvedFunctionType(token, args, rets)
+            case ParsedTupleType(token, items):
+                return ResolvedTupleType(token, list(map(self.resolve_type, items)))
             case struct_type:
                 return self.resolve_struct_type(struct_type)
 
@@ -3008,7 +3063,18 @@ class StructType:
     def size(self):
         return self._size
 
-Type = PrimitiveType | PtrType | StructType | FunctionType
+@dataclass
+class TupleType:
+    token: Token
+    items: List['Type']
+
+    def can_live_in_reg(self) -> bool:
+        return self.size() <= 4
+
+    def size(self):
+        return sum(map(lambda t: t.size(), self.items))
+
+Type = PrimitiveType | PtrType | StructType | FunctionType | TupleType
 
 def type_eq(a: Type, b: Type) -> bool:
     if isinstance(a, PrimitiveType) and isinstance(b, PrimitiveType):
@@ -3019,6 +3085,8 @@ def type_eq(a: Type, b: Type) -> bool:
         return a.struct.module == b.struct.module and a.struct.index == b.struct.index and a.struct.instance == b.struct.instance
     if isinstance(a, FunctionType) and isinstance(b, FunctionType):
         return types_eq(a.parameters, b.parameters) and types_eq(a.returns, b.returns)
+    if isinstance(a, TupleType) and isinstance(b, TupleType):
+        return types_eq(a.items, b.items)
     return False
 
 def types_eq(a: List[Type], b: List[Type]) -> bool:
@@ -3047,6 +3115,8 @@ def format_type(a: Type) -> str:
             for ret in returns:
                 s += format_type(ret) + ", "
             return s[:-2] + ")"
+        case TupleType(_, items):
+            return listtostr(items, format_type)
         case other:
             assert_never(other)
 
@@ -3382,15 +3452,27 @@ class MatchWord:
     parameters: List[Type]
     returns: List[Type]
 
+@dataclass
+class TupleMakeWord:
+    token: Token
+    taip: TupleType
+    copy_space_offset: int
+
+@dataclass
+class TupleUnpackWord:
+    token: Token
+    item: List[Type]
+    copy_space_offset: int
+
 IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit | IntrinsicSetStackSize
 
-Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord
+Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord | TupleMakeWord | TupleUnpackWord
 
 @dataclass
 class Module:
     id: int
     type_definitions: Dict[int, List[TypeDefinition]]
-    externs: List[Extern]
+    externs: Dict[int, Extern]
     globals: List[Global]
     functions: Dict[int, Function]
     data: bytes
@@ -3399,7 +3481,7 @@ class Module:
 class Monomizer:
     modules: Dict[int, ResolvedModule]
     type_definitions: Dict[int, Dict[int, List[Tuple[List[Type], TypeDefinition]]]] = field(default_factory=dict)
-    externs: Dict[int, List[Extern]] = field(default_factory=dict)
+    externs: Dict[int, Dict[int, Extern]] = field(default_factory=dict)
     globals: Dict[int, List[Global]] = field(default_factory=dict)
     functions: Dict[int, Dict[int, Function]] = field(default_factory=dict)
     function_table: Dict[FunctionHandle | ExternHandle, int] = field(default_factory=dict)
@@ -3408,9 +3490,11 @@ class Monomizer:
     def monomize(self) -> Tuple[Dict[FunctionHandle | ExternHandle, int], Dict[int, Module]]:
         for id in sorted(self.modules):
             module = self.modules[id]
-            self.externs[id] = list(map(self.monomize_extern, module.externs))
+            self.externs[id] = { i: self.monomize_extern(f) for i,f in enumerate(module.functions) if isinstance(f, ResolvedExtern) }
             self.globals[id] = list(map(lambda m: self.monomize_global(m, []), module.globals))
             for index, function in enumerate(module.functions):
+                if isinstance(function, ResolvedExtern):
+                    continue
                 if function.signature.export_name is not None:
                     assert(len(function.signature.generic_parameters) == 0)
                     signature = self.monomize_concrete_signature(function.signature)
@@ -3453,7 +3537,7 @@ class Monomizer:
             if module_id not in self.functions:
                 self.functions[module_id] = {}
             module = self.modules[module_id]
-            externs: List[Extern] = self.externs[module_id]
+            externs: Dict[int, Extern] = self.externs[module_id]
             globals: List[Global] = self.globals[module_id]
             type_definitions: Dict[int, List[TypeDefinition]] = { k: [t[1] for t in v] for k, v in self.type_definitions[module_id].items() }
             mono_modules[module_id] = Module(module_id, type_definitions, externs, globals, self.functions[module_id], self.modules[module_id].data)
@@ -3482,6 +3566,7 @@ class Monomizer:
 
     def monomize_function(self, function: ResolvedFunctionHandle, generics: List[Type]) -> ConcreteFunction:
         f = self.modules[function.module].functions[function.index]
+        assert(isinstance(f, ResolvedFunction))
         if len(generics) == 0:
             assert(len(f.signature.generic_parameters) == 0)
         signature = self.monomize_signature(f.signature, generics)
@@ -3706,6 +3791,18 @@ class Monomizer:
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 monomized_variant = self.monomize_struct(resolved_variant_type.struct, this_generics)[0]
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
+            case ResolvedTupleMakeWord(token, tupl):
+                offset = copy_space_offset.value
+                mono_tupl = TupleType(tupl.token, list(map(lambda t: self.monomize_type(t, generics), tupl.items)))
+                offset = copy_space_offset.value
+                if mono_tupl.size() > 4:
+                    copy_space_offset.value += mono_tupl.size()
+                return TupleMakeWord(token, mono_tupl, offset)
+            case ResolvedTupleUnpackWord(token, items):
+                offset = copy_space_offset.value
+                mono_items = list(map(lambda t: self.monomize_type(t, generics), items))
+                copy_space_offset.value += sum(item.size() for item in mono_items if not item.can_live_in_reg())
+                return TupleUnpackWord(token, mono_items, offset)
             case other:
                 assert_never(other)
 
@@ -3747,13 +3844,14 @@ class Monomizer:
         return [FieldAccess(field.name, source_taip, target_taip, offset)] + self.monomize_field_accesses(fields[1:], struct.generic_parameters)
 
     def monomize_call_word(self, word: ResolvedCallWord, copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], generics: List[Type]) -> CallWord:
-        if isinstance(word.function, ResolvedExternHandle):
-            signature = self.externs[word.function.module][word.function.index].signature
-            offset = copy_space_offset.value
-            copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, StructType))
-            max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
-            copy_space_offset.value += copy_space
-            return CallWord(word.name, ExternHandle(word.function.module, word.function.index), offset)
+        if word.function.module in self.externs:
+            if word.function.index in self.externs[word.function.module]:
+                signature = self.externs[word.function.module][word.function.index].signature
+                offset = copy_space_offset.value
+                copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, StructType))
+                max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
+                copy_space_offset.value += copy_space
+                return CallWord(word.name, ExternHandle(word.function.module, word.function.index), offset)
         generics_here = list(map(lambda t: self.monomize_type(t, generics), word.generic_arguments))
         if word.function.module not in self.functions:
             self.functions[word.function.module] = {}
@@ -3830,6 +3928,8 @@ class Monomizer:
                 return self.monomize_struct_type(taip, generics)
             case ResolvedFunctionType():
                 return self.monomize_function_type(taip, generics)
+            case ResolvedTupleType(token, items):
+                return TupleType(token, list(map(lambda item: self.monomize_type(item, generics), items)))
             case other:
                 assert_never(other)
 
@@ -3924,7 +4024,7 @@ class WatGenerator:
         self.write_line("(module")
         self.indent()
         for module in self.modules.values():
-            for extern in module.externs:
+            for extern in module.externs.values():
                 self.write_extern(module.id, extern)
                 self.write("\n")
             for i, globl in enumerate(module.globals):
@@ -4423,7 +4523,7 @@ class WatGenerator:
             case StructFieldInitWord(_, taip, copy_space_offset):
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:flip ")
-                if isinstance(taip, StructType):
+                if not taip.can_live_in_reg():
                     self.write(f"i32.const {taip.size()} memory.copy\n")
                 else:
                     self.write("i32.store\n")
@@ -4496,13 +4596,60 @@ class WatGenerator:
                 if case_taip is not None:
                     self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + 4} i32.add call $intrinsic:flip ")
-                    if isinstance(case_taip, StructType):
+                    if not case_taip.can_live_in_reg():
                         self.write(f"i32.const {case_taip.size()} memory.copy ;; store value\n")
                     elif case_taip == PrimitiveType.I64:
                         self.write("i64.store ;; store value\n")
                     else:
                         self.write("i32.store ;; store value\n")
                 self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add")
+            case TupleMakeWord(token, tupl, copy_space_offset):
+                self.write_indent()
+                if tupl.can_live_in_reg():
+                    if tupl.size() == 0:
+                        for item in tupl.items:
+                            self.write("drop ")
+                        self.write("i32.const 0 ")
+                    self.write(f";; make {format_type(tupl)}\n")
+                    return
+                self.write(f";; make {format_type(tupl)}\n")
+                item_offset = tupl.size()
+                self.indent()
+                for item in reversed(tupl.items):
+                    item_offset -= item.size()
+                    self.write_indent()
+                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + item_offset} i32.add call $intrinsic:flip ")
+                    if item.can_live_in_reg():
+                        self.write("i32.store\n")
+                    else:
+                        self.write(f"i32.const {item.size()} memory.copy\n")
+                self.dedent()
+                self.write_indent()
+                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(tupl)} end\n")
+            case TupleUnpackWord(token, items, copy_space_offset):
+                offset = 0
+                self.write_line(f";; unpack {listtostr(items, format_type)}")
+                self.indent()
+                for i, item in enumerate(items):
+                    self.write_indent()
+                    if item.size() == 0:
+                        self.write("i32.const ")
+                        continue
+                    if i + 1 != len(items):
+                        self.write("call $intrinsic:dupi32 ")
+                    self.write(f"i32.const {offset} i32.add ")
+                    if item.size() != 4:
+                        self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
+                        self.write("call $intrinsic:rotate-left ")
+                        self.write(f"i32.const {item.size()} memory.copy")
+                        copy_space_offset += item.size()
+                    else:
+                        self.write("i32.load")
+                    if i + 1 != len(items):
+                        self.write(" call $intrinsic:flip")
+                    self.write("\n")
+                    offset += item.size()
+                self.dedent()
             case other:
                 print(other, file=sys.stderr)
                 assert_never(other)
@@ -4574,7 +4721,7 @@ class WatGenerator:
             ret = returns[len(returns) - i]
             if isinstance(ret, StructType):
                 self.write_line(f"local.get $locl-copy-spac:e i32.const {offset} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy")
-                offset += 1
+                offset += ret.size()
             else:
                 self.write_line(f"local.get $s{i - 1}:a")
 

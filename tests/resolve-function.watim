@@ -12,7 +12,6 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    externs=(Map),
     custom-types=(Map),
     globals=(Map),
     functions=(Map

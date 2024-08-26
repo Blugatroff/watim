@@ -1,0 +1,92 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn exit(code: i32)
+
+struct Big {
+    a: i32
+    b: i32
+}
+
+fn main "_start" () {
+    1 2 3 make Big 4 5 make Big [,3] foo @c @b @a
+    $a $b.b $c.a + + exit
+}
+fn foo(a: [i32, Big, Big]) -> i32, Big, Big {
+    $a [,]
+}
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(import "wasi_snapshot_preview1" "proc_exit" (func $0:exit (param $code i32)))
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		(local $c i32)
+		(local $b i32)
+		(local $a i32)
+		(local $s0:a i32)
+		(local $s1:a i32)
+		(local $s2:a i32)
+		(local $locl-copy-spac:e i32)
+		(local $stac:k i32)
+		global.get $stac:k local.set $stac:k
+		global.get $stac:k global.get $stac:k i32.const 52 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $c
+		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $b
+		i32.const 1
+		i32.const 2
+		i32.const 3
+		;; make Big
+			local.get $locl-copy-spac:e i32.const 4 i32.add call $intrinsic:flip i32.store
+			local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:flip i32.store
+		local.get $locl-copy-spac:e i32.const 0 i32.add ;; make Big end
+		i32.const 4
+		i32.const 5
+		;; make Big
+			local.get $locl-copy-spac:e i32.const 12 i32.add call $intrinsic:flip i32.store
+			local.get $locl-copy-spac:e i32.const 8 i32.add call $intrinsic:flip i32.store
+		local.get $locl-copy-spac:e i32.const 8 i32.add ;; make Big end
+		;; make [i32, Big, Big]
+			local.get $locl-copy-spac:e i32.const 28 i32.add call $intrinsic:flip i32.const 8 memory.copy
+			local.get $locl-copy-spac:e i32.const 20 i32.add call $intrinsic:flip i32.const 8 memory.copy
+			local.get $locl-copy-spac:e i32.const 16 i32.add call $intrinsic:flip i32.store
+		local.get $locl-copy-spac:e i32.const 16 i32.add ;; make [i32, Big, Big] end
+		call $0:foo
+		local.set $s0:a
+		local.set $s1:a
+		local.set $s2:a
+		local.get $s2:a
+		local.get $locl-copy-spac:e i32.const 36 i32.add call $intrinsic:dupi32 local.get $s1:a i32.const 8 memory.copy
+		local.get $locl-copy-spac:e i32.const 44 i32.add call $intrinsic:dupi32 local.get $s0:a i32.const 8 memory.copy
+		local.get $c call $intrinsic:flip i32.const 8 memory.copy
+		local.get $b call $intrinsic:flip i32.const 8 memory.copy
+		local.set $a
+		local.get $a
+		local.get $b i32.load offset=4
+		local.get $c i32.load offset=0
+		i32.add
+		i32.add
+		call $0:exit
+		local.get $stac:k global.set $stac:k
+	)
+	(func $0:foo (param $a i32) (result i32) (result i32) (result i32)
+		(local $locl-copy-spac:e i32)
+		(local $stac:k i32)
+		global.get $stac:k local.set $stac:k
+		global.get $stac:k global.get $stac:k i32.const 36 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:dupi32 local.get $a i32.const 20 memory.copy
+		;; unpack [i32, Big, Big]
+			call $intrinsic:dupi32 i32.const 0 i32.add i32.load call $intrinsic:flip
+			call $intrinsic:dupi32 i32.const 4 i32.add local.get $locl-copy-spac:e i32.const 20 i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const 8 memory.copy call $intrinsic:flip
+			i32.const 12 i32.add local.get $locl-copy-spac:e i32.const 28 i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const 8 memory.copy
+		local.get $stac:k global.set $stac:k
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)
+[== Status ==]
+8

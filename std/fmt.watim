@@ -71,6 +71,10 @@ fn into-string(arena: .Arena, target: .ByteArray) -> Formatter {
     $target #user-data.string
     \append-string $user-data !i32 new
 }
+fn into-new-string(arena: .Arena) -> Formatter, .ByteArray {
+    $arena ByteArray:new Arena:push<ByteArray> @buf
+    $arena $buf into-string $buf
+}
 
 fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
     $fmt "\"" write

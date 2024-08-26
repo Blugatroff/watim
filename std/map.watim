@@ -90,4 +90,15 @@ fn get-bs<V>(self: .Map<ByteSlice, V>, key-ptr: .i32, key-len: i32) -> Maybe<.V>
     $self &key get<ByteSlice, V>
     // TODO: this fails to be rejected: $self &key get<ByteArray, V>
 }
+fn get-bs-with-index<V>(self: .Map<ByteSlice, V>, key-ptr: .i32, key-len: i32) -> Maybe<[.V, i32]> {
+    $key-ptr $key-len make ByteSlice @key
+    $self &key get-index<ByteSlice, V> match {
+        case None -> { make Maybe<[.V, i32]>.None }
+        case Some -> {
+            @index
+            &self.values $index Array:get<V> $index
+            [,2] make Maybe<[.V, i32]>.Some
+        }
+    }
+}
 

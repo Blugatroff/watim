@@ -10,7 +10,6 @@ check
 (Map
   "./struct.watim"=(Module
     imports=(Map),
-    externs=(Map),
     custom-types=(Map
       "Struct"=(Struct
         name=(IDENT Struct 1 8),
@@ -23,7 +22,6 @@ check
     imports=(Map
       "S"=[(Import (IMPORT import 1 1) 0 "./struct.watim" (IDENT S 1 28) [
         (ImportItem (IDENT Struct 1 31) (CustomTypeHandle 0 0))])]),
-    externs=(Map),
     custom-types=(Map),
     globals=(Map),
     functions=(Map)))
