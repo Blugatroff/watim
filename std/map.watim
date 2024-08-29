@@ -33,6 +33,16 @@ fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
         $i 1 + #i
     }
 }
+fn remove<K, V>(self: .Map<K, V>, key: .K) -> Maybe<V> {
+    $self $key get-index<K, V> match {
+        case None -> { make Maybe<V>.None }
+        case Some -> {
+            @index
+            &self.keys $index Array:remove<K> drop
+            &self.values $index Array:remove<V> make Maybe<V>.Some
+        }
+    }
+}
 fn get<K, V>(self: .Map<K, V>, key: .K) -> Maybe<.V> {
     $self $key get-index<K, V> match {
         case None -> { make Maybe<.V>.None }
@@ -100,5 +110,9 @@ fn get-bs-with-index<V>(self: .Map<ByteSlice, V>, key-ptr: .i32, key-len: i32) -
             [,2] make Maybe<[.V, i32]>.Some
         }
     }
+}
+fn remove-bs<V>(self: .Map<ByteSlice, V>, key-ptr: .i32, key-len: i32) -> Maybe<V> {
+    $key-ptr $key-len make ByteSlice @key
+    $self &key remove<ByteSlice, V>
 }
 

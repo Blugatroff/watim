@@ -20,6 +20,7 @@ fn NamedType-format(fmt: .Formatter, self: .NamedType) {
     $fmt &self.type Type-format
     $fmt ")" Fmt:write
 }
+fn NamedType-type(self: .NamedType) -> Type { $self.type }
 
 struct Struct {
     name: Token
