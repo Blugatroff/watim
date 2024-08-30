@@ -10,5 +10,5 @@ fn random() -> bool { 1 1 = }
 1
 [== Stderr Compiler ==]
 -:1:4 unexpected return values:
-	expected: [I32]
+	expected: [i32]
 	actual:   []

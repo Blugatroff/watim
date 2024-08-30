@@ -756,22 +756,22 @@ fn lookup-signature(ctx: .WordCtx, function: .FunctionHandle) -> .Signature {
 }
 
 fn resolve-words(ctx: .WordCtx, stack: .Stack, words: .Array<P:Word>) -> Result<[Array<Word>, bool], ResolveError> {
+    $words 0 $words.len Array:slice<P:Word> @remaining-words
     0 1 = @diverges
     Array:new<Word> @resolved
-    0 @i
     loop () -> Result<[Array<Word>, bool], ResolveError> {
-        $words.len $i = if { $resolved $diverges [,2] make Result<[Array<Word>, bool], ResolveError>.Success break }
+        $remaining-words.len 0 = if { $resolved $diverges [,2] make Result<[Array<Word>, bool], ResolveError>.Success break }
         $ctx.arena &resolved
-        $ctx $stack $words $i Array:get<P:Word> resolve-word match {
+        &remaining-words Array:pop-front<P:Word> @parsed-word
+        $ctx $stack &remaining-words &parsed-word resolve-word match {
             case Error -> { make Result<[Array<Word>, bool], ResolveError>.Error break }
             case Success -> {}
         } [,] $diverges or #diverges
         Array:push<Word>
-        $i 1 + #i
     }
 }
 
-fn resolve-word(ctx: .WordCtx, stack: .Stack, word: .P:Word) -> Result<[Word, bool], ResolveError> { block {
+fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, word: .P:Word) -> Result<[Word, bool], ResolveError> { block {
     $word match {
         case Number -> {
             $ctx $stack make Type.I32 push
@@ -795,7 +795,7 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, word: .P:Word) -> Result<[Word, bo
         case MakeStruct -> { $ctx flip $stack flip resolve-mk-struc break }
         case MakeStructNamed -> { $ctx flip $stack flip resolve-mk-struc-named break }
         case FunRef -> { $ctx flip $stack flip resolve-fun-ref break }
-        case If -> { $ctx flip $stack flip resolve-iff break }
+        case If -> { $ctx flip $stack flip $remaining-words flip resolve-iff break }
         case _ -> { drop make Lexer:TokenTy.TOKEN_MAKE 0 0 Lexer:Token-new-keyword make Word.Number 0 1 = [,2] }
     } make Result<[Word, bool], ResolveError>.Success
 } }
@@ -886,27 +886,71 @@ fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
     $temp $save Arena:restore
 }
 
-fn resolve-iff(ctx: .WordCtx, stack: .Stack, word: .P:If) -> Result<[Word, bool], ResolveError> { block {
+fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, word: .P:If) -> Result<[Word, bool], ResolveError> { block {
     $ctx $stack &word.token $ctx.Bool "expected a bool for `if`" expect1 match {
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
         case None -> {}
     }
     &ctx.env Env:child @true-env
-    &ctx.env Env:child @false-env
     $ctx $stack child @true-stack
-    $ctx $stack child @false-stack
     $ctx $true-env with-env @true-ctx
-    $ctx $false-env with-env @false-ctx
     &true-ctx &true-stack &word.true-words.words resolve-words match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } [,] @true-words-diverge @true-words
+
+    &true-stack.negative @true-parameters
+
+    Array:new<P:Word> @empty-word-array
     &word.false-words match {
         case None -> {
-            $ctx.ctx &word.token "TODO" abort<[Word, bool]> break
+            $true-words-diverge not if {
+                &empty-word-array
+            } else {
+                $ctx $stack child @remaining-stack
+
+                // This makes sure, that the parameters of the true-branch and
+                // the synthesized false-branch made up of all subsequent words match.
+                $ctx &remaining-stack $true-parameters.len use drop
+
+                &ctx.env Env:child @remaining-env
+                $ctx $remaining-env with-env @remaining-ctx
+
+                &remaining-ctx &remaining-stack $remaining-words resolve-words match {
+                    case Error -> { make Result<[Word, bool], ResolveError>.Error break }
+                    case Success -> {}
+                } [,] @remaining-words-diverge @remaining-words
+
+                // This pop-n will always pop enough values from the parent stack
+                // even for the true-branch, since the call to `use` above makes sure,
+                // that the `negative` of `remaining-stack` is at least as long as
+                // that of the true-branch.
+                $ctx $stack $remaining-stack.negative.len pop-n
+
+                // The true-branch diverges, so it doesn't produce any return values.
+                // The remaining words however might, so push the results up!
+                $ctx $stack &remaining-stack.positive push-many
+
+                // Since we are synthesizing this false-branch because the true-branch
+                // is diverging, the divergence of the remaining words
+                // determines the divergence of the entire if.
+                $remaining-words-diverge @diverges
+
+                make If {
+                    $word.token @token
+                    $remaining-stack.negative @parameters
+                    $remaining-stack.positive make Maybe<Array<Type>>.Some @returns
+                    $diverges @diverges
+                    $true-words @true-words
+                    $remaining-words @false-words
+                } make Word.If $diverges [,2] make Result<[Word, bool], ResolveError>.Success break
+            }
         }
         case Some -> { .words }
     } @false-words
+    &ctx.env Env:child @false-env
+    $ctx $stack child @false-stack
+    $ctx $false-env with-env @false-ctx
     &false-ctx &false-stack $false-words resolve-words match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}

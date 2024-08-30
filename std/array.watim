@@ -130,6 +130,20 @@ fn eq<T>(compare: (.T, .T -> bool), a: .Array<T>, b: .Array<T>) -> bool {
         }
     }
 }
+fn slice<T>(self: .Array<T>, start: i32, len: i32) -> Array<T> {
+    0 $start $len + $self.len le !i32 / drop
+    $self.ptr $start sizeof(T) * + $len init-no-copy<T>
+}
+fn pop-front<T>(self: .Array<T>) -> T {
+    $self.len 0 = if {
+        2 "Cannot pop from empty Array" IO:write-all IO:check
+        1 CORE:exit
+    }
+    $self.len 1 - #self.len
+    $self.cap 1 - #self.cap
+    $self.ptr ~
+    $self.ptr sizeof(T) + #self.ptr
+}
 fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .Array<T>) {
     $formatter "[" FMT:write
     0 @i
