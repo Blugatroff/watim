@@ -132,6 +132,9 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Generic -> { P:GenericType-format break }
     } Fmt:write
 } }
+fn Types-format(fmt: .Formatter, self: .Array<Type>) {
+    $fmt \Type-format $self Array:format<Type>
+}
 fn Type-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "bool" }
