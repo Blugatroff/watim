@@ -1,0 +1,46 @@
+[== Stdin Compiler ==]
+struct Foo {
+    a: .Bar
+}
+struct Bar {
+    x: i32
+}
+fn foo(f: .Foo) -> .i32 {
+    &f.a.x
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "-"=(Module
+    imports=(Map),
+    custom-types=(Map
+      "Foo"=(Struct
+        name=(IDENT Foo 1 8),
+        generic-parameters=[],
+        fields=[
+          (NamedType (IDENT a 2 5) (Ptr (CustomType 0 1 [])))]),
+      "Bar"=(Struct
+        name=(IDENT Bar 4 8),
+        generic-parameters=[],
+        fields=[
+          (NamedType (IDENT x 5 5) I32)])),
+    globals=(Map),
+    functions=(Map
+      "foo"=(Function
+        name=(IDENT foo 7 4),
+        export=None,
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[(NamedType (IDENT f 7 8) (Ptr (CustomType 0 0 [])))],
+          returns=[(Ptr I32)]),
+        locals=(Map
+          (LocalId "f" 0 0)=(Local (IDENT f 7 8) (Ptr (CustomType 0 0 [])) False True)),
+        words=[
+          (RefLocal (IDENT f 8 6) (LocalId "f" 0 0) [
+            (FieldAccess (IDENT a 8 8) (Ptr (CustomType 0 0 [])) (Ptr (CustomType 0 1 [])) 0),
+            (FieldAccess (IDENT x 8 10) (Ptr (CustomType 0 1 [])) I32 0)])]))))

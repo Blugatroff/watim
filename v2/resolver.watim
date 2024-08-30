@@ -15,8 +15,8 @@ import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format, Token-print)
 import "./parser.watim" as P (TopItem)
-import "./type.watim" as Type (Type, Type-eq, Type-format, Type-pretty, NamedType, NamedType-format, CustomType, CustomType-format, ModuleId, TypeLookup, lookup-type, Struct, Variant, VariantCase, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, CustomTypeType-format, FunType, TupleType, NamedType-type)
-import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format)
+import "./type.watim" as Type (Type, Type-eq, Types-eq, Type-format, Type-pretty, NamedType, NamedType-format, CustomType, CustomType-format, ModuleId, TypeLookup, lookup-type, Struct, Variant, VariantCase, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, CustomTypeType-format, FunType, TupleType, NamedType-type)
+import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
 fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
@@ -195,9 +195,24 @@ fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt " " Fmt:write
     $fmt &self.var-type Type-format
     $fmt " " Fmt:write
-    $fmt \FieldAccess-format &self.fields Array:format<FieldAccess>
-    $fmt " " Fmt:write
     $fmt &self.result-taip Type-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt ")" Fmt:write
+}
+
+struct RefLocal {
+    name: Token
+    var: VarId
+    fields: Array<FieldAccess>
+}
+fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
+    $fmt "(RefLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt ")" Fmt:write
 }
 
@@ -376,6 +391,7 @@ fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
 variant Word {
     case Number -> Token
     case GetLocal -> GetLocal
+    case RefLocal -> RefLocal
     case InitLocal -> InitLocal
     case String -> StringWord
     case Intrinsic -> IntrinsicWord
@@ -393,6 +409,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
     $self match {
         case Number -> { $fmt "(Number " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
         case GetLocal -> { $fmt flip GetLocal-format }
+        case RefLocal -> { $fmt flip RefLocal-format }
         case InitLocal -> { $fmt flip InitLocal-format }
         case String -> { $fmt flip StringWord-format }
         case Intrinsic -> { $fmt flip IntrinsicWord-format }
@@ -430,6 +447,7 @@ struct Function {
     export: Maybe<Token>
     signature: Signature
     words: Array<Word>
+    locals: Map<LocalId, Local>
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt "(Function\n" Fmt:write
@@ -445,6 +463,10 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt Fmt:write-indent
     $fmt "signature=" Fmt:write
     $fmt &self.signature Signature-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "locals=" Fmt:write
+    $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<LocalId, Local>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "words=" Fmt:write
@@ -615,6 +637,15 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
                     case Error -> { make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Error break }
                     case Success -> {}
                 } [,] @diverges
+                &stack.positive &signature.returns Types-eq not if {
+                    $ctx.arena Fmt:into-new-string @msg @fmt
+                    &fmt "unexpected return values:\n\texpected: " Fmt:write
+                    &fmt \Type-format &signature.returns Array:format<Type>
+                    &fmt "\n\tactual:   " Fmt:write
+                    &fmt \Type-format &stack.positive Array:format<Type>
+                    $ctx.ctx &fun.name $msg ~ ByteArray:unpack abort<Map<ByteSlice, FunctionOrExtern>> break
+                }
+                $env.vars-by-id ~
                 make Function
                 make FunctionOrExtern.Function
                 Map:insert<ByteSlice, FunctionOrExtern> drop
@@ -1231,7 +1262,6 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
 } }
 
 fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError> { block {
-
     $word match {
         case Local -> {
             @word
@@ -1296,9 +1326,7 @@ fn expect-arguments(ctx: .WordCtx, stack: .Stack, function-name: .Token, paramet
         $ctx $stack pop match {
             case None -> { 1 1 = }
             case Some -> {
-                @popped-type
-                &popped $popped-type Array:push-assert-no-alloc<Type>
-                &popped-type $expected-type Type-eq not
+                @popped-type &popped-type $expected-type Type-eq not
             }
         } if {
             $ctx.ctx $function-name "mismatched arguments" abort-m break
@@ -1541,22 +1569,33 @@ fn resolve-get-local(ctx: .WordCtx, stack: .Stack, word: .P:GetLocal) -> Result<
 
 fn resolve-ref-local(ctx: .WordCtx, stack: .Stack, word: .P:RefLocal) -> Result<[Word, bool], ResolveError> { block {
     &ctx.env &word.ident Env:lookup match {
-        case None -> { $ctx.ctx &word.ident "var not found" abort<[Word, bool]> break }
-        case Some -> {}
-    } @local
-    1 1 = #local.local.reffed
-    $ctx $local.local.type &word.fields resolve-field-accesses match {
+        case None -> {
+            $ctx.globals &word.ident Token-lexeme Map:get-bs-with-index<Global> match {
+                case None -> { $ctx.ctx &word.ident "var not found" abort<[Word, bool]> break }
+                case Some -> {
+                    [,] @id @globl
+                    $globl.type $word.ident $ctx.ctx.module-id $id make GlobalId make VarId.Global
+                }
+            }
+        }
+        case Some -> {
+            @local
+            1 1 = #local.local.reffed
+            $local.local.type $local.id make VarId.Local
+        }
+    } @var-id @type
+    $ctx $type &word.fields resolve-field-accesses match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } @fields
     $fields.len 0 = if {
-        &local.local.type
+        &type
     } else {
         &fields $fields.len 1 - Array:get<FieldAccess> .target-taip
-    } @resolved-type
-    $ctx $stack $resolved-type make Type.Ptr push
-    $word.ident $local.id make VarId.Local $local.local.type $fields $resolved-type ~ make GetLocal
-    make Word.GetLocal 0 1 = [,2]
+    } $ctx.arena flip Arena:copy<Type> @result-type
+    $ctx $stack $result-type make Type.Ptr push
+    $word.ident $var-id $fields make RefLocal
+    make Word.RefLocal 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }
 

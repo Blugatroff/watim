@@ -1402,6 +1402,9 @@ class ResolvedFieldAccess:
     target_taip: ResolvedType
     field_index: int
 
+    def __str__(self) -> str:
+        return f"(FieldAccess {self.name} {self.source_taip} {self.target_taip} {self.field_index})"
+
 @dataclass
 class ResolvedBody:
     words: List['ResolvedWord']
@@ -1447,13 +1450,16 @@ class ResolvedGetWord:
     taip: ResolvedType
 
     def __str__(self) -> str:
-        return f"(GetLocal {self.token} {self.local_id} {self.var_taip} {listtostr(self.fields)} {self.taip})"
+        return f"(GetLocal {self.token} {self.local_id} {self.var_taip} {self.taip} {listtostr(self.fields, multi_line=True)})"
 
 @dataclass
 class ResolvedRefWord:
     token: Token
     local_id: LocalId | GlobalId
     fields: List[ResolvedFieldAccess]
+
+    def __str__(self) -> str:
+        return f"(RefLocal {self.token} {self.local_id} {listtostr(self.fields, multi_line=True)})"
 
 @dataclass
 class ResolvedSetWord:
@@ -1774,6 +1780,7 @@ class ResolvedFunction:
         s += f"  name={self.signature.name},\n"
         s += f"  export={format_maybe(self.signature.export_name)},\n"
         s += f"  signature={indent_non_first(str(self.signature))},\n"
+        s += f"  locals={indent_non_first(format_dict(self.body.locals))},\n"
         s += f"  words={indent_non_first(listtostr(self.body.words, multi_line=True))}"
         return s + ")"
 
@@ -1883,31 +1890,23 @@ class ResolverException(Exception):
             column = self.token.column
         return f"{self.path}:{line}:{column} {self.message}"
 
-class LocalType(str, Enum):
-    PARAMETER = "PARAMETER"
-    LOCAL = "LOCAL"
-
 @dataclass
-class ResolvedParameterLocal:
+class ResolvedLocal:
     name: Token
     taip: ResolvedType
+    is_parameter: bool
     was_reffed: bool = False
 
     @staticmethod
-    def make(taip: ResolvedNamedType) -> 'ResolvedParameterLocal':
-        return ResolvedParameterLocal(taip.name, taip.taip)
-
-@dataclass
-class ResolvedInitLocal:
-    name: Token
-    taip: ResolvedType
-    was_reffed: bool = False
+    def make(taip: ResolvedNamedType) -> 'ResolvedLocal':
+        return ResolvedLocal(taip.name, taip.taip, False)
 
     @staticmethod
-    def make(taip: ResolvedNamedType) -> 'ResolvedInitLocal':
-        return ResolvedInitLocal(taip.name, taip.taip)
+    def make_parameter(taip: ResolvedNamedType) -> 'ResolvedLocal':
+        return ResolvedLocal(taip.name, taip.taip, True)
 
-ResolvedLocal = ResolvedParameterLocal | ResolvedInitLocal
+    def __str__(self) -> str:
+        return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
 
 @dataclass
 class Ref(Generic[T]):
@@ -2112,14 +2111,16 @@ class FunctionResolver:
         self.module_resolver.abort(token, message)
 
     def resolve(self) -> ResolvedFunction:
-        env = Env(list(map(ResolvedParameterLocal.make, self.signature.parameters)))
+        env = Env(list(map(ResolvedLocal.make_parameter, self.signature.parameters)))
         stack: Stack = Stack.empty()
         context = ResolveWordContext(env, None, None, True, None)
         (words, diverges) = self.resolve_words(context, stack, self.function.body)
         if not diverges:
-            self.expect_stack(self.signature.name, stack, self.signature.returns)
-            if len(stack) != 0:
-                self.abort(self.signature.name, f"items left on stack at end of function: {listtostr(stack.stack)}")
+            if not resolved_types_eq(stack.stack, self.signature.returns):
+                msg  =  "unexpected return values:\n"
+                msg += f"\texpected: {listtostr(self.signature.returns)}\n"
+                msg += f"\tactual:   {listtostr(stack.stack)}"
+                self.abort(self.signature.name, msg)
         body = ResolvedBody(words, env.vars_by_id)
         return ResolvedFunction(self.signature, body)
 
@@ -2287,7 +2288,7 @@ class FunctionResolver:
                 if taip is None:
                     self.abort(name, "expected a non-empty stack")
                 named_taip = ResolvedNamedType(name, taip)
-                local_id = context.env.insert(ResolvedInitLocal(named_taip.name, named_taip.taip))
+                local_id = context.env.insert(ResolvedLocal.make(named_taip))
                 return (ResolvedInitWord(name, local_id, taip), False)
             case ParsedRefWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
@@ -3547,17 +3548,12 @@ class Monomizer:
         res: Dict[LocalId, Local] = {}
         for id, local in locals.items():
             taip = self.monomize_type(local.taip, generics)
-            match local:
-                case ResolvedParameterLocal(_, _, was_reffed):
-                    lives_in_memory = was_reffed or not taip.can_live_in_reg()
-                    res[id] = ParameterLocal(local.name, taip, lives_in_memory)
-                    continue
-                case ResolvedInitLocal(_, _, was_reffed):
-                    lives_in_memory = was_reffed or not taip.can_live_in_reg()
-                    res[id] = InitLocal(local.name, taip, lives_in_memory)
-                    continue
-                case other:
-                    assert_never(other)
+            lives_in_memory = local.was_reffed or not taip.can_live_in_reg()
+            if local.is_parameter:
+                res[id] = ParameterLocal(local.name, taip, lives_in_memory)
+            else:
+                res[id] = InitLocal(local.name, taip, lives_in_memory)
+            continue
         return res
 
     def monomize_concrete_signature(self, signature: ResolvedFunctionSignature) -> FunctionSignature:

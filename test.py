@@ -122,6 +122,9 @@ native_tests = list(map(lambda p: f"./tests/{p}.watim", [
     "parse-generic-type",
     "resolve-function",
     "parse-annotation-no-returns",
+    "resolve-get-local",
+    "resolve-ref-local",
+    "values-left-in-function",
 ]))
 
 failed = False

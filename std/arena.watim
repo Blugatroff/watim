@@ -170,6 +170,11 @@ fn push-many<T>(self: .Arena, ptr: .T, n: i32) -> .T {
 fn push-byte(self: .Arena, byte: i32) {
     $self 1 alloc-bytes $byte store8
 }
+fn copy<T>(self: .Arena, value: .T) -> .T {
+    $self alloc<T> @ptr
+    $value !.i32 $ptr !.i32 sizeof(T) CORE:copy-bytes
+    $ptr
+}
 fn usage(self: .Arena) -> i32 {
     $self.size
 }

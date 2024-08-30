@@ -182,6 +182,9 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
     }
 }
 
+fn Types-eq(a: .Array<Type>, b: .Array<Type>) -> bool {
+    \Type-eq $a $b Array:eq<Type>
+}
 fn Types-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Array<Type>) {
     0 @i
     loop {

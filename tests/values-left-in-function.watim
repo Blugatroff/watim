@@ -1,14 +1,14 @@
 [== Stdin Compiler ==]
-fn main() -> i32 {
-	block {
-		random if { break }
-		loop { }
-	}
+fn foo() -> i32 {
+    3 0 1 = 5
 }
-fn random() -> bool { 1 1 = }
+[== Args Compiler ==]
+check
+-
+--quiet
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
 -:1:4 unexpected return values:
 	expected: [I32]
-	actual:   []
+	actual:   [I32, Bool, I32]
