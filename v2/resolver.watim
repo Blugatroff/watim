@@ -15,7 +15,7 @@ import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format, Token-print)
 import "./parser.watim" as P (TopItem)
-import "./type.watim" as Type (Type, Type-eq, Types-eq, Type-format, Type-pretty, NamedType, NamedType-format, CustomType, CustomType-format, ModuleId, TypeLookup, lookup-type, Struct, Variant, VariantCase, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, CustomTypeType-format, FunType, TupleType, NamedType-type)
+import "./type.watim" as Type (Type, Type-eq, Types-eq, Type-format, Type-pretty, Types-pretty-bracketed, NamedType, NamedType-format, CustomType, CustomType-format, ModuleId, TypeLookup, lookup-type, Struct, Variant, VariantCase, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, CustomTypeType-format, FunType, TupleType, NamedType-type)
 import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
@@ -640,9 +640,9 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
                 &stack.positive &signature.returns Types-eq not if {
                     $ctx.arena Fmt:into-new-string @msg @fmt
                     &fmt "unexpected return values:\n\texpected: " Fmt:write
-                    &fmt \Type-format &signature.returns Array:format<Type>
+                    &fmt $ctx.type-lookup &signature.returns Types-pretty-bracketed
                     &fmt "\n\tactual:   " Fmt:write
-                    &fmt \Type-format &stack.positive Array:format<Type>
+                    &fmt $ctx.type-lookup &stack.positive Types-pretty-bracketed
                     $ctx.ctx &fun.name $msg ~ ByteArray:unpack abort<Map<ByteSlice, FunctionOrExtern>> break
                 }
                 $env.vars-by-id ~

@@ -2118,8 +2118,8 @@ class FunctionResolver:
         if not diverges:
             if not resolved_types_eq(stack.stack, self.signature.returns):
                 msg  =  "unexpected return values:\n"
-                msg += f"\texpected: {listtostr(self.signature.returns)}\n"
-                msg += f"\tactual:   {listtostr(stack.stack)}"
+                msg += f"\texpected: {listtostr(self.signature.returns, format_resolved_type)}\n"
+                msg += f"\tactual:   {listtostr(stack.stack, format_resolved_type)}"
                 self.abort(self.signature.name, msg)
         body = ResolvedBody(words, env.vars_by_id)
         return ResolvedFunction(self.signature, body)

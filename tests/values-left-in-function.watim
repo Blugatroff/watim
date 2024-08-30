@@ -1,6 +1,7 @@
 [== Stdin Compiler ==]
-fn foo() -> i32 {
-    3 0 1 = 5
+struct Foo {}
+fn foo(a: Foo) -> i32 {
+    0 1 = 5
 }
 [== Args Compiler ==]
 check
@@ -9,6 +10,6 @@ check
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
--:1:4 unexpected return values:
-	expected: [I32]
-	actual:   [I32, Bool, I32]
+-:2:4 unexpected return values:
+	expected: [i32]
+	actual:   [bool, i32]

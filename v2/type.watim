@@ -190,10 +190,15 @@ fn Types-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Array<Type>) {
     loop {
         $i $self.len = if { break }
         $fmt $lookup $self $i Array:get<Type> Type-pretty
-        $i 1 + #self.len
+        $i 1 + #i
         $i $self.len = if { break }
         $fmt ", " Fmt:write
     }
+}
+fn Types-pretty-bracketed(fmt: .Formatter, lookup: .TypeLookup, self: .Array<Type>) {
+    $fmt "[" Fmt:write
+    $fmt $lookup $self Types-pretty
+    $fmt "]" Fmt:write
 }
 
 struct FunType {
