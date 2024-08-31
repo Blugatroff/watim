@@ -1,0 +1,43 @@
+[== Stdin Compiler ==]
+fn foo() -> i32 {
+    5 0 1 = if {
+        9
+    } else {
+        4
+    } +
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "-"=(Module
+    imports=(Map),
+    custom-types=(Map),
+    globals=(Map),
+    functions=(Map
+      "foo"=(Function
+        name=(IDENT foo 1 4),
+        export=None,
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[],
+          returns=[I32]),
+        locals=(Map),
+        words=[
+          (Number (NUMBER 5 2 5)),
+          (Number (NUMBER 0 2 7)),
+          (Number (NUMBER 1 2 9)),
+          (Intrinsic (IDENT = 2 11) (Eq I32)),
+          (If
+            token=(IF if 2 13),
+            parameters=[],
+            returns=(Some [I32]),
+            true-words=[
+              (Number (NUMBER 9 3 9))],
+            false-words=[
+              (Number (NUMBER 4 5 9))]),
+          (Intrinsic (IDENT + 6 7) (Add I32))]))))

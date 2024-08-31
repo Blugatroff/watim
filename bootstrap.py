@@ -327,6 +327,9 @@ ParsedType = PrimitiveType | ParsedPtrType | ParsedTupleType | GenericType | Par
 class NumberWord:
     token: Token
 
+    def __str__(self) -> str:
+        return f"(Number {self.token})"
+
 @dataclass
 class ParsedStringWord:
     token: Token
@@ -1277,8 +1280,8 @@ class ResolvedStruct:
     def __str__(self) -> str:
         return "(Struct\n" + indent(f"name={self.name},\ngeneric-parameters={listtostr(self.generic_parameters)},\nfields={listtostr(self.fields, multi_line=True)}") + ")"
 
-def format_maybe(v) -> str:
-    return "None" if v is None else f"(Some {v})"
+def format_maybe(v, format = None) -> str:
+    return "None" if v is None else (f"(Some {v})" if format is None else f"(Some {format(v)})")
 
 @dataclass
 class ResolvedVariantCase:
@@ -1500,6 +1503,15 @@ class ResolvedIfWord:
     else_words: List['ResolvedWord']
     diverges: bool
 
+    def __str__(self) -> str:
+        s = "(If\n"
+        s += f"  token={self.token},\n"
+        s += f"  parameters={listtostr(self.parameters)},\n"
+        s += f"  returns={format_maybe(self.returns, listtostr)},\n"
+        s += f"  true-words={indent_non_first(listtostr(self.if_words, multi_line=True))},\n"
+        s += f"  false-words={indent_non_first(listtostr(self.else_words, multi_line=True))}"
+        return s + ")"
+
 @dataclass
 class ResolvedLoopWord:
     token: Token
@@ -1653,6 +1665,9 @@ class ResolvedIntrinsicAdd:
     token: Token
     taip: ResolvedPtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
+    def __str__(self) -> str:
+        return f"(Intrinsic {self.token} (Add {self.taip}))"
+
 @dataclass
 class ResolvedIntrinsicSub:
     token: Token
@@ -1733,6 +1748,9 @@ class IntrinsicMemCopy:
 class ResolvedIntrinsicEqual:
     token: Token
     taip: ResolvedType
+
+    def __str__(self) -> str:
+        return f"(Intrinsic {self.token} (Eq {self.taip}))"
 
 @dataclass
 class ResolvedIntrinsicNotEqual:

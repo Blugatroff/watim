@@ -306,7 +306,7 @@ struct IntrinsicWord {
     intrinsic: Intrinsic
 }
 fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
-    $fmt "(IntrinsicWord " Fmt:write
+    $fmt "(Intrinsic " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
     $fmt &self.intrinsic Intrinsic-format
@@ -402,15 +402,19 @@ fn If-format(fmt: .Formatter, self: .If) {
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "parameters=" Fmt:write
     $fmt \Type-format &self.parameters Array:format<Type>
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
     $fmt \Types-format &self.returns Maybe:format<Array<Type>>
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "true-words=" Fmt:write
     $fmt \Word-format &self.true-words Array:format-multi-line<Word>
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "false-words=" Fmt:write
     $fmt \Word-format &self.false-words Array:format-multi-line<Word>
     $fmt ")" Fmt:write
