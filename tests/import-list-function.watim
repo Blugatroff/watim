@@ -1,0 +1,64 @@
+[== Stdin Compiler ==]
+import "./function.watim" as F (function-b)
+
+fn main "_start" () {
+    0 function-b drop
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "./function.watim"=(Module
+    imports=(Map),
+    custom-types=(Map),
+    globals=(Map),
+    functions=(Map
+      "function-a"=(Function
+        name=(IDENT function-a 1 4),
+        export=None,
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[(NamedType (IDENT a 1 15) I32)],
+          returns=[Bool]),
+        locals=(Map
+          (LocalId "a" 0 0)=(Local (IDENT a 1 15) I32 False True)),
+        words=[
+          (GetLocal (IDENT a 2 6) (LocalId "a" 0 0) I32 I32 []),
+          (Number (NUMBER 0 2 8)),
+          (Intrinsic (IDENT = 2 10) (Eq I32))]),
+      "function-b"=(Function
+        name=(IDENT function-b 4 4),
+        export=None,
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[(NamedType (IDENT b 4 15) I32)],
+          returns=[Bool]),
+        locals=(Map
+          (LocalId "b" 0 0)=(Local (IDENT b 4 15) I32 False True)),
+        words=[
+          (GetLocal (IDENT b 5 6) (LocalId "b" 0 0) I32 I32 []),
+          (Number (NUMBER 0 5 8)),
+          (Intrinsic (IDENT = 5 10) (Eq I32))]))),
+  "-"=(Module
+    imports=(Map
+      "F"=[(Import (IMPORT import 1 1) 0 "./function.watim" (IDENT F 1 30) [
+        (ImportItem (IDENT function-b 1 33) (FunctionHandle 0 1))])]),
+    custom-types=(Map),
+    globals=(Map),
+    functions=(Map
+      "main"=(Function
+        name=(IDENT main 3 4),
+        export=(Some (STRING "_start" 3 9)),
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[],
+          returns=[]),
+        locals=(Map),
+        words=[
+          (Number (NUMBER 0 4 5)),
+          (Call (IDENT function-b 4 7) (FunctionHandle 0 1) []),
+          (Drop (IDENT drop 4 18))]))))

@@ -1,0 +1,39 @@
+[== Stdin Compiler ==]
+fn foo() -> i32 {
+    5 loop {
+        3 break
+        1
+    } +
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "-"=(Module
+    imports=(Map),
+    custom-types=(Map),
+    globals=(Map),
+    functions=(Map
+      "foo"=(Function
+        name=(IDENT foo 1 4),
+        export=None,
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[],
+          returns=[I32]),
+        locals=(Map),
+        words=[
+          (Number (NUMBER 5 2 5)),
+          (Loop
+            token=(LOOP loop 2 7),
+            parameters=[I32],
+            returns=(Some [I32, I32]),
+            words=[
+              (Number (NUMBER 3 3 9)),
+              (Break (BREAK break 3 11)),
+              (Number (NUMBER 1 4 9))]),
+          (Intrinsic (IDENT + 5 7) (Add I32))]))))

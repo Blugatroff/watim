@@ -7,7 +7,7 @@ import "../std/array.watim" as Array (Array)
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS (FileSystem)
 import "../std/bytes.watim" as Bytes
-import "../std/byte-array.watim" as ByteArray
+import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
 import "../std/fmt.watim" as Fmt (ByteSlice-format)
@@ -87,7 +87,7 @@ fn parse-args(arena: .Arena) -> CliArgs {
     make CliArgs
 }
 
-fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>) -> ByteSlice {
+fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>) -> ByteArray {
     $file-path match {
         case None -> { $arena 0 FS:read-all IO:check }
         case Some -> {
@@ -107,8 +107,8 @@ fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
 }
 
 fn main "_start" () {
-    1 mem-grow drop
-    PA:page-size 2 * set-stack-size
+    4 mem-grow drop
+    PA:page-size 5 * set-stack-size
     Logging:enable
     ActiveMemory:init
     Arena:init-temp

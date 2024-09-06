@@ -86,6 +86,18 @@ fn push-assert-no-alloc<T>(self: .Array<T>, val: T) {
         1 CORE:exit
     }
 }
+fn append<T>(arena: .A:Arena, self: .Array<T>, ptr: .T, len: i32) {
+    // TODO: this could just be a memcopy
+    loop {
+        $len 0 = if { break }
+        $arena $self $ptr ~ push<T>
+        $ptr sizeof(T) + #ptr
+        $len 1 - #len
+    }
+}
+fn unpack<T>(self: .Array<T>) -> .T, i32 {
+    $self.ptr $self.len
+}
 fn get<T>(self: .Array<T>, index: i32) -> .T {
     $index $self.len ge if {
         2 "Index out of bounds\n" IO:write-all IO:check
@@ -107,6 +119,9 @@ fn pop<T>(self: .Array<T>) -> T {
     }
     $self $self.len 1 - get<T> ~
     $self.len 1 - #self.len
+}
+fn truncate<T>(self: .Array<T>, len: i32) {
+    $self.len $len CORE:min #self.len
 }
 fn clone<T>(arena: .A:Arena, self: .Array<T>) -> Array<T> {
     $arena $self.ptr $self.len init<T>

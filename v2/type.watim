@@ -1,5 +1,6 @@
 import "../std/maybe.watim" as Maybe (Maybe)
 import "../std/array.watim" as Array (Array)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/util.watim" as Util (i32-format)
 import "../std/fmt.watim" as Fmt (Formatter)
 import "../std/io.watim" as IO
@@ -56,6 +57,9 @@ fn VariantCase-format(fmt: .Formatter, self: .VariantCase) {
     $fmt \Type-format &self.type Maybe:format<Type>
     $fmt ")" Fmt:write
 }
+fn VariantCase-name(self: .VariantCase) -> ByteSlice {
+    &self.name Token-lexeme make ByteSlice
+}
 
 struct Variant {
     name: Token
@@ -78,7 +82,6 @@ fn Variant-format(fmt: .Formatter, self: .Variant) {
     $fmt \VariantCase-format &self.cases Array:format-multi-line<VariantCase>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
-
 }
 
 variant CustomType {

@@ -1,0 +1,6 @@
+fn function-a(a: i32) -> bool {
+    $a 0 =
+}
+fn function-b(b: i32) -> bool {
+    $b 0 =
+}

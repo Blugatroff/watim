@@ -422,6 +422,9 @@ class ParsedBlockWord:
 class BreakWord:
     token: Token
 
+    def __str__(self) -> str:
+        return f"(Break {self.token})"
+
 @dataclass
 class ParsedCastWord:
     token: Token
@@ -1482,6 +1485,9 @@ class ResolvedCallWord:
     function: 'ResolvedFunctionHandle'
     generic_arguments: List[ResolvedType]
 
+    def __str__(self) -> str:
+        return f"(Call {self.name} {self.function} {listtostr(self.generic_arguments)})"
+
 @dataclass
 class ResolvedFunctionHandle:
     module: int
@@ -1507,7 +1513,7 @@ class ResolvedIfWord:
         s = "(If\n"
         s += f"  token={self.token},\n"
         s += f"  parameters={listtostr(self.parameters)},\n"
-        s += f"  returns={format_maybe(self.returns, listtostr)},\n"
+        s += f"  returns={format_maybe(None if self.diverges else self.returns, listtostr)},\n"
         s += f"  true-words={indent_non_first(listtostr(self.if_words, multi_line=True))},\n"
         s += f"  false-words={indent_non_first(listtostr(self.else_words, multi_line=True))}"
         return s + ")"
@@ -1519,6 +1525,15 @@ class ResolvedLoopWord:
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
     diverges: bool
+
+    def __str__(self) -> str:
+        s = "(Loop\n"
+        s += f"  token={self.token},\n"
+        s += f"  parameters={listtostr(self.parameters)},\n"
+        s += f"  returns={format_maybe(None if self.diverges else self.returns, listtostr)},\n"
+        s += f"  words={indent_non_first(listtostr(self.words, multi_line=True))}"
+        return s + ")"
+
 
 @dataclass
 class ResolvedBlockWord:
@@ -1676,6 +1691,9 @@ class ResolvedIntrinsicSub:
 @dataclass
 class IntrinsicDrop:
     token: Token
+
+    def __str__(self) -> str:
+        return f"(Drop {self.token})"
 
 @dataclass
 class ResolvedIntrinsicMod:
@@ -2237,6 +2255,8 @@ class FunctionResolver:
                     self.abort(token, "unexpected items remaining on stack at the end of loop")
                 if len(loop_break_stacks) != 0:
                     returns = annotation.returns if annotation is not None else loop_break_stacks[0].types
+                    for _ in range(len(parameters)):
+                        stack.pop()
                     stack.extend(returns)
                 else:
                     returns = annotation.returns if annotation is not None else loop_stack.stack
@@ -4430,7 +4450,7 @@ class WatGenerator:
                 else:
                     self.write(f" i32.const {target_taip.size()} memory.copy\n")
             case LoadWord(_, taip, copy_space_offset):
-                if isinstance(taip, StructType):
+                if not taip.can_live_in_reg():
                     self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset}")
                     self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy\n")
