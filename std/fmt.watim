@@ -38,6 +38,36 @@ fn dedent(self: .Formatter) {
     $self.indent-level 1 - #self.indent-level
 }
 
+struct Buffer {
+    ptr: .i32
+    cap: i32
+    len: i32
+    parent: .Formatter
+}
+fn flush(self: .Buffer) {
+    $self.parent.user-data $self.ptr $self.len $self.parent.write ->
+    0 #self.len
+}
+fn write-buffered(user-data: i32, ptr: .i32, len: i32) {
+    $user-data !.Buffer @buffer
+    $buffer.len $len + $buffer.cap gt if {
+        $buffer flush
+    }
+    $len $buffer.cap gt if {
+        $buffer.parent.user-data $ptr $len $buffer.parent.write ->
+    }
+    $ptr $buffer.ptr $buffer.len + $len CORE:copy-bytes
+    $buffer.len $len + #buffer.len
+}
+fn buffered(arena: .Arena, fmt: .Formatter, buf-size: i32) -> Formatter, .Buffer {
+    $arena
+    $arena $buf-size Arena:alloc-bytes $buf-size 0 $fmt
+    make Buffer
+    Arena:push<Buffer> @buffer
+    \write-buffered $buffer !i32 new
+    $buffer
+}
+
 fn write-to-fd(fd: i32, ptr: .i32, len: i32) {
     $fd $ptr $len IO:write-all IO:check
 }

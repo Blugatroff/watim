@@ -214,7 +214,9 @@ fn main "_start" () {
                 case Success -> {}
             } @modules
             1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt \ByteSlice-format \Resolver:Module-format &modules Map:format-multi-line<ByteSlice, Resolver:Module>
+            $buf Fmt:flush
         }
     }
     &arena Arena:clear
