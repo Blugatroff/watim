@@ -1,5 +1,4 @@
 import "./core.watim" as CORE
-import "./io.watim" as IO
 import "./page-alloc.watim" as PA
 
 global ON_NEW: (.Arena ->)
@@ -204,7 +203,10 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
             $self.used-pages free-page
             #self.used-pages
         }
-        $point.pos #self.used-pages.pos
+        $self.used-pages 0!.Page /= if {
+            // $self.used-pages !.i32 sizeof(Page) + $point.pos + $self.size $point.size - CORE:clear
+            $point.pos #self.used-pages.pos
+        }
         $point.size #self.size
     }
     $ON_RESTORE 0 !(.Arena, i32 ->) /= if { $self $bytes-restored $ON_RESTORE -> }

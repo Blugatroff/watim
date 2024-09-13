@@ -124,6 +124,7 @@ fn contiguous-pages(n: i32) -> .i32 {
 }
 fn discard-page(page: .i32) {
     $page !.Page @page
+    // $page !.i32 page-size CORE:clear
     $ALLOCATOR.free-list #page.next
     $page #ALLOCATOR.free-list
     $ACTIVE_PAGES 1 - #ACTIVE_PAGES

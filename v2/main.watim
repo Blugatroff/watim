@@ -202,10 +202,11 @@ fn main "_start" () {
         case Check -> {
             @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
-            &arena Arena:usage @start-usage
             &arena &fs $file-path &modules load-modules-recursively
             &arena &modules determine-compilation-order @modules
-            &arena &modules resolve-modules match {
+            &arena Arena:temp @temp @save
+            $temp Arena:usage @start-usage
+            $temp &modules resolve-modules match {
                 case Error -> {
                     2 flip &modules ResolveError-print drop
                     2 IO:newline
@@ -214,7 +215,7 @@ fn main "_start" () {
                 }
                 case Success -> {}
             } @modules
-            &arena Arena:usage @end-usage
+            $temp Arena:usage @end-usage
             $end-usage $start-usage - @usage
             2 "resolving used: " IO:write-all IO:check
             2 $usage IO:print IO:check
@@ -224,7 +225,9 @@ fn main "_start" () {
             1 Fmt:to-fd @fmt
             &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt \ByteSlice-format \Resolver:Module-format &modules Map:format-multi-line<ByteSlice, Resolver:Module>
+            &fmt "\n" Fmt:write
             $buf Fmt:flush
+            $temp $save Arena:restore
         }
     }
     &arena Arena:clear

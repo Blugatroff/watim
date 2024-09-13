@@ -14,6 +14,16 @@ struct Map<K, V> {
 fn new<K, V>(compare: (.K, .K -> bool)) -> Map<K, V> {
     Array:new<K> Array:new<V> $compare make Map<K, V>
 }
+fn new-with-capacity<K, V>(arena: .Arena, compare: (.K, .K -> bool), cap: i32) -> Map<K, V> {
+    $arena $cap Array:new-with-capacity<K>
+    $arena $cap Array:new-with-capacity<V>
+    $compare make Map<K, V>
+}
+fn clone<K, V>(arena: .Arena, self: .Map<K, V>) -> Map<K, V> {
+    $arena &self.keys Array:clone<K>
+    $arena &self.values Array:clone<V>
+    $self.compare make Map<K, V>
+}
 struct Stupid<T> { inner: T filler: i32 }
 fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
     $key 0 make Stupid<K> @key
@@ -22,6 +32,24 @@ fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
         $i $self.keys.len = if { 
             $arena &self.keys $key.inner Array:push<K>
             $arena &self.values $value Array:push<V>
+            make Maybe<V>.None
+            break
+        }
+        $self $i get-key<K, V> &key.inner $self.compare -> if {
+            &self.values $i $value Array:set<V>
+            make Maybe<V>.Some
+            break
+        }
+        $i 1 + #i
+    }
+}
+fn insert-assert-no-alloc<K, V>(self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
+    $key 0 make Stupid<K> @key
+    0 @i
+    loop {
+        $i $self.keys.len = if { 
+            &self.keys $key.inner Array:push-assert-no-alloc<K>
+            &self.values $value Array:push-assert-no-alloc<V>
             make Maybe<V>.None
             break
         }
