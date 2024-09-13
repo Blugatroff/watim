@@ -107,8 +107,8 @@ fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
 }
 
 fn main "_start" () {
-    4 mem-grow drop
-    PA:page-size 5 * set-stack-size
+    5 mem-grow drop
+    PA:page-size 6 * set-stack-size
     Logging:enable
     ActiveMemory:init
     Arena:init-temp
@@ -202,6 +202,7 @@ fn main "_start" () {
         case Check -> {
             @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena Arena:usage @start-usage
             &arena &fs $file-path &modules load-modules-recursively
             &arena &modules determine-compilation-order @modules
             &arena &modules resolve-modules match {
@@ -213,6 +214,13 @@ fn main "_start" () {
                 }
                 case Success -> {}
             } @modules
+            &arena Arena:usage @end-usage
+            $end-usage $start-usage - @usage
+            2 "resolving used: " IO:write-all IO:check
+            2 $usage IO:print IO:check
+            2 " bytes (" IO:write-all IO:check
+            2 $usage print-byte-count IO:check
+            2 ")\n" IO:write-all IO:check
             1 Fmt:to-fd @fmt
             &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt \ByteSlice-format \Resolver:Module-format &modules Map:format-multi-line<ByteSlice, Resolver:Module>
@@ -221,6 +229,21 @@ fn main "_start" () {
     }
     &arena Arena:clear
     exit
+}
+
+fn print-byte-count(fd: i32, bytes: i32) -> i32 {
+    " KMGTP" @prefixes-len @prefixes
+    loop {
+        $prefixes-len 0 = if { 0 0 / break }
+        $bytes 1024 lt if {
+            $fd $bytes IO:print Core:dup<i32> 0 /= if { break } drop
+            $fd $prefixes load8 IO:write-byte Core:dup<i32> 0 /= if { break } drop
+            $fd "iB" IO:write-all break
+        }
+        $bytes 1024 / #bytes
+        $prefixes 1 + #prefixes
+        $prefixes-len 1 - #prefixes-len
+    }
 }
 
 fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>, modules: .Map<ByteSlice, Array<TopItem>>) { block {
