@@ -20,11 +20,8 @@ fn advance(ptr: ..i32, len: .i32, n: i32) {
     $len ~ $n - =>len
 }
 
-struct OnStack<T> { value: T }
 fn parse(arena: .Arena, ptr: .i32, len: i32) -> Result<Value, ParseError> { block {
-    $ptr make OnStack<.i32> @ptr
-    $len make OnStack<i32> @len
-    $arena &ptr.value &len.value parse-value match {
+    $arena &ptr &len parse-value match {
         case Success -> {}
         case _ -> { break }
     }

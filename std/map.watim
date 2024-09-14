@@ -24,18 +24,16 @@ fn clone<K, V>(arena: .Arena, self: .Map<K, V>) -> Map<K, V> {
     $arena &self.values Array:clone<V>
     $self.compare make Map<K, V>
 }
-struct Stupid<T> { inner: T filler: i32 }
 fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
-    $key 0 make Stupid<K> @key
     0 @i
     loop {
         $i $self.keys.len = if { 
-            $arena &self.keys $key.inner Array:push<K>
+            $arena &self.keys $key Array:push<K>
             $arena &self.values $value Array:push<V>
             make Maybe<V>.None
             break
         }
-        $self $i get-key<K, V> &key.inner $self.compare -> if {
+        $self $i get-key<K, V> &key $self.compare -> if {
             &self.values $i $value Array:set<V>
             make Maybe<V>.Some
             break
@@ -44,16 +42,15 @@ fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
     }
 }
 fn insert-assert-no-alloc<K, V>(self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
-    $key 0 make Stupid<K> @key
     0 @i
     loop {
         $i $self.keys.len = if { 
-            &self.keys $key.inner Array:push-assert-no-alloc<K>
+            &self.keys $key Array:push-assert-no-alloc<K>
             &self.values $value Array:push-assert-no-alloc<V>
             make Maybe<V>.None
             break
         }
-        $self $i get-key<K, V> &key.inner $self.compare -> if {
+        $self $i get-key<K, V> &key $self.compare -> if {
             &self.values $i $value Array:set<V>
             make Maybe<V>.Some
             break

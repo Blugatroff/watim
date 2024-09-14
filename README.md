@@ -3,7 +3,7 @@
 Watim is a simple, low level, stack-based language which compiles to [Webassembly Text Format (WAT)](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format).
 Which can then be compiled to wasm and run in your favorite browser or by runtimes like [wasmtime](https://github.com/bytecodealliance/wasmtime) and [wasm3](https://github.com/wasm3/wasm3).
 
-The Watim compiler is written in Watim.
+~~The Watim compiler is written in Watim.~~ The native compiler is being rewritten, i currently rely on the bootstrap compiler, see [./bootstrap.py](./bootstrap.py).
 
 This project was inspired by [Porth](https://gitlab.com/tsoding/porth).
 
@@ -24,7 +24,7 @@ Watim = WAT Improved
 - [X] Generics using monomorphization.
 - [ ] Type inference
 - [X] function pointers
-- [ ] struct literals
+- [X] struct literals
 - [ ] closures?
 - [ ] Some sort of Typeclass/Trait system perhaps?
 
@@ -77,17 +77,12 @@ struct Iov {
     len: i32
 }
 
-// local variable of a primitive type (i32, bool) cannot be referenced by pointer because they don't live in wasm linear memory.
-// To explicitly store them in memory they can be wrapped in a struct.
-struct OnStack<T> { value: T }
-
 fn write(file: i32, ptr: .i32, len: i32) -> i32 {
     uninit<Iov> @iov
-    0 make OnStack<i32> @written
+    0 @written
     $ptr #iov.ptr
     $len #iov.len
-    $file &iov 1 &written.value raw_write drop
-    $written.value @written
+    $file &iov 1 &written raw_write drop
     $written $len = if {
         $len
     } else {
@@ -96,12 +91,12 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
 }
 
 fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
-    0 make OnStack<i32> @nread
+    0 @nread
     uninit<Iov> @iov
     $buf-addr #iov.ptr
     $buf-size #iov.len
-    $file &iov 1 &nread.value raw_read drop
-    $nread.value
+    $file &iov 1 &nread raw_read drop
+    $nread
 }
 
 struct Buf { a: i32 b: i32 c: i32 d: i32 e: i32 f: i32 g: i32 h: i32 }
@@ -136,9 +131,9 @@ fn print(n: i32) {
 }
 
 fn write_byte(file: i32, b: i32) {
-    uninit<OnStack<i32>> @buf
-    &buf.value $b store8
-    $file &buf.value 1 write drop
+    uninit<i32> @buf
+    &buf $b store8
+    $file &buf 1 write drop
 }
 
 fn parse(pt: .i32, len: i32) -> i32 {
@@ -170,7 +165,7 @@ fn main "_start" () {
     uninit<Buf> @buf &buf.a @buf
     0 $buf 32 read @nread
     $nread 0 /= if {
-        $buf $nread 1 - + ~ "\n" drop = if { $nread 1 - #nread }
+        $buf $nread 1 - + ~ "\n" drop load8 = if { $nread 1 - #nread }
     }
     $buf $nread parse
     dup<i32> print 

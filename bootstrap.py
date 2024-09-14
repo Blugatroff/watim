@@ -2340,8 +2340,6 @@ class FunctionResolver:
                         else:
                             globl = self.module_resolver.resolved_modules[local.module].globals[local.index]
                         globl.was_reffed = True
-                if not isinstance(var_type, ResolvedStructType) and not isinstance(var_type, ResolvedPtrType):
-                    self.abort(token, "can only reference struct types")
                 stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
             case ParsedSetWord(token, fields):
