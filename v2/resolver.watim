@@ -300,6 +300,7 @@ variant Intrinsic {
     case NotEq -> Type
     case MemGrow
     case MemCopy
+    case MemFill
     case Store8
     case Load8
     case Rotl -> Type
@@ -325,6 +326,7 @@ fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
         case NotEq -> { $fmt "(NotEq " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
         case MemGrow -> { $fmt "MemGrow" Fmt:write }
         case MemCopy -> { $fmt "MemCopy" Fmt:write }
+        case MemFill -> { $fmt "MemFill" Fmt:write }
         case Store8 -> { $fmt "Store8" Fmt:write }
         case Load8 -> { $fmt "Load8" Fmt:write }
         case Rotl -> { $fmt "(Rotl " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
@@ -2152,6 +2154,15 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     case None -> {}
                 }
                 $word.name make Intrinsic.MemCopy make IntrinsicWord
+                make Word.Intrinsic 0 1 = [,2]
+                make Result<[Word, bool], ResolveError>.Success break
+            }
+            $name-ptr $name-len "mem-fill" Bytes:eq if {
+                $ctx $stack &word.name $ctx.ptr-I32 $ctx.I32 $ctx.I32 "`mem-fill` expected [.i32, i32, i32]" expect3 match {
+                    case Some -> { make Result<[Word, bool], ResolveError>.Error break }
+                    case None -> {}
+                }
+                $word.name make Intrinsic.MemFill make IntrinsicWord
                 make Word.Intrinsic 0 1 = [,2]
                 make Result<[Word, bool], ResolveError>.Success break
             }
