@@ -13,10 +13,6 @@ fn foo(a: i32) {
 	(table funcref (elem))
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
-	(func $0:main (export "_start")
-		i32.const 7
-		call $0:foo
-	)
 	(func $0:foo (param $a i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
@@ -27,6 +23,10 @@ fn foo(a: i32) {
 		i32.const 5
 		i32.store
 		local.get $stac:k global.set $stac:k
+	)
+	(func $0:main (export "_start")
+		i32.const 7
+		call $0:foo
 	)
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
 	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)

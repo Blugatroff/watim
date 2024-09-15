@@ -1229,7 +1229,7 @@ def listtostr(seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_l
         s += ",\n" if multi_line else ", "
     return s[0:-2] + "]" if multi_line else s[0:-2] + "]"
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ResolvedStructHandle:
     module: int
     index: int
@@ -1488,7 +1488,7 @@ class ResolvedCallWord:
     def __str__(self) -> str:
         return f"(Call {self.name} {self.function} {listtostr(self.generic_arguments)})"
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ResolvedFunctionHandle:
     module: int
     index: int
@@ -3227,11 +3227,11 @@ class Extern:
 @dataclass
 class ConcreteFunction:
     signature: FunctionSignature
-    body: Lazy[Body]
+    body: Body
 
 @dataclass
 class GenericFunction:
-    instances: List[Tuple[List[Type], ConcreteFunction]]
+    instances: Dict[int, ConcreteFunction]
 
 Function = ConcreteFunction | GenericFunction
 
@@ -3517,67 +3517,34 @@ class Module:
 @dataclass
 class Monomizer:
     modules: Dict[int, ResolvedModule]
-    type_definitions: Dict[int, Dict[int, List[Tuple[List[Type], TypeDefinition]]]] = field(default_factory=dict)
-    externs: Dict[int, Dict[int, Extern]] = field(default_factory=dict)
-    globals: Dict[int, List[Global]] = field(default_factory=dict)
-    functions: Dict[int, Dict[int, Function]] = field(default_factory=dict)
+    type_definitions: Dict[ResolvedStructHandle, List[Tuple[List[Type], TypeDefinition]]] = field(default_factory=dict)
+    externs: Dict[ResolvedFunctionHandle, Extern] = field(default_factory=dict)
+    globals: Dict[GlobalId, Global] = field(default_factory=dict)
+    functions: Dict[ResolvedFunctionHandle, Function] = field(default_factory=dict)
+    signatures: Dict[ResolvedFunctionHandle, FunctionSignature | List[FunctionSignature]] = field(default_factory=dict)
     function_table: Dict[FunctionHandle | ExternHandle, int] = field(default_factory=dict)
-    struct_word_copy_space_offset: int = 0
 
     def monomize(self) -> Tuple[Dict[FunctionHandle | ExternHandle, int], Dict[int, Module]]:
+        self.externs = { ResolvedFunctionHandle(m, i): self.monomize_extern(f) for m,module in self.modules.items() for i,f in enumerate(module.functions) if isinstance(f, ResolvedExtern) }
+        self.globals = { GlobalId(m, i): self.monomize_global(globl) for m,module in self.modules.items() for i,globl in enumerate(module.globals) }
         for id in sorted(self.modules):
             module = self.modules[id]
-            self.externs[id] = { i: self.monomize_extern(f) for i,f in enumerate(module.functions) if isinstance(f, ResolvedExtern) }
-            self.globals[id] = list(map(lambda m: self.monomize_global(m, []), module.globals))
             for index, function in enumerate(module.functions):
                 if isinstance(function, ResolvedExtern):
                     continue
                 if function.signature.export_name is not None:
                     assert(len(function.signature.generic_parameters) == 0)
-                    signature = self.monomize_concrete_signature(function.signature)
-                    copy_space_offset = Ref(0)
-                    max_struct_ret_count = Ref(0)
-                    monomized_locals = self.monomize_locals(function.body.locals, [])
-                    body = Lazy(lambda: Body(self.monomize_words(function.body.words, [], copy_space_offset, max_struct_ret_count, monomized_locals), copy_space_offset.value, max_struct_ret_count.value, monomized_locals))
-                    f = ConcreteFunction(signature, body)
-                    if id not in self.functions:
-                        self.functions[id] = {}
-                    self.functions[id][index] = f
-                    body.get()
-
-        all_have = False
-        while not all_have:
-            all_have = True
-            for module_functions in self.functions.values():
-                for ffs in module_functions.values():
-                    if isinstance(ffs, ConcreteFunction):
-                        if ffs.body.has_value():
-                            continue
-                        ffs.body.get()
-                        all_have = False
-                        break
-                    for (_, instance) in ffs.instances:
-                        if instance.body.has_value():
-                            continue
-                        instance.body.get()
-                        all_have = False
-                        break
-                    if not all_have:
-                        break
-                if not all_have:
-                    break
+                    handle = ResolvedFunctionHandle(id, index)
+                    self.monomize_function(handle, [])
 
         mono_modules = {}
         for module_id in self.modules:
-            if module_id not in self.type_definitions:
-                self.type_definitions[module_id] = {}
-            if module_id not in self.functions:
-                self.functions[module_id] = {}
             module = self.modules[module_id]
-            externs: Dict[int, Extern] = self.externs[module_id]
-            globals: List[Global] = self.globals[module_id]
-            type_definitions: Dict[int, List[TypeDefinition]] = { k: [t[1] for t in v] for k, v in self.type_definitions[module_id].items() }
-            mono_modules[module_id] = Module(module_id, type_definitions, externs, globals, self.functions[module_id], self.modules[module_id].data)
+            externs: Dict[int, Extern] = { handle.index: extern for (handle,extern) in self.externs.items() if handle.module == module_id }
+            globals: List[Global] = [globl for id, globl in self.globals.items() if id.module == module_id]
+            type_definitions: Dict[int, List[TypeDefinition]] = { handle.index: [taip for generics,taip in monomorphizations] for handle,monomorphizations in self.type_definitions.items() if handle.module == module_id }
+            functions = { handle.index: function for handle,function in self.functions.items() if handle.module == module_id }
+            mono_modules[module_id] = Module(module_id, type_definitions, externs, globals, functions, self.modules[module_id].data)
         return self.function_table, mono_modules
 
     def monomize_locals(self, locals: Dict[LocalId, ResolvedLocal], generics: List[Type]) -> Dict[LocalId, Local]:
@@ -3602,23 +3569,43 @@ class Monomizer:
         if len(generics) == 0:
             assert(len(f.signature.generic_parameters) == 0)
         signature = self.monomize_signature(f.signature, generics)
+        if len(f.signature.generic_parameters) == 0:
+            self.signatures[function] = signature
+            generic_index = None
+        else:
+            if function not in self.signatures:
+                self.signatures[function] = []
+            instances = self.signatures[function]
+            assert(isinstance(instances, list))
+            generic_index = len(instances)
+            instances.append(signature)
         copy_space_offset = Ref(0)
         max_struct_ret_count = Ref(0)
         monomized_locals = self.monomize_locals(f.body.locals, generics)
-        body = Lazy(lambda: Body(self.monomize_words(f.body.words, generics, copy_space_offset, max_struct_ret_count, monomized_locals), copy_space_offset.value, max_struct_ret_count.value, monomized_locals))
+        body = Body(
+            self.monomize_words(
+                f.body.words,
+                generics,
+                copy_space_offset,
+                max_struct_ret_count,
+                monomized_locals,
+                None),
+            copy_space_offset.value,
+            max_struct_ret_count.value,
+            monomized_locals)
         concrete_function = ConcreteFunction(signature, body)
-        if function.module not in self.functions:
-            self.functions[function.module] = {}
         if len(f.signature.generic_parameters) == 0:
             assert(len(generics) == 0)
-            assert(function.index not in self.functions[function.module])
-            self.functions[function.module][function.index] = concrete_function
+            assert(function not in self.functions)
+            self.functions[function] = concrete_function
             return concrete_function
-        if function.index not in self.functions[function.module]:
-            self.functions[function.module][function.index] = GenericFunction([])
-        generic_function = self.functions[function.module][function.index]
+        assert(generic_index is not None)
+        if function not in self.functions:
+            self.functions[function] = GenericFunction({})
+        generic_function = self.functions[function]
         assert(isinstance(generic_function, GenericFunction))
-        generic_function.instances.append((generics, concrete_function))
+        assert(generic_index not in generic_function.instances)
+        generic_function.instances[generic_index] = concrete_function
         return concrete_function
 
     def monomize_signature(self, signature: ResolvedFunctionSignature, generics: List[Type]) -> FunctionSignature:
@@ -3626,13 +3613,13 @@ class Monomizer:
         returns = list(map(lambda t: self.monomize_type(t, generics), signature.returns))
         return FunctionSignature(signature.export_name, signature.name, generics, parameters, returns)
 
-    def monomize_global(self, globl: ResolvedGlobal, generics: List[Type]) -> Global:
-        return Global(self.monomize_named_type(globl.taip, generics), globl.was_reffed)
+    def monomize_global(self, globl: ResolvedGlobal) -> Global:
+        return Global(self.monomize_named_type(globl.taip, []), globl.was_reffed)
 
-    def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local]) -> List[Word]:
-        return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count, locals), words))
+    def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> List[Word]:
+        return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count, locals, struct_space), words))
 
-    def monomize_word(self, word: ResolvedWord, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local]) -> Word:
+    def monomize_word(self, word: ResolvedWord, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> Word:
         match word:
             case NumberWord():
                 return word
@@ -3747,8 +3734,8 @@ class Monomizer:
             case ResolvedCastWord(token, source, taip):
                 return CastWord(token, self.monomize_type(source, generics), self.monomize_type(taip, generics))
             case ResolvedIfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words, diverges):
-                if_words = self.monomize_words(resolved_if_words, generics, copy_space_offset, max_struct_ret_count, locals)
-                else_words = self.monomize_words(resolved_else_words, generics, copy_space_offset, max_struct_ret_count, locals)
+                if_words = self.monomize_words(resolved_if_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+                else_words = self.monomize_words(resolved_else_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return IfWord(token, parameters, returns, if_words, else_words, diverges)
@@ -3756,15 +3743,15 @@ class Monomizer:
                 call_word = self.monomize_call_word(call, copy_space_offset, max_struct_ret_count, generics)
                 table_index = self.insert_function_into_table(call_word.function)
                 return FunRefWord(call_word, table_index)
-            case ResolvedLoopWord(token, resolved_words, parameters, returns, diverges):
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals)
-                parameters = list(map(lambda t: self.monomize_type(t, generics), parameters))
-                returns = list(map(lambda t: self.monomize_type(t, generics), returns))
+            case ResolvedLoopWord(token, resolved_words, resolved_parameters, resolved_returns, diverges):
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+                parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
+                returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return LoopWord(token, words, parameters, returns, diverges)
             case ResolvedSizeofWord(token, taip):
                 return SizeofWord(token, self.monomize_type(taip, generics))
             case ResolvedBlockWord(token, resolved_words, resolved_parameters, resolved_returns):
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals)
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return BlockWord(token, words, parameters, returns)
@@ -3783,25 +3770,21 @@ class Monomizer:
                 offset = copy_space_offset.value
                 if not monomized_taip.can_live_in_reg():
                     copy_space_offset.value += monomized_taip.size()
-                previous_struct_word_copy_space_offset = self.struct_word_copy_space_offset
-                self.struct_word_copy_space_offset = offset
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals)
-                self.struct_word_copy_space_offset = previous_struct_word_copy_space_offset
+                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals, offset)
                 return StructWord(token, monomized_taip, words, offset)
             case ResolvedUnnamedStructWord(token, taip):
                 monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
-                self.struct_word_copy_space_offset = offset
                 if not monomized_taip.can_live_in_reg():
                     copy_space_offset.value += monomized_taip.size()
                 return UnnamedStructWord(token, monomized_taip, offset)
             case ResolvedStructFieldInitWord(token, struct, generic_arguments, taip):
-                field_copy_space_offset = self.struct_word_copy_space_offset
                 generics_here = list(map(lambda t: self.monomize_type(t, generics), generic_arguments))
                 (struct_handle, monomized_struct) = self.monomize_struct(struct, generics_here)
                 if isinstance(monomized_struct, Variant):
                     assert(False)
-
+                assert(struct_space is not None)
+                field_copy_space_offset: int = struct_space
                 for field in monomized_struct.fields:
                     if field.name.lexeme == token.lexeme:
                         break
@@ -3817,9 +3800,9 @@ class Monomizer:
             case ResolvedMatchWord(token, resolved_variant_type, by_ref, cases, default_case, parameters, returns):
                 monomized_cases: List[MatchCase] = []
                 for resolved_case in cases:
-                    words = self.monomize_words(resolved_case.words, generics, copy_space_offset, max_struct_ret_count, locals)
+                    words = self.monomize_words(resolved_case.words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                     monomized_cases.append(MatchCase(resolved_case.tag, words))
-                monomized_default_case = None if default_case is None else self.monomize_words(default_case, generics, copy_space_offset, max_struct_ret_count, locals)
+                monomized_default_case = None if default_case is None else self.monomize_words(default_case, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 monomized_variant = self.monomize_struct(resolved_variant_type.struct, this_generics)[0]
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
@@ -3841,12 +3824,12 @@ class Monomizer:
     def lookup_var_taip(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> Type:
         if isinstance(local_id, LocalId):
             return locals[local_id].taip
-        return self.globals[local_id.module][local_id.index].taip.taip
+        return self.globals[local_id].taip.taip
 
     def does_var_live_in_memory(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> bool:
         if isinstance(local_id, LocalId):
             return locals[local_id].lives_in_memory()
-        globl = self.globals[local_id.module][local_id.index]
+        globl = self.globals[local_id]
         return globl.was_reffed or not globl.taip.taip.can_live_in_reg()
 
     def insert_function_into_table(self, function: FunctionHandle | ExternHandle) -> int:
@@ -3876,54 +3859,48 @@ class Monomizer:
         return [FieldAccess(field.name, source_taip, target_taip, offset)] + self.monomize_field_accesses(fields[1:], struct.generic_parameters)
 
     def monomize_call_word(self, word: ResolvedCallWord, copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], generics: List[Type]) -> CallWord:
-        if word.function.module in self.externs:
-            if word.function.index in self.externs[word.function.module]:
-                signature = self.externs[word.function.module][word.function.index].signature
-                offset = copy_space_offset.value
-                copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, StructType))
-                max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
-                copy_space_offset.value += copy_space
-                return CallWord(word.name, ExternHandle(word.function.module, word.function.index), offset)
+        if word.function in self.externs:
+            signature = self.externs[word.function].signature
+            offset = copy_space_offset.value
+            copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, StructType))
+            max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
+            copy_space_offset.value += copy_space
+            return CallWord(word.name, ExternHandle(word.function.module, word.function.index), offset)
         generics_here = list(map(lambda t: self.monomize_type(t, generics), word.generic_arguments))
-        if word.function.module not in self.functions:
-            self.functions[word.function.module] = {}
-        if word.function.index in self.functions[word.function.module]:
-            function = self.functions[word.function.module][word.function.index]
-            if isinstance(function, ConcreteFunction):
+        if word.function in self.signatures:
+            signatures = self.signatures[word.function]
+            if isinstance(signatures, FunctionSignature):
+                signature = signatures
                 assert(len(word.generic_arguments) == 0)
                 offset = copy_space_offset.value
-                copy_space = sum(taip.size() for taip in function.signature.returns if isinstance(taip, StructType))
-                max_struct_ret_count.value = max(max_struct_ret_count.value, len(function.signature.returns) if copy_space > 0 else 0)
+                copy_space = sum(taip.size() for taip in signature.returns if not taip.can_live_in_reg())
+                max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
                 copy_space_offset.value += copy_space
                 return CallWord(word.name, FunctionHandle(word.function.module, word.function.index, None), offset)
-            for instance_index, (instance_generics, instance) in enumerate(function.instances):
-                if types_eq(instance_generics, generics_here):
+            for instance_index, signature in enumerate(signatures):
+                if types_eq(signature.generic_arguments, generics_here):
                     offset = copy_space_offset.value
-                    copy_space = sum(taip.size() for taip in instance.signature.returns if not taip.can_live_in_reg())
-                    max_struct_ret_count.value = max(max_struct_ret_count.value, len(instance.signature.returns) if copy_space > 0 else 0)
+                    copy_space = sum(taip.size() for taip in signature.returns if not taip.can_live_in_reg())
+                    max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
                     copy_space_offset.value += copy_space
                     return CallWord(word.name, FunctionHandle(word.function.module, word.function.index, instance_index), offset)
         self.monomize_function(word.function, generics_here)
         return self.monomize_call_word(word, copy_space_offset, max_struct_ret_count, generics) # the function instance should now exist, try monomorphizing this CallWord again
 
     def lookup_struct(self, struct: ResolvedStructHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition] | None:
-        if struct.module not in self.type_definitions:
-            self.type_definitions[struct.module] = {}
-        if struct.index not in self.type_definitions[struct.module]:
+        if struct not in self.type_definitions:
             return None
-        for instance_index, (genics, instance) in enumerate(self.type_definitions[struct.module][struct.index]):
+        for instance_index, (genics, instance) in enumerate(self.type_definitions[struct]):
             if types_eq(genics, generics):
                 return StructHandle(struct.module, struct.index, instance_index), instance
         return None
 
-    def add_struct(self, module: int, index: int, taip: TypeDefinition, generics: List[Type]) -> StructHandle:
-        if module not in self.type_definitions:
-            self.type_definitions[module] = {}
-        if index not in self.type_definitions[module]:
-            self.type_definitions[module][index] = []
-        instance_index = len(self.type_definitions[module][index])
-        self.type_definitions[module][index].append((generics, taip))
-        return StructHandle(module, index, instance_index)
+    def add_struct(self, handle: ResolvedStructHandle, taip: TypeDefinition, generics: List[Type]) -> StructHandle:
+        if handle not in self.type_definitions:
+            self.type_definitions[handle] = []
+        instance_index = len(self.type_definitions[handle])
+        self.type_definitions[handle].append((generics, taip))
+        return StructHandle(handle.module, handle.index, instance_index)
 
     def monomize_struct(self, struct: ResolvedStructHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition]:
         handle_and_instance = self.lookup_struct(struct, generics)
@@ -3933,14 +3910,14 @@ class Monomizer:
         if isinstance(s, ResolvedVariant):
             cases: List[VariantCase] = []
             variant_instance = Variant(s.name, cases, generics, 69)
-            handle = self.add_struct(struct.module, struct.index, variant_instance, generics)
+            handle = self.add_struct(struct, variant_instance, generics)
             for case in map(lambda c: VariantCase(c.name, self.monomize_type(c.taip, generics) if c.taip is not None else None), s.cases):
                 cases.append(case)
             variant_instance._size = 4 + max((t.taip.size() for t in cases if t.taip is not None), default=0)
             return handle, variant_instance
         fields: List[NamedType] = []
         struct_instance = Struct(s.name, fields, generics, 69)
-        handle = self.add_struct(struct.module, struct.index, struct_instance, generics)
+        handle = self.add_struct(struct, struct_instance, generics)
         fields.extend(map(lambda t: self.monomize_named_type(t, generics), s.fields))
         struct_instance._size = sum(field.taip.size() for field in fields)
         return handle, struct_instance
@@ -4048,7 +4025,7 @@ class WatGenerator:
         function = self.modules[handle.module].functions[handle.index]
         if isinstance(function, GenericFunction):
             assert(handle.instance is not None)
-            return function.instances[handle.instance][1]
+            return function.instances[handle.instance]
         return function
 
     def write_wat_module(self) -> str:
@@ -4094,10 +4071,9 @@ class WatGenerator:
 
     def write_function(self, module: int, function: Function, instance_id: int | None = None) -> None:
         if isinstance(function, GenericFunction):
-            for (id, (_, instance)) in enumerate(function.instances):
+            for (id, instance) in function.instances.items():
                 self.write_function(module, instance, id)
             return
-        body = function.body.get()
         self.write_indent()
         self.write("(")
         self.write_signature(module, function.signature, instance_id)
@@ -4108,30 +4084,30 @@ class WatGenerator:
                 self.write_type_human(taip)
         self.write("\n")
         self.indent()
-        self.write_locals(function.body.get())
-        for i in range(0, body.max_struct_ret_count):
+        self.write_locals(function.body)
+        for i in range(0, function.body.max_struct_ret_count):
             self.write_indent()
             self.write(f"(local $s{i}:a i32)\n")
-        if body.locals_copy_space != 0:
+        if function.body.locals_copy_space != 0:
             self.write_indent()
             self.write("(local $locl-copy-spac:e i32)\n")
 
-        uses_stack = body.locals_copy_space != 0 or any(local.lives_in_memory() for local in function.body.get().locals.values())
+        uses_stack = function.body.locals_copy_space != 0 or any(local.lives_in_memory() for local in function.body.locals.values())
         if uses_stack:
             self.write_indent()
             self.write("(local $stac:k i32)\n")
             self.write_indent()
             self.write("global.get $stac:k local.set $stac:k\n")
 
-        for local_id, local in function.body.get().locals.items():
+        for local_id, local in function.body.locals.items():
             if isinstance(local, MemoryLocal):
                 self.write_mem(local.name.lexeme, local.size(), local_id.scope, local_id.shadow)
-        if body.locals_copy_space != 0:
-            self.write_mem("locl-copy-spac:e", body.locals_copy_space, 0, 0)
-        self.write_structs(body.locals)
+        if function.body.locals_copy_space != 0:
+            self.write_mem("locl-copy-spac:e", function.body.locals_copy_space, 0, 0)
+        self.write_structs(function.body.locals)
         if uses_stack and self.guard_stack:
             self.write_line("call $stack-overflow-guar:d")
-        self.write_body(module, body)
+        self.write_body(module, function.body)
         if uses_stack:
             self.write_line("local.get $stac:k global.set $stac:k")
         self.dedent()
@@ -4287,7 +4263,7 @@ class WatGenerator:
                 if taip == PrimitiveType.I64:
                     self.write_line("i64.add")
                     return
-                assert_never(word.taip)
+                assert_never(taip)
             case IntrinsicSub(token, taip):
                 if isinstance(taip, PtrType) or taip == PrimitiveType.I32:
                     self.write_line("i32.sub")
@@ -4295,7 +4271,7 @@ class WatGenerator:
                 if taip == PrimitiveType.I64:
                     self.write_line("i64.sub")
                     return
-                assert_never(word.taip)
+                assert_never(taip)
             case IntrinsicMul(_, taip):
                 self.write_line(f"{'i64' if taip == PrimitiveType.I64 else 'i32'}.mul")
             case IntrinsicDrop():
@@ -4431,7 +4407,7 @@ class WatGenerator:
             case SizeofWord(_, taip):
                 self.write_line(f"i32.const {taip.size()}")
             case FunRefWord(_, table_index):
-                self.write_line(f"i32.const {table_index}")
+                self.write_line(f"i32.const {table_index + 1}")
             case StoreWord(token, local_id, target_taip, loads):
                 self.write_indent()
                 if isinstance(local_id, GlobalId):
@@ -4797,7 +4773,7 @@ class WatGenerator:
         if len(self.function_table) == 0:
             self.write_line("(table funcref (elem))")
             return
-        self.write_line("(table funcref (elem")
+        self.write_line("(table funcref (elem $intrinsic:flip ")
         self.indent()
         self.write_indent()
         functions = list(self.function_table.items())
@@ -4807,7 +4783,8 @@ class WatGenerator:
             if isinstance(handle, FunctionHandle):
                 function = module.functions[handle.index]
                 if isinstance(function, GenericFunction):
-                    function = function.instances[0][1]
+                    assert(handle.instance is not None)
+                    function = function.instances[handle.instance]
                     name = f"${handle.module}:{function.signature.name.lexeme}:{handle.instance}"
                 else:
                     name = f"${handle.module}:{function.signature.name.lexeme}"

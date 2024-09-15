@@ -13,7 +13,7 @@ from bootstrap import main, ParserException, ResolverException
 if not os.path.isfile("test.wat") and subprocess.run("python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
     exit(1)
 
-def parse_test_file(path: str):
+def parse_test_file(path: str) -> dict | None:
     output = subprocess.run(f"wasmtime --dir=. -- test.wat read {path}", shell=True, stdout=subprocess.PIPE)
     if output.returncode != 0:
         return None
@@ -38,7 +38,7 @@ if "--native" in sys.argv:
     watim_bin_path = os.path.realpath("./watim.wat")
 
 def run_native_compiler(args: List[str] | None, stdin: str):
-    compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["-"]), input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["-"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 def run_bootstrap_compiler(args: List[str] | None, stdin: str):
@@ -55,35 +55,39 @@ def run_bootstrap_compiler(args: List[str] | None, stdin: str):
         return CompilerOutput(1, "", str(e))
 
 if len(sys.argv) > 2 and sys.argv[1] == "accept":
-    path = sys.argv[2]
-    test = parse_test_file(path)
-    os.chdir("./tests/fixtures")
-    if "--native" in sys.argv:
-        compiler = run_native_compiler(test['compiler-args'], test['compiler-stdin'])
-    else:
-        compiler = run_bootstrap_compiler(test['compiler-args'], test['compiler-stdin'])
-    os.chdir("../..")
-    stdout = None
-    stderr = None
-    status = None
-    if compiler.returncode == 0 and test['status'] is not None:
-        with open('./out.wat', 'wb') as outwat:
-            outwat.write(compiler.stdout.encode("UTF-8"))
-        program = subprocess.run(["wasmtime", "./out.wat"], input=bytes(test["stdin"] or "", 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout = None if test['stdout'] is None else program.stdout
-        stderr = None if test['stderr'] is None else program.stderr
-        status = None if test['status'] is None else program.returncode
-    write_test_file(path, {
-        "compiler-stdin": test['compiler-stdin'],
-        "compiler-args": test['compiler-args'],
-        "compiler-stdout": None if test['compiler-stdout'] is None else compiler.stdout,
-        "compiler-stderr": None if test['compiler-stderr'] is None else compiler.stderr,
-        "compiler-status": None if test['compiler-status'] is None else compiler.returncode,
-        "stdin": test['stdin'],
-        "stdout": stdout,
-        "stderr": stderr,
-        "status": status,
-    })
+    paths = sys.argv[2:]
+    for path in paths:
+        test = parse_test_file(path)
+        if test is None:
+            print(f"{path}: failed to parse test file", file=sys.stderr)
+            continue
+        os.chdir("./tests/fixtures")
+        if "--native" in sys.argv:
+            compiler = run_native_compiler(test['compiler-args'], test['compiler-stdin'])
+        else:
+            compiler = run_bootstrap_compiler(test['compiler-args'], test['compiler-stdin'])
+        os.chdir("../..")
+        stdout = None
+        stderr = None
+        status = None
+        if compiler.returncode == 0 and test['status'] is not None:
+            with open('./out.wat', 'wb') as outwat:
+                outwat.write(compiler.stdout.encode("UTF-8"))
+            program = subprocess.run(["wasmtime", "./out.wat"], input=bytes(test["stdin"] or "", 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout = None if test['stdout'] is None else program.stdout.decode()
+            stderr = None if test['stderr'] is None else program.stderr.decode()
+            status = None if test['status'] is None else program.returncode
+        write_test_file(path, {
+            "compiler-stdin": test['compiler-stdin'],
+            "compiler-args": test['compiler-args'],
+            "compiler-stdout": None if test['compiler-stdout'] is None else compiler.stdout,
+            "compiler-stderr": None if test['compiler-stderr'] is None else compiler.stderr,
+            "compiler-status": None if test['compiler-status'] is None else compiler.returncode,
+            "stdin": test['stdin'],
+            "stdout": stdout,
+            "stderr": stderr,
+            "status": status,
+        })
     exit(0)
 
 if len(sys.argv) > 2 and sys.argv[1] == "--native":

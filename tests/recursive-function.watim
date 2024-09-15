@@ -1,0 +1,18 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+fn mul(a: i32, b: i32) -> i32 {
+    $a 0 = $b 0 = or if {
+        0
+    } else {
+        $a $b 1 - mul $a +
+    }
+}
+fn main "_start" () {
+    3 5 mul proc_exit
+}
+[== Status Compiler ==]
+0
+[== Status ==]
+15
+

@@ -20,16 +20,16 @@ fn main "_start" () {
 	(table funcref (elem))
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
+	(func $0:add (param $s i32) (result i32)
+		local.get $s
+		i32.const 1
+		i32.add
+	)
 	(func $0:main (export "_start")
 		i32.const 3
 		;; make Small
 		call $0:add
 		call $0:proc_exit
-	)
-	(func $0:add (param $s i32) (result i32)
-		local.get $s
-		i32.const 1
-		i32.add
 	)
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
 	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)

@@ -34,7 +34,7 @@ fn eq(self: ByteSlice, other: ByteSlice) -> bool {
     $self unpack $other unpack Bytes:eq
 }
 fn eq-by-ref(self: .ByteSlice, other: .ByteSlice) -> bool {
-    $self ~ unpack $other ~ unpack Bytes:eq
+    $self.ptr $self.len $other.ptr $other.len Bytes:eq
 }
 fn is-empty(self: .ByteSlice) -> bool {
     $self.len 0 =
