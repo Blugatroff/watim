@@ -2588,7 +2588,7 @@ class FunctionResolver:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
                 if isinstance(taip, ResolvedPtrType):
-                    narrow_type = taip
+                    narrow_type: ResolvedPtrType | Literal[PrimitiveType.I32, PrimitiveType.I64] = taip
                     if stack[-1] != PrimitiveType.I32:
                         self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, i32]")
                     stack.pop()
@@ -4393,16 +4393,16 @@ class WatGenerator:
                         self.write_line("i32.rem_u")
                     case PrimitiveType.I64:
                         self.write_line("i64.rem_u")
-                    case other:
-                        assert_never(other)
+                    case _:
+                        assert_never(taip)
             case IntrinsicDiv(_, taip):
                 match taip:
                     case PrimitiveType.I32:
                         self.write_line("i32.div_u")
                     case PrimitiveType.I64:
                         self.write_line("i64.div_u")
-                    case other:
-                        assert_never(other)
+                    case _:
+                        assert_never(taip)
             case IntrinsicMemCopy():
                 self.write_line("memory.copy")
             case IntrinsicMemFill():
