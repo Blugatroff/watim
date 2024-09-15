@@ -267,6 +267,7 @@ class PrimitiveType(str, Enum):
             return "I64"
         if self == PrimitiveType.BOOL:
             return "Bool"
+        assert_never(self)
 
     def pretty(self) -> str:
         if self == PrimitiveType.I32:
@@ -275,6 +276,7 @@ class PrimitiveType(str, Enum):
             return "i64"
         if self == PrimitiveType.BOOL:
             return "bool"
+        assert_never(self)
 
     def size(self) -> int:
         if self == PrimitiveType.I32:
@@ -283,6 +285,7 @@ class PrimitiveType(str, Enum):
             return 8
         if self == PrimitiveType.BOOL:
             return 4
+        assert_never(self)
 
     def can_live_in_reg(self) -> bool:
         return True
@@ -614,7 +617,7 @@ class Parser:
                 continue
             return token
 
-    def retreat(self, token: Token):
+    def retreat(self):
         assert(self.cursor > 0)
         self.cursor -= 1
 
@@ -703,6 +706,8 @@ class Parser:
 
             if token.ty == TokenType.VARIANT:
                 name = self.advance(skip_ws=True)
+                if name is None:
+                    self.abort("Expected an identifier")
                 generic_parameters = self.parse_generic_parameters()
                 brace = self.advance(skip_ws=True)
                 if brace is None or brace.ty != TokenType.LEFT_BRACE:
@@ -730,6 +735,8 @@ class Parser:
 
             if token.ty == TokenType.GLOBAL:
                 name = self.advance(skip_ws=True)
+                if name is None:
+                    self.abort("expected an identifier")
                 colon = self.advance(skip_ws=True)
                 if colon is None or colon.ty != TokenType.COLON:
                     self.abort("Expected `:`")
@@ -744,10 +751,6 @@ class Parser:
             return isinstance(obj, ParsedStruct) or isinstance(obj, ParsedVariant)
         def is_global(obj: object) -> TypeGuard[ParsedGlobal]:
            return isinstance(obj, ParsedGlobal)
-        def is_function(obj: object) -> TypeGuard[ParsedFunction]:
-           return isinstance(obj, ParsedFunction)
-        def is_extern(obj: object) -> TypeGuard[ParsedExtern]:
-           return isinstance(obj, ParsedExtern)
         imports: List[ParsedImport] = list(filter(is_import, top_items))
         type_definitions: List[ParsedTypeDefinition] = list(filter(is_type_definition, top_items))
         globals: List[ParsedGlobal] = list(filter(is_global, top_items))
@@ -763,7 +766,7 @@ class Parser:
         body = self.parse_words(signature.generic_parameters)
 
         token = self.advance(skip_ws=True)
-        assert(token.ty == TokenType.RIGHT_BRACE)
+        assert(token is not None and token.ty == TokenType.RIGHT_BRACE)
         return ParsedFunction(start, signature, body)
 
     def parse_words(self, generic_parameters: List[Token]) -> List[ParsedWord]:
@@ -834,6 +837,7 @@ class Parser:
             return self.parse_call_word(generic_parameters, token)
         if token.ty == TokenType.BACKSLASH:
             token = self.advance(skip_ws=True) # skip `\`
+            assert(token is not None)
             return ParsedFunRefWord(self.parse_call_word(generic_parameters, token))
         if token.ty == TokenType.IF:
             brace = self.advance(skip_ws=True)
@@ -922,7 +926,7 @@ class Parser:
                 self.abort("Expected `)`")
             return ParsedSizeofWord(token, taip)
         if token.ty == TokenType.DOT:
-            self.retreat(token)
+            self.retreat()
             return ParsedGetFieldWord(token, self.parse_field_accesses())
         if token.ty == TokenType.ARROW:
             return ParsedIndirectCallWord(token)
@@ -2048,7 +2052,7 @@ class Stack:
         return Stack(self.clone(), [], [])
 
     def apply(self, other: 'Stack'):
-        for removed in other.negative:
+        for _ in other.negative:
             self.pop()
         for added in other.stack:
             self.append(added)
@@ -2307,12 +2311,12 @@ class FunctionResolver:
                     intrinsic = INTRINSICS[name.lexeme]
                     resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
                     return (self.resolve_intrinsic(name, stack, intrinsic, resolved_generic_arguments), False)
-                resolved_call_word = self.resolve_call_word(context.env, word)
+                resolved_call_word = self.resolve_call_word(word)
                 signature = self.module_resolver.get_signature(resolved_call_word.function)
                 self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_call_word, False)
             case ParsedForeignCallWord(name):
-                resolved_word = self.resolve_foreign_call_word(context.env, word)
+                resolved_word = self.resolve_foreign_call_word(word)
                 signature = self.module_resolver.get_signature(resolved_word.function)
                 self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_word, False)
@@ -2365,12 +2369,12 @@ class FunctionResolver:
             case ParsedFunRefWord(call):
                 match call:
                     case ParsedCallWord(name, _):
-                        resolved_call_word = self.resolve_call_word(context.env, call)
+                        resolved_call_word = self.resolve_call_word(call)
                         signature = self.module_resolver.get_signature(resolved_call_word.function)
                         stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
                         return (ResolvedFunRefWord(resolved_call_word), False)
                     case ParsedForeignCallWord(name):
-                        resolved_foreign_call_word = self.resolve_foreign_call_word(context.env, call)
+                        resolved_foreign_call_word = self.resolve_foreign_call_word(call)
                         signature = self.module_resolver.get_signature(resolved_foreign_call_word.function)
                         stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
                         return (ResolvedFunRefWord(resolved_foreign_call_word), False)
@@ -2584,21 +2588,24 @@ class FunctionResolver:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
                 if isinstance(taip, ResolvedPtrType):
+                    narrow_type = taip
                     if stack[-1] != PrimitiveType.I32:
                         self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, i32]")
                     stack.pop()
                 elif taip == PrimitiveType.I32:
+                    narrow_type = PrimitiveType.I32
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                     stack.append(taip)
                 elif taip == PrimitiveType.I64:
+                    narrow_type = PrimitiveType.I64
                     self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                     stack.append(taip)
                 else:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]} cannot add to {format_resolved_type(taip)}")
                 if intrinsic == IntrinsicType.ADD:
-                    return ResolvedIntrinsicAdd(token, taip)
+                    return ResolvedIntrinsicAdd(token, narrow_type)
                 if intrinsic == IntrinsicType.SUB:
-                    return ResolvedIntrinsicSub(token, taip)
+                    return ResolvedIntrinsicSub(token, narrow_type)
             case IntrinsicType.DROP:
                 if len(stack) == 0:
                     self.abort(token, "`drop` expected non empty stack")
@@ -2609,19 +2616,20 @@ class FunctionResolver:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
                 if taip == PrimitiveType.I32:
+                    narrow_type = PrimitiveType.I32
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 elif taip == PrimitiveType.I64:
+                    narrow_type = PrimitiveType.I64
                     popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                 else:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [i32, i32] or [i64, i64] on stack")
                 stack.append(taip)
                 if intrinsic == IntrinsicType.MOD:
-                    return ResolvedIntrinsicMod(token, taip)
+                    return ResolvedIntrinsicMod(token, narrow_type)
                 if intrinsic == IntrinsicType.MUL:
-                    return ResolvedIntrinsicMul(token, taip)
+                    return ResolvedIntrinsicMul(token, narrow_type)
                 if intrinsic == IntrinsicType.DIV:
-                    return ResolvedIntrinsicDiv(token, taip)
-                assert_never(intrinsic)
+                    return ResolvedIntrinsicDiv(token, narrow_type)
             case IntrinsicType.AND | IntrinsicType.OR:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
@@ -2658,20 +2666,22 @@ class FunctionResolver:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-1]
                 if taip == PrimitiveType.I32:
+                    narrow_type = PrimitiveType.I32
                     self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 elif taip == PrimitiveType.I64:
+                    narrow_type = PrimitiveType.I64
                     self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                 else:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [i32, i32] or [i64, i64] on stack")
                 stack.append(PrimitiveType.BOOL)
                 if intrinsic == IntrinsicType.GREATER:
-                    return ResolvedIntrinsicGreater(token, taip)
+                    return ResolvedIntrinsicGreater(token, narrow_type)
                 if intrinsic == IntrinsicType.LESS:
-                    return ResolvedIntrinsicLess(token, taip)
+                    return ResolvedIntrinsicLess(token, narrow_type)
                 if intrinsic == IntrinsicType.GREATER_EQ:
-                    return ResolvedIntrinsicGreaterEq(token, taip)
+                    return ResolvedIntrinsicGreaterEq(token, narrow_type)
                 if intrinsic == IntrinsicType.LESS_EQ:
-                    return ResolvedIntrinsicLessEq(token, taip)
+                    return ResolvedIntrinsicLessEq(token, narrow_type)
             case IntrinsicType.LOAD8:
                 self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32)])
                 stack.append(PrimitiveType.I32)
@@ -2712,16 +2722,18 @@ class FunctionResolver:
             case IntrinsicType.STORE:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
-                if not isinstance(stack[-2], ResolvedPtrType) or not resolved_type_eq(stack[-2].child, stack[-1]):
+                ptr_type = stack[-2]
+                if not isinstance(ptr_type, ResolvedPtrType) or not resolved_type_eq(ptr_type.child, stack[-1]):
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, a]")
                 taip = stack[-1]
                 stack.pop()
                 stack.pop()
                 return ResolvedIntrinsicStore(token, taip)
             case IntrinsicType.NOT:
-                if len(stack) == 0 or (stack[-1] != PrimitiveType.I32 and stack[-1] != PrimitiveType.BOOL):
+                taip = stack[-1]
+                if len(stack) == 0 or (taip != PrimitiveType.I32 and taip != PrimitiveType.BOOL) or not isinstance(taip, PrimitiveType):
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected a i32 or bool on the stack")
-                return ResolvedIntrinsicNot(token, stack[-1])
+                return ResolvedIntrinsicNot(token, taip)
             case IntrinsicType.UNINIT:
                 if len(generic_arguments) != 1:
                     self.abort(token, "uninit only accepts one generic argument")
@@ -2747,7 +2759,7 @@ class FunctionResolver:
                 abort()
         return list(reversed(popped))
 
-    def resolve_call_word(self, env: Env, word: ParsedCallWord) -> ResolvedCallWord:
+    def resolve_call_word(self, word: ParsedCallWord) -> ResolvedCallWord:
         resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
         function = self.module_resolver.resolve_function_name(word.name)
         signature = self.module_resolver.get_signature(function)
@@ -2781,7 +2793,7 @@ class FunctionResolver:
                     return other
         return inner
 
-    def resolve_foreign_call_word(self, env: Env, word: ParsedForeignCallWord) -> ResolvedCallWord:
+    def resolve_foreign_call_word(self, word: ParsedForeignCallWord) -> ResolvedCallWord:
         resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
         for (qualifier, imps) in self.module_resolver.imports.items():
             if qualifier == word.module.lexeme:
@@ -2880,7 +2892,7 @@ class ModuleResolver:
         for i, type_definition in enumerate(self.resolved_type_definitions):
             if isinstance(type_definition, ResolvedStruct) or isinstance(type_definition, ResolvedVariant):
                 if self.is_struct_recursive(ResolvedStructHandle(self.id, i)):
-                    raise self.abort(type_definition.name, "structs and variants cannot be recursive")
+                    self.abort(type_definition.name, "structs and variants cannot be recursive")
         self.globals = list(map(self.resolve_global, self.module.globals))
         resolved_signatures = list(map(lambda f: self.resolve_function_signature(f.signature), self.module.functions))
         self.signatures = resolved_signatures
@@ -2896,7 +2908,7 @@ class ModuleResolver:
         for index, signature in enumerate(self.signatures):
             if signature.name.lexeme == name.lexeme:
                 return ResolvedFunctionHandle(self.id, index)
-        for qualifier, imps in self.imports.items():
+        for _, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
                     if item.name.lexeme == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
@@ -2983,7 +2995,7 @@ class ModuleResolver:
         for index, struct in enumerate(self.module.type_definitions):
             if struct.name.lexeme == name.lexeme:
                 return ResolvedStructHandle(self.id, index)
-        for qualifier, imps in self.imports.items():
+        for _, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
                     if item.name.lexeme == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
@@ -3551,7 +3563,7 @@ class Monomizer:
             module = self.modules[module_id]
             externs: Dict[int, Extern] = { handle.index: extern for (handle,extern) in self.externs.items() if handle.module == module_id }
             globals: List[Global] = [globl for id, globl in self.globals.items() if id.module == module_id]
-            type_definitions: Dict[int, List[TypeDefinition]] = { handle.index: [taip for generics,taip in monomorphizations] for handle,monomorphizations in self.type_definitions.items() if handle.module == module_id }
+            type_definitions: Dict[int, List[TypeDefinition]] = { handle.index: [taip for _,taip in monomorphizations] for handle,monomorphizations in self.type_definitions.items() if handle.module == module_id }
             functions = { handle.index: function for handle,function in self.functions.items() if handle.module == module_id }
             mono_modules[module_id] = Module(module_id, type_definitions, externs, globals, functions, self.modules[module_id].data)
         return self.function_table, mono_modules
@@ -3791,7 +3803,7 @@ class Monomizer:
                 return UnnamedStructWord(token, monomized_taip, offset)
             case ResolvedStructFieldInitWord(token, struct, generic_arguments, taip):
                 generics_here = list(map(lambda t: self.monomize_type(t, generics), generic_arguments))
-                (struct_handle, monomized_struct) = self.monomize_struct(struct, generics_here)
+                (_,monomized_struct) = self.monomize_struct(struct, generics_here)
                 if isinstance(monomized_struct, Variant):
                     assert(False)
                 assert(struct_space is not None)
@@ -3808,7 +3820,7 @@ class Monomizer:
                 if variant.size() > 4:
                     copy_space_offset.value += variant.size()
                 return VariantWord(token, case, variant_handle, offset)
-            case ResolvedMatchWord(token, resolved_variant_type, by_ref, cases, default_case, parameters, returns):
+            case ResolvedMatchWord(token, resolved_variant_type, by_ref, cases, default_case, resolved_parameters, resolved_returns):
                 monomized_cases: List[MatchCase] = []
                 for resolved_case in cases:
                     words = self.monomize_words(resolved_case.words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
@@ -3816,6 +3828,8 @@ class Monomizer:
                 monomized_default_case = None if default_case is None else self.monomize_words(default_case, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 monomized_variant = self.monomize_struct(resolved_variant_type.struct, this_generics)[0]
+                parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
+                returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
             case ResolvedTupleMakeWord(token, tupl):
                 offset = copy_space_offset.value
@@ -4244,16 +4258,19 @@ class WatGenerator:
                 self.write_set(local_id, locals, var_lives_in_memory, taip, [])
             case CallWord(name, function_handle, return_space_offset):
                 self.write_indent()
-                if isinstance(function_handle, ExternHandle):
-                    extern = self.lookup_extern(function_handle)
-                    signature = extern.signature
-                    self.write(f"call ${function_handle.module}:{name.lexeme}")
-                if isinstance(function_handle, FunctionHandle):
-                    function = self.lookup_function(function_handle)
-                    signature = function.signature
-                    self.write(f"call ${function_handle.module}:{function.signature.name.lexeme}")
-                    if function_handle.instance is not None:
-                        self.write(f":{function_handle.instance}")
+                match function_handle:
+                    case ExternHandle():
+                        extern = self.lookup_extern(function_handle)
+                        signature = extern.signature
+                        self.write(f"call ${function_handle.module}:{name.lexeme}")
+                    case FunctionHandle():
+                        function = self.lookup_function(function_handle)
+                        signature = function.signature
+                        self.write(f"call ${function_handle.module}:{function.signature.name.lexeme}")
+                        if function_handle.instance is not None:
+                            self.write(f":{function_handle.instance}")
+                    case other:
+                        assert_never(other)
                 self.write_return_struct_receiving(return_space_offset, signature.returns)
             case IndirectCallWord(token, taip, return_space_offset):
                 self.write_indent()
