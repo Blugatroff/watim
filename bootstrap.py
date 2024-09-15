@@ -256,11 +256,14 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
 TYPE_LEXEME_DICT: dict[TokenType, str] = {v: k for k, v in LEXEME_TYPE_DICT.items()}
 
 class PrimitiveType(str, Enum):
+    I8 = "TYPE_I8"
     I32 = "TYPE_I32"
     I64 = "TYPE_I64"
     BOOL = "TYPE_BOOL"
 
     def __str__(self) -> str:
+        if self == PrimitiveType.I8:
+            return "I8"
         if self == PrimitiveType.I32:
             return "I32"
         if self == PrimitiveType.I64:
@@ -270,6 +273,8 @@ class PrimitiveType(str, Enum):
         assert_never(self)
 
     def pretty(self) -> str:
+        if self == PrimitiveType.I8:
+            return "i8"
         if self == PrimitiveType.I32:
             return "i32"
         if self == PrimitiveType.I64:
@@ -279,6 +284,8 @@ class PrimitiveType(str, Enum):
         assert_never(self)
 
     def size(self) -> int:
+        if self == PrimitiveType.I8:
+            return 1
         if self == PrimitiveType.I32:
             return 4
         if self == PrimitiveType.I64:
@@ -1137,6 +1144,8 @@ class Parser:
         token = self.advance(skip_ws=True)
         if token is None:
             self.abort("Expected a type")
+        if token.ty == TokenType.I8:
+            return PrimitiveType.I8
         if token.ty == TokenType.I32:
             return PrimitiveType.I32
         if token.ty == TokenType.I64:
@@ -2189,8 +2198,10 @@ class FunctionResolver:
             case ParsedStringWord(token, string):
                 stack.append(ResolvedPtrType(PrimitiveType.I32))
                 stack.append(PrimitiveType.I32)
-                offset = len(self.module_resolver.data)
-                self.module_resolver.data.extend(string)
+                offset = self.module_resolver.data.find(string)
+                if offset == -1:
+                    offset = len(self.module_resolver.data)
+                    self.module_resolver.data.extend(string)
                 return (StringWord(token, offset, len(string)), False)
             case ParsedCastWord(token, parsed_taip):
                 source_type = stack.pop()
@@ -3078,7 +3089,13 @@ class Struct:
         return self._size
 
     def field_offset(self, field_index: int) -> int:
-        return sum(self.fields[i].taip.size() for i in range(0, field_index))
+        offset = 0
+        for i in range(0, field_index):
+            field_size = self.fields[i].taip.size()
+            offset += field_size
+            if field_size % 4 != 0 and i + 1 < len(self.fields) and self.fields[i + 1].taip.size() >= 4:
+                offset = align_to(offset, 4)
+        return offset
 
 @dataclass
 class VariantCase:
@@ -3808,10 +3825,10 @@ class Monomizer:
                     assert(False)
                 assert(struct_space is not None)
                 field_copy_space_offset: int = struct_space
-                for field in monomized_struct.fields:
+                for i,field in enumerate(monomized_struct.fields):
                     if field.name.lexeme == token.lexeme:
+                        field_copy_space_offset += monomized_struct.field_offset(i)
                         break
-                    field_copy_space_offset += field.taip.size()
                 return StructFieldInitWord(token, self.monomize_type(taip, generics), field_copy_space_offset)
             case ResolvedVariantWord(token, case, resolved_variant_type):
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
@@ -3944,7 +3961,7 @@ class Monomizer:
         struct_instance = Struct(s.name, fields, generics, 69)
         handle = self.add_struct(struct, struct_instance, generics)
         fields.extend(map(lambda t: self.monomize_named_type(t, generics), s.fields))
-        struct_instance._size = sum(field.taip.size() for field in fields)
+        struct_instance._size = struct_instance.field_offset(len(struct_instance.fields) - 1) + struct_instance.fields[-1].taip.size() if len(struct_instance.fields) != 0 else 0
         return handle, struct_instance
 
     def monomize_named_type(self, taip: ResolvedNamedType, generics: List[Type]) -> NamedType:
@@ -4280,10 +4297,9 @@ class WatGenerator:
                 self.write(")")
                 self.write_return_struct_receiving(return_space_offset, taip.returns)
             case IntrinsicStore(token, taip):
-                if not taip.can_live_in_reg():
-                    self.write_line(f"i32.const {taip.size()} memory.copy")
-                else:
-                    self.write_line("i32.store")
+                self.write_indent()
+                self.write_store(taip)
+                self.write("\n")
             case IntrinsicAdd(token, taip):
                 if isinstance(taip, PtrType) or taip == PrimitiveType.I32:
                     self.write_line("i32.add")
@@ -4365,7 +4381,7 @@ class WatGenerator:
                 else:
                     self.write_line("i32.rotr")
             case IntrinsicAnd(_, taip):
-                if taip == PrimitiveType.I32 or taip == PrimitiveType.BOOL:
+                if taip == PrimitiveType.I32 or taip == PrimitiveType.BOOL or taip == PrimitiveType.I8:
                     self.write_line("i32.and")
                     return
                 if taip == PrimitiveType.I64:
@@ -4375,6 +4391,9 @@ class WatGenerator:
             case IntrinsicNot(_, taip):
                 if taip == PrimitiveType.BOOL:
                     self.write_line("i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and")
+                    return
+                if taip == PrimitiveType.I8:
+                    self.write_line("i32.const 255 i32.and i32.const 255 i32.xor i32.const 255 i32.and")
                     return
                 if taip == PrimitiveType.I32:
                     self.write_line("i32.const -1 i32.xor")
@@ -4420,18 +4439,34 @@ class WatGenerator:
                 else:
                     self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add")
             case CastWord(_, source, taip):
+                if (source == PrimitiveType.I32 or isinstance(source, PtrType)) and isinstance(taip, PtrType):
+                    self.write_line(f";; cast to {format_type(taip)}")
+                    return
+                if source == PrimitiveType.I32 and isinstance(taip, FunctionType):
+                    self.write_line(f";; cast to {format_type(taip)}")
+                    return
+                if source == PrimitiveType.I32 and isinstance(taip, StructType) and taip.size() == 4:
+                    self.write_line(f";; cast to {format_type(taip)}")
+                    return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I64: 
                     self.write_line(f"i64.extend_i32_s ;; cast to {format_type(taip)}")
+                    return
+                if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I8: 
+                    self.write_line(f"i32.const 255 i32.and ;; cast to {format_type(taip)}")
+                    return
+                if source == PrimitiveType.I64 and taip == PrimitiveType.I8: 
+                    self.write_line(f"i64.const 255 i64.and i32.wrap_i64 ;; cast to {format_type(taip)}")
                     return
                 if source == PrimitiveType.I64 and taip != PrimitiveType.I64:
                     self.write_line(f"i32.wrap_i64 ;; cast to {format_type(taip)}")
                     return
-                if source.can_live_in_reg() and taip == PrimitiveType.I32:
+                if source.can_live_in_reg() and source.size() <= 4 and taip == PrimitiveType.I32:
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
-                if source == PrimitiveType.I32 and isinstance(taip, StructType):
-                    assert(taip.can_live_in_reg())
-                self.write_line(f";; cast to {format_type(taip)}")
+                if source.can_live_in_reg() and source.size() <= 8 and taip == PrimitiveType.I64:
+                    self.write_line(f";; cast to {format_type(taip)}")
+                    return
+                self.write_line(f"UNSUPPORTED Cast from {format_type(source)} to {format_type(taip)}")
             case StringWord(_, offset, string_len):
                 self.write_line(f"i32.const {self.module_data_offsets[module] + offset} i32.const {string_len}")
             case SizeofWord(_, taip):
@@ -4448,18 +4483,16 @@ class WatGenerator:
                 for offset in loads:
                     self.write(f" i32.load offset={offset}")
                 self.write(" call $intrinsic:flip ")
-                if target_taip.can_live_in_reg():
-                    self.write_type(target_taip)
-                    self.write(".store\n")
-                else:
-                    self.write(f" i32.const {target_taip.size()} memory.copy\n")
+                self.write_store(target_taip)
+                self.write("\n")
             case LoadWord(_, taip, copy_space_offset):
+                self.write_indent()
                 if not taip.can_live_in_reg():
-                    self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset}")
                     self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy\n")
+                elif taip == PrimitiveType.I8:
+                    self.write("i32.load8\n")
                 else:
-                    self.write_indent()
                     self.write_type(taip)
                     self.write(".load\n")
             case BreakWord():
@@ -4545,16 +4578,14 @@ class WatGenerator:
                     self.write(f";; make {format_type(taip)}\n")
                     return
                 self.write(f";; make {format_type(taip)}\n")
-                field_offset = taip.size()
                 self.indent()
-                for field in reversed(struct.fields):
-                    field_offset -= field.taip.size()
+                for i in reversed(range(0, len(struct.fields))):
+                    field = struct.fields[i]
+                    field_offset = struct.field_offset(i)
                     self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + field_offset} i32.add call $intrinsic:flip ")
-                    if field.taip.can_live_in_reg():
-                        self.write("i32.store\n")
-                    else:
-                        self.write(f"i32.const {field.taip.size()} memory.copy\n")
+                    self.write_store(field.taip)
+                    self.write("\n")
                 self.dedent()
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
@@ -4693,6 +4724,16 @@ class WatGenerator:
                 assert_never(other)
         return False
 
+    def write_store(self, taip: Type):
+        if not taip.can_live_in_reg():
+            self.write(f"i32.const {taip.size()} memory.copy")
+        elif taip == PrimitiveType.I8:
+            self.write("i32.store8")
+        elif taip == PrimitiveType.I64:
+            self.write("i64.store")
+        else:
+            self.write("i32.store")
+
     def write_set(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, str], var_lives_in_memory: bool, target_taip: Type, loads: List[int]):
         self.write_indent()
         def write_ident():
@@ -4723,18 +4764,16 @@ class WatGenerator:
             self.write("global.get ")
         write_ident()
         if len(loads) == 0:
-            if target_taip.can_live_in_reg():
-                self.write(" call $intrinsic:flip i32.store\n")
-                return
-            self.write(f" call $intrinsic:flip i32.const {target_taip.size()} memory.copy\n")
+            self.write(" call $intrinsic:flip ")
+            self.write_store(target_taip)
+            self.write("\n")
             return
         if target_taip.can_live_in_reg():
             for i, load in enumerate(loads):
                 self.write(f" i32.const {load} i32.add ")
                 if i + 1 == len(loads):
                     self.write("call $intrinsic:flip ")
-                    self.write_type(target_taip)
-                    self.write(".store")
+                    self.write_store(target_taip)
                 else:
                     self.write("i32.load")
             self.write("\n")

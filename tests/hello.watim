@@ -112,8 +112,8 @@ fn main "_start" () {
 	(memory 1 65536)
 	(export "memory" (memory 0))
 	(table funcref (elem))
-	(global $stac:k (mut i32) (i32.const 24))
-	(data (i32.const 0) "Failed to parse: ''\n\n")
+	(global $stac:k (mut i32) (i32.const 20))
+	(data (i32.const 0) "Failed to parse: '\n")
 	(func $0:read (param $file i32) (param $buf-addr i32) (param $buf-size i32) (result i32)
 		(local $nread i32)
 		(local $iov i32)
@@ -245,7 +245,7 @@ fn main "_start" () {
 						call $0:write
 						drop
 						i32.const 1
-						i32.const 18 i32.const 1
+						i32.const 17 i32.const 1
 						call $0:write
 						drop
 						i32.const 1
@@ -422,7 +422,7 @@ fn main "_start" () {
 				i32.sub
 				i32.add
 				i32.load
-				i32.const 19 i32.const 1
+				i32.const 18 i32.const 1
 				drop
 				i32.load
 				i32.eq
@@ -442,7 +442,7 @@ fn main "_start" () {
 		call $0:dup:0
 		call $0:print
 		i32.const 1
-		i32.const 20 i32.const 1
+		i32.const 18 i32.const 1
 		call $0:write
 		drop
 		call $0:exit
