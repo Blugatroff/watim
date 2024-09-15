@@ -1637,6 +1637,7 @@ class IntrinsicType(str, Enum):
     ROTL = "ROTL"
     MEM_GROW = "MEM_GROW"
     MEM_COPY = "MEM_COPY"
+    MEM_FILL = "MEM_FILL"
     FLIP = "FLIP"
     UNINIT = "UNINIT"
     SET_STACK_SIZE = "SET_STACK_SIZE"
@@ -1666,6 +1667,7 @@ INTRINSICS: dict[str, IntrinsicType] = {
         "/=": IntrinsicType.NOT_EQ,
         "*": IntrinsicType.MUL,
         "mem-copy": IntrinsicType.MEM_COPY,
+        "mem-fill": IntrinsicType.MEM_FILL,
         "rotl": IntrinsicType.ROTL,
         "rotr": IntrinsicType.ROTR,
         "or": IntrinsicType.OR,
@@ -1763,6 +1765,10 @@ class IntrinsicMemCopy:
     token: Token
 
 @dataclass
+class IntrinsicMemFill:
+    token: Token
+
+@dataclass
 class ResolvedIntrinsicEqual:
     token: Token
     taip: ResolvedType
@@ -1802,7 +1808,7 @@ class ResolvedIntrinsicUninit:
     token: Token
     taip: ResolvedType
 
-ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit | IntrinsicSetStackSize
+ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicStore8 | IntrinsicLoad8 | IntrinsicMemCopy | IntrinsicMemFill | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual |IntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit | IntrinsicSetStackSize
 
 ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord | ResolvedTupleMakeWord | ResolvedTupleUnpackWord
 
@@ -2676,6 +2682,9 @@ class FunctionResolver:
             case IntrinsicType.MEM_COPY:
                 self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32])
                 return IntrinsicMemCopy(token)
+            case IntrinsicType.MEM_FILL:
+                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32, PrimitiveType.I32])
+                return IntrinsicMemFill(token)
             case IntrinsicType.NOT_EQ | IntrinsicType.EQ:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
@@ -3501,7 +3510,7 @@ class TupleUnpackWord:
     item: List[Type]
     copy_space_offset: int
 
-IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit | IntrinsicSetStackSize
+IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicLoad8 | IntrinsicStore8 | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemFill | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit | IntrinsicSetStackSize
 
 Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord | TupleMakeWord | TupleUnpackWord
 
@@ -3712,6 +3721,8 @@ class Monomizer:
             case ResolvedIntrinsicStore(token, taip):
                 return IntrinsicStore(token, self.monomize_type(taip, generics))
             case IntrinsicMemCopy():
+                return word
+            case IntrinsicMemFill():
                 return word
             case IntrinsicMemGrow():
                 return word
@@ -4377,6 +4388,8 @@ class WatGenerator:
                         assert_never(other)
             case IntrinsicMemCopy():
                 self.write_line("memory.copy")
+            case IntrinsicMemFill():
+                self.write_line("memory.fill")
             case IntrinsicMemGrow():
                 self.write_line("memory.grow")
             case IntrinsicSetStackSize():

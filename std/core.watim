@@ -65,11 +65,6 @@ fn escape(char: i32, dest: .i32) -> i32 {
 }
 
 fn clear(ptr: .i32, len: i32) {
-    0 @i
-    loop {
-        $i $len = if { break }
-        $ptr $i + 0 store8
-        $i 1 + #i
-    }
+    $ptr 0 $len mem-fill
 }
 
