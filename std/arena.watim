@@ -204,7 +204,7 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
             #self.used-pages
         }
         $self.used-pages 0!.Page /= if {
-            $self.used-pages !.i32 sizeof(Page) + $point.pos + $self.size $point.size - CORE:clear
+            // $self.used-pages !.i32 sizeof(Page) + $point.pos + $self.size $point.size - CORE:clear
             $point.pos #self.used-pages.pos
         }
         $point.size #self.size

@@ -1,0 +1,381 @@
+import "../std/core.watim" as Core
+import "../std/maybe.watim" as Maybe (Maybe, assert-none, assert-some)
+import "../std/result.watim" as Result (Result)
+import "../std/result.watim" as Result (Result)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../std/arena.watim" as Arena (Arena)
+import "../std/array.watim" as Array (Array)
+import "../std/map.watim" as Map (Map)
+import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/util.watim" as Util (i32-format)
+
+import "./lexer.watim" as Lexer (Token)
+import "./type.watim" as Resolved (ModuleId, CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format)
+import "./resolver.watim" as Resolver
+
+struct TypeId {
+    index: i32
+}
+fn TypeId-eq(a: .TypeId, b: .TypeId) -> bool {
+    $a.index $b.index =
+}
+fn TypeId-format(fmt: .Formatter, self: .TypeId) {
+    $fmt "(TypeId " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+
+struct NamedTypeId {
+    name: Token
+    type: TypeId
+}
+fn NamedTypeId-eq(a: .NamedTypeId, b: .NamedTypeId) -> bool {
+    &a.type &b.type TypeId-eq
+}
+
+struct FunType {
+    parameters: Array<TypeId>
+    returns: Array<TypeId>
+}
+fn FunType-format(fmt: .Formatter, self: .FunType) {
+    $fmt "(FunType " Fmt:write
+    $fmt \TypeId-format &self.parameters Array:format<TypeId>
+    $fmt " " Fmt:write
+    $fmt \TypeId-format &self.returns Array:format<TypeId>
+    $fmt ")" Fmt:write
+}
+
+variant Type {
+    case Bool
+    case I32
+    case I64
+    case Ptr -> TypeId
+    case Custom -> CustomTypeHandle
+    case Fun -> FunType
+    case Tuple -> Array<TypeId>
+}
+fn Type-eq(a: .Type, b: .Type) -> bool { block {
+    $a !.i32 ~ $b !.i32 ~ /= if { // compare tags
+        0 1 = break
+    }
+    $a match {
+        case Ptr -> { $b match {
+            case Ptr -> { flip TypeId-eq }
+            case _ -> { drop drop 0 1 = }
+        } }
+        case Custom -> { $b match {
+            case Custom -> { flip CustomTypeHandle-eq }
+            case _ -> { drop drop 0 1 = }
+        } }
+        case Fun -> { @a $b match {
+            case Fun -> {
+                @b
+                \TypeId-eq &a.parameters &b.parameters Array:eq<TypeId>
+                \TypeId-eq &a.returns    &b.returns    Array:eq<TypeId> and
+            }
+            case _ -> { drop 0 1 = }
+        } }
+        case Tuple -> { \TypeId-eq flip $b match {
+            case Tuple -> { Array:eq<TypeId> }
+            case _ -> { drop drop drop 0 1 = }
+        } }
+        case _ -> { drop 1 1 = }
+    }
+} }
+fn Type-format(fmt: .Formatter, self: .Type) { block {
+    $fmt $self match {
+        case Bool -> { "Bool" }
+        case I32 -> { "I32" }
+        case I64 -> { "I64" }
+        case Ptr -> { $fmt "(Ptr " Fmt:write TypeId-format $fmt ")" Fmt:write break }
+        case Custom -> {
+            @handle
+            "(CustomType " Fmt:write
+            $fmt $handle.module.index i32-format
+            $fmt " " Fmt:write
+            $fmt $handle.index i32-format
+            $fmt ")" Fmt:write break
+        }
+        case Fun -> { FunType-format break }
+        case Tuple -> { \TypeId-format flip Array:format<TypeId> break }
+    } Fmt:write
+} }
+
+variant CustomType {
+    case Struct -> Struct
+    case Variant -> Variant
+}
+fn CustomType-eq(a: .CustomType, b: .CustomType) -> bool {
+    $a match {
+        case Struct -> { $b match {
+            case Struct -> { Struct-eq }
+            case _ -> { drop drop 0 1 = }
+        } }
+        case Variant -> { $b match {
+            case Variant -> { Variant-eq }
+            case _ -> { drop drop 0 1 = }
+        } }
+    }
+}
+
+struct Struct {
+    name: Token
+    fields: Array<NamedTypeId>
+}
+fn Struct-eq(a: .Struct, b: .Struct) -> bool {
+    \NamedTypeId-eq &a.fields &b.fields Array:eq<NamedTypeId>
+}
+
+struct VariantCase {
+    name: Token
+    type: Maybe<TypeId>
+}
+fn VariantCase-eq(a: .VariantCase, b: .VariantCase) -> bool {
+    &a.type match {
+        case None -> { &b.type match {
+            case None -> { 1 1 = }
+            case Some -> { drop 0 1 = }
+        } }
+        case Some -> { &b.type match {
+            case Some -> { TypeId-eq }
+            case None -> { drop 0 1 = }
+        } }
+    }
+}
+
+struct Variant {
+    name: Token
+    cases: Array<VariantCase>
+}
+fn Variant-eq(a: .Variant, b: .Variant) -> bool {
+    \VariantCase-eq &a.cases &b.cases Array:eq<VariantCase>
+}
+
+struct Module {
+    custom-types: Array<CustomType>
+    globals: Array<Global>
+}
+struct Monomized {
+    types: Array<Maybe<Type>>
+    modules: Map<ByteSlice, Module>
+}
+
+struct Global {
+    name: Token
+    type: TypeId
+}
+
+struct Ctx {
+    arena: .Arena
+    module-id: ModuleId
+    resolved-modules: .Array<Resolver:Module>
+    types: Array<Maybe<Type>>
+    custom-types: Array<CustomType>
+    type-monomize-cache: .Map<Resolved:Type, TypeId>
+}
+
+struct PrimitiveTypes { a: Maybe<Type> b: Maybe<Type> c: Maybe<Type> }
+global PRIMITIVE_TYPES: PrimitiveTypes
+
+fn primitive-types() -> Array<Maybe<Type>> {
+    uninit<PrimitiveTypes> @zeroed
+    &zeroed !.i32 0 sizeof(PrimitiveTypes) mem-fill
+    &PRIMITIVE_TYPES !.i32 &zeroed !.i32 sizeof(PrimitiveTypes) Core:bytes-eq if {
+        make Type.Bool make Maybe<Type>.Some #PRIMITIVE_TYPES.a
+        make Type.I32  make Maybe<Type>.Some #PRIMITIVE_TYPES.b
+        make Type.I64  make Maybe<Type>.Some #PRIMITIVE_TYPES.c
+    }
+    &PRIMITIVE_TYPES.a sizeof(PrimitiveTypes) sizeof(Maybe<Type>) / Array:init-no-copy<Maybe<Type>>
+}
+
+fn Bool-id() -> TypeId { 0 make TypeId }
+fn I32-id () -> TypeId { 1 make TypeId }
+fn I64-id () -> TypeId { 2 make TypeId }
+
+fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolver:Module>) -> Monomized {
+    \Resolved:Type-eq Map:new<Resolved:Type, TypeId> @type-monomize-cache
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @monomized-modules
+    primitive-types @types
+    0 @i
+    loop {
+        $i $modules.values.len = if { break }
+        &modules.values $i Array:get<Resolver:Module> @module
+        make Ctx {
+            $arena @arena
+            $i make ModuleId @module-id
+            &modules.values @resolved-modules
+            $types @types
+            &type-monomize-cache @type-monomize-cache
+            Array:new<CustomType> @custom-types
+        } @ctx
+        $arena &monomized-modules
+        &modules.keys $i Array:get<ByteSlice> ~
+        make Module {
+            &ctx &module.globals.values monomize-globals @globals
+            $ctx.custom-types @custom-types
+        }
+        Map:insert<ByteSlice, Module> drop
+        $i 1 + #i
+    }
+    $types $monomized-modules make Monomized
+}
+
+fn monomize-globals(ctx: .Ctx, globals: .Array<Resolver:Global>) -> Array<Global> {
+    $ctx.arena $globals.len Array:new-with-capacity<Global> @monomized
+    0 @i
+    loop {
+        $i $globals.len = if { $monomized break }
+        $globals $i Array:get<Resolver:Global> @globl
+        &monomized $ctx $globl monomize-globl Array:push-assert-no-alloc<Global>
+        $i 1 + #i
+    }
+}
+
+fn monomize-globl(ctx: .Ctx, globl: .Resolver:Global) -> Global {
+    Array:new<TypeId> @empty
+    $globl.name $ctx &globl.type &empty monomize-type' make Global
+}
+
+fn compare-stack-key(a: .[.Resolved:Type, .Array<TypeId>], b: .[.Resolved:Type, .Array<TypeId>]) -> bool {
+    $a ~ [,] @a-gen-args @a-type
+    $b ~ [,] @b-gen-args @b-type
+    \TypeId-eq $a-gen-args $b-gen-args Array:eq<TypeId>
+    $a-type $b-type Resolved:Type-eq and
+}
+fn monomize-type'(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<TypeId>) -> TypeId {
+    \compare-stack-key Map:new<[.Resolved:Type, .Array<TypeId>], TypeId> @stack
+    $ctx $type $generic-arguments &stack monomize-type
+}
+fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> TypeId { block {
+    $type match {
+        case Bool -> { Bool-id break }
+        case I32 -> { I32-id break }
+        case I64 -> { I64-id break }
+        case Generic -> { .index ~ $generic-arguments flip Array:get<TypeId> ~ break }
+        case _ -> { drop }
+    }
+    $stack $type $generic-arguments [,2] @key &key Map:get<[.Resolved:Type, .Array<TypeId>], TypeId> match {
+        case Some -> { ~ break }
+        case None -> {}
+    }
+    $ctx.type-monomize-cache $type Map:get<Resolved:Type, TypeId> match {
+        case None -> {}
+        case Some -> { ~ break }
+    }
+    $ctx.types.len make TypeId @type-id
+    $ctx.arena &ctx.types make Maybe<Type>.None Array:push<Maybe<Type>>
+    $ctx.arena &stack.keys $type $generic-arguments [,2] Array:push<[.Resolved:Type, .Array<TypeId>]>
+    $ctx.arena &stack.values $type-id Array:push<TypeId>
+    $type match {
+        case Ptr -> {
+            $ctx flip ~ $generic-arguments $stack monomize-type make Type.Ptr
+        }
+        case Tuple -> {
+            $ctx flip .items.inner $generic-arguments $stack monomize-types make Type.Tuple
+        }
+        case Fun -> {
+            @fun-type
+            $ctx &fun-type.parameters.inner $generic-arguments $stack monomize-types
+            $ctx &fun-type.returns   .inner $generic-arguments $stack monomize-types
+            make FunType make Type.Fun
+        }
+        case Custom -> {
+            $ctx flip $generic-arguments $stack monomize-custom-type make Type.Custom
+        }
+        case _ -> { $ctx flip $generic-arguments $stack monomize-type break }
+    } @monomized-type
+    &ctx.types \cmp-perhaps-empty-type-slot &monomized-type Array:find<Maybe<Type>, .Type> if {
+        $ctx.types.len $type-id.index 1 + = if {
+            &ctx.types Array:pop<Maybe<Type>> assert-none<Type>
+        }
+        make TypeId
+    } else {
+        drop
+        &ctx.types $type-id.index $monomized-type make Maybe<Type>.Some Array:set<Maybe<Type>> drop
+        $ctx.arena $ctx.type-monomize-cache $type ~ $type-id Map:insert<Resolved:Type, TypeId> drop
+        $type-id
+    }
+    &stack.keys Array:pop<[.Resolved:Type, .Array<TypeId>]> drop
+    &stack.values Array:pop<TypeId> drop
+} }
+
+fn cmp-perhaps-empty-type-slot(slot: .Maybe<Type>, type: .Type) -> bool {
+    $slot match {
+        case None -> { 0 1 = }
+        case Some -> { $type Type-eq }
+    }
+}
+
+fn monomize-types(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> Array<TypeId> { block {
+    $ctx.arena $types.len Array:new-with-capacity<TypeId> @monomized
+    loop {
+        $monomized.len $types.len = if { $monomized break }
+        &monomized
+        $ctx $types $monomized.len Array:get<Resolved:Type> $generic-arguments $stack monomize-type
+        Array:push-assert-no-alloc<TypeId>
+    }
+} }
+
+fn monomize-custom-type(ctx: .Ctx, custom-type: .Resolved:CustomTypeType, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> CustomTypeHandle {
+    $ctx &custom-type.generic-arguments.inner $generic-arguments $stack monomize-types @generic-arguments-for-custom-type
+
+    $ctx.resolved-modules $custom-type.type-definition.module.index Array:get<Resolver:Module> .custom-types.values
+    $custom-type.type-definition.index Array:get<Resolved:CustomType> @resolved-custom-type
+
+    $resolved-custom-type match {
+        case Struct -> {
+            @resolved-struct
+            $resolved-struct.name
+            $ctx &resolved-struct.fields &generic-arguments-for-custom-type $stack monomize-named-types
+            make Struct make CustomType.Struct $ctx flip add-monomized-custom-type
+        }
+        case Variant -> {
+            @resolved-variant
+            $resolved-variant.name
+            $ctx.arena $resolved-variant.cases.len Array:new-with-capacity<VariantCase> @monomized-cases
+            loop {
+                $monomized-cases.len $resolved-variant.cases.len = if { $monomized-cases break }
+                &monomized-cases
+                &resolved-variant.cases $monomized-cases.len Array:get<Resolved:VariantCase> @resolved-case
+                $resolved-case.name
+                &resolved-case.type match {
+                    case None -> { make Maybe<TypeId>.None }
+                    case Some -> {
+                        $ctx flip &generic-arguments-for-custom-type $stack monomize-type make Maybe<TypeId>.Some
+                    }
+                }
+                make VariantCase
+                Array:push-assert-no-alloc<VariantCase>
+            }
+            make Variant make CustomType.Variant $ctx flip add-monomized-custom-type
+        }
+    }
+}
+
+fn add-monomized-custom-type(ctx: .Ctx, type: CustomType) -> CustomTypeHandle {
+    &ctx.custom-types \CustomType-eq &type Array:find<CustomType, .CustomType> if {
+        $ctx.module-id flip make CustomTypeHandle
+    } else {
+        drop
+        $ctx.module-id $ctx.custom-types.len make CustomTypeHandle
+        $ctx.arena &ctx.custom-types $type Array:push<CustomType>
+    }
+}
+
+
+fn monomize-named-types(ctx: .Ctx, types: .Array<Resolved:NamedType>, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> Array<NamedTypeId> {
+    $ctx.arena $types.len Array:new-with-capacity<NamedTypeId> @monomized
+    loop {
+        $monomized.len $types.len = if { $monomized break }
+        &monomized
+        $ctx $types $monomized.len Array:get<Resolved:NamedType> $generic-arguments $stack monomize-named-type
+        Array:push-assert-no-alloc<NamedTypeId>
+    }
+}
+
+fn monomize-named-type(ctx: .Ctx, type: .Resolved:NamedType, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> NamedTypeId {
+    $type.name
+    $ctx &type.type $generic-arguments $stack monomize-type
+    make NamedTypeId
+}
+

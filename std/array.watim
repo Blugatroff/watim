@@ -226,6 +226,16 @@ fn print-multi-line<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>
     } #code $code 0 /= if { $code break }
     $fd "]" IO:write-all
 } }
+fn contains<T>(self: .Array<T>, compare: (.T, .T -> bool), value: .T) -> bool {
+    0 @i
+    loop {
+        $i $self.len = if { 0 1 = break }
+        $self $i get<T> $value $compare -> if {
+            1 1 = break
+        }
+        $i 1 + #i
+    }
+}
 fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
     0 @i
     loop {

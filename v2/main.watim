@@ -19,14 +19,16 @@ import "./lexer.watim" as Lexer (Token, Token-lexeme)
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 import "./resolver.watim" as Resolver (resolve-modules, ResolveError-print)
+import "./monomizer.watim" as Monomizer (monomize)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
     2 "Usage: watim <watim-source-file>\n" IO:write-all IO:check
     2 "Commands:\n" IO:write-all IO:check
-    2 "  lex    [path]   Lex code and print the Tokens.\n" IO:write-all IO:check
-    2 "  parse  [path]   Parse code and print the AST\n" IO:write-all IO:check
-    2 "  check  [path]   Typecheck and print the AST\n" IO:write-all IO:check
+    2 "  lex       [path]   Lex code and print the Tokens.\n" IO:write-all IO:check
+    2 "  parse     [path]   Parse code and print the AST\n" IO:write-all IO:check
+    2 "  check     [path]   Typecheck and print the AST\n" IO:write-all IO:check
+    2 "  monomize  [path]   Monomize the entire program\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
     1 Core:exit
@@ -48,6 +50,7 @@ variant CliCommand {
     case Parse -> Maybe<ByteSlice>
     case Check -> Maybe<ByteSlice>
     case Pretty -> Maybe<ByteSlice>
+    case Monomize -> Maybe<ByteSlice>
 }
 struct CliArgs {
     command: CliCommand
@@ -75,11 +78,14 @@ fn parse-args(arena: .Arena) -> CliArgs {
         $command ByteSlice:unpack "parse" Bytes:eq if {
             $path make CliCommand.Parse break
         }
+        $command ByteSlice:unpack "pretty" Bytes:eq if {
+            $path make CliCommand.Pretty break
+        }
         $command ByteSlice:unpack "check" Bytes:eq if {
             $path make CliCommand.Check break
         }
-        $command ByteSlice:unpack "pretty" Bytes:eq if {
-            $path make CliCommand.Pretty break
+        $command ByteSlice:unpack "monomize" Bytes:eq if {
+            $path make CliCommand.Monomize break
         }
         print-usage-and-exit loop { }
     }
@@ -228,6 +234,26 @@ fn main "_start" () {
             &fmt "\n" Fmt:write
             $buf Fmt:flush
             $temp $save Arena:restore
+        }
+        case Monomize -> {
+            @file-path
+            \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena &fs $file-path &modules load-modules-recursively
+            &arena &modules determine-compilation-order @modules
+            "Resolving" Arena:new @resolving-arena
+            &resolving-arena &modules resolve-modules match {
+                case Error -> {
+                    2 flip &modules ResolveError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Map<ByteSlice, Resolver:Module>>
+                }
+                case Success -> {}
+            } @modules
+            "Monomizing" Arena:new @monomizing-arena
+            &monomizing-arena &modules monomize @monomized
+            &resolving-arena Arena:shred
+            &monomizing-arena Arena:shred
         }
     }
     &arena Arena:clear
