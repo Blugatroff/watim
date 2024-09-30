@@ -6,12 +6,12 @@ import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
-import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "../std/util.watim" as Util (i32-format)
 
-import "./lexer.watim" as Lexer (Token)
+import "./lexer.watim" as Lexer (Token, Token-format)
 import "./type.watim" as Resolved (ModuleId, CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format)
-import "./resolver.watim" as Resolver
+import "./resolver.watim" as Resolved
 
 struct TypeId {
     index: i32
@@ -31,6 +31,13 @@ struct NamedTypeId {
 }
 fn NamedTypeId-eq(a: .NamedTypeId, b: .NamedTypeId) -> bool {
     &a.type &b.type TypeId-eq
+}
+fn NamedTypeId-format(fmt: .Formatter, self: .NamedTypeId) {
+    $fmt "(NamedTypeId " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt ")" Fmt:write
 }
 
 struct FunType {
@@ -100,6 +107,9 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Tuple -> { \TypeId-format flip Array:format<TypeId> break }
     } Fmt:write
 } }
+fn MaybeType-format(fmt: .Formatter, self: .Maybe<Type>) {
+    $fmt \Type-format $self Maybe:format<Type>
+}
 
 variant CustomType {
     case Struct -> Struct
@@ -117,6 +127,12 @@ fn CustomType-eq(a: .CustomType, b: .CustomType) -> bool {
         } }
     }
 }
+fn CustomType-format(fmt: .Formatter, self: .CustomType) {
+    $fmt $self match {
+        case Struct -> { Struct-format }
+        case Variant -> { Variant-format }
+    }
+}
 
 struct Struct {
     name: Token
@@ -124,6 +140,18 @@ struct Struct {
 }
 fn Struct-eq(a: .Struct, b: .Struct) -> bool {
     \NamedTypeId-eq &a.fields &b.fields Array:eq<NamedTypeId>
+}
+fn Struct-format(fmt: .Formatter, self: .Struct) {
+    $fmt "(Struct\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "fields=" Fmt:write
+    $fmt \NamedTypeId-format &self.fields Array:format-multi-line<NamedTypeId>
+    $fmt Fmt:dedent
 }
 
 struct VariantCase {
@@ -142,6 +170,13 @@ fn VariantCase-eq(a: .VariantCase, b: .VariantCase) -> bool {
         } }
     }
 }
+fn VariantCase-format(fmt: .Formatter, self: .VariantCase) {
+    $fmt "(VariantCase " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \TypeId-format &self.type Maybe:format<TypeId>
+    $fmt ")" Fmt:write
+}
 
 struct Variant {
     name: Token
@@ -150,26 +185,82 @@ struct Variant {
 fn Variant-eq(a: .Variant, b: .Variant) -> bool {
     \VariantCase-eq &a.cases &b.cases Array:eq<VariantCase>
 }
+fn Variant-format(fmt: .Formatter, self: .Variant) {
+    $fmt "(Variant\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "cases=" Fmt:write
+    $fmt \VariantCase-format &self.cases Array:format-multi-line<VariantCase>
+    $fmt Fmt:dedent
+}
 
 struct Module {
     custom-types: Array<CustomType>
     globals: Array<Global>
+    externs: Array<Extern>
+    functions: Array<Function>
 }
+fn Module-format(fmt: .Formatter, self: .Module) {
+    $fmt "(Module\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "custom-types=" Fmt:write
+    $fmt \CustomType-format &self.custom-types Array:format-multi-line<CustomType>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "globals=" Fmt:write
+    $fmt \Global-format &self.globals Array:format-multi-line<Global>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "externs=" Fmt:write
+    $fmt \Extern-format &self.externs Array:format-multi-line<Extern>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "functions=" Fmt:write
+    $fmt \Function-format &self.functions Array:format-multi-line<Function>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
 struct Monomized {
     types: Array<Maybe<Type>>
     modules: Map<ByteSlice, Module>
+}
+fn Monomized-format(fmt: .Formatter, self: .Monomized) {
+    $fmt "(Monomized\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "types=" Fmt:write
+    $fmt \MaybeType-format &self.types Array:format-multi-line<Maybe<Type>>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "modules=" Fmt:write
+    $fmt \ByteSlice-format \Module-format &self.modules Map:format-multi-line<ByteSlice, Module>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
 }
 
 struct Global {
     name: Token
     type: TypeId
 }
+fn Global-format(fmt: .Formatter, self: .Global) {
+    $fmt "(Global " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt ")" Fmt:write
+}
 
 struct Ctx {
     arena: .Arena
     module-id: ModuleId
-    resolved-modules: .Array<Resolver:Module>
-    types: Array<Maybe<Type>>
+    resolved-modules: .Array<Resolved:Module>
+    types: .Array<Maybe<Type>>
     custom-types: Array<CustomType>
     type-monomize-cache: .Map<Resolved:Type, TypeId>
 }
@@ -192,19 +283,19 @@ fn Bool-id() -> TypeId { 0 make TypeId }
 fn I32-id () -> TypeId { 1 make TypeId }
 fn I64-id () -> TypeId { 2 make TypeId }
 
-fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolver:Module>) -> Monomized {
+fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomized {
     \Resolved:Type-eq Map:new<Resolved:Type, TypeId> @type-monomize-cache
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @monomized-modules
     primitive-types @types
     0 @i
     loop {
         $i $modules.values.len = if { break }
-        &modules.values $i Array:get<Resolver:Module> @module
+        &modules.values $i Array:get<Resolved:Module> @module
         make Ctx {
             $arena @arena
             $i make ModuleId @module-id
             &modules.values @resolved-modules
-            $types @types
+            &types @types
             &type-monomize-cache @type-monomize-cache
             Array:new<CustomType> @custom-types
         } @ctx
@@ -212,6 +303,7 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolver:Module>) -> Monomiz
         &modules.keys $i Array:get<ByteSlice> ~
         make Module {
             &ctx &module.globals.values monomize-globals @globals
+            &ctx &module.functions.values monomize-functions @externs @functions
             $ctx.custom-types @custom-types
         }
         Map:insert<ByteSlice, Module> drop
@@ -220,20 +312,166 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolver:Module>) -> Monomiz
     $types $monomized-modules make Monomized
 }
 
-fn monomize-globals(ctx: .Ctx, globals: .Array<Resolver:Global>) -> Array<Global> {
+fn monomize-globals(ctx: .Ctx, globals: .Array<Resolved:Global>) -> Array<Global> {
     $ctx.arena $globals.len Array:new-with-capacity<Global> @monomized
     0 @i
     loop {
         $i $globals.len = if { $monomized break }
-        $globals $i Array:get<Resolver:Global> @globl
+        $globals $i Array:get<Resolved:Global> @globl
         &monomized $ctx $globl monomize-globl Array:push-assert-no-alloc<Global>
         $i 1 + #i
     }
 }
 
-fn monomize-globl(ctx: .Ctx, globl: .Resolver:Global) -> Global {
-    Array:new<TypeId> @empty
-    $globl.name $ctx &globl.type &empty monomize-type' make Global
+fn monomize-globl(ctx: .Ctx, globl: .Resolved:Global) -> Global {
+    Array:new<TypeId> @generic-arguments
+    $globl.name $ctx &globl.type &generic-arguments monomize-type' make Global
+}
+
+struct Extern {
+    name: Token
+    extrn-module: ByteSlice
+    extrn-name: ByteSlice
+    signature: Signature
+}
+fn Extern-format(fmt: .Formatter, self: .Extern) {
+    $fmt "(Extern\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "extrn-module=" Fmt:write
+    $fmt &self.extrn-module ByteSlice-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "extrn-name=" Fmt:write
+    $fmt &self.extrn-name ByteSlice-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "signature=" Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+fn monomize-extrn(ctx: .Ctx, extrn: .Resolved:Extern) -> Extern {
+    Array:new<TypeId> @generic-arguments
+    make Extern {
+        $extrn.name @name
+        $extrn.extrn-module @extrn-module
+        $extrn.extrn-name @extrn-name
+        $ctx &extrn.signature &generic-arguments monomize-signature @signature
+    }
+}
+
+variant Word {
+    case Todo -> .Resolved:Word
+}
+fn Word-format(fmt: .Formatter, self: .Word) { block {
+    $fmt $self match {
+        case Todo -> {
+            $fmt "(Todo " Fmt:write
+            $fmt flip ~ Resolved:Word-format
+            ")"
+        }
+    } Fmt:write
+} }
+
+fn monomize-word(ctx: .Ctx, word: .Resolved:Word, generic-arguments: .Array<TypeId>) -> Word {
+    $word match {
+        case _ -> {
+            make Word.Todo
+        }
+    }
+}
+fn monomize-words(ctx: .Ctx, words: .Array<Resolved:Word>, generic-arguments: .Array<TypeId>) -> Array<Word> {
+    Array:new<Word> @monomized
+    loop {
+        $monomized.len $words.len = if { $monomized break }
+        $ctx.arena &monomized
+        $ctx $words $monomized.len Array:get<Resolved:Word> $generic-arguments monomize-word
+        Array:push<Word>
+    }
+}
+
+struct Function {
+    name: Token
+    export: Maybe<Token>
+    signature: Signature
+    words: Array<Word>
+}
+fn Function-format(fmt: .Formatter, self: .Function) {
+    $fmt "(Function\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "export=" Fmt:write
+    $fmt \Token-format &self.export Maybe:format<Token>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "signature=" Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "words=" Fmt:write
+    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+fn monomize-function(ctx: .Ctx, function: .Resolved:Function, generic-arguments: .Array<TypeId>) -> Function {
+    $function.name $function.export
+    $ctx &function.signature $generic-arguments monomize-signature
+    $ctx &function.words $generic-arguments monomize-words
+    make Function
+}
+
+fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -> Array<Function>, Array<Extern> {
+    Array:new<Extern> @monomized-externs
+    Array:new<Function> @monomized-functions
+    0 @i
+    loop {
+        $i $functions.len = if {
+            $monomized-functions $monomized-externs break
+        }
+        $functions $i Array:get<Resolved:FunctionOrExtern>
+        match {
+            case Extern   -> { $ctx flip monomize-extrn    $ctx.arena flip &monomized-externs   flip Array:push<Extern>   }
+            case Function -> {
+                @function
+                &function.export Maybe:is-some<Token> if {
+                    Array:new<TypeId> @generic-arguments
+                    $ctx $function &generic-arguments monomize-function
+                    $ctx.arena flip &monomized-functions flip Array:push<Function>
+                }
+            }
+        }
+        $i 1 + #i
+    }
+}
+
+struct Signature {
+    parameters: Array<NamedTypeId>
+    returns: Array<TypeId>
+}
+fn Signature-format(fmt: .Formatter, self: .Signature) {
+    $fmt "(Signature " Fmt:write
+    $fmt \NamedTypeId-format &self.parameters Array:format-multi-line<NamedTypeId>
+    $fmt " " Fmt:write
+    $fmt \TypeId-format &self.returns Array:format-multi-line<TypeId>
+    $fmt ")" Fmt:write
+}
+
+fn monomize-signature(ctx: .Ctx, extrn: .Resolved:Signature, generic-arguments: .Array<TypeId>) -> Signature {
+    make Signature {
+        $ctx &extrn.parameters    $generic-arguments monomize-named-types' @parameters
+        $ctx &extrn.returns.inner $generic-arguments monomize-types'       @returns
+    }
 }
 
 fn compare-stack-key(a: .[.Resolved:Type, .Array<TypeId>], b: .[.Resolved:Type, .Array<TypeId>]) -> bool {
@@ -263,7 +501,7 @@ fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<Type
         case Some -> { ~ break }
     }
     $ctx.types.len make TypeId @type-id
-    $ctx.arena &ctx.types make Maybe<Type>.None Array:push<Maybe<Type>>
+    $ctx.arena $ctx.types make Maybe<Type>.None Array:push<Maybe<Type>>
     $ctx.arena &stack.keys $type $generic-arguments [,2] Array:push<[.Resolved:Type, .Array<TypeId>]>
     $ctx.arena &stack.values $type-id Array:push<TypeId>
     $type match {
@@ -284,14 +522,14 @@ fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<Type
         }
         case _ -> { $ctx flip $generic-arguments $stack monomize-type break }
     } @monomized-type
-    &ctx.types \cmp-perhaps-empty-type-slot &monomized-type Array:find<Maybe<Type>, .Type> if {
+    $ctx.types \cmp-perhaps-empty-type-slot &monomized-type Array:find<Maybe<Type>, .Type> if {
         $ctx.types.len $type-id.index 1 + = if {
-            &ctx.types Array:pop<Maybe<Type>> assert-none<Type>
+            $ctx.types Array:pop<Maybe<Type>> assert-none<Type>
         }
         make TypeId
     } else {
         drop
-        &ctx.types $type-id.index $monomized-type make Maybe<Type>.Some Array:set<Maybe<Type>> drop
+        $ctx.types $type-id.index $monomized-type make Maybe<Type>.Some Array:set<Maybe<Type>> drop
         $ctx.arena $ctx.type-monomize-cache $type ~ $type-id Map:insert<Resolved:Type, TypeId> drop
         $type-id
     }
@@ -304,6 +542,11 @@ fn cmp-perhaps-empty-type-slot(slot: .Maybe<Type>, type: .Type) -> bool {
         case None -> { 0 1 = }
         case Some -> { $type Type-eq }
     }
+}
+
+fn monomize-types'(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .Array<TypeId>) -> Array<TypeId> {
+    \compare-stack-key Map:new<[.Resolved:Type, .Array<TypeId>], TypeId> @stack
+    $ctx $types $generic-arguments &stack monomize-types
 }
 
 fn monomize-types(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> Array<TypeId> { block {
@@ -319,7 +562,7 @@ fn monomize-types(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .A
 fn monomize-custom-type(ctx: .Ctx, custom-type: .Resolved:CustomTypeType, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> CustomTypeHandle {
     $ctx &custom-type.generic-arguments.inner $generic-arguments $stack monomize-types @generic-arguments-for-custom-type
 
-    $ctx.resolved-modules $custom-type.type-definition.module.index Array:get<Resolver:Module> .custom-types.values
+    $ctx.resolved-modules $custom-type.type-definition.module.index Array:get<Resolved:Module> .custom-types.values
     $custom-type.type-definition.index Array:get<Resolved:CustomType> @resolved-custom-type
 
     $resolved-custom-type match {
@@ -362,6 +605,10 @@ fn add-monomized-custom-type(ctx: .Ctx, type: CustomType) -> CustomTypeHandle {
     }
 }
 
+fn monomize-named-types'(ctx: .Ctx, types: .Array<Resolved:NamedType>, generic-arguments: .Array<TypeId>) -> Array<NamedTypeId> {
+    \compare-stack-key Map:new<[.Resolved:Type, .Array<TypeId>], TypeId> @stack
+    $ctx $types $generic-arguments &stack monomize-named-types
+}
 
 fn monomize-named-types(ctx: .Ctx, types: .Array<Resolved:NamedType>, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> Array<NamedTypeId> {
     $ctx.arena $types.len Array:new-with-capacity<NamedTypeId> @monomized

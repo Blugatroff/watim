@@ -1247,12 +1247,12 @@ fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
 }
 
 fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, bool], ResolveError> { block () -> Result<[Word, bool], ResolveError> {
-    $ctx.persistent $word.cases.len Array:new-with-capacity<MatchCase> @cases
+    $ctx.persistent $word.cases.len 1 + Array:new-with-capacity<MatchCase> @cases
     1 1 = @match-diverges
     $ctx $stack &word.token "expected a value to match on" pop1 match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
-    } @arg &arg match {
+    } @arg-item &arg-item match {
         case Ptr -> { ~ 1 1 = }
         case _ -> { 0 1 = }
     } @by-ref @arg
@@ -1272,7 +1272,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         }
     } @generic-arguments @varint ~ @varint-type
     $ctx.temp &varint.cases \VariantCase-name Array:map<VariantCase, ByteSlice> @remaining-cases
-    $ctx.temp $varint.cases.len Array:new-with-capacity<[Stack, .Token, bool]> @case-stacks
+    $ctx.temp $varint.cases.len 1 + Array:new-with-capacity<[Stack, .Token, bool]> @case-stacks
     0 @i
     loop {
         $i $word.cases.len = if { make Maybe<ResolveError>.None break }
@@ -1327,6 +1327,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
             $ctx $stack child @def-stack
             &ctx.env Env:child @def-env
             $ctx $def-env with-env @def-ctx
+            &def-ctx &def-stack $arg-item push
             &def-ctx &def-stack &default.body.words resolve-words match {
                 case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                 case Success -> {}
@@ -3412,7 +3413,7 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                             $j 1 + #j
                         } match {
                             case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
-                            case None -> { $ctx &type.name "not found" abort<CustomTypeType> break }
+                            case None -> {}
                         }
                         $i 1 + #i
                     }

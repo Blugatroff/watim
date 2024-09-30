@@ -1243,7 +1243,7 @@ fn matsh(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         } @body
         $cays ~ $case-name ~ $body make MatchCase @cays
         $is-default if {
-            $cays make Maybe<MatchCase>.Some @default
+            $cays make Maybe<MatchCase>.Some #default
         } else {
             $parser.arena &cases $cays Array:push<MatchCase>
         }

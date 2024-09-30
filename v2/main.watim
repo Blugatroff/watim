@@ -19,7 +19,7 @@ import "./lexer.watim" as Lexer (Token, Token-lexeme)
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 import "./resolver.watim" as Resolver (resolve-modules, ResolveError-print)
-import "./monomizer.watim" as Monomizer (monomize)
+import "./monomizer.watim" as Monomizer (Monomized-format, monomize)
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -252,7 +252,10 @@ fn main "_start" () {
             } @modules
             "Monomizing" Arena:new @monomizing-arena
             &monomizing-arena &modules monomize @monomized
-            &resolving-arena Arena:shred
+            // &resolving-arena Arena:shred
+            2 Fmt:to-fd @fmt
+            &fmt &monomized Monomized-format
+            &fmt "\n" Fmt:write
             &monomizing-arena Arena:shred
         }
     }
