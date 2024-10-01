@@ -1201,6 +1201,13 @@ fn dump(ctx: .WordCtx, self: .Stack) -> Array<Type> {
     &dump Array:reverse<Type>
     $dump
 }
+fn stacks-compatible(ctx: .WordCtx, a: .Stack, b: .Stack) -> bool {
+    $ctx $a $b.positive.inner.len use drop
+    $ctx $b $a.positive.inner.len use drop
+
+    &a.positive &b.positive Types-eq
+    &a.negative &b.negative Types-eq and
+}
 fn pop-n(ctx: .WordCtx, self: .Stack, n: i32) -> Array<Type> {
     $ctx.temp $n Array:new-with-capacity<Type> @popped
     loop () -> {
@@ -1237,7 +1244,6 @@ fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
             case Some -> {}
         } Array:push-assert-no-alloc<Type>
     }
-    &popped Array:reverse<Type>
     loop () -> {
         $popped.len 0 = if { break }
         $ctx.temp &self.positive
@@ -1351,9 +1357,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
                 }
                 case Some -> {
                     @first
-                    &case-stack.negative &first.negative Types-eq @negative-is-fine
-                    &case-stack.positive &first.positive Types-eq @positive-is-fine
-                    $positive-is-fine not $negative-is-fine not or if {
+                    $ctx $first &case-stack stacks-compatible not if {
                         $ctx.temp Fmt:into-new-string @buf @fmt
                         &fmt "arms of match case have different types:" Fmt:write
                         0 @j

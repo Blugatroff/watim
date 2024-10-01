@@ -223,11 +223,13 @@ fn main "_start" () {
             } @modules
             $temp Arena:usage @end-usage
             $end-usage $start-usage - @usage
-            2 "resolving used: " IO:write-all IO:check
-            2 $usage IO:print IO:check
-            2 " bytes (" IO:write-all IO:check
-            2 $usage print-byte-count IO:check
-            2 ")\n" IO:write-all IO:check
+            Logging:enabled if {
+                2 "resolving used: " IO:write-all IO:check
+                2 $usage IO:print IO:check
+                2 " bytes (" IO:write-all IO:check
+                2 $usage print-byte-count IO:check
+                2 ")\n" IO:write-all IO:check
+            }
             1 Fmt:to-fd @fmt
             &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt \ByteSlice-format \Resolver:Module-format &modules Map:format-multi-line<ByteSlice, Resolver:Module>

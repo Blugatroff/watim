@@ -57,6 +57,8 @@ def run_bootstrap_compiler(args: List[str] | None, stdin: str):
 if len(sys.argv) > 2 and sys.argv[1] == "accept":
     paths = sys.argv[2:]
     for path in paths:
+        if path == "--native":
+            continue
         test = parse_test_file(path)
         if test is None:
             print(f"{path}: failed to parse test file", file=sys.stderr)
@@ -132,6 +134,7 @@ native_tests = list(map(lambda p: f"./tests/{p}.watim", [
     "values-left-in-function",
     "resolve-if",
     "resolve-loop",
+    "compatible-but-different-stacks",
 ]))
 
 failed = False

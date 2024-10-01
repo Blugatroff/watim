@@ -1,0 +1,17 @@
+[== Stdin Compiler ==]
+variant Foo { case A case B case C }
+fn foo(a: Foo) -> i32 {
+	2 1 $a match {
+		case A -> { 1 }
+		case B -> { 2 + 3 }
+		case C -> { + 2 + 4 5 }
+		case _ -> { drop drop 1 2 }
+	} + +
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stderr Compiler ==]

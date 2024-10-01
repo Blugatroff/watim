@@ -11,7 +11,7 @@ import "../std/util.watim" as Util (i32-format)
 
 import "./lexer.watim" as Lexer (Token, Token-format)
 import "./type.watim" as Resolved (ModuleId, CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format)
-import "./resolver.watim" as Resolved
+import "./resolver.watim" as Resolved (StringWord, StringWord-format)
 
 struct TypeId {
     index: i32
@@ -367,10 +367,14 @@ fn monomize-extrn(ctx: .Ctx, extrn: .Resolved:Extern) -> Extern {
 }
 
 variant Word {
+    case Number -> Token
+    case String -> StringWord
     case Todo -> .Resolved:Word
 }
 fn Word-format(fmt: .Formatter, self: .Word) { block {
     $fmt $self match {
+        case Number -> { $fmt "(Number " Fmt:write Token-format $fmt ")" }
+        case String -> { StringWord-format break }
         case Todo -> {
             $fmt "(Todo " Fmt:write
             $fmt flip ~ Resolved:Word-format
@@ -381,6 +385,8 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
 
 fn monomize-word(ctx: .Ctx, word: .Resolved:Word, generic-arguments: .Array<TypeId>) -> Word {
     $word match {
+        case Number -> { ~ make Word.Number }
+        case String -> { ~ make Word.String }
         case _ -> {
             make Word.Todo
         }

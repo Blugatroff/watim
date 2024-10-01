@@ -2075,6 +2075,13 @@ class Stack:
         for taip in reversed(popped):
             self.append(taip)
 
+    def compatible_with(self, other: 'Stack') -> bool:
+        self.lift(len(other.stack))
+        other.lift(len(self.stack))
+        negative_is_fine = resolved_types_eq(self.negative, other.negative)
+        positive_is_fine = resolved_types_eq(self.stack, other.stack)
+        return negative_is_fine and positive_is_fine
+
     def __len__(self) -> int:
         return len(self.stack) + (len(self.parent) if self.parent is not None else 0)
 
@@ -2352,7 +2359,7 @@ class FunctionResolver:
             case ParsedRefWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
-                if not isinstance(var_type, ResolvedPtrType):
+                if all(not isinstance(f.source_taip, ResolvedPtrType) for f in resolved_fields):
                     if isinstance(local, LocalId):
                         context.env.mark_var_as_reffed(local)
                     else:
@@ -2361,7 +2368,8 @@ class FunctionResolver:
                         else:
                             globl = self.module_resolver.resolved_modules[local.module].globals[local.index]
                         globl.was_reffed = True
-                stack.append(ResolvedPtrType(var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip))
+                res_type = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
+                stack.append(ResolvedPtrType(res_type))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
             case ParsedSetWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
@@ -2533,9 +2541,7 @@ class FunctionResolver:
                 if len(non_diverging_case_stacks) != 0:
                     for i in range(1, len(non_diverging_case_stacks)):
                         (case_stack, _) = non_diverging_case_stacks[i]
-                        negative_is_fine = resolved_types_eq(case_stack.negative, non_diverging_case_stacks[0][0].negative)
-                        positive_is_fine = resolved_types_eq(case_stack.stack, non_diverging_case_stacks[0][0].stack)
-                        if not negative_is_fine or not positive_is_fine:
+                        if not case_stack.compatible_with(non_diverging_case_stacks[0][0]):
                             error_message = "arms of match case have different types:"
                             for case_stack, case_name_str in non_diverging_case_stacks:
                                 error_message += f"\n\t{listtostr(case_stack.negative, format_resolved_type)} -> {listtostr(case_stack.stack, format_resolved_type)} in case {case_name_str}"
