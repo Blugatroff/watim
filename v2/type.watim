@@ -10,6 +10,9 @@ import "./lexer.watim" as Lexer (Token, Token-format, Token-lexeme)
 import "./parser.watim" as P
 
 struct ModuleId { index: i32 }
+fn ModuleId-format(fmt: .Formatter, self: .ModuleId) {
+    $fmt $self.index i32-format
+}
 
 struct NamedType {
     name: Token

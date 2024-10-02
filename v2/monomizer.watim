@@ -10,8 +10,12 @@ import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "../std/util.watim" as Util (i32-format)
 
 import "./lexer.watim" as Lexer (Token, Token-format)
-import "./type.watim" as Resolved (ModuleId, CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format)
-import "./resolver.watim" as Resolved (StringWord, StringWord-format)
+import "./type.watim" as Resolved (ModuleId, ModuleId-format, CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format)
+import "./resolver.watim" as Resolved (
+    StringWord, StringWord-format,
+    VarId, VarId-format,
+    FunctionHandle, FunctionHandle-format, FunctionHandle-eq
+)
 
 struct TypeId {
     index: i32
@@ -202,7 +206,6 @@ struct Module {
     custom-types: Array<CustomType>
     globals: Array<Global>
     externs: Array<Extern>
-    functions: Array<Function>
 }
 fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt "(Module\n" Fmt:write
@@ -218,10 +221,6 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt Fmt:write-indent
     $fmt "externs=" Fmt:write
     $fmt \Extern-format &self.externs Array:format-multi-line<Extern>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "functions=" Fmt:write
-    $fmt \Function-format &self.functions Array:format-multi-line<Function>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -229,6 +228,13 @@ fn Module-format(fmt: .Formatter, self: .Module) {
 struct Monomized {
     types: Array<Maybe<Type>>
     modules: Map<ByteSlice, Module>
+    functions: Map<FunctionHandle, Map<Array<TypeId>, Function>>
+}
+fn TypeIds-format(fmt: .Formatter, self: .Array<TypeId>) {
+    $fmt \TypeId-format $self Array:format<TypeId>
+}
+fn format-function-map(fmt: .Formatter, self: .Map<Array<TypeId>, Function>) {
+    $fmt \TypeIds-format \Function-format $self Map:format-multi-line<Array<TypeId>, Function>
 }
 fn Monomized-format(fmt: .Formatter, self: .Monomized) {
     $fmt "(Monomized\n" Fmt:write
@@ -240,6 +246,10 @@ fn Monomized-format(fmt: .Formatter, self: .Monomized) {
     $fmt Fmt:write-indent
     $fmt "modules=" Fmt:write
     $fmt \ByteSlice-format \Module-format &self.modules Map:format-multi-line<ByteSlice, Module>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "functions=" Fmt:write
+    $fmt \ModuleId-format \format-function-map &self.functions Map:format-multi-line<ModuleId, Map<Array<TypeId>, Function>>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -256,6 +266,10 @@ fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt ")" Fmt:write
 }
 
+fn TypeIds-eq(a: .Array<TypeId>, b: .Array<TypeId>) -> bool {
+    \TypeId-eq $a $b Array:eq<TypeId>
+}
+
 struct Ctx {
     arena: .Arena
     module-id: ModuleId
@@ -263,6 +277,32 @@ struct Ctx {
     types: .Array<Maybe<Type>>
     custom-types: Array<CustomType>
     type-monomize-cache: .Map<Resolved:Type, TypeId>
+    functions: .Map<FunctionHandle, Map<Array<TypeId>, Function>>
+}
+fn insert-function(ctx: .Ctx, handle: FunctionHandle, generic-arguments: Array<TypeId>, function: Function) -> i32 {
+    $ctx.functions &handle Map:get<FunctionHandle, Map<Array<TypeId>, Function>> match {
+        case None -> {
+            $ctx.arena $ctx.functions $handle
+            \TypeIds-eq Map:new<Array<TypeId>, Function>
+            Map:insert<FunctionHandle, Map<Array<TypeId>, Function>> drop
+            $ctx $handle $generic-arguments $function insert-function
+        }
+        case Some -> {
+            @instances
+            $instances.values.len
+            $ctx.arena $instances $generic-arguments $function Map:insert<Array<TypeId>, Function> drop
+        }
+    }
+}
+fn lookup-function(ctx: .Ctx, handle: FunctionHandle, generic-arguments: .Array<TypeId>) -> Maybe<.Function> {
+    $ctx.functions &handle Map:get<FunctionHandle, Map<Array<TypeId>, Function>> match {
+        case None -> { make Maybe<.Function>.None }
+        case Some -> { $generic-arguments Map:get<Array<TypeId>, Function> }
+    }
+}
+fn lookup-resolved-function(ctx: .Ctx, handle: FunctionHandle) -> .Resolved:FunctionOrExtern {
+    $ctx.resolved-modules $handle.module.index Array:get<Resolved:Module>
+    .functions.values $handle.index Array:get<Resolved:FunctionOrExtern>
 }
 
 struct PrimitiveTypes { a: Maybe<Type> b: Maybe<Type> c: Maybe<Type> }
@@ -286,6 +326,7 @@ fn I64-id () -> TypeId { 2 make TypeId }
 fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomized {
     \Resolved:Type-eq Map:new<Resolved:Type, TypeId> @type-monomize-cache
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @monomized-modules
+    \FunctionHandle-eq Map:new<FunctionHandle, Map<Array<TypeId>, Function>> @functions
     primitive-types @types
     0 @i
     loop {
@@ -298,18 +339,19 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
             &types @types
             &type-monomize-cache @type-monomize-cache
             Array:new<CustomType> @custom-types
+            &functions @functions
         } @ctx
         $arena &monomized-modules
         &modules.keys $i Array:get<ByteSlice> ~
         make Module {
             &ctx &module.globals.values monomize-globals @globals
-            &ctx &module.functions.values monomize-functions @externs @functions
+            &ctx &module.functions.values monomize-functions @externs
             $ctx.custom-types @custom-types
         }
         Map:insert<ByteSlice, Module> drop
         $i 1 + #i
     }
-    $types $monomized-modules make Monomized
+    $types $monomized-modules $functions make Monomized
 }
 
 fn monomize-globals(ctx: .Ctx, globals: .Array<Resolved:Global>) -> Array<Global> {
@@ -366,27 +408,189 @@ fn monomize-extrn(ctx: .Ctx, extrn: .Resolved:Extern) -> Extern {
     }
 }
 
+struct FieldAccess {
+    name: Token
+    source-taip: TypeId
+    target-taip: TypeId
+    field-index: i32
+}
+fn FieldAccess-format(fmt: .Formatter, self: .FieldAccess) {
+    $fmt "(FieldAccess " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.source-taip TypeId-format
+    $fmt " " Fmt:write
+    $fmt &self.target-taip TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.field-index i32-format
+    $fmt ")" Fmt:write
+}
+
+struct GetLocal {
+    name: Token
+    var: VarId
+    fields: Array<FieldAccess>
+    result-taip: TypeId
+}
+fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
+    $fmt "(GetLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt &self.result-taip TypeId-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt ")" Fmt:write
+}
+
+struct SetLocal {
+    name: Token
+    var: VarId
+    fields: Array<FieldAccess>
+}
+fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
+    $fmt "(SetLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt ")" Fmt:write
+}
+
+struct Cast {
+    token: Token
+    src: TypeId
+    dst: TypeId
+}
+fn Cast-format(fmt: .Formatter, self: .Cast) {
+    $fmt "(Cast " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.src TypeId-format
+    $fmt " " Fmt:write
+    $fmt &self.dst TypeId-format
+    $fmt ")" Fmt:write
+}
+
+struct Call {
+    name: Token
+    function: FunctionHandle
+    instance-id: i32
+}
+fn Call-format(fmt: .Formatter, self: .Call) {
+    $fmt "(Call " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.function FunctionHandle-format
+    $fmt " " Fmt:write
+    $fmt $self.instance-id i32-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case String -> StringWord
+    case GetLocal -> GetLocal
+    case SetLocal -> SetLocal
+    case Cast -> Cast
+    case Call -> Call
     case Todo -> .Resolved:Word
 }
 fn Word-format(fmt: .Formatter, self: .Word) { block {
     $fmt $self match {
         case Number -> { $fmt "(Number " Fmt:write Token-format $fmt ")" }
         case String -> { StringWord-format break }
+        case GetLocal -> { GetLocal-format break }
+        case SetLocal -> { SetLocal-format break }
+        case Cast -> { Cast-format break }
+        case Call -> { Call-format break }
         case Todo -> {
-            $fmt "(Todo " Fmt:write
-            $fmt flip ~ Resolved:Word-format
+            $fmt "(Todo" Fmt:write
+            drop // $fmt flip ~ Resolved:Word-format
             ")"
         }
     } Fmt:write
+} }
+
+fn monomize-cast(ctx: .Ctx, word: .Resolved:Cast, generic-arguments: .Array<TypeId>) -> Word {
+    $word.token
+    $ctx &word.src $generic-arguments monomize-type'
+    $ctx &word.dst $generic-arguments monomize-type'
+    make Cast make Word.Cast
+}
+
+fn monomize-get-locl(ctx: .Ctx, word: .Resolved:GetLocal, generic-arguments: .Array<TypeId>) -> Word {
+    make GetLocal {
+        $word.name @name
+        $word.var @var
+        $ctx &word.var-type $generic-arguments monomize-type' @var-type
+        $ctx &word.fields $generic-arguments monomize-field-accesses @fields
+        $ctx &word.result-taip $generic-arguments monomize-type' @result-taip
+    }
+    make Word.GetLocal
+}
+fn monomize-get-locl(ctx: .Ctx, word: .Resolved:SetLocal, generic-arguments: .Array<TypeId>) -> Word {
+    make SetLocal {
+        $word.name @name
+        $word.var @var
+        $ctx &word.fields $generic-arguments monomize-field-accesses @fields
+    }
+    make Word.SetLocal
+}
+
+fn monomize-field-accesses(ctx: .Ctx, fields: .Array<Resolved:FieldAccess>, generic-arguments: .Array<TypeId>) -> Array<FieldAccess> {
+    $ctx.arena $fields.len Array:new-with-capacity<FieldAccess> @monomized
+    loop {
+        $monomized.len $fields.len = if { $monomized break }
+        &monomized
+        $ctx
+        $fields $fields.len 1 - Array:get<Resolved:FieldAccess>
+        $generic-arguments monomize-field-access
+        Array:push-assert-no-alloc<FieldAccess>
+    }
+}
+fn monomize-field-access(ctx: .Ctx, field: .Resolved:FieldAccess, generic-arguments: .Array<TypeId>) -> FieldAccess {
+    make FieldAccess {
+        $field.name @name
+        $ctx &field.source-taip $generic-arguments monomize-type' @source-taip
+        $ctx &field.target-taip $generic-arguments monomize-type' @target-taip
+        $field.field-index @field-index
+    }
+}
+
+fn monomize-call(ctx: .Ctx, call: .Resolved:Call, generic-arguments: .Array<TypeId>) -> Word { block {
+    $ctx &call.generic-arguments.inner $generic-arguments monomize-types' @generic-arguments-of-this-call
+
+    $ctx $call.function lookup-resolved-function match {
+        case Extern -> {
+            drop
+            make Call {
+                $call.name @name
+                $call.function @function
+                0 @instance-id
+            } make Word.Call
+        }
+        case Function -> {
+            $ctx flip &generic-arguments-of-this-call monomize-function @function
+            $ctx $call.function $generic-arguments-of-this-call $function insert-function @instance
+            make Call {
+                $call.name @name
+                $call.function @function
+                $instance @instance-id
+            } make Word.Call
+        }
+    }
 } }
 
 fn monomize-word(ctx: .Ctx, word: .Resolved:Word, generic-arguments: .Array<TypeId>) -> Word {
     $word match {
         case Number -> { ~ make Word.Number }
         case String -> { ~ make Word.String }
+        case GetLocal -> { $ctx flip $generic-arguments monomize-get-locl }
+        case Cast -> { $ctx flip $generic-arguments monomize-cast }
+        case Call -> { $ctx flip $generic-arguments monomize-call }
         case _ -> {
             make Word.Todo
         }
@@ -437,23 +641,21 @@ fn monomize-function(ctx: .Ctx, function: .Resolved:Function, generic-arguments:
     make Function
 }
 
-fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -> Array<Function>, Array<Extern> {
+fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -> Array<Extern> {
     Array:new<Extern> @monomized-externs
-    Array:new<Function> @monomized-functions
     0 @i
     loop {
-        $i $functions.len = if {
-            $monomized-functions $monomized-externs break
-        }
+        $i $functions.len = if { $monomized-externs break }
         $functions $i Array:get<Resolved:FunctionOrExtern>
         match {
-            case Extern   -> { $ctx flip monomize-extrn    $ctx.arena flip &monomized-externs   flip Array:push<Extern>   }
+            case Extern -> { $ctx flip monomize-extrn $ctx.arena flip &monomized-externs flip Array:push<Extern>   }
             case Function -> {
                 @function
                 &function.export Maybe:is-some<Token> if {
                     Array:new<TypeId> @generic-arguments
-                    $ctx $function &generic-arguments monomize-function
-                    $ctx.arena flip &monomized-functions flip Array:push<Function>
+                    $ctx $function &generic-arguments monomize-function @function
+                    $ctx.module-id $i make FunctionHandle @handle
+                    $ctx $handle $generic-arguments $function insert-function drop
                 }
             }
         }

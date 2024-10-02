@@ -26,6 +26,10 @@ fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
     $fmt $self.index i32-format
     $fmt ")" Fmt:write
 }
+fn FunctionHandle-eq(self: .FunctionHandle, other: .FunctionHandle) -> bool {
+    $self.module.index $other.module.index =
+    $self.index $other.index = and
+}
 
 variant ImportItemItem {
     case Function -> FunctionHandle
@@ -1183,9 +1187,7 @@ fn pop(ctx: .WordCtx, self: .Stack) -> Maybe<Type> {
 fn size(self: .Stack) -> i32 {
     &self.positive Types-len
     $self.parent match {
-        case None -> {
-            0 + // TODO: allow different but compatible stack-parameters in the cases of a match.
-        }
+        case None -> {}
         case Some -> { size + }
     }
 }
