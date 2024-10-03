@@ -2076,6 +2076,8 @@ class Stack:
             self.append(taip)
 
     def compatible_with(self, other: 'Stack') -> bool:
+        if len(self) != len(other):
+            return False
         self.lift(len(other.stack))
         other.lift(len(self.stack))
         negative_is_fine = resolved_types_eq(self.negative, other.negative)

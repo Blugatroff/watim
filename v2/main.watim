@@ -254,10 +254,12 @@ fn main "_start" () {
             } @modules
             "Monomizing" Arena:new @monomizing-arena
             &monomizing-arena &modules monomize @monomized
-            // &resolving-arena Arena:shred
-            2 Fmt:to-fd @fmt
+            &resolving-arena Arena:shred
+            1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt &monomized Monomized-format
             &fmt "\n" Fmt:write
+            $buf Fmt:flush
             &monomizing-arena Arena:shred
         }
     }

@@ -396,7 +396,6 @@ fn Uninit-format(fmt: .Formatter, self: .Uninit) {
 struct FieldInit {
     name: Token
     struc: CustomTypeHandle
-    generic-arguments: Types
     type: Type
 }
 fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
@@ -404,8 +403,6 @@ fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.struc CustomTypeHandle-format
-    $fmt " " Fmt:write
-    $fmt &self.generic-arguments Types-format'
     $fmt " " Fmt:write
     $fmt &self.type Type-format
     $fmt ")" Fmt:write
@@ -1302,13 +1299,14 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         &varint.cases $tag Array:get<VariantCase> .type @case-type
         $ctx $stack child @case-stack
         $case-type match {
-            case None -> {}
+            case None -> { make Maybe<Type>.None }
             case Some -> {
                 $by-ref if { make Type.Ptr } else { ~ } @case-type
-                $ctx &generic-arguments &case-type resolve-generic
-                $ctx flip &case-stack flip push
+                $ctx &generic-arguments &case-type resolve-generic @case-type
+                $ctx &case-stack $case-type push
+                $case-type make Maybe<Type>.Some
             }
-        }
+        } @case-type
         &ctx.env Env:child @case-env
         $ctx $case-env with-env @case-ctx
         &case-ctx &case-stack &parsed-case.body.words resolve-words match {
@@ -1316,7 +1314,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
             case Success -> {}
         } [,] @case-diverges @words
         $case-diverges $match-diverges and #match-diverges
-        &cases $case-type ~ $tag $words make MatchCase Array:push-assert-no-alloc<MatchCase>
+        &cases $case-type $tag $words make MatchCase Array:push-assert-no-alloc<MatchCase>
 
         &parsed-case.name Token-lexeme make ByteSlice @name
         &remaining-cases \ByteSlice:eq-by-ref &name Array:find-remove<ByteSlice, .ByteSlice> flip drop flip drop not if {
