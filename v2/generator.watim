@@ -1,0 +1,68 @@
+import "../std/arena.watim" as Arena (Arena)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../std/byte-array.watim" as ByteArray (ByteArray)
+import "../std/array.watim" as Array (Array)
+import "../std/fmt.watim" as Fmt (Formatter)
+
+import "./monomizer.watim" as Monomized (
+    Monomized, Module,
+    Function, FunctionHandle
+)
+
+fn generate(fmt: .Formatter, program: .Monomized) {
+    $fmt "(module\n" Fmt:write
+    $fmt Fmt:indent
+
+    $fmt Fmt:write-indent $fmt "(memory 1 65536)\n" Fmt:write
+    $fmt Fmt:write-indent $fmt "(export \"memory\" (memory 0))\n" Fmt:write
+
+    0 !.Arena Arena:temp @arena @arena-save
+
+    $arena $program.modules.values.len Arena:alloc-many<i32> $program.modules.values.len Array:init-no-copy<i32> @static-data-offsets
+
+    ByteArray:new @all-static-data
+    0 @i
+    loop {
+        $program.modules.values.len $i = if { break }
+        &program.modules.values $i Array:get<Monomized:Module> @module
+        &static-data-offsets $i $all-static-data.len Array:set<i32> drop
+        $arena &all-static-data $module.static-data ByteSlice:unpack ByteArray:push
+        $i 1 + #i
+    }
+
+    $fmt $program generate-function-table
+
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+fn lookup-function(program: .Monomized, handle: .FunctionHandle) -> .Monomized:Function {
+    &program.modules.values $handle.module.index Array:get<Module> @module
+    &module.functions $handle.index Array:get<Array<.Function>> @instances
+    $instances $handle.instance Array:get<.Function> ~
+}
+
+fn generate-function-table(fmt: .Formatter, program: .Monomized) { block {
+    $fmt Fmt:write-indent
+    $program.function-table.len 0 = if {
+        $fmt "(table funcref (elem))\n" Fmt:write
+        break
+    }
+    $fmt "(table funcref (elem $intrinsic:flip\n" Fmt:write
+
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+
+    0 @i
+    loop {
+        $program.function-table.len $i = if { break }
+        &program.function-table $i Array:get<FunctionHandle> @function
+        2 Fmt:to-fd @fmt
+        &fmt $function Monomized:FunctionHandle-format
+        &fmt "\n" Fmt:write
+        $program $function lookup-function @function
+        $i 1 + #i
+    }
+
+    $fmt Fmt:dedent
+} }

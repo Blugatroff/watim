@@ -20,6 +20,7 @@ import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-for
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 import "./resolver.watim" as Resolver (resolve-modules, ResolveError-print)
 import "./monomizer.watim" as Monomizer (Monomized-format, monomize)
+import "./generator.watim" as Generator
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
@@ -29,6 +30,7 @@ fn print-usage-and-exit() {
     2 "  parse     [path]   Parse code and print the AST\n" IO:write-all IO:check
     2 "  check     [path]   Typecheck and print the AST\n" IO:write-all IO:check
     2 "  monomize  [path]   Monomize the entire program\n" IO:write-all IO:check
+    2 "  compile   [path]   Compile the entire program\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
     1 Core:exit
@@ -51,6 +53,7 @@ variant CliCommand {
     case Check -> Maybe<ByteSlice>
     case Pretty -> Maybe<ByteSlice>
     case Monomize -> Maybe<ByteSlice>
+    case Compile -> Maybe<ByteSlice>
 }
 struct CliArgs {
     command: CliCommand
@@ -86,6 +89,9 @@ fn parse-args(arena: .Arena) -> CliArgs {
         }
         $command ByteSlice:unpack "monomize" Bytes:eq if {
             $path make CliCommand.Monomize break
+        }
+        $command ByteSlice:unpack "compile" Bytes:eq if {
+            $path make CliCommand.Compile break
         }
         print-usage-and-exit loop { }
     }
@@ -260,6 +266,29 @@ fn main "_start" () {
             &fmt &monomized Monomized-format
             &fmt "\n" Fmt:write
             $buf Fmt:flush
+            &monomizing-arena Arena:shred
+        }
+        case Compile -> {
+            @file-path
+            \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena &fs $file-path &modules load-modules-recursively
+            &arena &modules determine-compilation-order @modules
+            "Resolving" Arena:new @resolving-arena
+            &resolving-arena &modules resolve-modules match {
+                case Error -> {
+                    2 flip &modules ResolveError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Map<ByteSlice, Resolver:Module>>
+                }
+                case Success -> {}
+            } @modules
+            "Monomizing" Arena:new @monomizing-arena
+            &monomizing-arena &modules monomize @monomized
+            &resolving-arena Arena:shred
+            1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
+            &fmt &monomized Generator:generate
             &monomizing-arena Arena:shred
         }
     }
