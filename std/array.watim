@@ -38,6 +38,14 @@ fn new-with-capacity<T>(arena: .A:Arena, elems: i32) -> Array<T> {
         0 @len
     }
 }
+fn ensure-capacity<T>(arena: .A:Arena, self: .Array<T>, cap: i32) {
+    $self.cap $cap lt if {
+        $arena $cap A:alloc-many<T> @ptr
+        $self.ptr $ptr $cap CORE:copy<T>
+        $ptr #self.ptr
+        $cap #self.cap
+    }
+}
 fn init<T>(arena: .A:Arena, ptr: .T, elems: i32) -> Array<T> {
     make Array<T> {
         $elems @cap

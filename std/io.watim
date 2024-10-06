@@ -75,6 +75,9 @@ fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
 
 struct Buf32 { a: i32 b: i32 c: i32 d: i32 e: i32 f: i32 g: i32 h: i32 }
 
+fn print-ref(fd: i32, n: .i32) -> i32 {
+    $fd $n ~ print
+}
 fn print(fd: i32, n: i32) -> i32 {
     uninit<Buf32> @buf-reversed
     $fd &buf-reversed.a $n &buf-reversed.a print-i32-into write-all

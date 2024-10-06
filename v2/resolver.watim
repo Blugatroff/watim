@@ -803,6 +803,7 @@ struct Module {
     custom-types: Map<ByteSlice, CustomType>
     globals: Map<ByteSlice, Global>
     functions: Map<ByteSlice, FunctionOrExtern>
+    static-data: ByteSlice
 }
 fn format-import-array(fmt: .Formatter, self: .Array<Import>) {
     $fmt \Import-format $self Array:format<Import>
@@ -909,7 +910,7 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
         } @functions
 
         &resolved-modules $module-path ~
-        $imports $custom-types $globals $functions make Module
+        $imports $custom-types $globals $functions &ctx.static-data ByteArray:to-slice make Module
         Map:insert-assert-no-alloc<ByteSlice, Module> drop
         $arena &other-module-types &resolved-modules.values $id Array:get<Module> .custom-types.values Array:push<.Array<CustomType>>
         $id 1 + #id

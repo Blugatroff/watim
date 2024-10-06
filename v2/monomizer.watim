@@ -7,8 +7,10 @@ import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
 import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
-import "../std/util.watim" as Util (i32-format, bool-format)
+import "../std/util.watim" as Util (i32-format, bool-format, i32-format-ref)
+import "../std/io.watim" as IO
 
+import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-format)
 import "./type.watim" as Resolved (
     ModuleId, ModuleId-format,
@@ -18,7 +20,6 @@ import "./env.watim" as Env (LocalId, LocalId-format)
 import "./resolver.watim" as Resolved (
     StringWord, StringWord-format,
     VarId, VarId-format,
-    FunctionHandle, FunctionHandle-format, FunctionHandle-eq,
 )
 
 // =============================================================================
@@ -125,9 +126,6 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Tuple -> { \TypeId-format flip Array:format<TypeId> break }
     } Fmt:write
 } }
-fn MaybeType-format(fmt: .Formatter, self: .Maybe<Type>) {
-    $fmt \Type-format $self Maybe:format<Type>
-}
 
 variant CustomType {
     case Struct -> Struct
@@ -293,6 +291,9 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
+fn Function-ref-format(fmt: .Formatter, self: ..Function) {
+    $fmt $self ~ Function-format
+}
 
 struct Signature {
     parameters: Array<NamedTypeId>
@@ -306,36 +307,54 @@ fn Signature-format(fmt: .Formatter, self: .Signature) {
     $fmt ")" Fmt:write
 }
 
+struct FunctionHandle {
+    module: ModuleId
+    index: i32
+    instance: i32
+}
+fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
+    $fmt "(FunctionHandle " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.instance i32-format
+    $fmt ")" Fmt:write
+}
+fn FunctionHandle-eq(self: .FunctionHandle, other: .FunctionHandle) -> bool {
+    $self.module.index $other.module.index =
+    $self.index $other.index = and
+    $self.instance $other.instance = and
+}
 
 // =============================================================================
 //  Output of Monomorphization pass
 // =============================================================================
 
 struct Monomized {
-    types: Array<Maybe<Type>>
+    types: Array<Maybe<Key>>
     modules: Map<ByteSlice, Module>
-    functions: Map<FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>>
-}
-fn MaybeFunction-format(fmt: .Formatter, self: ..Maybe<Function>) {
-    $fmt \Function-format $self ~ Maybe:format<Function>
-}
-fn format-function-map(fmt: .Formatter, self: .Map<Array<TypeId>, .Maybe<Function>>) {
-    $fmt \TypeIds-format \MaybeFunction-format $self Map:format-multi-line<Array<TypeId>, .Maybe<Function>>
+    sizes: Array<i32>
+    function-table: Array<FunctionHandle>
 }
 fn Monomized-format(fmt: .Formatter, self: .Monomized) {
     $fmt "(Monomized\n" Fmt:write
     $fmt Fmt:indent
     $fmt Fmt:write-indent
     $fmt "types=" Fmt:write
-    $fmt \MaybeType-format &self.types Array:format-multi-line<Maybe<Type>>
+    $fmt \MaybeKey-format &self.types Array:format-multi-line<Maybe<Key>>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "sizes=" Fmt:write
+    $fmt \i32-format-ref &self.sizes Array:format<i32>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "modules=" Fmt:write
     $fmt \ByteSlice-format \Module-format &self.modules Map:format-multi-line<ByteSlice, Module>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "functions=" Fmt:write
-    $fmt \ModuleId-format \format-function-map &self.functions Map:format-multi-line<ModuleId, Map<Array<TypeId>, .Maybe<Function>>>
+    $fmt "function-table=" Fmt:write
+    $fmt \FunctionHandle-format &self.function-table Array:format<FunctionHandle>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -344,6 +363,8 @@ struct Module {
     custom-types: Array<CustomType>
     globals: Array<Global>
     externs: Array<Extern>
+    static-data: ByteSlice
+    functions: Array<Array<.Function>>
 }
 fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt "(Module\n" Fmt:write
@@ -359,8 +380,15 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt Fmt:write-indent
     $fmt "externs=" Fmt:write
     $fmt \Extern-format &self.externs Array:format-multi-line<Extern>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "functions=" Fmt:write
+    $fmt \FunctionArray-format &self.functions Array:format-multi-line<Array<.Function>>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
+}
+fn FunctionArray-format(fmt: .Formatter, self: .Array<.Function>) {
+    $fmt \Function-ref-format $self Array:format-multi-line<.Function>
 }
 
 
@@ -372,18 +400,18 @@ struct Ctx {
     arena: .Arena
     module-id: ModuleId
     resolved-modules: .Array<Resolved:Module>
-    types: .Array<Maybe<Type>>
+    types: .Array<Maybe<Key>>
+    function-table: .Array<FunctionHandle>
     custom-types: Array<CustomType>
-    type-monomize-cache: .Map<Resolved:Type, TypeId>
-    functions: .Map<FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>>
+    functions: .Map<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>>
 }
-fn pre-insert-function(ctx: .Ctx, handle: FunctionHandle, generic-arguments: Array<TypeId>) -> .Maybe<Function>, i32 {
+fn pre-insert-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: Array<TypeId>) -> .Maybe<Function>, i32 {
     $ctx.arena make Maybe<Function>.None Arena:push<Maybe<Function>> @slot
-    $ctx.functions &handle Map:get<FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> match {
+    $ctx.functions &handle Map:get<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> match {
         case None -> {
             \TypeIds-eq Map:new<Array<TypeId>, .Maybe<Function>> @instances
             $ctx.arena &instances $generic-arguments $slot Map:insert<Array<TypeId>, .Maybe<Function>> drop
-            $ctx.arena $ctx.functions $handle $instances Map:insert<FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> drop
+            $ctx.arena $ctx.functions $handle $instances Map:insert<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> drop
             $slot 0
         }
         case Some -> {
@@ -394,29 +422,39 @@ fn pre-insert-function(ctx: .Ctx, handle: FunctionHandle, generic-arguments: Arr
         }
     }
 }
-fn lookup-function(ctx: .Ctx, handle: FunctionHandle, generic-arguments: .Array<TypeId>) -> Maybe<i32> {
-    $ctx.functions &handle Map:get<FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> match {
+fn lookup-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: .Array<TypeId>) -> Maybe<i32> {
+    $ctx.functions &handle Map:get<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> match {
         case None -> { make Maybe<i32>.None }
         case Some -> { $generic-arguments Map:get-index<Array<TypeId>, .Maybe<Function>> }
     }
 }
-fn lookup-resolved-function(ctx: .Ctx, handle: FunctionHandle) -> .Resolved:FunctionOrExtern {
+fn lookup-resolved-function(ctx: .Ctx, handle: Resolved:FunctionHandle) -> .Resolved:FunctionOrExtern {
     $ctx.resolved-modules $handle.module.index Array:get<Resolved:Module>
     .functions.values $handle.index Array:get<Resolved:FunctionOrExtern>
 }
+fn insert-into-function-table(ctx: .Ctx, handle: FunctionHandle) -> i32 {
+    $ctx.function-table \FunctionHandle-eq  &handle Array:find<FunctionHandle, .FunctionHandle> if {
+        // TODO: This should not be necessary
+        @a $a
+    } else {
+        drop
+        $ctx.function-table.len
+        $ctx.arena $ctx.function-table $handle Array:push<FunctionHandle>
+    }
+}
 
-struct PrimitiveTypes { a: Maybe<Type> b: Maybe<Type> c: Maybe<Type> }
+struct PrimitiveTypes { a: Maybe<Key> b: Maybe<Key> c: Maybe<Key> }
 global PRIMITIVE_TYPES: PrimitiveTypes
 
-fn primitive-types() -> Array<Maybe<Type>> {
+fn primitive-types() -> Array<Maybe<Key>> {
     uninit<PrimitiveTypes> @zeroed
     &zeroed !.i32 0 sizeof(PrimitiveTypes) mem-fill
     &PRIMITIVE_TYPES !.i32 &zeroed !.i32 sizeof(PrimitiveTypes) Core:bytes-eq if {
-        make Type.Bool make Maybe<Type>.Some #PRIMITIVE_TYPES.a
-        make Type.I32  make Maybe<Type>.Some #PRIMITIVE_TYPES.b
-        make Type.I64  make Maybe<Type>.Some #PRIMITIVE_TYPES.c
+        make Type.Bool make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.a
+        make Type.I32  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.b
+        make Type.I64  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.c
     }
-    &PRIMITIVE_TYPES.a sizeof(PrimitiveTypes) sizeof(Maybe<Type>) / Array:init-no-copy<Maybe<Type>>
+    &PRIMITIVE_TYPES.a sizeof(PrimitiveTypes) sizeof(Maybe<Key>) / Array:init-no-copy<Maybe<Key>>
 }
 
 fn Bool-id() -> TypeId { 0 make TypeId }
@@ -428,17 +466,60 @@ fn I64-id () -> TypeId { 2 make TypeId }
 //  Type monomorphization procedures
 // =============================================================================
 
-fn compare-stack-key(a: .[.Resolved:Type, .Array<TypeId>], b: .[.Resolved:Type, .Array<TypeId>]) -> bool {
-    $a ~ [,] @a-gen-args @a-type
-    $b ~ [,] @b-gen-args @b-type
-    \TypeId-eq $a-gen-args $b-gen-args Array:eq<TypeId>
-    $a-type $b-type Resolved:Type-eq and
+struct CustomTypeKey {
+    handle: Resolved:CustomTypeHandle
+    generic-arguments: Array<TypeId>
+    type: Maybe<Type>
 }
-fn monomize-type'(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<TypeId>) -> TypeId {
-    \compare-stack-key Map:new<[.Resolved:Type, .Array<TypeId>], TypeId> @stack
-    $ctx $type $generic-arguments &stack monomize-type
+fn CustomTypeKey-eq(a: .CustomTypeKey, b: .CustomTypeKey) -> bool {
+    &a.handle &b.handle Resolved:CustomTypeHandle-eq
+    \TypeId-eq &a.generic-arguments &b.generic-arguments Array:eq<TypeId> and
 }
-fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> TypeId { block {
+fn CustomTypeKey-format(fmt: .Formatter, self: .CustomTypeKey) {
+    $fmt "(CustomTypeKey " Fmt:write
+    &self.type match {
+        case Some -> { $fmt flip Type-format }
+        case None -> {
+            $fmt &self.handle Resolved:CustomTypeHandle-format
+            $fmt " " Fmt:write
+            $fmt \TypeId-format &self.generic-arguments Array:format<TypeId>
+        }
+    }
+    $fmt ")" Fmt:write
+}
+variant Key {
+    case CustomType -> CustomTypeKey
+    case Other -> Type
+}
+fn Key-type(self: .Key) -> .Type {
+    $self match {
+        case CustomType -> { .type Maybe:ref<Type> Maybe:assert-some<.Type> }
+        case Other -> {}
+    }
+}
+
+fn Key-eq(a: .Key, b: .Key) -> bool {
+    $a match {
+        case CustomType -> { $b match {
+            case CustomType -> { CustomTypeKey-eq }
+            case Other -> { drop drop 0 1 = }
+        } }
+        case Other -> { $b match {
+            case Other -> { Type-eq }
+            case CustomType -> { drop drop 0 1 = }
+        } }
+    }
+}
+fn Key-format(fmt: .Formatter, self: .Key) {
+    $fmt $self match {
+        case CustomType -> { CustomTypeKey-format }
+        case Other -> { Type-format }
+    }
+}
+fn MaybeKey-format(fmt: .Formatter, self: .Maybe<Key>) {
+    $fmt \Key-format $self Maybe:format<Key>
+}
+fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<TypeId>) -> TypeId { block {
     $type match {
         case Bool -> { Bool-id break }
         case I32 -> { I32-id break }
@@ -446,87 +527,94 @@ fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<Type
         case Generic -> { .index ~ $generic-arguments flip Array:get<TypeId> ~ break }
         case _ -> { drop }
     }
-    $stack $type $generic-arguments [,2] @key &key Map:get<[.Resolved:Type, .Array<TypeId>], TypeId> match {
-        case Some -> { ~ break }
-        case None -> {}
-    }
-    $ctx.type-monomize-cache $type Map:get<Resolved:Type, TypeId> match {
-        case None -> {}
-        case Some -> { ~ break }
-    }
+
     $ctx.types.len make TypeId @type-id
-    $ctx.arena $ctx.types make Maybe<Type>.None Array:push<Maybe<Type>>
-    $ctx.arena &stack.keys $type $generic-arguments [,2] Array:push<[.Resolved:Type, .Array<TypeId>]>
-    $ctx.arena &stack.values $type-id Array:push<TypeId>
+    $ctx.arena $ctx.types make Maybe<Key>.None Array:push<Maybe<Key>>
+
     $type match {
         case Ptr -> {
-            $ctx flip ~ $generic-arguments $stack monomize-type make Type.Ptr
+            $ctx flip ~ $generic-arguments monomize-type make Type.Ptr make Key.Other
         }
         case Tuple -> {
-            $ctx flip .items.inner $generic-arguments $stack monomize-types make Type.Tuple
+            $ctx flip .items.inner $generic-arguments monomize-types make Type.Tuple make Key.Other
         }
         case Fun -> {
             @fun-type
-            $ctx &fun-type.parameters.inner $generic-arguments $stack monomize-types
-            $ctx &fun-type.returns   .inner $generic-arguments $stack monomize-types
-            make FunType make Type.Fun
+            $ctx &fun-type.parameters.inner $generic-arguments monomize-types
+            $ctx &fun-type.returns   .inner $generic-arguments monomize-types
+            make FunType make Type.Fun make Key.Other
         }
         case Custom -> {
-            $ctx flip $generic-arguments $stack monomize-custom-type make Type.Custom
+            @custom-type
+            $custom-type.type-definition 
+            $ctx &custom-type.generic-arguments.inner $generic-arguments monomize-types
+            make Maybe<Type>.None
+            make CustomTypeKey make Key.CustomType
         }
-        case _ -> { $ctx flip $generic-arguments $stack monomize-type break }
-    } @monomized-type
-    $ctx.types \cmp-perhaps-empty-type-slot &monomized-type Array:find<Maybe<Type>, .Type> if {
+        case _ -> { $ctx flip $generic-arguments monomize-type break }
+    } @key
+    2 Fmt:to-fd @fmt
+    $ctx.types \cmp-perhaps-empty-type-slot &key Array:find<Maybe<Key>, .Key> if {
         $ctx.types.len $type-id.index 1 + = if {
-            $ctx.types Array:pop<Maybe<Type>> assert-none<Type>
+            $ctx.types Array:pop<Maybe<Key>> assert-none<Key>
         }
         make TypeId
     } else {
         drop
-        $ctx.types $type-id.index $monomized-type make Maybe<Type>.Some Array:set<Maybe<Type>> drop
-        $ctx.arena $ctx.type-monomize-cache $type ~ $type-id Map:insert<Resolved:Type, TypeId> drop
+        $ctx.types $type-id.index $key make Maybe<Key>.Some Array:set<Maybe<Key>> drop
+        &key match {
+            case CustomType -> {
+                @key
+                $type match {
+                    case Custom -> {
+                        $ctx flip &key.generic-arguments monomize-custom-type
+                        make Type.Custom make Maybe<Type>.Some @type
+
+                        $ctx.types $type-id.index Array:get<Maybe<Key>> Maybe:ref<Key> Maybe:assert-some<.Key> match {
+                            case CustomType -> { .type $type store }
+                            case _ -> { drop 0 0 / drop }
+                        }
+                    }
+                    case _ -> { drop 0 0 / drop }
+                }
+            }
+            case _ -> { drop }
+        }
         $type-id
     }
-    &stack.keys Array:pop<[.Resolved:Type, .Array<TypeId>]> drop
-    &stack.values Array:pop<TypeId> drop
 } }
 
 fn monomize-fun-type(ctx: .Ctx, fun-type: .Resolved:FunType, generic-arguments: .Array<TypeId>) -> TypeId {
     $fun-type ~ make Resolved:Type.Fun @type
-    $ctx &type $generic-arguments monomize-type'
+    $ctx &type $generic-arguments monomize-type
 }
 
-fn cmp-perhaps-empty-type-slot(slot: .Maybe<Type>, type: .Type) -> bool {
+fn cmp-perhaps-empty-type-slot(slot: .Maybe<Key>, type: .Key) -> bool {
     $slot match {
         case None -> { 0 1 = }
-        case Some -> { $type Type-eq }
+        case Some -> { $type Key-eq }
     }
 }
 
-fn monomize-types'(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .Array<TypeId>) -> Array<TypeId> {
-    \compare-stack-key Map:new<[.Resolved:Type, .Array<TypeId>], TypeId> @stack
-    $ctx $types $generic-arguments &stack monomize-types
-}
-
-fn monomize-types(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> Array<TypeId> { block {
+fn monomize-types(ctx: .Ctx, types: .Array<Resolved:Type>, generic-arguments: .Array<TypeId>) -> Array<TypeId> { block {
     $ctx.arena $types.len Array:new-with-capacity<TypeId> @monomized
     loop {
         $monomized.len $types.len = if { $monomized break }
         &monomized
-        $ctx $types $monomized.len Array:get<Resolved:Type> $generic-arguments $stack monomize-type
+        $ctx $types $monomized.len Array:get<Resolved:Type> $generic-arguments monomize-type
         Array:push-assert-no-alloc<TypeId>
     }
 } }
 
-
 fn monomize-custom-type'(ctx: .Ctx, custom-type: .Resolved:CustomTypeType, generic-arguments: .Array<TypeId>) -> TypeId {
     $custom-type ~ make Resolved:Type.Custom @type
-    $ctx &type $generic-arguments monomize-type'
+    $ctx &type $generic-arguments monomize-type
 }
-
-fn monomize-custom-type(ctx: .Ctx, custom-type: .Resolved:CustomTypeType, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> CustomTypeHandle {
-    $ctx &custom-type.generic-arguments.inner $generic-arguments $stack monomize-types @generic-arguments-for-custom-type
-
+fn monomize-custom-type(
+    ctx: .Ctx,
+    custom-type: .Resolved:CustomTypeType,
+    generic-arguments: .Array<TypeId>
+) -> CustomTypeHandle {
     $ctx.resolved-modules $custom-type.type-definition.module.index Array:get<Resolved:Module> .custom-types.values
     $custom-type.type-definition.index Array:get<Resolved:CustomType> @resolved-custom-type
 
@@ -534,7 +622,8 @@ fn monomize-custom-type(ctx: .Ctx, custom-type: .Resolved:CustomTypeType, generi
         case Struct -> {
             @resolved-struct
             $resolved-struct.name
-            $ctx &resolved-struct.fields &generic-arguments-for-custom-type $stack monomize-named-types
+            $ctx &resolved-struct.fields $generic-arguments monomize-named-types @fields
+            $fields
             make Struct make CustomType.Struct $ctx flip add-monomized-custom-type
         }
         case Variant -> {
@@ -549,7 +638,7 @@ fn monomize-custom-type(ctx: .Ctx, custom-type: .Resolved:CustomTypeType, generi
                 &resolved-case.type match {
                     case None -> { make Maybe<TypeId>.None }
                     case Some -> {
-                        $ctx flip &generic-arguments-for-custom-type $stack monomize-type make Maybe<TypeId>.Some
+                        $ctx flip $generic-arguments monomize-type make Maybe<TypeId>.Some
                     }
                 }
                 make VariantCase
@@ -570,24 +659,19 @@ fn add-monomized-custom-type(ctx: .Ctx, type: CustomType) -> CustomTypeHandle {
     }
 }
 
-fn monomize-named-types'(ctx: .Ctx, types: .Array<Resolved:NamedType>, generic-arguments: .Array<TypeId>) -> Array<NamedTypeId> {
-    \compare-stack-key Map:new<[.Resolved:Type, .Array<TypeId>], TypeId> @stack
-    $ctx $types $generic-arguments &stack monomize-named-types
-}
-
-fn monomize-named-types(ctx: .Ctx, types: .Array<Resolved:NamedType>, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> Array<NamedTypeId> {
+fn monomize-named-types(ctx: .Ctx, types: .Array<Resolved:NamedType>, generic-arguments: .Array<TypeId>) -> Array<NamedTypeId> {
     $ctx.arena $types.len Array:new-with-capacity<NamedTypeId> @monomized
     loop {
         $monomized.len $types.len = if { $monomized break }
         &monomized
-        $ctx $types $monomized.len Array:get<Resolved:NamedType> $generic-arguments $stack monomize-named-type
+        $ctx $types $monomized.len Array:get<Resolved:NamedType> $generic-arguments monomize-named-type
         Array:push-assert-no-alloc<NamedTypeId>
     }
 }
 
-fn monomize-named-type(ctx: .Ctx, type: .Resolved:NamedType, generic-arguments: .Array<TypeId>, stack: .Map<[.Resolved:Type, .Array<TypeId>], TypeId>) -> NamedTypeId {
+fn monomize-named-type(ctx: .Ctx, type: .Resolved:NamedType, generic-arguments: .Array<TypeId>) -> NamedTypeId {
     $type.name
-    $ctx &type.type $generic-arguments $stack monomize-type
+    $ctx &type.type $generic-arguments monomize-type
     make NamedTypeId
 }
 
@@ -597,10 +681,10 @@ fn monomize-named-type(ctx: .Ctx, type: .Resolved:NamedType, generic-arguments: 
 // =============================================================================
 
 fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomized {
-    \Resolved:Type-eq Map:new<Resolved:Type, TypeId> @type-monomize-cache
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @monomized-modules
-    \FunctionHandle-eq Map:new<FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> @functions
+    \Resolved:FunctionHandle-eq Map:new<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> @functions
     primitive-types @types
+    Array:new<FunctionHandle> @function-table
     0 @i
     loop {
         $i $modules.values.len = if { break }
@@ -610,7 +694,7 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
             $i make ModuleId @module-id
             &modules.values @resolved-modules
             &types @types
-            &type-monomize-cache @type-monomize-cache
+            &function-table @function-table
             Array:new<CustomType> @custom-types
             &functions @functions
         } @ctx
@@ -620,11 +704,46 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
             &ctx &module.globals.values monomize-globals @globals
             &ctx &module.functions.values monomize-functions @externs
             $ctx.custom-types @custom-types
+            $arena $module.static-data ByteSlice:copy @static-data
+            Array:new<Array<.Function>> @functions
         }
         Map:insert<ByteSlice, Module> drop
         $i 1 + #i
     }
-    $types $monomized-modules $functions make Monomized
+    0 @i
+    loop {
+        $i $monomized-modules.values.len = if { break }
+        &monomized-modules.values $i Array:get<Module> .functions @module-functions
+        0 @j
+        loop {
+            $functions.values.len $j = if { break }
+            &functions.keys   $j Array:get<Resolved:FunctionHandle> @handle
+            $handle.module.index $i = if {
+                &functions.values $j Array:get<Map<Array<TypeId>, .Maybe<Function>>> @function
+                Array:new<.Function> @function-instances
+                0 @k
+                loop {
+                    $k $function.values.len = if { break }
+                    &function.values $k Array:get<.Maybe<Function>> ~ match {
+                        case None -> {}
+                        case Some -> {
+                            $arena flip &function-instances flip Array:push<.Function>
+                        }
+                    }
+                    $k 1 + #k
+                }
+                $arena $module-functions $function-instances Array:push<Array<.Function>>
+            }
+            $j 1 + #j
+        }
+        $i 1 + #i
+    }
+    $types $monomized-modules
+    Logging:enabled if {
+        2 "Calculating type sizes\n" IO:write-all IO:check
+    }
+    $arena &monomized-modules &types compute-sizes $function-table
+    make Monomized
 }
 
 fn monomize-globals(ctx: .Ctx, globals: .Array<Resolved:Global>) -> Array<Global> {
@@ -640,7 +759,7 @@ fn monomize-globals(ctx: .Ctx, globals: .Array<Resolved:Global>) -> Array<Global
 
 fn monomize-globl(ctx: .Ctx, globl: .Resolved:Global) -> Global {
     Array:new<TypeId> @generic-arguments
-    $globl.name $ctx &globl.type &generic-arguments monomize-type' make Global
+    $globl.name $ctx &globl.type &generic-arguments monomize-type make Global
 }
 
 fn monomize-extrn(ctx: .Ctx, extrn: .Resolved:Extern) -> Extern {
@@ -672,7 +791,7 @@ fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -
                 @function
                 &function.export Maybe:is-some<Token> if {
                     Array:new<TypeId> @generic-arguments
-                    $ctx.module-id $i make FunctionHandle @handle
+                    $ctx.module-id $i make Resolved:FunctionHandle @handle
                     $ctx $handle $generic-arguments pre-insert-function drop @slot
                     $ctx $function &generic-arguments monomize-function make Maybe<Function>.Some =>slot
                 }
@@ -684,8 +803,98 @@ fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -
 
 fn monomize-signature(ctx: .Ctx, extrn: .Resolved:Signature, generic-arguments: .Array<TypeId>) -> Signature {
     make Signature {
-        $ctx &extrn.parameters    $generic-arguments monomize-named-types' @parameters
-        $ctx &extrn.returns.inner $generic-arguments monomize-types'       @returns
+        $ctx &extrn.parameters    $generic-arguments monomize-named-types @parameters
+        $ctx &extrn.returns.inner $generic-arguments monomize-types       @returns
+    }
+}
+
+
+// =============================================================================
+//  Compute size of all types after monomorphization.
+// =============================================================================
+
+fn compute-sizes(arena: .Arena, modules: .Map<ByteSlice, Module>, types: .Array<Maybe<Key>>) -> Array<i32> {
+    $arena $types.len Arena:alloc-many<i32> $types.len Array:init-no-copy<i32> @sizes
+    $sizes.ptr 255 $types.len sizeof(i32) * mem-fill
+    0 @i
+    loop {
+        $i $types.len = if { $sizes break }
+        $modules &sizes $types $i compute-size
+        $i 1 + #i
+    }
+}
+
+fn compute-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Array<Maybe<Key>>, index: i32) {
+    $sizes $index Array:get<i32> ~ 0 not = if {
+        $types $index Array:get<Maybe<Key>> match {
+            case None -> { 0 not 1 - }
+            case Some -> {
+                Key-type match {
+                    case Ptr -> { drop 4 }
+                    case Bool -> { 4 }
+                    case I32 -> { 4 }
+                    case I64 -> { 8 }
+                    case Custom -> {
+                        @handle
+                        $modules $sizes $types
+                        &modules.values $handle.module.index Array:get<Module> .custom-types
+                        $handle.index Array:get<CustomType> compute-custom-type-size
+                    }
+                    case Tuple -> {
+                        @items 0 @size 0 @i
+                        loop {
+                            $i $items.len = if { $size break }
+                            $modules $sizes $types $items $i Array:get<TypeId> ~ compute-typeid-size $size + #size
+                            $i 1 + #i
+                        }
+                    }
+                    case Fun -> { drop 4 }
+                }
+            }
+        } @size
+        $sizes $index $size Array:set<i32> drop
+    }
+}
+
+fn compute-typeid-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Array<Maybe<Key>>, type: TypeId) -> i32 {
+    $sizes $type.index Array:get<i32> ~ @size
+    $size 0 not = if {
+        $modules $sizes $types $type.index compute-size
+        $modules $sizes $types $type compute-typeid-size
+    } else {
+        $size
+    }
+}
+
+fn compute-custom-type-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Array<Maybe<Key>>, type: .CustomType) -> i32 {
+    $modules $sizes $types $type match {
+        case Struct -> { compute-struc-size }
+        case Variant -> { compute-varint-size }
+    }
+}
+
+fn compute-struc-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Array<Maybe<Key>>, struc: .Struct) -> i32 {
+    0 @size
+    0 @i
+    loop {
+        $i $struc.fields.len = if { $size break }
+        $modules $sizes $types
+        &struc.fields $i Array:get<NamedTypeId> .type ~ compute-typeid-size
+        $size + #size
+        $i 1 + #i
+    }
+}
+
+fn compute-varint-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Array<Maybe<Key>>, varint: .Variant) -> i32 {
+    0 @size
+    0 @i
+    loop {
+        $i $varint.cases.len = if { $size 4 + break }
+        &varint.cases $i Array:get<VariantCase> .type match {
+            case None -> { 0 }
+            case Some -> { ~ $modules flip $sizes flip $types flip compute-typeid-size }
+        } $size Core:max @size
+        $i 1 + #i
     }
 }
 
@@ -823,15 +1032,12 @@ fn Cast-format(fmt: .Formatter, self: .Cast) {
 struct Call {
     name: Token
     function: FunctionHandle
-    instance-id: i32
 }
 fn Call-format(fmt: .Formatter, self: .Call) {
     $fmt "(Call " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.function FunctionHandle-format
-    $fmt " " Fmt:write
-    $fmt $self.instance-id i32-format
     $fmt ")" Fmt:write
 }
 
@@ -1066,6 +1272,18 @@ fn VariantWord-format(fmt: .Formatter, self: .VariantWord) {
     $fmt ")" Fmt:write
 }
 
+struct FunRef {
+    call: Call
+    table-index: i32
+}
+fn FunRef-format(fmt: .Formatter, self: .FunRef) {
+    $fmt "(FunRef " Fmt:write
+    $fmt &self.call Call-format
+    $fmt " " Fmt:write
+    $fmt $self.table-index i32-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case String -> StringWord
@@ -1092,7 +1310,7 @@ variant Word {
     case UnpackTuple -> Array<TypeId>
     case IndirectCall -> TypeId
     case GetField -> GetField
-    case FunRef -> Call
+    case FunRef -> FunRef
     case Match -> Match
     case Struct -> TypeId
     case StructNamed -> StructWordNamed
@@ -1124,7 +1342,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case UnpackTuple -> { $fmt "(UnpackTuple " Fmt:write TypeIds-format $fmt ")" }
         case IndirectCall -> { $fmt "(IndirectCall " Fmt:write TypeId-format $fmt ")" }
         case GetField -> { GetField-format break }
-        case FunRef -> { $fmt "(FunRef " Fmt:write Call-format $fmt ")" }
+        case FunRef -> { FunRef-format break }
         case Match -> { Match-format break }
         case Struct -> { $fmt "(Struct " Fmt:write TypeId-format $fmt ")" }
         case StructNamed -> { StructWordNamed-format break }
@@ -1147,8 +1365,8 @@ fn Words-format(fmt: .Formatter, self: .Array<Word>) {
 
 fn monomize-cast(ctx: .Ctx, word: .Resolved:Cast, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.src $generic-arguments monomize-type'
-    $ctx &word.dst $generic-arguments monomize-type'
+    $ctx &word.src $generic-arguments monomize-type
+    $ctx &word.dst $generic-arguments monomize-type
     make Cast make Word.Cast
 }
 
@@ -1156,9 +1374,9 @@ fn monomize-get-locl(ctx: .Ctx, word: .Resolved:GetLocal, generic-arguments: .Ar
     make GetLocal {
         $word.name @name
         $word.var @var
-        $ctx &word.var-type $generic-arguments monomize-type' @var-type
+        $ctx &word.var-type $generic-arguments monomize-type @var-type
         $ctx &word.fields $generic-arguments monomize-field-accesses @fields
-        $ctx &word.result-taip $generic-arguments monomize-type' @result-taip
+        $ctx &word.result-taip $generic-arguments monomize-type @result-taip
     }
     make Word.GetLocal
 }
@@ -1185,21 +1403,22 @@ fn monomize-field-accesses(ctx: .Ctx, fields: .Array<Resolved:FieldAccess>, gene
 fn monomize-field-access(ctx: .Ctx, field: .Resolved:FieldAccess, generic-arguments: .Array<TypeId>) -> FieldAccess {
     make FieldAccess {
         $field.name @name
-        $ctx &field.source-taip $generic-arguments monomize-type' @source-taip
-        $ctx &field.target-taip $generic-arguments monomize-type' @target-taip
+        $ctx &field.source-taip $generic-arguments monomize-type @source-taip
+        $ctx &field.target-taip $generic-arguments monomize-type @target-taip
         $field.field-index @field-index
     }
 }
 
 fn monomize-call(ctx: .Ctx, call: .Resolved:Call, generic-arguments: .Array<TypeId>) -> Call { block {
-    $ctx &call.generic-arguments.inner $generic-arguments monomize-types' @generic-arguments-of-this-call
+    $ctx &call.generic-arguments.inner $generic-arguments monomize-types @generic-arguments-of-this-call
 
     $ctx $call.function lookup-resolved-function match {
         case Extern -> {
             drop
             make Call {
                 $call.name @name
-                $call.function @function
+                $call.function.module $call.function.index 0
+                make FunctionHandle @function
                 0 @instance-id
             }
         }
@@ -1214,8 +1433,8 @@ fn monomize-call(ctx: .Ctx, call: .Resolved:Call, generic-arguments: .Array<Type
             } @instance
             make Call {
                 $call.name @name
-                $call.function @function
-                $instance @instance-id
+                $call.function.module $call.function.index $instance
+                make FunctionHandle @function
             }
         }
     }
@@ -1224,35 +1443,35 @@ fn monomize-call(ctx: .Ctx, call: .Resolved:Call, generic-arguments: .Array<Type
 fn monomize-intrinsic(ctx: .Ctx, word: .Resolved:IntrinsicWord, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
     $ctx &word.intrinsic match {
-        case Gt -> { $generic-arguments monomize-type' make Intrinsic.Gt }
-        case Lt -> { $generic-arguments monomize-type' make Intrinsic.Lt }
-        case Add -> { $generic-arguments monomize-type' make Intrinsic.Add }
-        case Sub -> { $generic-arguments monomize-type' make Intrinsic.Sub }
-        case Mul -> { $generic-arguments monomize-type' make Intrinsic.Mul }
-        case Div -> { $generic-arguments monomize-type' make Intrinsic.Div }
-        case Mod -> { $generic-arguments monomize-type' make Intrinsic.Mod }
-        case Eq -> { $generic-arguments monomize-type' make Intrinsic.Eq }
-        case NotEq -> { $generic-arguments monomize-type' make Intrinsic.NotEq }
+        case Gt -> { $generic-arguments monomize-type make Intrinsic.Gt }
+        case Lt -> { $generic-arguments monomize-type make Intrinsic.Lt }
+        case Add -> { $generic-arguments monomize-type make Intrinsic.Add }
+        case Sub -> { $generic-arguments monomize-type make Intrinsic.Sub }
+        case Mul -> { $generic-arguments monomize-type make Intrinsic.Mul }
+        case Div -> { $generic-arguments monomize-type make Intrinsic.Div }
+        case Mod -> { $generic-arguments monomize-type make Intrinsic.Mod }
+        case Eq -> { $generic-arguments monomize-type make Intrinsic.Eq }
+        case NotEq -> { $generic-arguments monomize-type make Intrinsic.NotEq }
         case MemGrow -> { drop make Intrinsic.MemGrow }
         case MemCopy -> { drop make Intrinsic.MemCopy }
         case MemFill -> { drop make Intrinsic.MemFill }
         case Store8 -> { drop make Intrinsic.Store8 }
         case Load8 -> { drop make Intrinsic.Load8 }
-        case Rotl -> { $generic-arguments monomize-type' make Intrinsic.Rotl }
-        case Rotr -> { $generic-arguments monomize-type' make Intrinsic.Rotr }
-        case And -> { $generic-arguments monomize-type' make Intrinsic.And }
-        case Or -> { $generic-arguments monomize-type' make Intrinsic.Or }
-        case Ge -> { $generic-arguments monomize-type' make Intrinsic.Ge }
-        case Le -> { $generic-arguments monomize-type' make Intrinsic.Le }
-        case Not -> { $generic-arguments monomize-type' make Intrinsic.Not }
-        case Store -> { $generic-arguments monomize-type' make Intrinsic.Store }
+        case Rotl -> { $generic-arguments monomize-type make Intrinsic.Rotl }
+        case Rotr -> { $generic-arguments monomize-type make Intrinsic.Rotr }
+        case And -> { $generic-arguments monomize-type make Intrinsic.And }
+        case Or -> { $generic-arguments monomize-type make Intrinsic.Or }
+        case Ge -> { $generic-arguments monomize-type make Intrinsic.Ge }
+        case Le -> { $generic-arguments monomize-type make Intrinsic.Le }
+        case Not -> { $generic-arguments monomize-type make Intrinsic.Not }
+        case Store -> { $generic-arguments monomize-type make Intrinsic.Store }
         case SetStackSize -> { drop make Intrinsic.SetStackSize }
     } make IntrinsicWord make Word.Intrinsic
 }
 
 fn monomize-init-locl(ctx: .Ctx, word: .Resolved:InitLocal, generic-arguments: .Array<TypeId>) -> Word {
     $word.name
-    $ctx &word.type $generic-arguments monomize-type'
+    $ctx &word.type $generic-arguments monomize-type
     $word.local
     make InitLocal make Word.InitLocal
 }
@@ -1273,10 +1492,10 @@ fn monomize-store-locl(ctx: .Ctx, word: .Resolved:StoreLocal, generic-arguments:
 
 fn monomize-iff(ctx: .Ctx, word: .Resolved:If, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.parameters.inner $generic-arguments monomize-types'
+    $ctx &word.parameters.inner $generic-arguments monomize-types
     &word.returns match {
         case None -> { make Maybe<Array<TypeId>>.None }
-        case Some -> { .inner $ctx flip $generic-arguments monomize-types' make Maybe<Array<TypeId>>.Some }
+        case Some -> { .inner $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
     }
     $ctx &word.true-words  $generic-arguments monomize-words
     $ctx &word.false-words $generic-arguments monomize-words
@@ -1285,10 +1504,10 @@ fn monomize-iff(ctx: .Ctx, word: .Resolved:If, generic-arguments: .Array<TypeId>
 
 fn monomize-lop(ctx: .Ctx, word: .Resolved:Loop, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.parameters.inner $generic-arguments monomize-types'
+    $ctx &word.parameters.inner $generic-arguments monomize-types
     &word.returns match {
         case None -> { make Maybe<Array<TypeId>>.None }
-        case Some -> { .inner $ctx flip $generic-arguments monomize-types' make Maybe<Array<TypeId>>.Some }
+        case Some -> { .inner $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
     }
     $ctx &word.words  $generic-arguments monomize-words
     make Loop make Word.Loop
@@ -1296,26 +1515,26 @@ fn monomize-lop(ctx: .Ctx, word: .Resolved:Loop, generic-arguments: .Array<TypeI
 
 fn monomize-blok(ctx: .Ctx, word: .Resolved:Block, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.parameters.inner $generic-arguments monomize-types'
-    $ctx &word.returns.inner $generic-arguments monomize-types'
+    $ctx &word.parameters.inner $generic-arguments monomize-types
+    $ctx &word.returns.inner $generic-arguments monomize-types
     $ctx &word.words  $generic-arguments monomize-words
     make Block make Word.Block
 }
 
 fn monomize-sizeof(ctx: .Ctx, word: .Resolved:Sizeof, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type' make Word.Sizeof
+    $ctx &word.type $generic-arguments monomize-type make Word.Sizeof
 }
 
 fn monomize-uninit(ctx: .Ctx, word: .Resolved:Uninit, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type' make Word.Uninit
+    $ctx &word.type $generic-arguments monomize-type make Word.Uninit
 }
 
 fn monomize-field-init(ctx: .Ctx, word: .Resolved:FieldInit, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type' make Word.FieldInit
+    $ctx &word.type $generic-arguments monomize-type make Word.FieldInit
 }
 
 fn monomize-load(ctx: .Ctx, word: .Resolved:Load, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type' make Word.Load
+    $ctx &word.type $generic-arguments monomize-type make Word.Load
 }
 
 fn monomize-get-field(ctx: .Ctx, word: .Resolved:GetField, generic-arguments: .Array<TypeId>) -> Word {
@@ -1328,7 +1547,7 @@ fn monomize-get-field(ctx: .Ctx, word: .Resolved:GetField, generic-arguments: .A
 fn monomize-matsh-cays(ctx: .Ctx, cays: .Resolved:MatchCase, generic-arguments: .Array<TypeId>) -> MatchCase {
     &cays.type match {
         case None -> { make Maybe<TypeId>.None }
-        case Some -> { $ctx flip $generic-arguments monomize-type' make Maybe<TypeId>.Some }
+        case Some -> { $ctx flip $generic-arguments monomize-type make Maybe<TypeId>.Some }
     }
     $cays.tag
     $ctx &cays.words $generic-arguments monomize-words
@@ -1354,8 +1573,8 @@ fn monomize-matsh(ctx: .Ctx, word: .Resolved:Match, generic-arguments: .Array<Ty
             case None -> { make Maybe<Array<Word>>.None }
             case Some -> { $ctx flip $generic-arguments monomize-words make Maybe<Array<Word>>.Some }
         } @default
-        $ctx &word.parameters.inner $generic-arguments monomize-types' @parameters
-        $ctx &word.returns.inner    $generic-arguments monomize-types' @returns
+        $ctx &word.parameters.inner $generic-arguments monomize-types @parameters
+        $ctx &word.returns.inner    $generic-arguments monomize-types @returns
     } make Word.Match
 }
 
@@ -1373,6 +1592,13 @@ fn monomize-varint-word(ctx: .Ctx, word: .Resolved:VariantWord, generic-argument
     $word.tag
     $ctx &word.type $generic-arguments monomize-custom-type'
     make VariantWord make Word.Variant
+}
+
+fn monomize-fun-ref(ctx: .Ctx, word: .Resolved:FunRef, generic-arguments: .Array<TypeId>) -> Word {
+    $ctx &word.call $generic-arguments monomize-call @call
+    $call
+    $ctx $call.function insert-into-function-table
+    make FunRef make Word.FunRef
 }
 
 fn monomize-word(ctx: .Ctx, word: .Resolved:Word, generic-arguments: .Array<TypeId>) -> Word {
@@ -1396,12 +1622,12 @@ fn monomize-word(ctx: .Ctx, word: .Resolved:Word, generic-arguments: .Array<Type
         case Uninit -> { $generic-arguments monomize-uninit }
         case FieldInit -> { $generic-arguments monomize-field-init }
         case Load -> { $generic-arguments monomize-load }
-        case MakeTuple -> { .items.inner $generic-arguments monomize-types' make Word.MakeTuple }
-        case UnpackTuple -> { .items.inner $generic-arguments monomize-types' make Word.UnpackTuple }
+        case MakeTuple -> { .items.inner $generic-arguments monomize-types make Word.MakeTuple }
+        case UnpackTuple -> { .items.inner $generic-arguments monomize-types make Word.UnpackTuple }
         case IndirectCall -> { .type $generic-arguments monomize-fun-type make Word.IndirectCall }
         case Break -> { flip drop ~ make Word.Break }
         case GetField -> { $generic-arguments monomize-get-field }
-        case FunRef -> { .call $generic-arguments monomize-call make Word.FunRef }
+        case FunRef -> { $generic-arguments monomize-fun-ref }
         case Match -> { $generic-arguments monomize-matsh }
         case StructWord -> { $generic-arguments monomize-struc-word }
         case StructWordNamed -> { $generic-arguments monomize-struc-word-named }

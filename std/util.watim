@@ -32,6 +32,10 @@ fn i32-format(formatter: .Formatter, self: i32) {
     $formatter &buf.a $self &buf.a IO:print-i32-into FMT:write
 }
 
+fn i32-format-ref(formatter: .Formatter, self: .i32) {
+    $formatter $self ~ i32-format
+}
+
 fn bool-format(formatter: .Formatter, self: bool) {
     $formatter $self if { "True" } else { "False" } FMT:write
 }
