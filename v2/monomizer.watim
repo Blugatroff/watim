@@ -403,31 +403,39 @@ struct Ctx {
     types: .Array<Maybe<Key>>
     function-table: .Array<FunctionHandle>
     custom-types: Array<CustomType>
-    functions: .Map<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>>
+    functions: .Array<Array<Map<Array<TypeId>, .Maybe<Function>>>>
 }
 fn pre-insert-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: Array<TypeId>) -> .Maybe<Function>, i32 {
     $ctx.arena make Maybe<Function>.None Arena:push<Maybe<Function>> @slot
-    $ctx.functions &handle Map:get<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> match {
-        case None -> {
-            \TypeIds-eq Map:new<Array<TypeId>, .Maybe<Function>> @instances
-            $ctx.arena &instances $generic-arguments $slot Map:insert<Array<TypeId>, .Maybe<Function>> drop
-            $ctx.arena $ctx.functions $handle $instances Map:insert<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> drop
-            $slot 0
-        }
-        case Some -> {
-            @instances
-            $instances.values.len
-            $ctx.arena $instances $generic-arguments $slot Map:insert<Array<TypeId>, .Maybe<Function>> drop
-            $slot flip
-        }
+    loop {
+        $ctx.functions.len $handle.module.index gt if { break }
+        $ctx.arena $ctx.functions
+        Array:new<Map<Array<TypeId>, .Maybe<Function>>>
+        Array:push<Array<Map<Array<TypeId>, .Maybe<Function>>>>
     }
-}
-fn lookup-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: .Array<TypeId>) -> Maybe<i32> {
-    $ctx.functions &handle Map:get<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> match {
-        case None -> { make Maybe<i32>.None }
-        case Some -> { $generic-arguments Map:get-index<Array<TypeId>, .Maybe<Function>> }
+    $ctx.functions $handle.module.index Array:get<Array<Map<Array<TypeId>, .Maybe<Function>>>> @module-functions
+
+    loop {
+        $module-functions.len $handle.index gt if { break }
+        $ctx.arena $module-functions
+        \TypeIds-eq Map:new<Array<TypeId>, .Maybe<Function>>
+        Array:push<Map<Array<TypeId>, .Maybe<Function>>>
     }
+    $module-functions $handle.index Array:get<Map<Array<TypeId>, .Maybe<Function>>> @instances
+
+    $instances.values.len
+    $ctx.arena $instances $generic-arguments $slot Map:insert<Array<TypeId>, .Maybe<Function>> drop
+    $slot flip
 }
+fn lookup-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: .Array<TypeId>) -> Maybe<i32> { block {
+    $ctx.functions.len $handle.module.index le if { make Maybe<i32>.None break }
+    $ctx.functions $handle.module.index Array:get<Array<Map<Array<TypeId>, .Maybe<Function>>>> @module-functions
+
+    $module-functions.len $handle.index le if { make Maybe<i32>.None break }
+    $module-functions $handle.index Array:get<Map<Array<TypeId>, .Maybe<Function>>> @instances
+
+    $instances $generic-arguments Map:get-index<Array<TypeId>, .Maybe<Function>>
+} }
 fn lookup-resolved-function(ctx: .Ctx, handle: Resolved:FunctionHandle) -> .Resolved:FunctionOrExtern {
     $ctx.resolved-modules $handle.module.index Array:get<Resolved:Module>
     .functions.values $handle.index Array:get<Resolved:FunctionOrExtern>
@@ -682,7 +690,7 @@ fn monomize-named-type(ctx: .Ctx, type: .Resolved:NamedType, generic-arguments: 
 
 fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomized {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @monomized-modules
-    \Resolved:FunctionHandle-eq Map:new<Resolved:FunctionHandle, Map<Array<TypeId>, .Maybe<Function>>> @functions
+    Array:new<Array<Map<Array<TypeId>, .Maybe<Function>>>> @functions
     primitive-types @types
     Array:new<FunctionHandle> @function-table
     0 @i
@@ -714,27 +722,33 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
     loop {
         $i $monomized-modules.values.len = if { break }
         &monomized-modules.values $i Array:get<Module> .functions @module-functions
-        0 @j
-        loop {
-            $functions.values.len $j = if { break }
-            &functions.keys   $j Array:get<Resolved:FunctionHandle> @handle
-            $handle.module.index $i = if {
-                &functions.values $j Array:get<Map<Array<TypeId>, .Maybe<Function>>> @function
-                Array:new<.Function> @function-instances
+
+        $i $functions.len lt if {
+            &monomized-modules.values $i Array:get<Module> .functions @module-functions
+            &functions $i Array:get<Array<Map<Array<TypeId>, .Maybe<Function>>>> @functions
+
+            0 @j
+            loop {
+                $functions.len $j = if { break }
+                $functions $j Array:get<Map<Array<TypeId>, .Maybe<Function>>> .values @instances
+
+                loop {
+                    $module-functions.len $j gt if { break }
+                    $arena $module-functions Array:new<.Function> Array:push<Array<.Function>>
+                }
+                $module-functions $j Array:get<Array<.Function>> @target
+
                 0 @k
                 loop {
-                    $k $function.values.len = if { break }
-                    &function.values $k Array:get<.Maybe<Function>> ~ match {
-                        case None -> {}
-                        case Some -> {
-                            $arena flip &function-instances flip Array:push<.Function>
-                        }
-                    }
+                    $instances.len $k = if { break }
+
+                    $arena $target
+                    $instances $k Array:get<.Maybe<Function>> ~ Maybe:ref<Function> Maybe:assert-some<.Function>
+                    Array:push<.Function>
                     $k 1 + #k
                 }
-                $arena $module-functions $function-instances Array:push<Array<.Function>>
+                $j 1 + #j
             }
-            $j 1 + #j
         }
         $i 1 + #i
     }

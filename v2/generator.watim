@@ -3,7 +3,9 @@ import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/array.watim" as Array (Array)
 import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/util.watim" as Util (i32-format)
 
+import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "./monomizer.watim" as Monomized (
     Monomized, Module,
     Function, FunctionHandle
@@ -56,13 +58,21 @@ fn generate-function-table(fmt: .Formatter, program: .Monomized) { block {
     0 @i
     loop {
         $program.function-table.len $i = if { break }
-        &program.function-table $i Array:get<FunctionHandle> @function
-        2 Fmt:to-fd @fmt
-        &fmt $function Monomized:FunctionHandle-format
-        &fmt "\n" Fmt:write
-        $program $function lookup-function @function
+        &program.function-table $i Array:get<FunctionHandle> @handle
         $i 1 + #i
-    }
 
+        $program $handle lookup-function @function
+        $fmt $handle.module.index i32-format
+        $fmt ":" Fmt:write
+        $fmt &function.name Token-lexeme Fmt:write
+        $handle.instance 0 /= if {
+            $fmt ":" Fmt:write
+            $fmt $handle.instance i32-format
+        }
+        $i $program.function-table.len /= if {
+            $fmt " " Fmt:write
+        }
+    }
     $fmt Fmt:dedent
+    $fmt "))" Fmt:write
 } }
