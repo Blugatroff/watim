@@ -75,12 +75,15 @@ fn Import-format(fmt: .Formatter, self: .Import) {
 struct Global {
     name: Token
     type: Type
+    reffed: bool
 }
 fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt "(Global " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.type Type-format
+    $fmt " " Fmt:write
+    $fmt $self.reffed bool-format
     $fmt ")" Fmt:write
 }
 
@@ -933,6 +936,7 @@ fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result
                     case Error -> { make Result<Map<ByteSlice, Global>, ResolveError>.Error break }
                     case Success -> {}
                 }
+                0 1 = // whether this Global was reffed using `&`
                 make Global
                 Map:insert<ByteSlice, Global> drop
             }
@@ -1131,8 +1135,13 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
 
 fn allocate-static-data(ctx: .Ctx, ptr: .i32, len: i32) -> i32, i32 {
     $ctx.static-data.len
-    $ctx.persistent &ctx.static-data $ptr $len ByteArray:push
-    $len
+    $ctx.static-data.ptr $ctx.static-data.len $ptr $len Bytes:find-seq if {
+        @a $a // TODO: this should not be necessary
+    } else {
+        drop
+        $ctx.persistent &ctx.static-data $ptr $len ByteArray:push
+        $len
+    }
 }
 
 struct Stack {
@@ -2892,6 +2901,7 @@ fn resolve-ref-local(ctx: .WordCtx, stack: .Stack, word: .P:RefLocal) -> Result<
                 case None -> { $ctx.ctx &word.ident "var not found" abort<[Word, bool]> break }
                 case Some -> {
                     [,] @id @globl
+                    1 1 = #globl.reffed
                     $globl.type $word.ident $ctx.ctx.module-id $id make GlobalId make VarId.Global
                 }
             }

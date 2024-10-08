@@ -222,12 +222,15 @@ fn Variant-format(fmt: .Formatter, self: .Variant) {
 struct Global {
     name: Token
     type: TypeId
+    reffed: bool
 }
 fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt "(Global " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.reffed bool-format
     $fmt ")" Fmt:write
 }
 
@@ -773,7 +776,7 @@ fn monomize-globals(ctx: .Ctx, globals: .Array<Resolved:Global>) -> Array<Global
 
 fn monomize-globl(ctx: .Ctx, globl: .Resolved:Global) -> Global {
     Array:new<TypeId> @generic-arguments
-    $globl.name $ctx &globl.type &generic-arguments monomize-type make Global
+    $globl.name $ctx &globl.type &generic-arguments monomize-type $globl.reffed make Global
 }
 
 fn monomize-extrn(ctx: .Ctx, extrn: .Resolved:Extern) -> Extern {

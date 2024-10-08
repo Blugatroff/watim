@@ -8,7 +8,8 @@ import "../std/util.watim" as Util (i32-format)
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "./monomizer.watim" as Monomized (
     Monomized, Module,
-    Function, FunctionHandle
+    Function, FunctionHandle,
+    TypeId, Global
 )
 
 fn generate(fmt: .Formatter, program: .Monomized) {
@@ -20,7 +21,8 @@ fn generate(fmt: .Formatter, program: .Monomized) {
 
     0 !.Arena Arena:temp @arena @arena-save
 
-    $arena $program.modules.values.len Arena:alloc-many<i32> $program.modules.values.len Array:init-no-copy<i32> @static-data-offsets
+    $arena $program.modules.values.len Arena:alloc-many<i32> $program.modules.values.len
+    Array:init-no-copy<i32> @static-data-offsets
 
     ByteArray:new @all-static-data
     0 @i
@@ -33,15 +35,58 @@ fn generate(fmt: .Formatter, program: .Monomized) {
     }
 
     $fmt $program generate-function-table
+    $fmt $program $all-static-data.len generate-globals @stack-start
 
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
+    $arena $arena-save Arena:restore
 }
 
 fn lookup-function(program: .Monomized, handle: .FunctionHandle) -> .Monomized:Function {
     &program.modules.values $handle.module.index Array:get<Module> @module
     &module.functions $handle.index Array:get<Array<.Function>> @instances
     $instances $handle.instance Array:get<.Function> ~
+}
+
+fn type-size(program: .Monomized, type: TypeId) -> i32 {
+    &program.sizes $type.index Array:get<i32> ~
+}
+
+fn can-live-in-reg(program: .Monomized, type: TypeId) -> bool {
+    $program $type type-size 8 le
+}
+
+fn generate-globals(fmt: .Formatter, program: .Monomized, static-data-len: i32) -> i32 {
+    $static-data-len @offset
+    0 @i
+    loop {
+        $i $program.modules.values.len = if { $offset break }
+        &program.modules.values $i Array:get<Module> @module
+        $i 1 + #i
+
+        0 @j
+        loop {
+            $j $module.globals.len = if { break }
+            &module.globals $j Array:get<Global> @globl
+            $j 1 + #j
+            $program $globl.type type-size @size
+            $globl.reffed $program $globl.type can-live-in-reg not or @lives-in-memory
+            $lives-in-memory if { $offset } else { 0 } @initial-value
+
+            $fmt Fmt:write-indent
+            $fmt "(global " Fmt:write
+            $fmt &globl.name Token-lexeme Fmt:write
+            $fmt ":" Fmt:write
+            $fmt $i i32-format
+            $fmt " (mut i32) (i32.const " Fmt:write
+            $fmt $initial-value i32-format
+            $fmt "))\n" Fmt:write
+
+            $lives-in-memory if {
+                $offset $size + #offset
+            }
+        }
+    }
 }
 
 fn generate-function-table(fmt: .Formatter, program: .Monomized) { block {
@@ -74,5 +119,5 @@ fn generate-function-table(fmt: .Formatter, program: .Monomized) { block {
         }
     }
     $fmt Fmt:dedent
-    $fmt "))" Fmt:write
+    $fmt "))\n" Fmt:write
 } }
