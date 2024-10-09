@@ -12,5 +12,5 @@ check
     imports=(Map),
     custom-types=(Map),
     globals=(Map
-      "FOO"=(Global (IDENT FOO 1 8) I32)),
+      "FOO"=(Global (IDENT FOO 1 8) I32 False)),
     functions=(Map)))

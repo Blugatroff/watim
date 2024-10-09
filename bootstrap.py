@@ -1412,7 +1412,7 @@ class ResolvedGlobal:
     was_reffed: bool = False
 
     def __str__(self) -> str:
-        return f"(Global {self.taip.name} {self.taip.taip})"
+        return f"(Global {self.taip.name} {self.taip.taip} {self.was_reffed})"
 
 @dataclass
 class ResolvedFieldAccess:
