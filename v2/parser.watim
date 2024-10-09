@@ -9,7 +9,7 @@ import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/fmt.watim" as Fmt (Formatter)
 import "../std/util.watim" as Util (i32-format)
 
-import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-print, Token-location, Token-column, Token-eq-by-lexeme)
+import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-print, Token-location, Token-column, Token-eq-by-lexeme, Token-string-content)
 
 struct Import {
     start: Token
@@ -462,9 +462,19 @@ fn MakeTuple-format(fmt: .Formatter, self: .MakeTuple) {
     $fmt ")" Fmt:write
 }
 
+struct StringWord {
+    token: Token
+    data: ByteSlice
+}
+fn StringWord-format(fmt: .Formatter, self: .StringWord) {
+    $fmt "(StringWord " Fmt:write
+    $fmt &self.token Token-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Call -> Call
-    case String -> Token
+    case String -> StringWord
     case InitLocal -> InitLocal
     case RefLocal -> RefLocal
     case GetLocal -> GetLocal
@@ -491,7 +501,7 @@ variant Word {
 fn Word-format(fmt: .Formatter, self: .Word) { block {
     $self match {
         case Call -> { $fmt flip Call-format break }
-        case String -> { "String" }
+        case String -> { $fmt flip StringWord-format break }
         case InitLocal -> { $fmt flip InitLocal-format break }
         case RefLocal -> { $fmt flip RefLocal-format break }
         case GetLocal -> { $fmt flip GetLocal-format break }
@@ -1119,7 +1129,7 @@ fn words(parser: .Parser, token: .Token) -> Result<Words, ParseError> { block {
 fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
     $token Token-ty match {
         case TOKEN_IDENT -> { $parser $token call match { case Error -> { make Result<Word, ParseError>.Error } case Success -> { make Word.Call make Result<Word, ParseError>.Success } } break }
-        case TOKEN_STRING -> { $token ~ make Word.String }
+        case TOKEN_STRING -> { $parser $token string break }
         case TOKEN_AT -> { $parser $token init-locl break }
         case TOKEN_AMPERSAND -> { $parser $token ref-locl break }
         case TOKEN_DOLLAR -> { $parser $token get-locl break }
@@ -1145,6 +1155,14 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         }
     } make Result<Word, ParseError>.Success
 } }
+
+fn string(parser: .Parser, token: .Token) -> Result<Word, ParseError> {
+    $token ~
+    $parser.arena $token Token-string-content
+    make StringWord
+    make Word.String
+    make Result<Word, ParseError>.Success
+}
 
 fn tuple(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block () -> Result<Word, ParseError> {
     $parser make TokenTy.TOKEN_COMMA expect-token match {

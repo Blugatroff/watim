@@ -148,7 +148,7 @@ fn Token-lexeme(self: .Token) -> .i32, i32 { block {
 } }
 fn Token-string-content(arena: .Arena:Arena, self: .Token) -> ByteSlice {
     $arena $self Token-lexeme 2 - flip 1 + flip
-    make ByteSlice ByteSlice:unescape
+    make ByteSlice ByteArray:unescape @ba &ba ByteArray:to-slice
 }
 fn Token-hardcoded-lexeme(self: .Token) -> .i32, i32 {
     $self Token-ty match {

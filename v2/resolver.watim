@@ -13,7 +13,7 @@ import "../std/util.watim" as Util (i32-format, bool-format)
 import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 
 import "./logging.watim" as Logging
-import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format, Token-print)
+import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format, Token-string-content)
 import "./parser.watim" as P (TopItem)
 import "./type.watim" as Type (Type, Type-eq, Type-format, Types, Types-contains-generic, Types-new, Types-new-with-capacity, Types-wrap, Types-truncate, Types-append, Types-eq, Types-clone, Types-len, Types-reverse, Types-get, Types-push, Types-push-assert-no-alloc, Types-pop, Types-format, Types-pretty, FunType-format, Types-format', Type-pretty, Types-pretty-bracketed, NamedType, NamedType-format, CustomType, CustomType-format, ModuleId, TypeLookup, lookup-type, Struct, Variant, VariantCase, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, CustomTypeType-format, FunType, TupleType, NamedType-type, VariantCase-name)
 import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
@@ -1100,11 +1100,11 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
             ~ make Word.Number 0 1 = [,2]
         }
         case String -> {
-            @token
+            @word
             $ctx $stack $ctx.ptr-I32 ~ push
             $ctx $stack make Type.I32 push
-            $token ~
-            $ctx.ctx $token Token-lexeme allocate-static-data
+            $word.token
+            $ctx.ctx $word.data ByteSlice:unpack allocate-static-data
             make StringWord
             make Word.String 0 1 = [,2]
         }

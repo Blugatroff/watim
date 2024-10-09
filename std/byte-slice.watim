@@ -105,8 +105,4 @@ fn trim-with(self: ByteSlice, f: (i32 -> bool)) -> ByteSlice {
 fn write-unescaped(fd: i32, self: .ByteSlice) -> i32 {
     $fd $self.ptr $self.len IO:write-all
 }
-fn unescape(arena: .Arena:Arena, self: ByteSlice) -> ByteSlice {
-    // TODO: actually unescape instead of assuming nothing is escaped
-    $arena $self copy
-}
 

@@ -910,7 +910,7 @@ fn compute-varint-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, typ
         &varint.cases $i Array:get<VariantCase> .type match {
             case None -> { 0 }
             case Some -> { ~ $modules flip $sizes flip $types flip compute-typeid-size }
-        } $size Core:max @size
+        } $size Core:max #size
         $i 1 + #i
     }
 }

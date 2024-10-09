@@ -172,7 +172,7 @@ fn Word-pretty(self: .Word, pp: .PrettyPrinter) -> i32 { block {
     $self match {
         case Number -> { $pp flip write-token }
         case Call -> { $pp Call-pretty }
-        case String -> { $pp flip write-token }
+        case String -> { .token $pp flip write-token }
         case If -> { $pp If-pretty }
         case Block -> { $pp Block-pretty }
         case Loop -> { $pp Loop-pretty }

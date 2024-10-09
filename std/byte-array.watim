@@ -20,6 +20,15 @@ fn new() -> ByteArray {
     }
 }
 
+fn with-capacity(arena: .Arena, cap: i32) -> ByteArray {
+    make ByteArray {
+        $arena $cap Arena:alloc-bytes @ptr
+        $cap @cap
+        $arena @arena
+        0 @len
+    }
+}
+
 fn init(ptr: .i32, len: i32) -> ByteArray {
     make ByteArray {
         $ptr @ptr
@@ -101,5 +110,45 @@ fn to-slice(self: .ByteArray) -> ByteSlice {
 
 fn eq(self: .ByteArray, other: .ByteArray) -> bool {
     $self.ptr $self.len $other.ptr $other.len Bytes:eq
+}
+
+fn unescape(arena: .Arena:Arena, self: ByteSlice) -> ByteArray {
+    $arena $self.len with-capacity @out
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $self.ptr $i + load8 @char
+        $char "\\" drop load8 = if {
+            $i 1 + $self.len = if {
+                $arena &out $char push-byte
+                break
+            } else {
+                $self.ptr $i + 1 + load8 @char
+                block {
+                    $char "\"" drop load8 = if {
+                        $arena &out "\"" drop load8 push-byte break
+                    }
+                    $char "n" drop load8 = if {
+                        $arena &out "\n" drop load8 push-byte break
+                    }
+                    $char "t" drop load8 = if {
+                        $arena &out "\t" drop load8 push-byte break
+                    }
+                    $char "r" drop load8 = if {
+                        $arena &out "\r" drop load8 push-byte break
+                    }
+                    $char "\\" drop load8 = if {
+                        $arena &out "\\" drop load8 push-byte break
+                    }
+                    0 0 / drop
+                }
+            }
+            $i 2 + #i
+        } else {
+            $arena &out $char push-byte
+            $i 1 + #i
+        }
+    }
+    $out
 }
 
