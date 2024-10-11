@@ -11,6 +11,15 @@ struct Map<K, V> {
     values: Array<V>
     compare: (.K, .K -> bool)
 }
+fn eq<K, V>(value-compare: (.V, .V -> bool), a: .Map<K, V>, b: .Map<K, V>) -> bool {
+    0 $a.compare $b.compare = !i32 / drop
+
+    $a.compare &a.keys &b.keys Array:eq<K> if {
+        $value-compare &a.values &b.values Array:eq<V>
+    } else {
+        0 1 =
+    }
+}
 fn new<K, V>(compare: (.K, .K -> bool)) -> Map<K, V> {
     Array:new<K> Array:new<V> $compare make Map<K, V>
 }

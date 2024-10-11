@@ -12,6 +12,30 @@ variant Value {
     case Object -> Map<ByteArray, Value>
     case Null
 }
+fn Value-eq(a: .Value, b: .Value) -> bool {
+    $a match {
+        case Number -> { ~ $b match {
+            case Number -> { ~ = }
+            case _ -> { drop drop 0 1 = }
+        } }
+        case String -> { $b match {
+            case String -> { ByteArray:eq }
+            case _ -> { drop drop 0 1 = }
+        } }
+        case Array -> { \Value-eq flip $b match {
+            case Array -> { Array:eq<Value> }
+            case _ -> { drop drop drop 0 1 = }
+        } }
+        case Object -> { \Value-eq flip $b match {
+            case Object -> { Map:eq<ByteArray, Value> }
+            case _ -> { drop drop drop 0 1 = }
+        } }
+        case Null -> { $b match {
+            case Null -> { 1 1 = }
+            case _ -> { drop 0 1 = }
+        } }
+    }
+}
 
 struct ParseError {}
 
@@ -187,7 +211,7 @@ fn parse-object(arena: .Arena, ptr: ..i32, len: .i32) -> Result<Map<ByteArray, V
     $ptr $len 1 advance
     $ptr $len whitespace
     $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
-    \ByteArray:eq Map:new<Value, Value> @entries
+    \ByteArray:eq Map:new<ByteArray, Value> @entries
     $ptr ~ load8 "}" drop load8 = if {
         $ptr $len 1 advance
         $entries make Result<Map<ByteArray, Value>, ParseError>.Success break
