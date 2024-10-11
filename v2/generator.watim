@@ -1,17 +1,27 @@
 import "../std/core.watim" as Core (align-to)
+import "../std/maybe.watim" as Maybe (Maybe)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/array.watim" as Array (Array)
+import "../std/map.watim" as Map (Map)
 import "../std/fmt.watim" as Fmt (Formatter)
 import "../std/util.watim" as Util (i32-format, bool-format)
 
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "./monomizer.watim" as Monomized (
     Monomized, Module,
-    Function, FunctionHandle,
-    TypeId, Global
+    Function, FunctionHandle, Signature, Global,
+    Type, Key, Key-type, NamedTypeId, TypeId, Local,
+    Word, Intrinsic, FieldAccess
 )
+import "./resolver.watim" as Resolver (GlobalId, VarId)
+import "./env.watim" as Env (LocalId)
+
+struct Ctx {
+    fmt: .Formatter
+    program: .Monomized
+}
 
 fn generate(fmt: .Formatter, program: .Monomized) {
     $fmt "(module\n" Fmt:write
@@ -35,8 +45,10 @@ fn generate(fmt: .Formatter, program: .Monomized) {
         $i 1 + #i
     }
 
-    $fmt $program generate-function-table
-    $fmt $program $all-static-data.len 4 align-to generate-globals 4 align-to @stack-start
+    $fmt $program make Ctx @ctx
+
+    &ctx generate-function-table
+    &ctx $all-static-data.len 4 align-to generate-globals 4 align-to @stack-start
 
     $fmt Fmt:write-indent
     $fmt "(global $stac:k (mut i32) (i32.const " Fmt:write
@@ -44,6 +56,10 @@ fn generate(fmt: .Formatter, program: .Monomized) {
     $fmt "))\n" Fmt:write
 
     $fmt &all-static-data ByteArray:to-slice generate-data
+
+    &ctx generate-functions
+
+    $fmt generate-intrinsic-functions
 
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
@@ -54,6 +70,17 @@ fn lookup-function(program: .Monomized, handle: .FunctionHandle) -> .Monomized:F
     &program.modules.values $handle.module.index Array:get<Module> @module
     &module.functions $handle.index Array:get<Array<.Function>> @instances
     $instances $handle.instance Array:get<.Function> ~
+}
+
+fn lookup-globl(program: .Monomized, id: .GlobalId) -> .Global {
+    &program.modules.values $id.module.index Array:get<Module> .globals $id.index Array:get<Global>
+}
+
+fn lookup-type(program: .Monomized, type: TypeId) -> .Type {
+    &program.types $type.index Array:get<Maybe<Key>> match {
+        case None -> { Core:unreachable<.Type> }
+        case Some -> { Key-type }
+    }
 }
 
 fn type-size(program: .Monomized, type: TypeId) -> i32 {
@@ -71,68 +98,505 @@ fn generate-data(fmt: .Formatter, data: ByteSlice) {
     $fmt ")\n" Fmt:write
 }
 
-fn generate-globals(fmt: .Formatter, program: .Monomized, static-data-len: i32) -> i32 {
+fn generate-globals(ctx: .Ctx, static-data-len: i32) -> i32 {
     $static-data-len @offset
     0 @i
     loop {
-        $i $program.modules.values.len = if { $offset break }
-        &program.modules.values $i Array:get<Module> @module
-        $i 1 + #i
+        $i $ctx.program.modules.values.len = if { $offset break }
+        &ctx.program.modules.values $i Array:get<Module> @module
 
         0 @j
         loop {
             $j $module.globals.len = if { break }
             &module.globals $j Array:get<Global> @globl
             $j 1 + #j
-            $program $globl.type type-size @size
-            $globl.reffed $program $globl.type can-live-in-reg not or @lives-in-memory
+            $ctx.program $globl.type type-size @size
+            $globl.reffed $ctx.program $globl.type can-live-in-reg not or @lives-in-memory
             $lives-in-memory if { $offset } else { 0 } @initial-value
 
-            $fmt Fmt:write-indent
-            $fmt "(global " Fmt:write
-            $fmt &globl.name Token-lexeme Fmt:write
-            $fmt ":" Fmt:write
-            $fmt $i i32-format
-            $fmt " (mut i32) (i32.const " Fmt:write
-            $fmt $initial-value i32-format
-            $fmt "))\n" Fmt:write
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "(global $" Fmt:write
+            $ctx.fmt &globl.name Token-lexeme Fmt:write
+            $ctx.fmt ":" Fmt:write
+            $ctx.fmt $i i32-format
+            $ctx.fmt " (mut i32) (i32.const " Fmt:write
+            $ctx.fmt $initial-value i32-format
+            $ctx.fmt "))\n" Fmt:write
 
             $lives-in-memory if {
                 $offset $size + #offset
             }
         }
+        $i 1 + #i
     }
 }
 
-fn generate-function-table(fmt: .Formatter, program: .Monomized) { block {
-    $fmt Fmt:write-indent
-    $program.function-table.len 0 = if {
-        $fmt "(table funcref (elem))\n" Fmt:write
+fn generate-function-table(ctx: .Ctx) { block {
+    $ctx.fmt Fmt:write-indent
+    $ctx.program.function-table.len 0 = if {
+        $ctx.fmt "(table funcref (elem))\n" Fmt:write
         break
     }
-    $fmt "(table funcref (elem $intrinsic:flip\n" Fmt:write
+    $ctx.fmt "(table funcref (elem $intrinsic:flip\n" Fmt:write
 
-    $fmt Fmt:indent
-    $fmt Fmt:write-indent
+    $ctx.fmt Fmt:indent
+    $ctx.fmt Fmt:write-indent
 
     0 @i
     loop {
-        $program.function-table.len $i = if { break }
-        &program.function-table $i Array:get<FunctionHandle> @handle
+        $ctx.program.function-table.len $i = if { break }
+        &ctx.program.function-table $i Array:get<FunctionHandle> @handle
         $i 1 + #i
 
-        $program $handle lookup-function @function
-        $fmt $handle.module.index i32-format
-        $fmt ":" Fmt:write
-        $fmt &function.name Token-lexeme Fmt:write
+        $ctx.program $handle lookup-function @function
+        $ctx.fmt $handle.module.index i32-format
+        $ctx.fmt ":" Fmt:write
+        $ctx.fmt &function.name Token-lexeme Fmt:write
         $handle.instance 0 /= if {
-            $fmt ":" Fmt:write
-            $fmt $handle.instance i32-format
+            $ctx.fmt ":" Fmt:write
+            $ctx.fmt $handle.instance i32-format
         }
-        $i $program.function-table.len /= if {
-            $fmt " " Fmt:write
+        $i $ctx.program.function-table.len /= if {
+            $ctx.fmt " " Fmt:write
         }
     }
-    $fmt Fmt:dedent
-    $fmt "))\n" Fmt:write
+    $ctx.fmt Fmt:dedent
+    $ctx.fmt "))\n" Fmt:write
 } }
+
+fn generate-intrinsic-functions(fmt: .Formatter) {
+    $fmt Fmt:write-indent
+    $fmt "(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)\n" Fmt:write
+}
+
+fn generate-functions(ctx: .Ctx) {
+    0 @module-id
+    loop {
+        $module-id $ctx.program.modules.values.len = if { break }
+        &ctx.program.modules.values $module-id Array:get<Module> @module
+
+        0 @function-id
+        loop {
+            $function-id $module.functions.len = if { break }
+            &module.functions $function-id Array:get<Array<.Function>> @instances
+
+            0 @instance-id
+            loop {
+                $instance-id $instances.len = if { break }
+                $instances $instance-id Array:get<.Function> ~ @function
+                $ctx $function $module-id $instance-id generate-function
+                $instance-id 1 + #instance-id
+            }
+
+            $function-id 1 + #function-id
+        }
+
+        $module-id 1 + #module-id
+    }
+}
+
+fn globl-lives-in-memory(ctx: .Ctx, globl: .Global) -> bool {
+    $ctx.program $globl.type can-live-in-reg not
+    $globl.reffed or
+}
+
+fn local-lives-in-memory(ctx: .Ctx, local: .Local) -> bool {
+    $ctx.program $local.type can-live-in-reg not
+    $local.reffed or
+}
+
+fn any-local-lives-in-memory(ctx: .Ctx, locals: .Map<LocalId, Local>) -> bool {
+    0 @i
+    loop {
+        $i $locals.values.len = if { 0 1 = break }
+        $ctx &locals.values $i Array:get<Local> local-lives-in-memory if {
+            1 1 = break
+        }
+        $i 1 + #i
+    }
+}
+
+fn generate-function(
+    ctx: .Ctx,
+    function: .Function,
+    module: i32,
+    instance: i32
+) {
+    $ctx.fmt Fmt:write-indent
+    $ctx.fmt "(" Fmt:write
+    $ctx &function.signature &function.export $module &function.name $instance generate-signature
+    $ctx.fmt "\n" Fmt:write
+    $ctx.fmt Fmt:indent
+    $ctx &function.locals generate-locals
+
+    $function.local-copy-space 0 /= if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "(local $locl-copy-spac:e i32)\n" Fmt:write
+    }
+
+    $function.local-copy-space 0 /=
+    $ctx &function.locals any-local-lives-in-memory or @uses-stack
+    $uses-stack if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "(local $stac:k i32)\n" Fmt:write
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "global.get $stac:k local.set $stac:k\n" Fmt:write
+    }
+
+    $function.local-copy-space 0 /= if {
+        $ctx "locl-copy-spac:e" $function.local-copy-space 0 0 generate-memory-slot
+    }
+
+    $ctx &function.locals generate-memory-slots-for-locals
+
+    $ctx &function.locals &function.words generate-words
+
+    $uses-stack if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "local.get $stac:k global.set $stac:k\n" Fmt:write
+    }
+
+    $ctx.fmt Fmt:dedent
+    $ctx.fmt Fmt:write-indent
+    $ctx.fmt ")\n" Fmt:write
+}
+
+fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
+    0 @i
+    loop {
+        $i $locals.values.len = if { break }
+        &locals.values $i Array:get<Local> @local
+
+        $ctx $local local-lives-in-memory @lives-in-memory
+        $ctx.program $local.type can-live-in-reg @can-live-in-reg
+
+        $local.is-parameter $lives-in-memory and $can-live-in-reg and if {
+            // This parameter must be put on the stack, because it is reffed
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "global.get $stac:k $global.get $stac:k local.get $" Fmt:write
+            $ctx.fmt &local.name Token-lexeme Fmt:write
+            $ctx.fmt " " Fmt:write
+            $ctx $local.type generate-type
+            $ctx.fmt ".store local.tee $" Fmt:write
+            $ctx.fmt &local.name Token-lexeme Fmt:write
+            $ctx.fmt " i32.const " Fmt:write
+            $ctx.fmt $ctx.program $local.type type-size i32-format
+            $ctx.fmt " i32.add global.set $stac:k\n" Fmt:write
+        }
+
+        $local.is-parameter not $lives-in-memory and if {
+            &locals.keys $i Array:get<LocalId> @local-id
+
+            $ctx
+            &local.name Token-lexeme
+            $ctx.program $local.type type-size
+            $local-id.scope
+            $local-id.shadow
+            generate-memory-slot
+        }
+
+        $i 1 + #i
+    }
+}
+
+fn generate-memory-slot(ctx: .Ctx, name-ptr: .i32, name-len: i32, size: i32, scope: i32, shadow: i32) {
+    $ctx.fmt Fmt:write-indent
+    $ctx.fmt "global.get $stac:k global.get $stac:k i32.const " Fmt:write
+    $ctx.fmt $size 4 align-to i32-format
+    $ctx.fmt " i32.add global.set $stac:k local.set $" Fmt:write
+    $ctx.fmt $name-ptr $name-len Fmt:write
+    $scope 0 /= $shadow 0 /= or if {
+        $ctx.fmt ":" Fmt:write
+        $ctx.fmt $scope i32-format
+        $ctx.fmt ":" Fmt:write
+        $ctx.fmt $shadow i32-format
+    }
+    $ctx.fmt "\n" Fmt:write
+}
+
+fn generate-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
+    0 @i
+    loop {
+        $i $locals.values.len = if { break }
+        &locals.values $i Array:get<Local> @local
+        $local.is-parameter not if {
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "(local $" Fmt:write
+            $ctx.fmt &local.name Token-lexeme Fmt:write
+            &locals.keys $i Array:get<LocalId> @local-id
+            $local-id.scope 0 /= $local-id.shadow 0 /= or if {
+                $ctx.fmt ":" Fmt:write
+                $ctx.fmt $local-id.scope i32-format
+                $ctx.fmt ":" Fmt:write
+                $ctx.fmt $local-id.shadow i32-format
+            }
+            $ctx.fmt " " Fmt:write
+            $ctx $local.type generate-type
+            $ctx.fmt ")\n" Fmt:write
+        }
+        $i 1 + #i
+    }
+}
+
+fn generate-words(ctx: .Ctx, locals: .Map<LocalId, Local>, words: .Array<Word>) {
+    0 @i
+    loop {
+        $i $words.len = if { break }
+        $ctx $locals $words $i Array:get<Word> generate-word
+        $i 1 + #i
+    }
+}
+
+fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
+    $ctx.fmt Fmt:write-indent
+    $word match {
+        case Number -> {
+            $ctx.fmt "i32.const " Fmt:write
+            $ctx.fmt flip Token-lexeme Fmt:write
+        }
+        case String -> {
+            @word
+            $ctx.fmt "i32.const " Fmt:write
+            $ctx.fmt $word.offset i32-format
+            $ctx.fmt " i32.const " Fmt:write
+            $ctx.fmt $word.len i32-format
+        }
+        case Drop -> {
+            drop $ctx.fmt "drop" Fmt:write
+        }
+        case Intrinsic -> {
+            .intrinsic $ctx flip generate-intrinsic
+        }
+        case InitLocal -> {
+            @word
+            $locals &word.local Map:get<LocalId, Local> Maybe:assert-some<.Local> @local
+            $ctx $local local-lives-in-memory not if {
+                // The local does not live in linear memory, so
+                // the target_taip must also already be on the stack unpacked.
+                0 $ctx.program $word.type can-live-in-reg !i32 / drop // assert can-live-in-reg
+
+                $ctx.fmt "local.set " Fmt:write
+                $ctx.fmt $local &word.local generate-local-ident
+            } else {
+                $ctx.fmt "local.get " Fmt:write
+                $ctx.fmt $local &word.local generate-local-ident
+                $ctx.fmt " call $intrinsic:flip " Fmt:write
+                $ctx $word.type generate-store
+            }
+        }
+        case GetLocal -> {
+            @word
+            $ctx.program $word.result-type can-live-in-reg not if {
+                // set up the address to store the result in
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.local-copy-space-offset i32-format
+                $ctx.fmt " i32.add call $intrinsic:dupi32 " Fmt:write
+            }
+            &word.var match {
+                case Global -> {
+                    @global-id
+                    $ctx.fmt "global.get $" Fmt:write
+                    $ctx.program $global-id lookup-globl @globl
+                    $ctx.fmt &globl.name Token-lexeme Fmt:write
+                    $ctx.fmt ":" Fmt:write
+                    $ctx.fmt $global-id.module.index i32-format
+                }
+                case Local -> {
+                    $ctx.fmt "local.get " Fmt:write
+                    $ctx flip $locals flip generate-local-ident-by-id
+                }
+            }
+        }
+        case SetLocal -> {
+            @word
+            0 !.Arena Arena:temp @temp @temp-save
+            $temp $ctx &word.fields determine-loads @loads
+            &word.var match {
+                case Local -> {
+                    $locals flip Map:get<LocalId, Local> Maybe:assert-some<.Local> @local
+                    $ctx $local local-lives-in-memory
+                    $local.type
+                }
+                case Global -> {
+                    $ctx.program flip lookup-globl @globl
+                    $ctx $globl globl-lives-in-memory
+                    $globl.type
+                }
+            } @var-type @var-lives-in-memory
+            $loads.len 0 = $var-lives-in-memory not and if {
+                $ctx.fmt &word.var match {
+                    case Local -> { drop "local.set " }
+                    case Global -> { drop "global.set " }
+                } Fmt:write
+                $ctx $locals &word.var generate-var-ident
+            } else {
+                $ctx.fmt &word.var match {
+                    case Local -> { drop "local.get " }
+                    case Global -> { drop "global.get " }
+                } Fmt:write
+                $ctx $locals &word.var generate-var-ident
+
+                $word.fields.len 0 = if { $var-type } else {
+                    &word.fields $word.fields.len 1 - Array:get<FieldAccess> .target-type ~
+                } @target-type
+
+                $loads.len 0 = if {
+                    $ctx.fmt " call $intrinsic:flip " Fmt:write
+                    $ctx $target-type generate-store
+                } else {
+                    $ctx.fmt "TODO" Fmt:write
+                }
+            }
+            $temp $temp-save Arena:restore
+        }
+        case RefLocal -> {
+            @word
+            0 !.Arena Arena:temp @temp @temp-save
+            $temp $ctx &word.fields determine-loads @loads
+            $ctx.fmt &word.var match {
+                case Local -> { drop "local.get " }
+                case Global -> { drop "global.get " }
+            } Fmt:write
+            $ctx $locals &word.var generate-var-ident
+            0 @i
+            loop {
+                $i $loads.len = if { break }
+                &loads $i Array:get<i32> ~ @load
+                $i 1 + #i
+                $i $loads.len = if {
+                    $ctx.fmt " i32.const " Fmt:write
+                    $ctx.fmt $load i32-format
+                    $ctx.fmt " i32.add" Fmt:write
+                } else {
+                    $ctx.fmt " i32.load offset=" Fmt:write
+                    $ctx.fmt $load i32-format
+                }
+            }
+            $temp $temp-save Arena:restore
+        }
+        case _ -> {
+            drop
+            $ctx.fmt "TODO" Fmt:write
+        }
+    }
+    $ctx.fmt "\n" Fmt:write
+}
+
+fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>) -> Array<i32> {
+    // TODO
+    Array:new<i32>
+}
+
+fn generate-store(ctx: .Ctx, type: TypeId) { block {
+    $ctx.program $type can-live-in-reg not if {
+        $ctx.fmt "i32.const " Fmt:write
+        $ctx.fmt $ctx.program $type type-size i32-format
+        $ctx.fmt " memory.copy" Fmt:write
+        break
+    }
+    $ctx.fmt $ctx.program $type lookup-type match {
+        case I64 -> { "i64.store" }
+        case _ -> { drop "i32.store" }
+    } Fmt:write
+} }
+
+fn generate-var-ident(ctx: .Ctx, locals: .Map<LocalId, Local>, var-id: .VarId) {
+    $ctx $var-id match {
+        case Local -> {
+            $locals flip generate-local-ident-by-id
+        }
+        case Global -> {
+            @global-id
+            .fmt ~ "$" Fmt:write
+            $ctx.program $global-id lookup-globl @globl
+            $ctx.fmt &globl.name Token-lexeme Fmt:write
+            $ctx.fmt ":" Fmt:write
+            $ctx.fmt $global-id.module.index i32-format
+        }
+    }
+}
+
+fn generate-local-ident-by-id(ctx: .Ctx, locals: .Map<LocalId, Local>, local-id: .LocalId) {
+    $ctx.fmt 
+    $locals $local-id Map:get<LocalId, Local> Maybe:assert-some<.Local>
+    $local-id generate-local-ident
+}
+
+fn generate-local-ident(fmt: .Formatter, local: .Local, local-id: .LocalId) {
+    $fmt "$" Fmt:write
+    $fmt &local.name Token-lexeme Fmt:write
+    $local-id.scope 0 /= $local-id.shadow 0 /= or if {
+        $fmt ":" Fmt:write
+        $fmt $local-id.scope i32-format
+        $fmt ":" Fmt:write
+        $fmt $local-id.shadow i32-format
+    }
+}
+
+fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) {
+    $ctx.fmt $intrinsic match {
+        case Add -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.add" }
+            case _ -> { drop "i32.add" }
+        } }
+        case _ -> { drop "TODO" }
+    } Fmt:write
+}
+
+fn generate-signature(ctx: .Ctx, signature: .Signature, export: .Maybe<Token>, module: i32, name: .Token, instance: i32) {
+    $ctx.fmt "func $" Fmt:write
+    $ctx.fmt $module i32-format
+    $ctx.fmt ":" Fmt:write
+    $ctx.fmt $name Token-lexeme Fmt:write
+    $instance 0 /= if {
+        $ctx.fmt ":" Fmt:write
+        $ctx.fmt $instance i32-format
+    }
+    $export match {
+        case None -> {}
+        case Some -> {
+            $ctx.fmt " (export " Fmt:write
+            $ctx.fmt flip Token-lexeme Fmt:write
+            $ctx.fmt ")" Fmt:write
+        }
+    }
+    $ctx &signature.parameters generate-parameters
+    $ctx &signature.returns    generate-returns
+}
+
+fn generate-parameters(ctx: .Ctx, parameters: .Array<NamedTypeId>) {
+    0 @i
+    loop {
+        $i $parameters.len = if { break }
+        $parameters $i Array:get<NamedTypeId> @parameter
+        $ctx.fmt " (param $" Fmt:write
+        $ctx.fmt &parameter.name Token-lexeme Fmt:write
+        $ctx.fmt " " Fmt:write
+        $ctx $parameter.type generate-type
+        $ctx.fmt ")" Fmt:write
+        $i 1 + #i
+    }
+}
+
+fn generate-returns(ctx: .Ctx, returns: .Array<TypeId>) {
+    0 @i
+    loop {
+        $i $returns.len = if { break }
+        $ctx $returns $i Array:get<TypeId> ~ generate-type
+        $i 1 + #i
+    }
+}
+
+fn generate-type(ctx: .Ctx, type: TypeId) {
+    $ctx.program $type type-size @size
+    $ctx.fmt $size 4 gt $size 8 le and if {
+        "i64"
+    } else {
+        "i32"
+    } Fmt:write
+}
+

@@ -1209,7 +1209,7 @@ class Parser:
 @dataclass
 class ImportItem:
     name: Token
-    handle: 'ResolvedFunctionHandle | ResolvedStructHandle'
+    handle: 'ResolvedFunctionHandle | ResolvedCustomTypeHandle'
 
     def __str__(self) -> str:
         return f"(ImportItem {self.name} {self.handle})"
@@ -1243,7 +1243,7 @@ def listtostr(seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_l
     return s[0:-2] + "]" if multi_line else s[0:-2] + "]"
 
 @dataclass(frozen=True, eq=True)
-class ResolvedStructHandle:
+class ResolvedCustomTypeHandle:
     module: int
     index: int
 
@@ -1253,7 +1253,7 @@ class ResolvedStructHandle:
 @dataclass
 class ResolvedStructType:
     name: Token
-    struct: ResolvedStructHandle
+    struct: ResolvedCustomTypeHandle
     generic_arguments: List['ResolvedType']
 
     def __str__(self) -> str:
@@ -1326,7 +1326,7 @@ def resolved_type_eq(a: ResolvedType, b: ResolvedType):
     if isinstance(a, ResolvedPtrType) and isinstance(b, ResolvedPtrType):
         return resolved_type_eq(a.child, b.child)
     if isinstance(a, ResolvedStructType) and isinstance(b, ResolvedStructType):
-        return a.struct.module == a.struct.module and a.struct.index == b.struct.index and resolved_types_eq(a.generic_arguments, b.generic_arguments)
+        return a.struct.module == b.struct.module and a.struct.index == b.struct.index and resolved_types_eq(a.generic_arguments, b.generic_arguments)
     if isinstance(a, ResolvedFunctionType) and isinstance(b, ResolvedFunctionType):
         if len(a.parameters) != len(b.parameters) or len(a.returns) != len(b.returns):
             return False
@@ -1580,7 +1580,7 @@ class ResolvedIndirectCallWord:
 @dataclass
 class ResolvedStructFieldInitWord:
     token: Token
-    struct: ResolvedStructHandle
+    struct: ResolvedCustomTypeHandle
     generic_arguments: List[ResolvedType]
     taip: ResolvedType
 
@@ -2134,7 +2134,7 @@ class BreakStack:
 
 @dataclass
 class StructLitContext:
-    struct: ResolvedStructHandle
+    struct: ResolvedCustomTypeHandle
     generic_arguments: List[ResolvedType]
     fields: Dict[str, ResolvedType]
 
@@ -2898,7 +2898,7 @@ class ModuleResolver:
         else:
             return self.resolved_modules[function.module].functions[function.index].signature
 
-    def get_type_definition(self, struct: ResolvedStructHandle) -> ResolvedTypeDefinition:
+    def get_type_definition(self, struct: ResolvedCustomTypeHandle) -> ResolvedTypeDefinition:
         if struct.module == self.id:
             return self.resolved_type_definitions[struct.index]
         return self.resolved_modules[struct.module].type_definitions[struct.index]
@@ -2910,7 +2910,7 @@ class ModuleResolver:
         self.resolved_type_definitions = resolved_type_definitions
         for i, type_definition in enumerate(self.resolved_type_definitions):
             if isinstance(type_definition, ResolvedStruct) or isinstance(type_definition, ResolvedVariant):
-                if self.is_struct_recursive(ResolvedStructHandle(self.id, i)):
+                if self.is_struct_recursive(ResolvedCustomTypeHandle(self.id, i)):
                     self.abort(type_definition.name, "structs and variants cannot be recursive")
         self.globals = list(map(self.resolve_global, self.module.globals))
         resolved_signatures = list(map(lambda f: self.resolve_function_signature(f.signature), self.module.functions))
@@ -2930,7 +2930,7 @@ class ModuleResolver:
         for _, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
-                    if item.name.lexeme == name.lexeme and not isinstance(item.handle, ResolvedStructHandle):
+                    if item.name.lexeme == name.lexeme and not isinstance(item.handle, ResolvedCustomTypeHandle):
                         return item.handle
         self.abort(name, f"function {name.lexeme} not found")
 
@@ -2948,7 +2948,7 @@ class ModuleResolver:
             resolved_item = None
             for struct_id, type_definition in enumerate(imported_module.type_definitions):
                 if type_definition.name.lexeme == item.lexeme:
-                    resolved_item = ImportItem(item, ResolvedStructHandle(imported_module.id, struct_id))
+                    resolved_item = ImportItem(item, ResolvedCustomTypeHandle(imported_module.id, struct_id))
                     break
             if resolved_item is not None:
                 resolved_items.append(resolved_item)
@@ -3005,19 +3005,19 @@ class ModuleResolver:
                         for imp in imps:
                             for index, struct in enumerate(self.resolved_modules[imp.module].type_definitions):
                                 if struct.name.lexeme == name.lexeme:
-                                    return ResolvedStructType(taip.name, ResolvedStructHandle(imp.module, index), resolved_generic_arguments)
+                                    return ResolvedStructType(taip.name, ResolvedCustomTypeHandle(imp.module, index), resolved_generic_arguments)
                 self.abort(taip.module, f"struct {module.lexeme}:{name.lexeme} not found")
             case other:
                 assert_never(other)
 
-    def resolve_struct_name(self, name: Token) -> ResolvedStructHandle:
+    def resolve_struct_name(self, name: Token) -> ResolvedCustomTypeHandle:
         for index, struct in enumerate(self.module.type_definitions):
             if struct.name.lexeme == name.lexeme:
-                return ResolvedStructHandle(self.id, index)
+                return ResolvedCustomTypeHandle(self.id, index)
         for _, imps in self.imports.items():
             for imp in imps:
                 for item in imp.items:
-                    if item.name.lexeme == name.lexeme and isinstance(item.handle, ResolvedStructHandle):
+                    if item.name.lexeme == name.lexeme and isinstance(item.handle, ResolvedCustomTypeHandle):
                         return item.handle
         self.abort(name, f"struct {name.lexeme} not found")
 
@@ -3033,7 +3033,7 @@ class ModuleResolver:
     def resolve_struct(self, struct: ParsedStruct) -> ResolvedStruct:
         return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)), struct.generic_parameters)
 
-    def is_struct_recursive(self, struct_handle: ResolvedStructHandle, stack: List[ResolvedStruct | ResolvedVariant] = []) -> bool:
+    def is_struct_recursive(self, struct_handle: ResolvedCustomTypeHandle, stack: List[ResolvedStruct | ResolvedVariant] = []) -> bool:
         struct = self.get_type_definition(struct_handle)
         if struct in stack:
             return True
@@ -3129,7 +3129,7 @@ class StructHandle:
     instance: int
 
     def __str__(self) -> str:
-        return f"ResolvedStructHandle(module={str(self.module)}, index={str(self.index)}, instance={str(self.instance)})"
+        return f"ResolvedCustomTypeHandle(module={str(self.module)}, index={str(self.index)}, instance={str(self.instance)})"
 
 @dataclass
 class StructType:
@@ -3216,18 +3216,6 @@ class ParameterLocal:
         return self._lives_in_memory
 
 @dataclass
-class MemoryLocal:
-    name: Token
-    taip: Type
-    annotated_size: int | None = None
-
-    def size(self) -> int:
-        return self.annotated_size if self.annotated_size is not None else self.taip.size()
-
-    def lives_in_memory(self) -> bool:
-        return True
-
-@dataclass
 class InitLocal:
     name: Token
     taip: Type
@@ -3239,7 +3227,7 @@ class InitLocal:
     def lives_in_memory(self) -> bool:
         return self._lives_in_memory
 
-Local = ParameterLocal | MemoryLocal | InitLocal
+Local = ParameterLocal | InitLocal
 
 @dataclass
 class Body:
@@ -3563,7 +3551,7 @@ class Module:
 @dataclass
 class Monomizer:
     modules: Dict[int, ResolvedModule]
-    type_definitions: Dict[ResolvedStructHandle, List[Tuple[List[Type], TypeDefinition]]] = field(default_factory=dict)
+    type_definitions: Dict[ResolvedCustomTypeHandle, List[Tuple[List[Type], TypeDefinition]]] = field(default_factory=dict)
     externs: Dict[ResolvedFunctionHandle, Extern] = field(default_factory=dict)
     globals: Dict[GlobalId, Global] = field(default_factory=dict)
     functions: Dict[ResolvedFunctionHandle, Function] = field(default_factory=dict)
@@ -3937,7 +3925,7 @@ class Monomizer:
         self.monomize_function(word.function, generics_here)
         return self.monomize_call_word(word, copy_space_offset, max_struct_ret_count, generics) # the function instance should now exist, try monomorphizing this CallWord again
 
-    def lookup_struct(self, struct: ResolvedStructHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition] | None:
+    def lookup_struct(self, struct: ResolvedCustomTypeHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition] | None:
         if struct not in self.type_definitions:
             return None
         for instance_index, (genics, instance) in enumerate(self.type_definitions[struct]):
@@ -3945,14 +3933,14 @@ class Monomizer:
                 return StructHandle(struct.module, struct.index, instance_index), instance
         return None
 
-    def add_struct(self, handle: ResolvedStructHandle, taip: TypeDefinition, generics: List[Type]) -> StructHandle:
+    def add_struct(self, handle: ResolvedCustomTypeHandle, taip: TypeDefinition, generics: List[Type]) -> StructHandle:
         if handle not in self.type_definitions:
             self.type_definitions[handle] = []
         instance_index = len(self.type_definitions[handle])
         self.type_definitions[handle].append((generics, taip))
         return StructHandle(handle.module, handle.index, instance_index)
 
-    def monomize_struct(self, struct: ResolvedStructHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition]:
+    def monomize_struct(self, struct: ResolvedCustomTypeHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition]:
         handle_and_instance = self.lookup_struct(struct, generics)
         if handle_and_instance is not None:
             return handle_and_instance
@@ -4149,9 +4137,6 @@ class WatGenerator:
             self.write_indent()
             self.write("global.get $stac:k local.set $stac:k\n")
 
-        for local_id, local in function.body.locals.items():
-            if isinstance(local, MemoryLocal):
-                self.write_mem(local.name.lexeme, local.size(), local_id.scope, local_id.shadow)
         if function.body.locals_copy_space != 0:
             self.write_mem("locl-copy-spac:e", function.body.locals_copy_space, 0, 0)
         self.write_structs(function.body.locals)
@@ -4215,7 +4200,7 @@ class WatGenerator:
             case GetWord(token, local_id, target_taip, loads, copy_space_offset, var_lives_in_memory):
                 self.write_indent()
                 if not target_taip.can_live_in_reg():
-                    # set up the address to store store the result in
+                    # set up the address to store the result in
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
                 if isinstance(local_id, GlobalId):
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
@@ -4938,7 +4923,7 @@ def indent_non_first(s: str) -> str:
 def indent(s: str) -> str:
     return reduce(lambda a,b: f"{a}{b}", map(lambda s: f"  {s}", s.splitlines(keepends=True)))
 
-Mode = Literal["lex"] | Literal["parse"] | Literal["check"] | Literal["compile"]
+Mode = Literal["lex"] | Literal["parse"] | Literal["check"] | Literal["monomize"] | Literal["compile"]
 
 def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> str:
     if path == "-":
@@ -4967,6 +4952,8 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
     if mode == "check":
         return format_dict({ (f"./{k}" if k != "-" else k): v for k,v in resolved_modules_by_path.items() })
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
+    if mode == "monomize":
+        return "TODO"
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
 def main(argv: List[str], stdin: str | None = None) -> str:
@@ -4979,6 +4966,12 @@ def main(argv: List[str], stdin: str | None = None) -> str:
         path = argv[2] if len(argv) > 2 else "-"
     elif len(argv) > 2 and argv[1] == "check":
         mode = "check"
+        path = argv[2]
+    elif len(argv) > 2 and argv[1] == "monomize":
+        mode = "monomize"
+        path = argv[2]
+    elif len(argv) > 2 and argv[1] == "compile":
+        mode = "compile"
         path = argv[2]
     else:
         path = argv[1]

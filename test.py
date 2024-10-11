@@ -135,6 +135,11 @@ native_tests = list(map(lambda p: f"./tests/{p}.watim", [
     "resolve-if",
     "resolve-loop",
     "compatible-but-different-stacks",
+    "monomize-function",
+    "generate-global",
+    "generate-empty-function",
+    "generate-basic-words",
+    "generate-local-words",
 ]))
 
 failed = False

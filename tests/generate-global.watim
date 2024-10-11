@@ -1,0 +1,23 @@
+[== Stdin Compiler ==]
+global JustAnInt: i32
+struct Bigger { a: i64 b: i64 }
+global BiggerStruct: Bigger
+[== Args Compiler ==]
+compile
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $JustAnInt:0 (mut i32) (i32.const 0))
+	(global $BiggerStruct:0 (mut i32) (i32.const 0))
+	(global $stac:k (mut i32) (i32.const 16))
+	(data (i32.const 0) "")
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)

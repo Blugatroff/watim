@@ -156,17 +156,17 @@ fn VarId-format(fmt: .Formatter, self: .VarId) {
 
 struct FieldAccess {
     name: Token
-    source-taip: Type
-    target-taip: Type
+    source-type: Type
+    target-type: Type
     field-index: i32
 }
 fn FieldAccess-format(fmt: .Formatter, self: .FieldAccess) {
     $fmt "(FieldAccess " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.source-taip Type-format
+    $fmt &self.source-type Type-format
     $fmt " " Fmt:write
-    $fmt &self.target-taip Type-format
+    $fmt &self.target-type Type-format
     $fmt " " Fmt:write
     $fmt $self.field-index i32-format
     $fmt ")" Fmt:write
@@ -2796,9 +2796,9 @@ fn resolve-get-field(ctx: .WordCtx, stack: .Stack, word: .P:GetField) -> Result<
         case _ -> { drop 0 1 = }
     } @on-ptr
     $on-ptr if {
-        $ctx $stack &fields $fields.len 1 - Array:get<FieldAccess>.target-taip make Type.Ptr push
+        $ctx $stack &fields $fields.len 1 - Array:get<FieldAccess>.target-type make Type.Ptr push
     } else {
-        $ctx $stack &fields $fields.len 1 - Array:get<FieldAccess>.target-taip ~ push
+        $ctx $stack &fields $fields.len 1 - Array:get<FieldAccess>.target-type ~ push
     }
     $word.token $fields $on-ptr make GetField
     make Word.GetField 0 1 = [,2]
@@ -2817,7 +2817,7 @@ fn resolve-get-local(ctx: .WordCtx, stack: .Stack, word: .P:GetLocal) -> Result<
     $fields.len 0 = if {
         $type
     } else {
-        &fields $fields.len 1 - Array:get<FieldAccess> .target-taip ~
+        &fields $fields.len 1 - Array:get<FieldAccess> .target-type ~
     } @resolved-type
     $ctx $stack $resolved-type push
     $word.ident $var-id $type $fields $resolved-type make GetLocal
@@ -2839,8 +2839,9 @@ fn resolve-var-name(ctx: .WordCtx, name: .Token) -> Result<[VarId, Type], Resolv
         }
         case Some -> {
             @local
-            $local.id make VarId.Local $local.local.type [,2]
-            make Result<[VarId, Type], ResolveError>.Success
+            $local make VarId.Local
+            &ctx.env &local Env:lookup-by-id .type ~
+            [,2] make Result<[VarId, Type], ResolveError>.Success
         }
     }
 }
@@ -2857,7 +2858,7 @@ fn resolve-set-local(ctx: .WordCtx, stack: .Stack, word: .P:SetLocal) -> Result<
     $fields.len 0 = if {
         &type
     } else {
-        &fields $fields.len 1 - Array:get<FieldAccess> .target-taip
+        &fields $fields.len 1 - Array:get<FieldAccess> .target-type
     } @resolved-type
     $ctx $stack &word.ident $resolved-type "TODO" expect1 match {
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
@@ -2880,7 +2881,7 @@ fn resolve-store-local(ctx: .WordCtx, stack: .Stack, word: .P:Store) -> Result<[
     $fields.len 0 = if {
         &type
     } else {
-        &fields $fields.len 1 - Array:get<FieldAccess> .target-taip
+        &fields $fields.len 1 - Array:get<FieldAccess> .target-type
     } match {
         case Ptr -> { ~ }
         case _ -> { drop $ctx.ctx &word.name "`=>` can only store into ptr types" abort<[Word, bool]> break }
@@ -2901,25 +2902,47 @@ fn resolve-ref-local(ctx: .WordCtx, stack: .Stack, word: .P:RefLocal) -> Result<
                 case None -> { $ctx.ctx &word.ident "var not found" abort<[Word, bool]> break }
                 case Some -> {
                     [,] @id @globl
-                    1 1 = #globl.reffed
-                    $globl.type $word.ident $ctx.ctx.module-id $id make GlobalId make VarId.Global
+                    &globl.reffed
+                    $globl.type
+                    $word.ident $ctx.ctx.module-id $id make GlobalId make VarId.Global
                 }
             }
         }
         case Some -> {
-            @local
-            1 1 = #local.local.reffed
-            $local.local.type $local.id make VarId.Local
+            @local-id
+            &ctx.env &local-id Env:lookup-by-id @local
+            &local.reffed $local.type $local-id make VarId.Local
         }
-    } @var-id @type
+    } @var-id @type @reffed-slot
     $ctx $type &word.fields resolve-field-accesses match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } @fields
+
+    0 @i
+    loop {
+        $i $word.fields.len = if {
+            // No field access went through a pointer,
+            // therefore this local really was reffed.
+            1 1 = =>reffed-slot
+            break
+        }
+        &fields $i Array:get<FieldAccess> .target-type match {
+            case Ptr -> {
+                drop
+                // At least one field access goes through a pointer,
+                // therefore this isn't a real ref of the local!
+                break
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+
     $fields.len 0 = if {
         &type
     } else {
-        &fields $fields.len 1 - Array:get<FieldAccess> .target-taip
+        &fields $fields.len 1 - Array:get<FieldAccess> .target-type
     } $ctx.persistent flip Arena:copy<Type> @result-type
     $ctx $stack $result-type make Type.Ptr push
     $word.ident $var-id $fields make RefLocal
@@ -3046,7 +3069,7 @@ fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveEr
                     $module-path ~ ByteSlice:unpack FS:path-dir ByteArray:init
                 } @path
                 $temp-arena &path &imp.path Token-lexeme 2 - flip 1 + flip ByteArray:push
-                $temp-arena $path ByteSlice:unpack FS:normalize make ByteSlice @path
+                $temp-arena $path ByteArray:unpack FS:normalize make ByteSlice @path
                 $ctx.parsed-modules &path Map:get-index<ByteSlice, Array<TopItem>> assert-some<i32> make ModuleId @imported-module-id
                 $ctx.persistent $path ByteSlice:copy @path
 

@@ -8,6 +8,8 @@ struct Formatter {
     indent-level: i32
     write: (i32, .i32, i32 ->)
     user-data: i32
+    indentation-ptr: .i32
+    indentation-len: i32
 }
 
 fn new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
@@ -15,6 +17,16 @@ fn new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
         $write @write
         $user-data @user-data
         0 @indent-level
+        "  " @indentation-len @indentation-ptr
+    }
+}
+fn use-indentation(fmt: Formatter, indentation-ptr: .i32, indentation-len: i32) -> Formatter {
+    make Formatter {
+        $fmt.write @write
+        $fmt.user-data @user-data
+        $fmt.indent-level @indent-level
+        $indentation-ptr @indentation-ptr
+        $indentation-len @indentation-len
     }
 }
 fn write(self: .Formatter, ptr: .i32, len: i32) {
@@ -24,7 +36,7 @@ fn write-indent(self: .Formatter) {
     0 @i
     loop {
         $i $self.indent-level = if { break }
-        $self "  " write
+        $self $self.indentation-ptr $self.indentation-len write
         $i 1 + #i
     }
 }
@@ -64,7 +76,14 @@ fn buffered(arena: .Arena, fmt: .Formatter, buf-size: i32) -> Formatter, .Buffer
     $arena $buf-size Arena:alloc-bytes $buf-size 0 $fmt
     make Buffer
     Arena:push<Buffer> @buffer
-    \write-buffered $buffer !i32 new
+    $buffer !i32 @user-data
+    make Formatter {
+        \write-buffered @write
+        $user-data @user-data
+        $fmt.indent-level @indent-level
+        $fmt.indentation-ptr @indentation-ptr
+        $fmt.indentation-len @indentation-len
+    }
     $buffer
 }
 

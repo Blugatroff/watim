@@ -16,7 +16,7 @@ import "./type.watim" as Resolved (
     ModuleId, ModuleId-format,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
-import "./env.watim" as Env (LocalId, LocalId-format)
+import "./env.watim" as Resolved (LocalId, LocalId-format, LocalId-eq)
 import "./resolver.watim" as Resolved (
     StringWord, StringWord-format,
     VarId, VarId-format,
@@ -267,10 +267,30 @@ fn Extern-format(fmt: .Formatter, self: .Extern) {
     $fmt ")" Fmt:write
 }
 
+struct Local {
+    name: Token
+    type: TypeId
+    reffed: bool
+    is-parameter: bool
+}
+fn Local-format(fmt: .Formatter, self: .Local) {
+    $fmt "(Local " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.reffed bool-format
+    $fmt " " Fmt:write
+    $fmt $self.is-parameter bool-format
+    $fmt ")" Fmt:write
+}
+
 struct Function {
     name: Token
     export: Maybe<Token>
     signature: Signature
+    locals: Map<LocalId, Local>
+    local-copy-space: i32
     words: Array<Word>
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
@@ -287,6 +307,14 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt Fmt:write-indent
     $fmt "signature=" Fmt:write
     $fmt &self.signature Signature-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "locals=" Fmt:write
+    $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<LocalId, Local>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "local-copy-space=" Fmt:write
+    $fmt $self.local-copy-space i32-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "words=" Fmt:write
@@ -759,8 +787,9 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
     Logging:enabled if {
         2 "Calculating type sizes\n" IO:write-all IO:check
     }
-    $arena &monomized-modules &types compute-sizes $function-table
-    make Monomized
+    $arena &monomized-modules &types compute-sizes @sizes
+    &monomized-modules &sizes measure-copy-space
+    $sizes $function-table make Monomized
 }
 
 fn monomize-globals(ctx: .Ctx, globals: .Array<Resolved:Global>) -> Array<Global> {
@@ -792,8 +821,37 @@ fn monomize-extrn(ctx: .Ctx, extrn: .Resolved:Extern) -> Extern {
 fn monomize-function(ctx: .Ctx, function: .Resolved:Function, generic-arguments: .Array<TypeId>) -> Function {
     $function.name $function.export
     $ctx &function.signature $generic-arguments monomize-signature
+    $ctx &function.locals $generic-arguments monomize-locals
+    0 not
     $ctx &function.words $generic-arguments monomize-words
     make Function
+}
+
+fn monomize-locals(ctx: .Ctx, locals: .Map<LocalId, Resolved:Local>, generic-arguments: .Array<TypeId>) -> Map<LocalId, Local> {
+    $ctx.arena \LocalId-eq $locals.values.len Map:new-with-capacity<LocalId, Local> @monomized
+    0 @i
+    loop {
+        $i $locals.values.len = if { $monomized break }
+
+        &monomized.keys
+        &locals.keys $i Array:get<LocalId> ~
+        Array:push-assert-no-alloc<LocalId>
+
+        &monomized.values
+        $ctx &locals.values $i Array:get<Resolved:Local> $generic-arguments monomize-local
+        Array:push-assert-no-alloc<Local>
+
+        $i 1 + #i
+    }
+}
+
+fn monomize-local(ctx: .Ctx, local: .Resolved:Local, generic-arguments: .Array<TypeId>) -> Local {
+    make Local {
+        $local.name @name
+        $ctx &local.type $generic-arguments monomize-type @type
+        $local.reffed @reffed
+        $local.is-parameter @is-parameter
+    }
 }
 
 fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -> Array<Extern> {
@@ -924,7 +982,8 @@ struct GetLocal {
     name: Token
     var: VarId
     fields: Array<FieldAccess>
-    result-taip: TypeId
+    result-type: TypeId
+    local-copy-space-offset: i32
 }
 fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt "(GetLocal " Fmt:write
@@ -932,9 +991,11 @@ fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt " " Fmt:write
     $fmt &self.var VarId-format
     $fmt " " Fmt:write
-    $fmt &self.result-taip TypeId-format
+    $fmt &self.result-type TypeId-format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt " " Fmt:write
+    $fmt $self.local-copy-space-offset i32-format
     $fmt ")" Fmt:write
 }
 
@@ -1015,17 +1076,17 @@ fn GetField-format(fmt: .Formatter, self: .GetField) {
 
 struct FieldAccess {
     name: Token
-    source-taip: TypeId
-    target-taip: TypeId
+    source-type: TypeId
+    target-type: TypeId
     field-index: i32
 }
 fn FieldAccess-format(fmt: .Formatter, self: .FieldAccess) {
     $fmt "(FieldAccess " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.source-taip TypeId-format
+    $fmt &self.source-type TypeId-format
     $fmt " " Fmt:write
-    $fmt &self.target-taip TypeId-format
+    $fmt &self.target-type TypeId-format
     $fmt " " Fmt:write
     $fmt $self.field-index i32-format
     $fmt ")" Fmt:write
@@ -1393,7 +1454,8 @@ fn monomize-get-locl(ctx: .Ctx, word: .Resolved:GetLocal, generic-arguments: .Ar
         $word.var @var
         $ctx &word.var-type $generic-arguments monomize-type @var-type
         $ctx &word.fields $generic-arguments monomize-field-accesses @fields
-        $ctx &word.result-taip $generic-arguments monomize-type @result-taip
+        $ctx &word.result-taip $generic-arguments monomize-type @result-type
+        0 not @local-copy-space-offset
     }
     make Word.GetLocal
 }
@@ -1420,8 +1482,8 @@ fn monomize-field-accesses(ctx: .Ctx, fields: .Array<Resolved:FieldAccess>, gene
 fn monomize-field-access(ctx: .Ctx, field: .Resolved:FieldAccess, generic-arguments: .Array<TypeId>) -> FieldAccess {
     make FieldAccess {
         $field.name @name
-        $ctx &field.source-taip $generic-arguments monomize-type @source-taip
-        $ctx &field.target-taip $generic-arguments monomize-type @target-taip
+        $ctx &field.source-type $generic-arguments monomize-type @source-type
+        $ctx &field.target-type $generic-arguments monomize-type @target-type
         $field.field-index @field-index
     }
 }
@@ -1660,3 +1722,69 @@ fn monomize-words(ctx: .Ctx, words: .Array<Resolved:Word>, generic-arguments: .A
         Array:push<Word>
     }
 }
+
+
+// =============================================================================
+//  Local copy space measuring
+// =============================================================================
+
+fn measure-copy-space(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>) {
+    0 @module-id
+    loop {
+        $module-id $modules.values.len = if { break }
+        &modules.values $module-id Array:get<Module> $sizes module-measure-copy-space
+        $module-id 1 + #module-id
+    }
+}
+
+fn module-measure-copy-space(module: .Module, sizes: .Array<i32>) {
+    0 @function-id
+    loop {
+        $function-id $module.functions.len = if { break }
+        &module.functions $function-id Array:get<Array<.Function>> @instances
+        0 @instance-id
+        loop {
+            $instance-id $instances.len = if { break }
+            $instances $instance-id Array:get<.Function> ~ @function
+            $function $sizes function-measure-copy-space
+            $instance-id 1 + #instance-id
+        }
+        $function-id 1 + #function-id
+    }
+}
+
+fn function-measure-copy-space(function: .Function, sizes: .Array<i32>) {
+    0 #function.local-copy-space
+    &function.words $sizes &function.local-copy-space words-measure-copy-space
+}
+
+fn words-measure-copy-space(words: .Array<Word>, sizes: .Array<i32>, offset: .i32) {
+    0 @i
+    loop {
+        $i $words.len = if { break }
+        $words $i Array:get<Word> $sizes $offset word-measure-copy-space
+        $i 1 + #i
+    }
+}
+
+fn type-size(type: TypeId, sizes: .Array<i32>) -> i32 {
+    $sizes $type.index Array:get<i32> ~
+}
+
+fn can-live-in-reg(type: TypeId, sizes: .Array<i32>) -> bool {
+    $sizes $type.index Array:get<i32> ~ 8 le
+}
+
+fn word-measure-copy-space(word: .Word, sizes: .Array<i32>, offset: .i32) {
+    $word match {
+        case GetLocal -> {
+            @word
+            $word.result-type $sizes can-live-in-reg not if {
+                $offset ~ #word.local-copy-space-offset
+                $offset ~ $word.result-type $sizes type-size + =>offset
+            }
+        }
+        case _ -> { drop }
+    }
+}
+

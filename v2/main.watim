@@ -136,7 +136,7 @@ fn main "_start" () {
             &files-arena FS:init IO:check @fs
             &files-arena &fs $file-path read-file-or-stdin @watim-code
             "Tokens" Arena:new @tokens-arena
-            &tokens-arena $watim-code lex @tokens
+            &tokens-arena &watim-code ByteArray:to-slice lex @tokens
             &files-arena Arena:shred
             0 @i
             loop {
@@ -157,7 +157,7 @@ fn main "_start" () {
             "Files" Arena:new @files-arena
             &files-arena FS:init IO:check @fs
             &files-arena &fs $file-path read-file-or-stdin @watim-code
-            &arena $watim-code lex @tokens
+            &arena &watim-code ByteArray:to-slice lex @tokens
             &files-arena Arena:shred
             &arena $tokens parse match {
                 case Error -> {
@@ -185,7 +185,7 @@ fn main "_start" () {
             "Files" Arena:new @files-arena
             &files-arena FS:init IO:check @fs
             &files-arena &fs $file-path read-file-or-stdin @watim-code
-            &arena $watim-code lex @tokens
+            &arena &watim-code ByteArray:to-slice lex @tokens
             &files-arena Arena:shred
             &arena $tokens parse match {
                 case Error -> {
@@ -286,7 +286,7 @@ fn main "_start" () {
             "Monomizing" Arena:new @monomizing-arena
             &monomizing-arena &modules monomize @monomized
             &resolving-arena Arena:shred
-            1 Fmt:to-fd @fmt
+            1 Fmt:to-fd "\t" Fmt:use-indentation @fmt
             &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt &monomized Generator:generate
             &fmt "\n" Fmt:write
@@ -329,7 +329,7 @@ fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<Byt
     }
     $arena Arena:temp @temp-arena @save
     $temp-arena $fs $file-path read-file-or-stdin @watim-code
-    $arena $watim-code lex @tokens
+    $arena &watim-code ByteArray:to-slice lex @tokens
     $arena $tokens parse match {
         case Error -> {
             2 flip $file-path-or-dash ByteSlice:unpack ParseError-print drop
