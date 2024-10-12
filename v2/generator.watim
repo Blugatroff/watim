@@ -9,14 +9,16 @@ import "../std/fmt.watim" as Fmt (Formatter)
 import "../std/util.watim" as Util (i32-format, bool-format)
 
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
+import "./type.watim" as Type (CustomTypeHandle)
+import "./env.watim" as Env (LocalId)
+import "./resolver.watim" as Resolver (GlobalId, VarId)
 import "./monomizer.watim" as Monomized (
     Monomized, Module,
     Function, FunctionHandle, Signature, Global,
     Type, Key, Key-type, NamedTypeId, TypeId, Local,
+    CustomType, Variant, Struct,
     Word, Intrinsic, FieldAccess
 )
-import "./resolver.watim" as Resolver (GlobalId, VarId)
-import "./env.watim" as Env (LocalId)
 
 struct Ctx {
     fmt: .Formatter
@@ -81,6 +83,11 @@ fn lookup-type(program: .Monomized, type: TypeId) -> .Type {
         case None -> { Core:unreachable<.Type> }
         case Some -> { Key-type }
     }
+}
+
+fn lookup-custom-type(program: .Monomized, handle: .CustomTypeHandle) -> .CustomType {
+    &program.modules.values $handle.module.index Array:get<Module> .custom-types
+    $handle.index Array:get<CustomType>
 }
 
 fn type-size(program: .Monomized, type: TypeId) -> i32 {
@@ -277,7 +284,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
         $local.is-parameter $lives-in-memory and $can-live-in-reg and if {
             // This parameter must be put on the stack, because it is reffed
             $ctx.fmt Fmt:write-indent
-            $ctx.fmt "global.get $stac:k $global.get $stac:k local.get $" Fmt:write
+            $ctx.fmt "global.get $stac:k global.get $stac:k local.get $" Fmt:write
             $ctx.fmt &local.name Token-lexeme Fmt:write
             $ctx.fmt " " Fmt:write
             $ctx $local.type generate-type
@@ -390,7 +397,8 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
         }
         case GetLocal -> {
             @word
-            $ctx.program $word.result-type can-live-in-reg not if {
+            $ctx.program $word.result-type can-live-in-reg @result-can-live-in-reg
+            $result-can-live-in-reg not if {
                 // set up the address to store the result in
                 $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
                 $ctx.fmt $word.local-copy-space-offset i32-format
@@ -404,17 +412,62 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
                     $ctx.fmt &globl.name Token-lexeme Fmt:write
                     $ctx.fmt ":" Fmt:write
                     $ctx.fmt $global-id.module.index i32-format
+                    $ctx $globl globl-lives-in-memory
                 }
                 case Local -> {
+                    @local-id
                     $ctx.fmt "local.get " Fmt:write
-                    $ctx flip $locals flip generate-local-ident-by-id
+                    $locals $local-id Map:get<LocalId, Local> Maybe:assert-some<.Local> @local
+                    $ctx.fmt $local $local-id generate-local-ident
+                    $ctx $local local-lives-in-memory
+                }
+            } @var-lives-in-memory
+            // at this point, either the value itself or a pointer to it is on the stack
+
+            0 !.Arena Arena:temp @temp @temp-save
+            $temp $ctx &word.fields $var-lives-in-memory determine-loads @loads
+
+            $ctx.program $word.result-type type-size @result-size
+
+            $loads.len 0 = if {
+                $result-can-live-in-reg not if {
+                    $ctx.fmt " i32.const " Fmt:write
+                    $ctx.fmt $result-size i32-format
+                    $ctx.fmt " memory.copy" Fmt:write
+                } else {
+                    $var-lives-in-memory if {
+                        $ctx.fmt " i32.load" Fmt:write
+                    }
+                }
+            } else {
+                0 @i
+                loop {
+                    $i $loads.len = if { break }
+                    &loads $i Array:get<i32> ~ @load
+                    $i 1 + #i
+                    $i $loads.len = if {
+                        $ctx.fmt " i32.load offset=" Fmt:write
+                        $ctx.fmt $load i32-format
+                        break
+                    }
+                    $result-can-live-in-reg if {
+                        $ctx.fmt " i32.load offset=" Fmt:write
+                        $ctx.fmt $load i32-format
+                    } else {
+                        $ctx.fmt " i32.const" Fmt:write
+                        $ctx.fmt $load i32-format
+                        $ctx.fmt " i32.add i32.const " Fmt:write
+                        $ctx.fmt $result-size i32-format
+                        $ctx.fmt " memory.copy" Fmt:write
+                    }
                 }
             }
+            $temp $temp-save Arena:restore
+
         }
         case SetLocal -> {
             @word
             0 !.Arena Arena:temp @temp @temp-save
-            $temp $ctx &word.fields determine-loads @loads
             &word.var match {
                 case Local -> {
                     $locals flip Map:get<LocalId, Local> Maybe:assert-some<.Local> @local
@@ -427,6 +480,7 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
                     $globl.type
                 }
             } @var-type @var-lives-in-memory
+            $temp $ctx &word.fields $var-lives-in-memory determine-loads @loads
             $loads.len 0 = $var-lives-in-memory not and if {
                 $ctx.fmt &word.var match {
                     case Local -> { drop "local.set " }
@@ -448,7 +502,21 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
                     $ctx.fmt " call $intrinsic:flip " Fmt:write
                     $ctx $target-type generate-store
                 } else {
-                    $ctx.fmt "TODO" Fmt:write
+                    0 @i
+                    loop {
+                        $i $loads.len = if { break }
+                        &loads $i Array:get<i32> ~ @load
+                        $i 1 + #i
+                        $ctx.fmt " i32.const " Fmt:write
+                        $ctx.fmt $load i32-format
+                        $ctx.fmt " i32.add " Fmt:write
+                        $i $loads.len = if {
+                            $ctx.fmt "call $intrinsic:flip " Fmt:write
+                            $ctx $target-type generate-store
+                        } else {
+                            $ctx.fmt "i32.load" Fmt:write
+                        }
+                    }
                 }
             }
             $temp $temp-save Arena:restore
@@ -456,7 +524,7 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
         case RefLocal -> {
             @word
             0 !.Arena Arena:temp @temp @temp-save
-            $temp $ctx &word.fields determine-loads @loads
+            $temp $ctx &word.fields 1 1 = determine-loads @loads
             $ctx.fmt &word.var match {
                 case Local -> { drop "local.get " }
                 case Global -> { drop "global.get " }
@@ -486,9 +554,65 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
     $ctx.fmt "\n" Fmt:write
 }
 
-fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>) -> Array<i32> {
-    // TODO
-    Array:new<i32>
+fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, lives-in-memory: bool) -> Array<i32> {
+    Array:new<i32> @loads
+    0 @i
+    loop {
+        $i $fields.len = if { $loads break }
+        $fields $i Array:get<FieldAccess> @field
+        $ctx.program $field.source-type lookup-type match {
+            case Ptr -> { drop 1 1 = }
+            case _ -> { drop 0 1 = }
+        } @source-type-is-ptr
+        $ctx.program $field.source-type can-live-in-reg
+        $i 0 = $lives-in-memory and not and
+        $source-type-is-ptr not and if {
+            $i 1 + #i
+        } else {
+            0 @offset
+            loop {
+                $i $fields.len = if { break }
+                $fields $i Array:get<FieldAccess> @field
+
+                $ctx.program $field.source-type lookup-type match {
+                    case Custom -> {}
+                    case Ptr -> { $ctx.program flip ~ lookup-type match {
+                        case Custom -> {}
+                        case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+                    } }
+                    case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+                } @struct-handle
+
+                $ctx.program $struct-handle lookup-custom-type match {
+                    case Variant -> { drop Core:unreachable<.Struct> }
+                    case Struct -> {}
+                } @struc
+
+                $ctx.program $struc $field.field-index field-offset @field-offset
+
+                $offset $field-offset + #offset
+                $i 1 + #i
+
+                $ctx.program $field.target-type lookup-type match {
+                    case Custom -> { drop }
+                    case _ -> { drop break }
+                }
+            }
+            $arena &loads $offset Array:push<i32>
+        }
+    }
+}
+
+fn field-offset(program: .Monomized, struc: .Struct, field-index: i32) -> i32 {
+    0 @offset
+    0 @i
+    loop {
+        $i $field-index = if { $offset break }
+        &struc.fields $i Array:get<NamedTypeId> @field
+        $program $field.type type-size @field-size
+        $offset $field-size + #offset
+        $i 1 + #i
+    }
 }
 
 fn generate-store(ctx: .Ctx, type: TypeId) { block {

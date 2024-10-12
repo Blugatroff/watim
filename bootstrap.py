@@ -4207,16 +4207,16 @@ class WatGenerator:
                 else:
                     self.write("local.get ")
                     self.write_local_ident(token.lexeme, local_id)
-                # at this point, either the value itself or a pointer to it is one the stack
-                if len(loads) == 0 and not isinstance(target_taip, PtrType):
+                # at this point, either the value itself or a pointer to it is on the stack
+                if len(loads) == 0:
                     if not target_taip.can_live_in_reg():
                         self.write(f" i32.const {target_taip.size()} memory.copy\n")
                         return
-                    if isinstance(local_id, LocalId) and target_taip.can_live_in_reg() and var_lives_in_memory:
+                    if target_taip.can_live_in_reg() and var_lives_in_memory:
                         self.write(" i32.load\n")
                         return
                 for i, load in enumerate(loads):
-                    if i + 1 < len(loads) or not isinstance(target_taip, StructType):
+                    if i + 1 < len(loads):
                         self.write(f" i32.load offset={load}")
                     else:
                         if target_taip.can_live_in_reg():
@@ -4761,20 +4761,11 @@ class WatGenerator:
             self.write_store(target_taip)
             self.write("\n")
             return
-        if target_taip.can_live_in_reg():
-            for i, load in enumerate(loads):
-                self.write(f" i32.const {load} i32.add ")
-                if i + 1 == len(loads):
-                    self.write("call $intrinsic:flip ")
-                    self.write_store(target_taip)
-                else:
-                    self.write("i32.load")
-            self.write("\n")
-            return
         for i, load in enumerate(loads):
             self.write(f" i32.const {load} i32.add ")
             if i + 1 == len(loads):
-                self.write(f"call $intrinsic:flip i32.const {target_taip.size()} memory.copy")
+                self.write("call $intrinsic:flip ")
+                self.write_store(target_taip)
             else:
                 self.write("i32.load")
         self.write("\n")

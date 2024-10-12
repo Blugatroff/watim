@@ -2927,7 +2927,7 @@ fn resolve-ref-local(ctx: .WordCtx, stack: .Stack, word: .P:RefLocal) -> Result<
             1 1 = =>reffed-slot
             break
         }
-        &fields $i Array:get<FieldAccess> .target-type match {
+        &fields $i Array:get<FieldAccess> .source-type match {
             case Ptr -> {
                 drop
                 // At least one field access goes through a pointer,
