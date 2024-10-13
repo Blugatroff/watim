@@ -16,7 +16,7 @@ import "./monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
     Extern, Function, FunctionHandle, Signature, Global,
     Type, Key, Key-type, NamedTypeId, TypeId, Local,
-    CustomType, Variant, Struct,
+    CustomType, CustomType-name, Variant, Struct,
     Word, Intrinsic, FieldAccess
 )
 
@@ -282,6 +282,18 @@ fn generate-function(
     $ctx.fmt Fmt:write-indent
     $ctx.fmt "(" Fmt:write
     $ctx &function.signature &function.export $module &function.name $instance generate-signature
+    $function.generic-arguments.len 0 /= if {
+        $ctx.fmt " ;;" Fmt:write
+        0 @i
+        loop {
+            $i $function.generic-arguments.len = if { break }
+            $ctx.fmt " " Fmt:write
+            $ctx
+            &function.generic-arguments $i Array:get<TypeId> ~
+            generate-type-pretty
+            $i 1 + #i
+        }
+    }
     $ctx.fmt "\n" Fmt:write
     $ctx.fmt Fmt:indent
     $ctx &function.locals generate-locals
@@ -634,13 +646,73 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
                 $ctx.fmt ")\n" Fmt:write
             }
             $ctx.fmt Fmt:dedent
-            $ctx.fmt ")\n" Fmt:write
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt ")" Fmt:write
             &word.returns match {
                 case None -> {
+                    $ctx.fmt "\n" Fmt:write
                     $ctx.fmt Fmt:write-indent
-                    $ctx.fmt "unreachable\n" Fmt:write
+                    $ctx.fmt "unreachable" Fmt:write
                 }
                 case Some -> { drop }
+            }
+        }
+        case Break -> { drop $ctx.fmt "br $block" Fmt:write }
+        case Block -> {
+            @word
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "(block $block" Fmt:write
+            $ctx &word.parameters generate-parameters-unnamed
+            $ctx &word.returns generate-returns
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:indent
+            $ctx $locals &word.words generate-words
+            $ctx.fmt Fmt:dedent
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt ")" Fmt:write
+        }
+        case Loop -> {
+            @word
+            $ctx.fmt "(block $block " Fmt:write
+            $ctx &word.parameters generate-parameters-unnamed
+            $ctx &word.returns match { case Some -> { generate-returns } case None -> { drop } }
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:indent
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "(loop $loop " Fmt:write
+            $ctx &word.parameters generate-parameters-unnamed
+            $ctx &word.returns match { case Some -> { generate-returns } case None -> { drop } }
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:indent
+            $ctx $locals &word.words generate-words
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "br $loop\n" Fmt:write
+            $ctx.fmt Fmt:dedent
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt ")\n" Fmt:write
+            $ctx.fmt Fmt:dedent
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt ")" Fmt:write
+            &word.returns match {
+                case Some -> { drop }
+                case None -> {
+                    $ctx.fmt "\n" Fmt:write
+                    $ctx.fmt Fmt:write-indent
+                    $ctx.fmt "unreachable" Fmt:write
+                }
+            }
+        }
+        case Load -> {
+            @word
+            $ctx.program $word.type can-live-in-reg if {
+                $ctx $word.type generate-type
+                $ctx.fmt ".load" Fmt:write
+            } else {
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.copy-space-offset i32-format
+                $ctx.fmt " i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const " Fmt:write
+                $ctx.fmt $ctx.program $word.type type-size i32-format
+                $ctx.fmt "memory.copy" Fmt:write
             }
         }
         case Uninit -> {
@@ -774,6 +846,10 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) {
             case I64 -> { "i64.add" }
             case _ -> { drop "i32.add" }
         } }
+        case Sub -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.sub" }
+            case _ -> { drop "i32.sub" }
+        } }
         case Eq -> {
             ~ @type
             $ctx.program $type lookup-type match {
@@ -784,6 +860,59 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) {
                 }
             }
         }
+        case NotEq -> {
+            ~ @type
+            $ctx.program $type lookup-type match {
+                case I64 -> { "i64.ne" }
+                case _ -> {
+                    0 $ctx.program $type can-live-in-reg !i32 / drop // assert
+                    drop "i32.ne"
+                }
+            }
+        }
+        case Mod -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.rem_u" }
+            case I64 -> { "i64.rem_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Mul -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.mul" }
+            case I64 -> { "i64.mul" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Div -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.div_u" }
+            case I64 -> { "i64.div_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Lt -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.lt_u" }
+            case I64 -> { "i64.lt_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Gt -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.gt_u" }
+            case I64 -> { "i64.gt_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Le -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.le_u" }
+            case I64 -> { "i64.le_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Ge -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.ge_u" }
+            case I64 -> { "i64.ge_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case And -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.and" }
+            case I32 -> { "i32.and" }
+            case Bool -> { "i32.and" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Load8 -> { "i32.load8_u" }
+        case Store8 -> { "i32.store8" }
         case _ -> { drop "TODO" }
     } Fmt:write
 }
@@ -855,4 +984,56 @@ fn generate-type(ctx: .Ctx, type: TypeId) {
         "i32"
     } Fmt:write
 }
+
+fn generate-type-pretty(ctx: .Ctx, type: TypeId) { block {
+    $ctx.fmt $ctx.program $type lookup-type match {
+        case I32 -> { "i32" }
+        case I64 -> { "i64" }
+        case Bool -> { "bool" }
+        case Ptr -> { $ctx.fmt "." Fmt:write $ctx flip ~ generate-type-pretty drop break }
+        case Tuple -> {
+            @items
+            "[" Fmt:write
+            0 @i
+            loop {
+                $i $items.len = if { break }
+                $ctx $items $i Array:get<TypeId> ~ generate-type-pretty
+                $i 1 + #i
+                $items.len $i /= if {
+                    $ctx.fmt ", " Fmt:write
+                }
+            }
+            $ctx.fmt "]" Fmt:write
+            break
+        }
+        case Fun -> {
+            @type
+            "(" Fmt:write
+            0 @i
+            loop {
+                $i $type.parameters.len = if { break }
+                $ctx &type.parameters $i Array:get<TypeId> ~ generate-type-pretty
+                $ctx.fmt ", " Fmt:write
+                $i 1 + #i
+            }
+            $ctx.fmt "->" Fmt:write
+            0 @i
+            loop {
+                $i $type.returns.len = if { break }
+                $i 0 = if {
+                    $ctx.fmt " " Fmt:write
+                } else {
+                    $ctx.fmt ", " Fmt:write
+                }
+                $ctx &type.returns $i Array:get<TypeId> ~ generate-type-pretty
+                $i 1 + #i
+            }
+            $ctx.fmt ")" Fmt:write
+            break
+        }
+        case Custom -> {
+            $ctx.program flip lookup-custom-type CustomType-name Token-lexeme
+        }
+    } Fmt:write
+} }
 

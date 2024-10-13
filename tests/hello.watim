@@ -393,7 +393,7 @@ compile
 			)
 		)
 	)
-	(func $0:dup:0 (param $a i32) (result i32) (result i32) ;; i32
+	(func $0:dup (param $a i32) (result i32) (result i32) ;; i32
 		local.get $a
 		local.get $a
 	)
@@ -443,7 +443,7 @@ compile
 		local.get $buf:0:1
 		local.get $nread
 		call $0:parse
-		call $0:dup:0
+		call $0:dup
 		call $0:print
 		i32.const 1
 		i32.const 18 i32.const 1

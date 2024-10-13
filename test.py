@@ -142,6 +142,7 @@ native_tests = list(map(lambda p: f"./tests/{p}.watim", [
     "generate-local-words",
     "generate-field-accesses",
     "promote-param-to-stack",
+    "hello",
 ]))
 
 failed = False

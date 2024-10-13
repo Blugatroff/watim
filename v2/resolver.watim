@@ -1134,11 +1134,12 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
 } }
 
 fn allocate-static-data(ctx: .Ctx, ptr: .i32, len: i32) -> i32, i32 {
-    $ctx.static-data.len
     $ctx.static-data.ptr $ctx.static-data.len $ptr $len Bytes:find-seq if {
         @a $a // TODO: this should not be necessary
+        $len
     } else {
         drop
+        $ctx.static-data.len
         $ctx.persistent &ctx.static-data $ptr $len ByteArray:push
         $len
     }
@@ -2098,12 +2099,9 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 $ctx $stack $a push
                 $a
                 block {
-                    $name-ptr $name-len "gt" Bytes:eq if { make Intrinsic.Gt break }
-                    $name-ptr $name-len "lt" Bytes:eq if { make Intrinsic.Lt break }
-                    $name-ptr $name-len "ge" Bytes:eq if { make Intrinsic.Ge break }
-                    $name-ptr $name-len "le" Bytes:eq if { make Intrinsic.Le break }
                     $name-ptr $name-len "%"  Bytes:eq if { make Intrinsic.Mod break }
-                    make Intrinsic.Mul
+                    $name-ptr $name-len "*"  Bytes:eq if { make Intrinsic.Mul break }
+                    make Intrinsic.Div
                 }
                 $word.name flip make IntrinsicWord
                 make Word.Intrinsic 0 1 = [,2]

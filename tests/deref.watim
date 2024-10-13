@@ -26,7 +26,7 @@ fn main "_start" () {
 	(table funcref (elem))
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
-	(func $0:id:0 (param $t i32) (result i32) ;; Foo
+	(func $0:id (param $t i32) (result i32) ;; Foo
 		local.get $t
 	)
 	(func $0:id:1 (param $t i32) (result i32) ;; .Foo
@@ -42,7 +42,7 @@ fn main "_start" () {
 		i32.const 21
 		local.get $foo i32.const 0 i32.add call $intrinsic:flip i32.store
 		local.get $foo i32.load
-		call $0:id:0
+		call $0:id
 		local.get $foo
 		call $0:id:1
 		i32.load

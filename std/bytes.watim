@@ -51,19 +51,19 @@ fn find-seq(ptr: .i32, len: i32, target-ptr: .i32, target-len: i32) -> i32, bool
     loop {
         $target-len 0 = if { 0 0 0 = break }
         $len 0 = if {
-            0 $target-len 0 = break
+            0 0 1 = break
         }
         $target-ptr load8 @byte
         $ptr $len $byte find if {
             #index
-            $ptr $index + $len $index - 
+            $ptr $index + $len $index -
             $target-ptr $target-len
             is-prefix if {
                 $index $prev-index + 0 0 = break
             }
         } else {
             0 1 = break
-        } 
+        }
         $ptr $index + 1 + #ptr
         $len $index - 1 - #len
         $index 1 + $prev-index + #prev-index

@@ -149,6 +149,12 @@ fn CustomType-format(fmt: .Formatter, self: .CustomType) {
         case Variant -> { Variant-format }
     }
 }
+fn CustomType-name(self: .CustomType) -> .Token {
+    $self match {
+        case Struct -> { .name }
+        case Variant -> { .name }
+    }
+}
 
 
 // =============================================================================
@@ -292,6 +298,7 @@ struct Function {
     locals: Map<LocalId, Local>
     local-copy-space: i32
     words: Array<Word>
+    generic-arguments: Array<TypeId> // just for debug annotations
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt "(Function\n" Fmt:write
@@ -876,6 +883,7 @@ fn monomize-function(ctx: .Ctx, function: .Resolved:Function, generic-arguments:
     $ctx &function.locals $generic-arguments monomize-locals
     0 not
     $ctx &function.words $generic-arguments monomize-words
+    $generic-arguments ~
     make Function
 }
 
@@ -1428,6 +1436,18 @@ fn Uninit-format(fmt: .Formatter, self: .Uninit) {
     $fmt ")" Fmt:write
 }
 
+struct Load {
+    type: TypeId
+    copy-space-offset: i32
+}
+fn Load-format(fmt: .Formatter, self: .Load) {
+    $fmt "(Load " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.copy-space-offset i32-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case String -> StringWord
@@ -1449,7 +1469,7 @@ variant Word {
     case Sizeof -> TypeId
     case Uninit -> Uninit
     case FieldInit -> TypeId
-    case Load -> TypeId
+    case Load -> Load
     case MakeTuple -> Array<TypeId>
     case UnpackTuple -> Array<TypeId>
     case IndirectCall -> TypeId
@@ -1481,7 +1501,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Sizeof -> { $fmt "(Sizeof " Fmt:write TypeId-format $fmt ")" }
         case Uninit -> { Uninit-format break }
         case FieldInit -> { $fmt "(FieldInit " Fmt:write TypeId-format $fmt ")" }
-        case Load -> { $fmt "(Load " Fmt:write TypeId-format $fmt ")" }
+        case Load -> { Load-format break }
         case MakeTuple -> { $fmt "(MakeTuple " Fmt:write TypeIds-format $fmt ")" }
         case UnpackTuple -> { $fmt "(UnpackTuple " Fmt:write TypeIds-format $fmt ")" }
         case IndirectCall -> { $fmt "(IndirectCall " Fmt:write TypeId-format $fmt ")" }
@@ -1681,7 +1701,9 @@ fn monomize-field-init(ctx: .Ctx, word: .Resolved:FieldInit, generic-arguments: 
 }
 
 fn monomize-load(ctx: .Ctx, word: .Resolved:Load, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type make Word.Load
+    $ctx &word.type $generic-arguments monomize-type
+    0 not
+    make Load make Word.Load
 }
 
 fn monomize-get-field(ctx: .Ctx, word: .Resolved:GetField, generic-arguments: .Array<TypeId>) -> Word {
@@ -1850,23 +1872,16 @@ fn can-live-in-reg(type: TypeId, sizes: .Array<i32>) -> bool {
     le
 }
 
-fn word-measure-copy-space(word: .Word, sizes: .Array<i32>, offset: .i32) {
+fn word-measure-copy-space(word: .Word, sizes: .Array<i32>, offset: .i32) { block {
     $word match {
-        case GetLocal -> {
-            @word
-            $word.result-type $sizes can-live-in-reg not if {
-                $offset ~ #word.copy-space-offset
-                $offset ~ $word.result-type $sizes type-size + =>offset
-            }
-        }
-        case Uninit -> {
-            @word
-            $word.type $sizes can-live-in-reg not if {
-                $offset ~ #word.copy-space-offset
-                $offset ~ $word.type $sizes type-size + =>offset
-            }
-        }
-        case _ -> { drop }
+        case GetLocal -> { @word $word.result-type &word.copy-space-offset }
+        case Uninit -> { @word $word.type &word.copy-space-offset }
+        case Load -> { @word $word.type &word.copy-space-offset }
+        case _ -> { drop break }
+    } @offset-slot @type
+    $type $sizes can-live-in-reg not if {
+        $offset ~ =>offset-slot
+        $offset ~ $type $sizes type-size + =>offset
     }
-}
+} }
 

@@ -4277,7 +4277,7 @@ class WatGenerator:
                         function = self.lookup_function(function_handle)
                         signature = function.signature
                         self.write(f"call ${function_handle.module}:{function.signature.name.lexeme}")
-                        if function_handle.instance is not None:
+                        if function_handle.instance is not None and function_handle.instance != 0:
                             self.write(f":{function_handle.instance}")
                     case other:
                         assert_never(other)
@@ -4325,7 +4325,7 @@ class WatGenerator:
                 self.write_line("i32.eq")
             case IntrinsicNotEqual(_, taip):
                 if taip == PrimitiveType.I64:
-                    self.write_line("i64.eq")
+                    self.write_line("i64.ne")
                     return
                 assert(taip.can_live_in_reg())
                 self.write_line("i32.ne")
@@ -4499,8 +4499,7 @@ class WatGenerator:
                 self.indent()
                 self.write_words(module, locals, words)
                 self.dedent()
-                self.write_indent()
-                self.write(")\n")
+                self.write_line(")")
             case LoopWord(_, words, parameters, returns, diverges):
                 self.write_indent()
                 self.write("(block $block ")
@@ -4788,7 +4787,7 @@ class WatGenerator:
 
     def write_signature(self, module: int, signature: FunctionSignature, instance_id: int | None = None) -> None:
         self.write(f"func ${module}:{signature.name.lexeme}")
-        if instance_id is not None:
+        if instance_id is not None and instance_id != 0:
             self.write(f":{instance_id}")
         if signature.export_name is not None:
             self.write(f" (export {signature.export_name.lexeme})")
