@@ -390,12 +390,22 @@ fn Monomized-format(fmt: .Formatter, self: .Monomized) {
     $fmt ")" Fmt:write
 }
 
+variant ExternOrInstances {
+    case Extern -> Extern
+    case Instances -> Array<.Function>
+}
+fn ExternOrInstances-format(fmt: .Formatter, self: .ExternOrInstances) {
+    $fmt $self match {
+        case Extern -> { Extern-format }
+        case Instances -> { \Function-ref-format flip Array:format-multi-line<.Function> }
+    }
+}
+
 struct Module {
     custom-types: Array<CustomType>
     globals: Array<Global>
-    externs: Array<Extern>
     static-data: ByteSlice
-    functions: Array<Array<.Function>>
+    functions: Array<ExternOrInstances>
 }
 fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt "(Module\n" Fmt:write
@@ -409,23 +419,21 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt \Global-format &self.globals Array:format-multi-line<Global>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "externs=" Fmt:write
-    $fmt \Extern-format &self.externs Array:format-multi-line<Extern>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
     $fmt "functions=" Fmt:write
-    $fmt \FunctionArray-format &self.functions Array:format-multi-line<Array<.Function>>
+    $fmt \ExternOrInstances-format &self.functions Array:format-multi-line<ExternOrInstances>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
-}
-fn FunctionArray-format(fmt: .Formatter, self: .Array<.Function>) {
-    $fmt \Function-ref-format $self Array:format-multi-line<.Function>
 }
 
 
 // =============================================================================
 //  Context for monomorphization
 // =============================================================================
+
+variant ExternOrInstancesMap {
+    case Instances -> Map<Array<TypeId>, .Maybe<Function>>
+    case Extern -> Extern
+}
 
 struct Ctx {
     arena: .Arena
@@ -434,25 +442,48 @@ struct Ctx {
     types: .Array<Maybe<Key>>
     function-table: .Array<FunctionHandle>
     custom-types: Array<CustomType>
-    functions: .Array<Array<Map<Array<TypeId>, .Maybe<Function>>>>
+    functions: .Array<Array<ExternOrInstancesMap>>
+}
+fn insert-extrn(ctx: .Ctx, handle: Resolved:FunctionHandle, extrn: Extern) {
+    loop {
+        $ctx.functions.len $handle.module.index gt if { break }
+        $ctx.arena $ctx.functions
+        Array:new<ExternOrInstancesMap>
+        Array:push<Array<ExternOrInstancesMap>>
+    }
+    $ctx.functions $handle.module.index Array:get<Array<ExternOrInstancesMap>> @module-functions
+    loop {
+        $module-functions.len $handle.index gt if { break }
+        $ctx.arena $module-functions
+        \TypeIds-eq Map:new<Array<TypeId>, .Maybe<Function>>
+        make ExternOrInstancesMap.Instances
+        Array:push<ExternOrInstancesMap>
+    }
+    $module-functions $handle.index
+    $extrn make ExternOrInstancesMap.Extern
+    Array:set<ExternOrInstancesMap> drop
 }
 fn pre-insert-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: Array<TypeId>) -> .Maybe<Function>, i32 {
     $ctx.arena make Maybe<Function>.None Arena:push<Maybe<Function>> @slot
     loop {
         $ctx.functions.len $handle.module.index gt if { break }
         $ctx.arena $ctx.functions
-        Array:new<Map<Array<TypeId>, .Maybe<Function>>>
-        Array:push<Array<Map<Array<TypeId>, .Maybe<Function>>>>
+        Array:new<ExternOrInstancesMap>
+        Array:push<Array<ExternOrInstancesMap>>
     }
-    $ctx.functions $handle.module.index Array:get<Array<Map<Array<TypeId>, .Maybe<Function>>>> @module-functions
+    $ctx.functions $handle.module.index Array:get<Array<ExternOrInstancesMap>> @module-functions
 
     loop {
         $module-functions.len $handle.index gt if { break }
         $ctx.arena $module-functions
         \TypeIds-eq Map:new<Array<TypeId>, .Maybe<Function>>
-        Array:push<Map<Array<TypeId>, .Maybe<Function>>>
+        make ExternOrInstancesMap.Instances
+        Array:push<ExternOrInstancesMap>
     }
-    $module-functions $handle.index Array:get<Map<Array<TypeId>, .Maybe<Function>>> @instances
+    $module-functions $handle.index Array:get<ExternOrInstancesMap> match {
+        case Instances -> {}
+        case Extern -> { drop Core:unreachable<.Map<Array<TypeId>, .Maybe<Function>>> }
+    } @instances
 
     $instances.values.len
     $ctx.arena $instances $generic-arguments $slot Map:insert<Array<TypeId>, .Maybe<Function>> drop
@@ -460,10 +491,13 @@ fn pre-insert-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-argum
 }
 fn lookup-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments: .Array<TypeId>) -> Maybe<i32> { block {
     $ctx.functions.len $handle.module.index le if { make Maybe<i32>.None break }
-    $ctx.functions $handle.module.index Array:get<Array<Map<Array<TypeId>, .Maybe<Function>>>> @module-functions
+    $ctx.functions $handle.module.index Array:get<Array<ExternOrInstancesMap>> @module-functions
 
     $module-functions.len $handle.index le if { make Maybe<i32>.None break }
-    $module-functions $handle.index Array:get<Map<Array<TypeId>, .Maybe<Function>>> @instances
+    $module-functions $handle.index Array:get<ExternOrInstancesMap> match {
+        case Extern -> { drop Core:unreachable<.Map<Array<TypeId>, .Maybe<Function>>> }
+        case Instances -> {}
+    } @instances
 
     $instances $generic-arguments Map:get-index<Array<TypeId>, .Maybe<Function>>
 } }
@@ -721,7 +755,7 @@ fn monomize-named-type(ctx: .Ctx, type: .Resolved:NamedType, generic-arguments: 
 
 fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomized {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @monomized-modules
-    Array:new<Array<Map<Array<TypeId>, .Maybe<Function>>>> @functions
+    Array:new<Array<ExternOrInstancesMap>> @functions
     primitive-types @types
     Array:new<FunctionHandle> @function-table
     0 @i
@@ -737,14 +771,16 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
             Array:new<CustomType> @custom-types
             &functions @functions
         } @ctx
+
+
         $arena &monomized-modules
         &modules.keys $i Array:get<ByteSlice> ~
         make Module {
             &ctx &module.globals.values monomize-globals @globals
-            &ctx &module.functions.values monomize-functions @externs
+            &ctx &module.functions.values monomize-functions
             $ctx.custom-types @custom-types
             $arena $module.static-data ByteSlice:copy @static-data
-            Array:new<Array<.Function>> @functions
+            Array:new<ExternOrInstances> @functions
         }
         Map:insert<ByteSlice, Module> drop
         $i 1 + #i
@@ -756,27 +792,43 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
 
         $i $functions.len lt if {
             &monomized-modules.values $i Array:get<Module> .functions @module-functions
-            &functions $i Array:get<Array<Map<Array<TypeId>, .Maybe<Function>>>> @functions
+            &functions $i Array:get<Array<ExternOrInstancesMap>> @functions
 
             0 @j
             loop {
                 $functions.len $j = if { break }
-                $functions $j Array:get<Map<Array<TypeId>, .Maybe<Function>>> .values @instances
 
                 loop {
                     $module-functions.len $j gt if { break }
-                    $arena $module-functions Array:new<.Function> Array:push<Array<.Function>>
+                    $arena $module-functions
+                    Array:new<.Function> make ExternOrInstances.Instances
+                    Array:push<ExternOrInstances>
                 }
-                $module-functions $j Array:get<Array<.Function>> @target
 
-                0 @k
-                loop {
-                    $instances.len $k = if { break }
+                $functions $j Array:get<ExternOrInstancesMap> match {
+                    case Instances -> {
+                        .values @instances
 
-                    $arena $target
-                    $instances $k Array:get<.Maybe<Function>> ~ Maybe:ref<Function> Maybe:assert-some<.Function>
-                    Array:push<.Function>
-                    $k 1 + #k
+                        $module-functions $j Array:get<ExternOrInstances> match {
+                            case Instances -> {}
+                            case Extern -> { drop Core:unreachable<.Array<.Function>> }
+                        } @target
+
+                        0 @k
+                        loop {
+                            $instances.len $k = if { break }
+
+                            $arena $target
+                            $instances $k Array:get<.Maybe<Function>> ~ Maybe:ref<Function> Maybe:assert-some<.Function>
+                            Array:push<.Function>
+                            $k 1 + #k
+                        }
+                    }
+                    case Extern -> {
+                        $module-functions flip $j flip
+                        ~ make ExternOrInstances.Extern
+                        Array:set<ExternOrInstances> drop
+                    }
                 }
                 $j 1 + #j
             }
@@ -854,19 +906,21 @@ fn monomize-local(ctx: .Ctx, local: .Resolved:Local, generic-arguments: .Array<T
     }
 }
 
-fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) -> Array<Extern> {
-    Array:new<Extern> @monomized-externs
+fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) {
     0 @i
     loop {
-        $i $functions.len = if { $monomized-externs break }
+        $i $functions.len = if { break }
         $functions $i Array:get<Resolved:FunctionOrExtern>
+        $ctx.module-id $i make Resolved:FunctionHandle @handle
         match {
-            case Extern -> { $ctx flip monomize-extrn $ctx.arena flip &monomized-externs flip Array:push<Extern>   }
+            case Extern -> {
+                $ctx flip monomize-extrn
+                $ctx flip $handle flip insert-extrn
+            }
             case Function -> {
                 @function
                 &function.export Maybe:is-some<Token> if {
                     Array:new<TypeId> @generic-arguments
-                    $ctx.module-id $i make Resolved:FunctionHandle @handle
                     $ctx $handle $generic-arguments pre-insert-function drop @slot
                     $ctx $function &generic-arguments monomize-function make Maybe<Function>.Some =>slot
                 }
@@ -983,7 +1037,7 @@ struct GetLocal {
     var: VarId
     fields: Array<FieldAccess>
     result-type: TypeId
-    local-copy-space-offset: i32
+    copy-space-offset: i32
 }
 fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt "(GetLocal " Fmt:write
@@ -995,7 +1049,7 @@ fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt " " Fmt:write
-    $fmt $self.local-copy-space-offset i32-format
+    $fmt $self.copy-space-offset i32-format
     $fmt ")" Fmt:write
 }
 
@@ -1362,6 +1416,18 @@ fn FunRef-format(fmt: .Formatter, self: .FunRef) {
     $fmt ")" Fmt:write
 }
 
+struct Uninit {
+    type: TypeId
+    copy-space-offset: i32
+}
+fn Uninit-format(fmt: .Formatter, self: .Uninit) {
+    $fmt "(Uninit " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.copy-space-offset i32-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case String -> StringWord
@@ -1381,7 +1447,7 @@ variant Word {
     case Break -> Token
     case Block -> Block
     case Sizeof -> TypeId
-    case Uninit -> TypeId
+    case Uninit -> Uninit
     case FieldInit -> TypeId
     case Load -> TypeId
     case MakeTuple -> Array<TypeId>
@@ -1413,7 +1479,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Loop -> { Loop-format break }
         case Block -> { Block-format break }
         case Sizeof -> { $fmt "(Sizeof " Fmt:write TypeId-format $fmt ")" }
-        case Uninit -> { $fmt "(Uninit " Fmt:write TypeId-format $fmt ")" }
+        case Uninit -> { Uninit-format break }
         case FieldInit -> { $fmt "(FieldInit " Fmt:write TypeId-format $fmt ")" }
         case Load -> { $fmt "(Load " Fmt:write TypeId-format $fmt ")" }
         case MakeTuple -> { $fmt "(MakeTuple " Fmt:write TypeIds-format $fmt ")" }
@@ -1455,7 +1521,7 @@ fn monomize-get-locl(ctx: .Ctx, word: .Resolved:GetLocal, generic-arguments: .Ar
         $ctx &word.var-type $generic-arguments monomize-type @var-type
         $ctx &word.fields $generic-arguments monomize-field-accesses @fields
         $ctx &word.result-taip $generic-arguments monomize-type @result-type
-        0 not @local-copy-space-offset
+        0 not @copy-space-offset
     }
     make Word.GetLocal
 }
@@ -1605,7 +1671,9 @@ fn monomize-sizeof(ctx: .Ctx, word: .Resolved:Sizeof, generic-arguments: .Array<
 }
 
 fn monomize-uninit(ctx: .Ctx, word: .Resolved:Uninit, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type make Word.Uninit
+    $ctx &word.type $generic-arguments monomize-type
+    0 not
+    make Uninit make Word.Uninit
 }
 
 fn monomize-field-init(ctx: .Ctx, word: .Resolved:FieldInit, generic-arguments: .Array<TypeId>) -> Word {
@@ -1741,13 +1809,18 @@ fn module-measure-copy-space(module: .Module, sizes: .Array<i32>) {
     0 @function-id
     loop {
         $function-id $module.functions.len = if { break }
-        &module.functions $function-id Array:get<Array<.Function>> @instances
-        0 @instance-id
-        loop {
-            $instance-id $instances.len = if { break }
-            $instances $instance-id Array:get<.Function> ~ @function
-            $function $sizes function-measure-copy-space
-            $instance-id 1 + #instance-id
+        &module.functions $function-id Array:get<ExternOrInstances> match {
+            case Instances -> {
+                @instances
+                0 @instance-id
+                loop {
+                    $instance-id $instances.len = if { break }
+                    $instances $instance-id Array:get<.Function> ~ @function
+                    $function $sizes function-measure-copy-space
+                    $instance-id 1 + #instance-id
+                }
+            }
+            case Extern -> { drop }
         }
         $function-id 1 + #function-id
     }
@@ -1772,7 +1845,9 @@ fn type-size(type: TypeId, sizes: .Array<i32>) -> i32 {
 }
 
 fn can-live-in-reg(type: TypeId, sizes: .Array<i32>) -> bool {
-    $sizes $type.index Array:get<i32> ~ 8 le
+    $sizes $type.index Array:get<i32> ~
+    4 // TODO: make this 8, because i64 could be used for small structs like ByteSlice 8
+    le
 }
 
 fn word-measure-copy-space(word: .Word, sizes: .Array<i32>, offset: .i32) {
@@ -1780,8 +1855,15 @@ fn word-measure-copy-space(word: .Word, sizes: .Array<i32>, offset: .i32) {
         case GetLocal -> {
             @word
             $word.result-type $sizes can-live-in-reg not if {
-                $offset ~ #word.local-copy-space-offset
+                $offset ~ #word.copy-space-offset
                 $offset ~ $word.result-type $sizes type-size + =>offset
+            }
+        }
+        case Uninit -> {
+            @word
+            $word.type $sizes can-live-in-reg not if {
+                $offset ~ #word.copy-space-offset
+                $offset ~ $word.type $sizes type-size + =>offset
             }
         }
         case _ -> { drop }

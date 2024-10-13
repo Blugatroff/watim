@@ -5,7 +5,7 @@ import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
-import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "../std/util.watim" as Util (i32-format, bool-format)
 
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
@@ -13,8 +13,8 @@ import "./type.watim" as Type (CustomTypeHandle)
 import "./env.watim" as Env (LocalId)
 import "./resolver.watim" as Resolver (GlobalId, VarId)
 import "./monomizer.watim" as Monomized (
-    Monomized, Module,
-    Function, FunctionHandle, Signature, Global,
+    Monomized, Module, ExternOrInstances,
+    Extern, Function, FunctionHandle, Signature, Global,
     Type, Key, Key-type, NamedTypeId, TypeId, Local,
     CustomType, Variant, Struct,
     Word, Intrinsic, FieldAccess
@@ -28,6 +28,24 @@ struct Ctx {
 fn generate(fmt: .Formatter, program: .Monomized) {
     $fmt "(module\n" Fmt:write
     $fmt Fmt:indent
+
+    $fmt $program make Ctx @ctx
+
+    0 @i
+    loop {
+        $program.modules.values.len $i = if { break }
+        &program.modules.values $i Array:get<Monomized:Module> @module
+        0 @j
+        loop {
+            $j $module.functions.len = if { break }
+            &module.functions $j Array:get<ExternOrInstances> match {
+                case Extern -> { &ctx flip $i generate-extrn }
+                case Instances -> { drop }
+            }
+            $j 1 + #j
+        }
+        $i 1 + #i
+    }
 
     $fmt Fmt:write-indent $fmt "(memory 1 65536)\n" Fmt:write
     $fmt Fmt:write-indent $fmt "(export \"memory\" (memory 0))\n" Fmt:write
@@ -46,8 +64,6 @@ fn generate(fmt: .Formatter, program: .Monomized) {
         $arena &all-static-data $module.static-data ByteSlice:unpack ByteArray:push
         $i 1 + #i
     }
-
-    $fmt $program make Ctx @ctx
 
     &ctx generate-function-table
     &ctx $all-static-data.len 4 align-to generate-globals 4 align-to @stack-start
@@ -68,10 +84,23 @@ fn generate(fmt: .Formatter, program: .Monomized) {
     $arena $arena-save Arena:restore
 }
 
-fn lookup-function(program: .Monomized, handle: .FunctionHandle) -> .Monomized:Function {
+variant FunctionOrExtern {
+    case Extern -> .Extern
+    case Function -> .Function
+}
+fn FunctionOrExtern-name(self: .FunctionOrExtern) -> .Token {
+    $self match {
+        case Extern -> { ~ .name }
+        case Function -> { ~ .name }
+    }
+}
+
+fn lookup-function(program: .Monomized, handle: .FunctionHandle) -> FunctionOrExtern {
     &program.modules.values $handle.module.index Array:get<Module> @module
-    &module.functions $handle.index Array:get<Array<.Function>> @instances
-    $instances $handle.instance Array:get<.Function> ~
+    &module.functions $handle.index Array:get<ExternOrInstances> match {
+        case Extern -> { make FunctionOrExtern.Extern }
+        case Instances -> { $handle.instance Array:get<.Function> ~ make FunctionOrExtern.Function }
+    }
 }
 
 fn lookup-globl(program: .Monomized, id: .GlobalId) -> .Global {
@@ -95,7 +124,19 @@ fn type-size(program: .Monomized, type: TypeId) -> i32 {
 }
 
 fn can-live-in-reg(program: .Monomized, type: TypeId) -> bool {
-    $program $type type-size 8 le
+    $program $type type-size 4 le
+}
+
+fn generate-extrn(ctx: .Ctx, extrn: .Extern, module-id: i32) {
+    $ctx.fmt Fmt:write-indent
+    $ctx.fmt "(import " Fmt:write
+    $ctx.fmt &extrn.extrn-module ByteSlice-format
+    $ctx.fmt " " Fmt:write
+    $ctx.fmt &extrn.extrn-name ByteSlice-format
+    $ctx.fmt " (" Fmt:write
+    make Maybe<Token>.None @export
+    $ctx &extrn.signature &export $module-id &extrn.name 0 generate-signature
+    $ctx.fmt "))\n" Fmt:write
 }
 
 fn generate-data(fmt: .Formatter, data: ByteSlice) {
@@ -158,7 +199,7 @@ fn generate-function-table(ctx: .Ctx) { block {
         $ctx.program $handle lookup-function @function
         $ctx.fmt $handle.module.index i32-format
         $ctx.fmt ":" Fmt:write
-        $ctx.fmt &function.name Token-lexeme Fmt:write
+        $ctx.fmt &function FunctionOrExtern-name Token-lexeme Fmt:write
         $handle.instance 0 /= if {
             $ctx.fmt ":" Fmt:write
             $ctx.fmt $handle.instance i32-format
@@ -189,14 +230,19 @@ fn generate-functions(ctx: .Ctx) {
         0 @function-id
         loop {
             $function-id $module.functions.len = if { break }
-            &module.functions $function-id Array:get<Array<.Function>> @instances
+            &module.functions $function-id Array:get<ExternOrInstances> match {
+                case Extern -> { drop }
+                case Instances -> {
+                    @instances
 
-            0 @instance-id
-            loop {
-                $instance-id $instances.len = if { break }
-                $instances $instance-id Array:get<.Function> ~ @function
-                $ctx $function $module-id $instance-id generate-function
-                $instance-id 1 + #instance-id
+                    0 @instance-id
+                    loop {
+                        $instance-id $instances.len = if { break }
+                        $instances $instance-id Array:get<.Function> ~ @function
+                        $ctx $function $module-id $instance-id generate-function
+                        $instance-id 1 + #instance-id
+                    }
+                }
             }
 
             $function-id 1 + #function-id
@@ -401,7 +447,7 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
             $result-can-live-in-reg not if {
                 // set up the address to store the result in
                 $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
-                $ctx.fmt $word.local-copy-space-offset i32-format
+                $ctx.fmt $word.copy-space-offset i32-format
                 $ctx.fmt " i32.add call $intrinsic:dupi32 " Fmt:write
             }
             &word.var match {
@@ -546,6 +592,67 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
             }
             $temp $temp-save Arena:restore
         }
+        case Call -> {
+            @word
+            $ctx.fmt "call $" Fmt:write
+            $ctx.fmt $word.function.module.index i32-format
+            $ctx.fmt ":" Fmt:write
+            $ctx.fmt $ctx.program &word.function lookup-function match {
+                case Extern -> { .name }
+                case Function -> { .name }
+            } Token-lexeme Fmt:write
+            $word.function.instance 0 /= if {
+                $ctx.fmt ":" Fmt:write
+                $ctx.fmt $word.function.instance i32-format
+            }
+            // TODO: generate-return-struct-receiving
+        }
+        case If -> {
+            @word
+            $ctx.fmt "(if" Fmt:write
+            $ctx &word.parameters generate-parameters-unnamed
+            $ctx &word.returns match {
+                case None -> { drop }
+                case Some -> { generate-returns }
+            }
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:indent
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "(then\n" Fmt:write
+            $ctx.fmt Fmt:indent
+            $ctx $locals &word.true-words generate-words
+            $ctx.fmt Fmt:dedent
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt ")\n" Fmt:write
+            $word.false-words.len 0 /= if {
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt "(else\n" Fmt:write
+                $ctx.fmt Fmt:indent
+                $ctx $locals &word.false-words generate-words
+                $ctx.fmt Fmt:dedent
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt ")\n" Fmt:write
+            }
+            $ctx.fmt Fmt:dedent
+            $ctx.fmt ")\n" Fmt:write
+            &word.returns match {
+                case None -> {
+                    $ctx.fmt Fmt:write-indent
+                    $ctx.fmt "unreachable\n" Fmt:write
+                }
+                case Some -> { drop }
+            }
+        }
+        case Uninit -> {
+            @word
+            $ctx.program $word.type can-live-in-reg if {
+                $ctx.fmt "i32.const 0" Fmt:write
+            } else {
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.copy-space-offset i32-format
+                $ctx.fmt " i32.add" Fmt:write
+            }
+        }
         case _ -> {
             drop
             $ctx.fmt "TODO" Fmt:write
@@ -667,6 +774,16 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) {
             case I64 -> { "i64.add" }
             case _ -> { drop "i32.add" }
         } }
+        case Eq -> {
+            ~ @type
+            $ctx.program $type lookup-type match {
+                case I64 -> { "i64.eq" }
+                case _ -> {
+                    0 $ctx.program $type can-live-in-reg !i32 / drop // assert
+                    drop "i32.eq"
+                }
+            }
+        }
         case _ -> { drop "TODO" }
     } Fmt:write
 }
@@ -706,11 +823,25 @@ fn generate-parameters(ctx: .Ctx, parameters: .Array<NamedTypeId>) {
     }
 }
 
+fn generate-parameters-unnamed(ctx: .Ctx, parameters: .Array<TypeId>) {
+    0 @i
+    loop {
+        $i $parameters.len = if { break }
+        $parameters $i Array:get<TypeId> ~ @parameter
+        $ctx.fmt " (param " Fmt:write
+        $ctx $parameter generate-type
+        $ctx.fmt ")" Fmt:write
+        $i 1 + #i
+    }
+}
+
 fn generate-returns(ctx: .Ctx, returns: .Array<TypeId>) {
     0 @i
     loop {
         $i $returns.len = if { break }
+        $ctx.fmt " (result " Fmt:write
         $ctx $returns $i Array:get<TypeId> ~ generate-type
+        $ctx.fmt ")" Fmt:write
         $i 1 + #i
     }
 }
@@ -718,7 +849,8 @@ fn generate-returns(ctx: .Ctx, returns: .Array<TypeId>) {
 fn generate-type(ctx: .Ctx, type: TypeId) {
     $ctx.program $type type-size @size
     $ctx.fmt $size 4 gt $size 8 le and if {
-        "i64"
+        // "i64" TODO: support this everywhere else
+        "i32"
     } else {
         "i32"
     } Fmt:write
