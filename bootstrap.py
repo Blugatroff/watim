@@ -4098,8 +4098,8 @@ class WatGenerator:
 
         for module_id in sorted(self.modules):
             module = self.modules[module_id]
-            for function in module.functions.values():
-                self.write_function(module_id, function)
+            for function in sorted(module.functions.keys()):
+                self.write_function(module_id, module.functions[function])
 
         self.write_intrinsics()
 

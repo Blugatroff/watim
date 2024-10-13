@@ -26,15 +26,15 @@ fn use(foo: Foo) {
 	(global $FOO:0 (mut i32) (i32.const 0))
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
-	(func $0:use (param $foo i32)
-		local.get $foo
-		call $0:proc_exit
-	)
 	(func $0:main (export "_start")
 		i32.const 3
 		global.set $FOO:0
 		global.get $FOO:0
 		call $0:use
+	)
+	(func $0:use (param $foo i32)
+		local.get $foo
+		call $0:proc_exit
 	)
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
 	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
