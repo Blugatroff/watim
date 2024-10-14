@@ -316,6 +316,10 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt &self.signature Signature-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
+    $fmt "generic-arguments=" Fmt:write
+    $fmt \TypeId-format &self.generic-arguments Array:format<TypeId>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "locals=" Fmt:write
     $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<LocalId, Local>
     $fmt ",\n" Fmt:write
@@ -1623,7 +1627,7 @@ fn monomize-call(ctx: .Ctx, call: .Resolved:Call, generic-arguments: .Array<Type
             }
         }
         case Function -> {
-            $ctx $call.function $generic-arguments lookup-function match {
+            $ctx $call.function &generic-arguments-of-this-call lookup-function match {
                 case Some -> { flip drop }
                 case None -> {
                     $ctx $call.function $generic-arguments-of-this-call pre-insert-function @instance @slot
