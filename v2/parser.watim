@@ -997,9 +997,15 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
             loop () -> Result<TopItem, ParseError> {
                 $parser.arena &cases
                 $parser advance match {
-                    case None -> { $parser "expected `}`" abort<TopItem> break }
+                    case None -> { $parser "expected `case` or `}`" abort<TopItem> break }
                     case Some -> {}
                 } Core:dup<.Token> Token-ty match {
+                    case TOKEN_RIGHT_BRACE -> {
+                        @end
+                        $token ~ $name ~ $generic-parameters $cases $end ~ make Variant
+                        make TopItem.Variant
+                        make Result<TopItem, ParseError>.Success break
+                    }
                     case TOKEN_CASE -> {}
                     case _ -> { $parser "expected `case`" abort<TopItem> break }
                 } ~
