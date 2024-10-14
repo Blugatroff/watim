@@ -1,5 +1,5 @@
 import "../std/core.watim" as Core (align-to)
-import "../std/maybe.watim" as Maybe (Maybe)
+import "../std/maybe.watim" as Maybe (Maybe, is-some)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/byte-array.watim" as ByteArray (ByteArray)
@@ -16,8 +16,9 @@ import "./monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
     Extern, Function, FunctionHandle, Signature, Global,
     Type, Key, Key-type, NamedTypeId, TypeId, Local,
-    CustomType, CustomType-name, Variant, Struct,
-    Word, Intrinsic, FieldAccess
+    CustomType, CustomType-name, Variant, VariantCase, Struct,
+    Word, Intrinsic, FieldAccess, MatchCase,
+    type-size, field-offset, can-live-in-reg
 )
 
 struct Ctx {
@@ -119,14 +120,6 @@ fn lookup-custom-type(program: .Monomized, handle: .CustomTypeHandle) -> .Custom
     $handle.index Array:get<CustomType>
 }
 
-fn type-size(program: .Monomized, type: TypeId) -> i32 {
-    &program.sizes $type.index Array:get<i32> ~
-}
-
-fn can-live-in-reg(program: .Monomized, type: TypeId) -> bool {
-    $program $type type-size 4 le
-}
-
 fn generate-extrn(ctx: .Ctx, extrn: .Extern, module-id: i32) {
     $ctx.fmt Fmt:write-indent
     $ctx.fmt "(import " Fmt:write
@@ -158,8 +151,8 @@ fn generate-globals(ctx: .Ctx, static-data-len: i32) -> i32 {
             $j $module.globals.len = if { break }
             &module.globals $j Array:get<Global> @globl
             $j 1 + #j
-            $ctx.program $globl.type type-size @size
-            $globl.reffed $ctx.program $globl.type can-live-in-reg not or @lives-in-memory
+            &ctx.program.sizes $globl.type type-size @size
+            $globl.reffed &ctx.program.sizes $globl.type can-live-in-reg not or @lives-in-memory
             $lives-in-memory if { $offset } else { 0 } @initial-value
 
             $ctx.fmt Fmt:write-indent
@@ -253,12 +246,12 @@ fn generate-functions(ctx: .Ctx) {
 }
 
 fn globl-lives-in-memory(ctx: .Ctx, globl: .Global) -> bool {
-    $ctx.program $globl.type can-live-in-reg not
+    &ctx.program.sizes $globl.type can-live-in-reg not
     $globl.reffed or
 }
 
 fn local-lives-in-memory(ctx: .Ctx, local: .Local) -> bool {
-    $ctx.program $local.type can-live-in-reg not
+    &ctx.program.sizes $local.type can-live-in-reg not
     $local.reffed or
 }
 
@@ -337,7 +330,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
         &locals.values $i Array:get<Local> @local
 
         $ctx $local local-lives-in-memory @lives-in-memory
-        $ctx.program $local.type can-live-in-reg @can-live-in-reg
+        &ctx.program.sizes $local.type can-live-in-reg @can-live-in-reg
 
         $local.is-parameter $lives-in-memory and $can-live-in-reg and if {
             // This parameter must be put on the stack, because it is reffed
@@ -349,7 +342,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
             $ctx.fmt ".store local.tee $" Fmt:write
             $ctx.fmt &local.name Token-lexeme Fmt:write
             $ctx.fmt " i32.const " Fmt:write
-            $ctx.fmt $ctx.program $local.type type-size i32-format
+            $ctx.fmt &ctx.program.sizes $local.type type-size i32-format
             $ctx.fmt " i32.add global.set $stac:k\n" Fmt:write
         }
 
@@ -358,7 +351,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
 
             $ctx
             &local.name Token-lexeme
-            $ctx.program $local.type type-size
+            &ctx.program.sizes $local.type type-size
             $local-id.scope
             $local-id.shadow
             generate-memory-slot
@@ -442,7 +435,7 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
             $ctx $local local-lives-in-memory not if {
                 // The local does not live in linear memory, so
                 // the target_taip must also already be on the stack unpacked.
-                0 $ctx.program $word.type can-live-in-reg !i32 / drop // assert can-live-in-reg
+                0 &ctx.program.sizes $word.type can-live-in-reg !i32 / drop // assert can-live-in-reg
 
                 $ctx.fmt "local.set " Fmt:write
                 $ctx.fmt $local &word.local generate-local-ident
@@ -455,7 +448,7 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
         }
         case GetLocal -> {
             @word
-            $ctx.program $word.result-type can-live-in-reg @result-can-live-in-reg
+            &ctx.program.sizes $word.result-type can-live-in-reg @result-can-live-in-reg
             $result-can-live-in-reg not if {
                 // set up the address to store the result in
                 $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
@@ -485,7 +478,7 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
             0 !.Arena Arena:temp @temp @temp-save
             $temp $ctx &word.fields $var-lives-in-memory determine-loads @loads
 
-            $ctx.program $word.result-type type-size @result-size
+            &ctx.program.sizes $word.result-type type-size @result-size
 
             $loads.len 0 = if {
                 $result-can-live-in-reg not if {
@@ -704,20 +697,251 @@ fn generate-word(ctx: .Ctx, locals: .Map<LocalId, Local>, word: .Word) {
         }
         case Load -> {
             @word
-            $ctx.program $word.type can-live-in-reg if {
+            &ctx.program.sizes $word.type can-live-in-reg if {
                 $ctx $word.type generate-type
                 $ctx.fmt ".load" Fmt:write
             } else {
                 $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
                 $ctx.fmt $word.copy-space-offset i32-format
                 $ctx.fmt " i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const " Fmt:write
-                $ctx.fmt $ctx.program $word.type type-size i32-format
+                $ctx.fmt &ctx.program.sizes $word.type type-size i32-format
                 $ctx.fmt "memory.copy" Fmt:write
+            }
+        }
+        case Struct -> {
+            @word
+            $ctx.program $word.type lookup-type match {
+                case Custom -> {}
+                case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+            } @custom-type-handle
+            $ctx.program $custom-type-handle lookup-custom-type match {
+                case Variant -> { drop Core:unreachable<.Struct> }
+                case Struct -> {}
+            } @struc
+
+            &ctx.program.sizes $word.type type-size @type-size
+            &ctx.program.sizes $word.type can-live-in-reg if {
+                $type-size 0 = if {
+                    0 @i
+                    loop {
+                        $i $struc.fields.len = if { break }
+                        $ctx.fmt "drop " Fmt:write
+                        $i 1 + #i
+                    }
+                    $ctx.fmt "i32.const 0 " Fmt:write
+                }
+                $ctx.fmt ";; make " Fmt:write
+                $ctx $word.type generate-type-pretty
+            } else {
+                $ctx.fmt ";; make " Fmt:write
+                $ctx $word.type generate-type-pretty
+                $ctx.fmt "\n" Fmt:write
+                $ctx.fmt Fmt:indent
+                $struc.fields.len @i
+                loop {
+                    $i 0 = if { break }
+                    $i 1 - @field-index
+                    &struc.fields $field-index Array:get<NamedTypeId> @field
+                    &ctx.program.sizes $struc $field-index field-offset @field-offset
+                    $ctx.fmt Fmt:write-indent
+                    $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                    $ctx.fmt $word.copy-space-offset $field-offset + i32-format
+                    $ctx.fmt " i32.add call $intrinsic:flip " Fmt:write
+                    $ctx $field.type generate-store
+                    $ctx.fmt "\n" Fmt:write
+                    $i 1 - #i
+                }
+                $ctx.fmt Fmt:dedent
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.copy-space-offset i32-format
+                $ctx.fmt " i32.add ;; make " Fmt:write
+                $ctx $word.type generate-type-pretty
+                $ctx.fmt " end" Fmt:write
+            }
+        }
+        case StructNamed -> {
+            @word
+            $ctx.program $word.type lookup-type match {
+                case Custom -> {}
+                case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+            } @custom-type-handle
+            $ctx.program $custom-type-handle lookup-custom-type match {
+                case Variant -> { drop Core:unreachable<.Struct> }
+                case Struct -> {}
+            } @struc
+            &ctx.program.sizes $word.type type-size @type-size
+            $type-size 0 = if {
+                0 @i
+                loop {
+                    $i $struc.fields.len = if { break }
+                    $ctx.fmt "drop " Fmt:write
+                    $i 1 + #i
+                }
+                $ctx.fmt "i32.const 0 ;; make " Fmt:write
+                $ctx $word.type generate-type-pretty
+            } else {
+                $ctx.fmt ";; make " Fmt:write
+                $ctx $word.type generate-type-pretty
+                $ctx.fmt "\n" Fmt:write
+                $ctx.fmt Fmt:indent
+                $ctx $locals &word.words generate-words
+                $ctx.fmt Fmt:dedent
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.copy-space-offset i32-format
+                $ctx.fmt " i32.add ;; make " Fmt:write
+                $ctx $word.type generate-type-pretty
+                $ctx.fmt " end" Fmt:write
+            }
+        }
+        case FieldInit -> {
+            @word
+            $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+            $ctx.fmt $word.copy-space-offset i32-format
+            $ctx.fmt " i32.add call $intrinsic:flip " Fmt:write
+            $ctx $word.type generate-store
+        }
+        case Variant -> {
+            @word
+            $ctx.program $word.type lookup-type match {
+                case Custom -> {}
+                case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+            } @custom-type-handle
+            $ctx.program $custom-type-handle lookup-custom-type match {
+                case Variant -> {}
+                case Struct -> { drop Core:unreachable<.Variant> }
+            } @varint
+            &varint.cases $word.tag Array:get<VariantCase> @cays
+            &ctx.program.sizes $word.type can-live-in-reg if {
+                $cays.type match {
+                    case Some -> { drop $ctx.fmt "drop " Fmt:write }
+                    case None -> {}
+                }
+                $ctx.fmt "i32.const " Fmt:write
+                $ctx.fmt $word.tag i32-format
+                $ctx.fmt " ;; store tag " Fmt:write
+                $ctx.fmt &varint.name Token-lexeme Fmt:write
+                $ctx.fmt "." Fmt:write
+                $ctx.fmt &cays.name Token-lexeme Fmt:write
+                $ctx.fmt "\n" Fmt:write
+            } else {
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.copy-space-offset i32-format
+                $ctx.fmt " i32.add i32.const " Fmt:write
+                $ctx.fmt $word.tag i32-format
+                $ctx.fmt " i32.store ;; store tag\n" Fmt:write
+                $cays.type match {
+                    case Some -> {
+                        @case-type
+                        $ctx.fmt Fmt:write-indent
+                        $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                        $ctx.fmt $word.copy-space-offset 4 + i32-format
+                        $ctx.fmt " i32.add call $intrinsic:flip " Fmt:write
+                        &ctx.program.sizes $case-type can-live-in-reg not if {
+                            $ctx.fmt "i32.const " Fmt:write
+                            $ctx.fmt &ctx.program.sizes $case-type type-size i32-format
+                            $ctx.fmt " memory.copy ;; store value\n" Fmt:write
+                        } else {
+                            $ctx $case-type generate-type
+                            $ctx.fmt ".store ;; store value\n" Fmt:write
+                        }
+                    }
+                    case None -> {}
+                }
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
+                $ctx.fmt $word.copy-space-offset i32-format
+                $ctx.fmt " i32.add" Fmt:write
+            }
+        }
+        case Match -> {
+            @word
+            $ctx.program $word.type lookup-type match {
+                case Custom -> {}
+                case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+            } @custom-type-handle
+            $ctx.program $custom-type-handle lookup-custom-type match {
+                case Variant -> {}
+                case Struct -> { drop Core:unreachable<.Variant> }
+            } @varint
+            $ctx.fmt ";; match on " Fmt:write
+            $ctx.fmt &varint.name Token-lexeme Fmt:write
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:write-indent
+            0 @i
+            &ctx.program.sizes $word.type can-live-in-reg @variant-can-live-in-reg
+            loop {
+                $i $word.cases.len = if {
+                    &word.default match {
+                        case None -> {
+                            $ctx.fmt "unreachable" Fmt:write
+                        }
+                        case Some -> {
+                            $ctx flip $locals flip generate-words
+                        }
+                    }
+                    break
+                }
+                &word.cases $i Array:get<MatchCase> @cays
+                $ctx.fmt "call $intrinsic:dupi32 " Fmt:write
+                $variant-can-live-in-reg not $word.by-ref or if {
+                    $ctx.fmt "i32.load " Fmt:write
+                }
+                $ctx.fmt "i32.const " Fmt:write
+                $ctx.fmt $cays.tag i32-format
+                $ctx.fmt " i32.eq (if (param i32)" Fmt:write
+                $ctx &word.parameters generate-parameters-unnamed
+                $ctx &word.returns generate-returns
+                $ctx.fmt "\n" Fmt:write
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt "(then\n" Fmt:write
+                $ctx.fmt Fmt:indent
+                $ctx.fmt Fmt:write-indent
+                $cays.type match {
+                    case None -> {
+                        $ctx.fmt "drop" Fmt:write
+                        $ctx.fmt "\n" Fmt:write
+                    }
+                    case Some -> {
+                        @case-type
+                        &ctx.program.sizes $case-type type-size 0 /= if {
+                            $ctx.fmt "i32.const 4 i32.add" Fmt:write
+                            $word.by-ref not if { &ctx.program.sizes $case-type can-live-in-reg if {
+                                $ctx.fmt " " Fmt:write
+                                $ctx $case-type generate-type
+                                $ctx.fmt ".load" Fmt:write
+                            } }
+                            $ctx.fmt "\n" Fmt:write
+                        }
+                    }
+                }
+                $ctx $locals &cays.words generate-words
+                $ctx.fmt Fmt:dedent
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt ")\n" Fmt:write
+                $ctx.fmt Fmt:write-indent
+                $i 1 + $word.cases.len = &word.default is-some<Array<Word>> and if {
+                    $ctx.fmt "(else\n" Fmt:write
+                    $ctx.fmt Fmt:indent
+                } else {
+                    $ctx.fmt "(else " Fmt:write
+                }
+                $i 1 + #i
+            }
+            loop {
+                $i 0 = if { break }
+                $i $word.cases.len = &word.default is-some<Array<Word>> and if {
+                    $ctx.fmt Fmt:dedent
+                    $ctx.fmt Fmt:write-indent
+                }
+                $ctx.fmt "))" Fmt:write
+                $i 1 - #i
             }
         }
         case Uninit -> {
             @word
-            $ctx.program $word.type can-live-in-reg if {
+            &ctx.program.sizes $word.type can-live-in-reg if {
                 $ctx.fmt "i32.const 0" Fmt:write
             } else {
                 $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
@@ -743,7 +967,7 @@ fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, lives-
             case Ptr -> { drop 1 1 = }
             case _ -> { drop 0 1 = }
         } @source-type-is-ptr
-        $ctx.program $field.source-type can-live-in-reg
+        &ctx.program.sizes $field.source-type can-live-in-reg
         $i 0 = $lives-in-memory and not and
         $source-type-is-ptr not and if {
             $i 1 + #i
@@ -767,7 +991,7 @@ fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, lives-
                     case Struct -> {}
                 } @struc
 
-                $ctx.program $struc $field.field-index field-offset @field-offset
+                &ctx.program.sizes $struc $field.field-index field-offset @field-offset
 
                 $offset $field-offset + #offset
                 $i 1 + #i
@@ -782,22 +1006,10 @@ fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, lives-
     }
 }
 
-fn field-offset(program: .Monomized, struc: .Struct, field-index: i32) -> i32 {
-    0 @offset
-    0 @i
-    loop {
-        $i $field-index = if { $offset break }
-        &struc.fields $i Array:get<NamedTypeId> @field
-        $program $field.type type-size @field-size
-        $offset $field-size + #offset
-        $i 1 + #i
-    }
-}
-
 fn generate-store(ctx: .Ctx, type: TypeId) { block {
-    $ctx.program $type can-live-in-reg not if {
+    &ctx.program.sizes $type can-live-in-reg not if {
         $ctx.fmt "i32.const " Fmt:write
-        $ctx.fmt $ctx.program $type type-size i32-format
+        $ctx.fmt &ctx.program.sizes $type type-size i32-format
         $ctx.fmt " memory.copy" Fmt:write
         break
     }
@@ -855,7 +1067,7 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) {
             $ctx.program $type lookup-type match {
                 case I64 -> { "i64.eq" }
                 case _ -> {
-                    0 $ctx.program $type can-live-in-reg !i32 / drop // assert
+                    0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
                     drop "i32.eq"
                 }
             }
@@ -865,7 +1077,7 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) {
             $ctx.program $type lookup-type match {
                 case I64 -> { "i64.ne" }
                 case _ -> {
-                    0 $ctx.program $type can-live-in-reg !i32 / drop // assert
+                    0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
                     drop "i32.ne"
                 }
             }
@@ -976,7 +1188,7 @@ fn generate-returns(ctx: .Ctx, returns: .Array<TypeId>) {
 }
 
 fn generate-type(ctx: .Ctx, type: TypeId) {
-    $ctx.program $type type-size @size
+    &ctx.program.sizes $type type-size @size
     $ctx.fmt $size 4 gt $size 8 le and if {
         // "i64" TODO: support this everywhere else
         "i32"

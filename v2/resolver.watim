@@ -400,6 +400,7 @@ struct FieldInit {
     name: Token
     struc: CustomTypeHandle
     type: Type
+    field-index: i32
 }
 fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
     $fmt "(FieldInit " Fmt:write
@@ -408,6 +409,8 @@ fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
     $fmt &self.struc CustomTypeHandle-format
     $fmt " " Fmt:write
     $fmt &self.type Type-format
+    $fmt " " Fmt:write
+    $fmt $self.field-index i32-format
     $fmt ")" Fmt:write
 }
 
@@ -1008,7 +1011,7 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
 struct StructLitCtx {
     struc: CustomTypeHandle
     generic-arguments: Types
-    fields: Map<ByteSlice, Type>
+    fields: Map<ByteSlice, [i32, Type]>
 }
 
 struct BreakStack {
@@ -1896,14 +1899,14 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
             $ctx.ctx &word.token "can not make this type" abort<[Word, bool]> break
         }
     } @struc
-    \ByteSlice:eq-by-ref Map:new<ByteSlice, Type> @fields
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, [i32, Type]> @fields
     0 @i
     loop {
         $struc.fields.len $i = if { break }
         &struc.fields $i Array:get<NamedType> @field
         $ctx.temp &fields &field.name Token-lexeme make ByteSlice
-        $ctx &struct-type.generic-arguments &field.type resolve-generic
-        Map:insert<ByteSlice, Type> drop
+        $i $ctx &struct-type.generic-arguments &field.type resolve-generic [,2]
+        Map:insert<ByteSlice, [i32, Type]> drop
         $i 1 + #i
     }
     make StructLitCtx {
@@ -2745,15 +2748,16 @@ fn resolve-init-local(ctx: .WordCtx, stack: .Stack, word: .P:InitLocal) -> Resul
         case None -> {}
         case Some -> {
             @struc-lit-ctx
-            &struc-lit-ctx.fields &word.ident Token-lexeme Map:remove-bs<Type> match {
+            &struc-lit-ctx.fields &word.ident Token-lexeme Map:remove-bs<[i32, Type]> match {
                 case None -> {}
                 case Some -> {
-                    @field-type
+                    [,] @field-type @field-index
                     $ctx &struc-lit-ctx.generic-arguments &field-type resolve-generic @field-type
                     &type &field-type Type-eq not if {
                         $ctx.ctx &word.ident "expected different type for field" abort<[Word, bool]> break
                     }
                     make FieldInit {
+                        $field-index @field-index
                         $field-type @type
                         $word.ident @name
                         $struc-lit-ctx.generic-arguments @generic-arguments

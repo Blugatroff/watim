@@ -450,6 +450,7 @@ struct Ctx {
     function-table: .Array<FunctionHandle>
     custom-types: Array<CustomType>
     functions: .Array<Array<ExternOrInstancesMap>>
+    struc-env: Maybe<CustomTypeHandle>
 }
 fn insert-extrn(ctx: .Ctx, handle: Resolved:FunctionHandle, extrn: Extern) {
     loop {
@@ -633,7 +634,6 @@ fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<Type
         }
         case _ -> { $ctx flip $generic-arguments monomize-type break }
     } @key
-    2 Fmt:to-fd @fmt
     $ctx.types \cmp-perhaps-empty-type-slot &key Array:find<Maybe<Key>, .Key> if {
         $ctx.types.len $type-id.index 1 + = if {
             $ctx.types Array:pop<Maybe<Key>> assert-none<Key>
@@ -777,6 +777,7 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Monomiz
             &function-table @function-table
             Array:new<CustomType> @custom-types
             &functions @functions
+            make Maybe<CustomTypeHandle>.None @struc-env
         } @ctx
 
 
@@ -1387,13 +1388,28 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt Fmt:dedent
 }
 
+struct StructWord {
+    type: TypeId
+    copy-space-offset: i32
+}
+fn StructWord-format(fmt: .Formatter, self: .StructWord) {
+    $fmt "(StructWord " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.copy-space-offset i32-format
+    $fmt ")" Fmt:write
+}
+
 struct StructWordNamed {
     type: TypeId
     words: Array<Word>
+    copy-space-offset: i32
 }
 fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
     $fmt "(StructWordNamed " Fmt:write
     $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.copy-space-offset i32-format
     $fmt " " Fmt:write
     $fmt &self.words Words-format
     $fmt ")" Fmt:write
@@ -1403,12 +1419,15 @@ fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
 struct VariantWord {
     tag: i32
     type: TypeId
+    copy-space-offset: i32
 }
 fn VariantWord-format(fmt: .Formatter, self: .VariantWord) {
     $fmt "(VariantWord " Fmt:write
     $fmt $self.tag i32-format
     $fmt " " Fmt:write
     $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.copy-space-offset i32-format
     $fmt ")" Fmt:write
 }
 
@@ -1448,6 +1467,22 @@ fn Load-format(fmt: .Formatter, self: .Load) {
     $fmt ")" Fmt:write
 }
 
+struct FieldInit {
+    struc: CustomTypeHandle
+    type: TypeId
+    field-index: i32
+    copy-space-offset: i32
+}
+fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
+    $fmt "(FieldInit " Fmt:write
+    $fmt &self.type TypeId-format
+    $fmt " " Fmt:write
+    $fmt $self.field-index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.copy-space-offset i32-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case String -> StringWord
@@ -1468,7 +1503,7 @@ variant Word {
     case Block -> Block
     case Sizeof -> TypeId
     case Uninit -> Uninit
-    case FieldInit -> TypeId
+    case FieldInit -> FieldInit
     case Load -> Load
     case MakeTuple -> Array<TypeId>
     case UnpackTuple -> Array<TypeId>
@@ -1476,7 +1511,7 @@ variant Word {
     case GetField -> GetField
     case FunRef -> FunRef
     case Match -> Match
-    case Struct -> TypeId
+    case Struct -> StructWord
     case StructNamed -> StructWordNamed
     case Variant -> VariantWord
 }
@@ -1500,7 +1535,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Block -> { Block-format break }
         case Sizeof -> { $fmt "(Sizeof " Fmt:write TypeId-format $fmt ")" }
         case Uninit -> { Uninit-format break }
-        case FieldInit -> { $fmt "(FieldInit " Fmt:write TypeId-format $fmt ")" }
+        case FieldInit -> { FieldInit-format break }
         case Load -> { Load-format break }
         case MakeTuple -> { $fmt "(MakeTuple " Fmt:write TypeIds-format $fmt ")" }
         case UnpackTuple -> { $fmt "(UnpackTuple " Fmt:write TypeIds-format $fmt ")" }
@@ -1508,7 +1543,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case GetField -> { GetField-format break }
         case FunRef -> { FunRef-format break }
         case Match -> { Match-format break }
-        case Struct -> { $fmt "(Struct " Fmt:write TypeId-format $fmt ")" }
+        case Struct -> { StructWord-format break }
         case StructNamed -> { StructWordNamed-format break }
         case Variant -> { VariantWord-format break }
         case Todo -> {
@@ -1697,7 +1732,14 @@ fn monomize-uninit(ctx: .Ctx, word: .Resolved:Uninit, generic-arguments: .Array<
 }
 
 fn monomize-field-init(ctx: .Ctx, word: .Resolved:FieldInit, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-type make Word.FieldInit
+    $ctx.struc-env match {
+        case None -> { Core:unreachable<CustomTypeHandle> }
+        case Some -> {}
+    }
+    $ctx &word.type $generic-arguments monomize-type
+    $word.field-index
+    0 not
+    make FieldInit make Word.FieldInit
 }
 
 fn monomize-load(ctx: .Ctx, word: .Resolved:Load, generic-arguments: .Array<TypeId>) -> Word {
@@ -1748,18 +1790,28 @@ fn monomize-matsh(ctx: .Ctx, word: .Resolved:Match, generic-arguments: .Array<Ty
 }
 
 fn monomize-struc-word(ctx: .Ctx, word: .Resolved:StructWord, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-custom-type' make Word.Struct
+    $ctx &word.type $generic-arguments monomize-custom-type'
+    0 not
+    make StructWord
+    make Word.Struct
 }
 
 fn monomize-struc-word-named(ctx: .Ctx, word: .Resolved:StructWordNamed, generic-arguments: .Array<TypeId>) -> Word {
-    $ctx &word.type $generic-arguments monomize-custom-type'
+    $ctx &word.type $generic-arguments monomize-custom-type' @type
+    $ctx.types $type.index Array:get<Maybe<Key>> Maybe:ref<Key> assert-some<.Key> Key-type match {
+        case Custom -> {}
+        case _ -> { drop Core:unreachable<.CustomTypeHandle> }
+    } ~ make Maybe<CustomTypeHandle>.Some #ctx.struc-env
+    $type
     $ctx &word.words $generic-arguments monomize-words
+    0 not
     make StructWordNamed make Word.StructNamed
 }
 
 fn monomize-varint-word(ctx: .Ctx, word: .Resolved:VariantWord, generic-arguments: .Array<TypeId>) -> Word {
     $word.tag
     $ctx &word.type $generic-arguments monomize-custom-type'
+    0 not
     make VariantWord make Word.Variant
 }
 
@@ -1822,12 +1874,12 @@ fn measure-copy-space(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>) {
     0 @module-id
     loop {
         $module-id $modules.values.len = if { break }
-        &modules.values $module-id Array:get<Module> $sizes module-measure-copy-space
+        &modules.values &modules.values $module-id Array:get<Module> $sizes module-measure-copy-space
         $module-id 1 + #module-id
     }
 }
 
-fn module-measure-copy-space(module: .Module, sizes: .Array<i32>) {
+fn module-measure-copy-space(modules: .Array<Module>, module: .Module, sizes: .Array<i32>) {
     0 @function-id
     loop {
         $function-id $module.functions.len = if { break }
@@ -1838,7 +1890,7 @@ fn module-measure-copy-space(module: .Module, sizes: .Array<i32>) {
                 loop {
                     $instance-id $instances.len = if { break }
                     $instances $instance-id Array:get<.Function> ~ @function
-                    $function $sizes function-measure-copy-space
+                    $modules $function $sizes function-measure-copy-space
                     $instance-id 1 + #instance-id
                 }
             }
@@ -1848,40 +1900,86 @@ fn module-measure-copy-space(module: .Module, sizes: .Array<i32>) {
     }
 }
 
-fn function-measure-copy-space(function: .Function, sizes: .Array<i32>) {
+fn function-measure-copy-space(modules: .Array<Module>, function: .Function, sizes: .Array<i32>) {
     0 #function.local-copy-space
-    &function.words $sizes &function.local-copy-space words-measure-copy-space
+    &function.words $modules $sizes &function.local-copy-space 0 not words-measure-copy-space
 }
 
-fn words-measure-copy-space(words: .Array<Word>, sizes: .Array<i32>, offset: .i32) {
+fn words-measure-copy-space(words: .Array<Word>, modules: .Array<Module>, sizes: .Array<i32>, offset: .i32, struc-offset: i32) {
     0 @i
     loop {
         $i $words.len = if { break }
-        $words $i Array:get<Word> $sizes $offset word-measure-copy-space
+        $words $i Array:get<Word> $modules $sizes $offset $struc-offset word-measure-copy-space
         $i 1 + #i
     }
 }
 
-fn type-size(type: TypeId, sizes: .Array<i32>) -> i32 {
+fn type-size(sizes: .Array<i32>, type: TypeId) -> i32 {
     $sizes $type.index Array:get<i32> ~
 }
 
-fn can-live-in-reg(type: TypeId, sizes: .Array<i32>) -> bool {
+fn field-offset(sizes: .Array<i32>, struc: .Struct, field-index: i32) -> i32 {
+    0 @offset
+    0 @i
+    loop {
+        $i $field-index = if { $offset break }
+        &struc.fields $i Array:get<NamedTypeId> @field
+        $sizes $field.type type-size @field-size
+        $offset $field-size + #offset
+        $i 1 + #i
+    }
+}
+
+fn can-live-in-reg(sizes: .Array<i32>, type: TypeId) -> bool {
     $sizes $type.index Array:get<i32> ~
     4 // TODO: make this 8, because i64 could be used for small structs like ByteSlice 8
     le
 }
 
-fn word-measure-copy-space(word: .Word, sizes: .Array<i32>, offset: .i32) { block {
+fn word-measure-copy-space(
+    word: .Word,
+    modules: .Array<Module>,
+    sizes: .Array<i32>,
+    offset: .i32,
+    struc-offset: i32
+) { block {
     $word match {
         case GetLocal -> { @word $word.result-type &word.copy-space-offset }
         case Uninit -> { @word $word.type &word.copy-space-offset }
         case Load -> { @word $word.type &word.copy-space-offset }
+        case Struct -> { @word $word.type &word.copy-space-offset }
+        case StructNamed -> {
+            @word
+            $sizes $word.type can-live-in-reg not if {
+                $offset ~ #word.copy-space-offset
+                $offset ~ $sizes $word.type type-size + =>offset
+                &word.words $modules $sizes $offset $word.copy-space-offset words-measure-copy-space
+            } break
+        }
+        case Variant -> { @word $word.type &word.copy-space-offset }
+        case FieldInit -> {
+            @word
+            $modules $word.struc.module.index Array:get<Module> .custom-types
+            $word.struc.index Array:get<CustomType> match {
+                case Struct -> {}
+                case Variant -> { !.Struct 0 0 / drop }
+            } @struc
+            $sizes $struc $word.field-index field-offset @field-offset
+            $struc-offset $field-offset + #word.copy-space-offset break
+        }
+        case If -> {
+            @word
+            &word.true-words $modules $sizes $offset $struc-offset words-measure-copy-space
+            &word.false-words $modules $sizes $offset $struc-offset words-measure-copy-space
+            break
+        }
+        case Loop -> { .words $modules $sizes $offset $struc-offset words-measure-copy-space break }
+        case Block -> { .words $modules $sizes $offset $struc-offset words-measure-copy-space break }
         case _ -> { drop break }
     } @offset-slot @type
-    $type $sizes can-live-in-reg not if {
+    $sizes $type can-live-in-reg not if {
         $offset ~ =>offset-slot
-        $offset ~ $type $sizes type-size + =>offset
+        $offset ~ $sizes $type type-size + =>offset
     }
 } }
 

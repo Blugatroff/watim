@@ -42,6 +42,13 @@ fn is-some<T>(o: .Maybe<T>) -> bool {
     } =
 }
 
+fn is-none<T>(o: .Maybe<T>) -> bool {
+    0 $o match {
+        case Some -> { drop 1 }
+        case None -> { 0 }
+    } =
+}
+
 fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>) {
     $self match {
         case None -> { $fmt "None" Fmt:write }

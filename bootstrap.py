@@ -4584,10 +4584,8 @@ class WatGenerator:
             case StructFieldInitWord(_, taip, copy_space_offset):
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:flip ")
-                if not taip.can_live_in_reg():
-                    self.write(f"i32.const {taip.size()} memory.copy\n")
-                else:
-                    self.write("i32.store\n")
+                self.write_store(taip)
+                self.write("\n")
             case MatchWord(_, variant_handle, by_ref, cases, default, parameters, returns):
                 variant = self.lookup_type_definition(variant_handle)
                 def go(cases: List[MatchCase]):
@@ -4595,10 +4593,10 @@ class WatGenerator:
                         if default is None:
                             self.write("unreachable")
                             return
-                        if variant.size() <= 4 and by_ref:
-                            self.write_indent()
-                            self.write("i32.load")
-                            self.write("\n")
+                        # if variant.size() <= 4 and by_ref:
+                        #     self.write_indent()
+                        #     self.write("i32.load")
+                        #     self.write("\n")
                         self.write_words(module, locals, default)
                         return
                     case = cases[0]
