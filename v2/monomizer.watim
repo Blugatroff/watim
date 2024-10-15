@@ -1802,6 +1802,7 @@ fn monomize-struc-word(ctx: .Ctx, word: .Resolved:StructWord, generic-arguments:
 
 fn monomize-struc-word-named(ctx: .Ctx, word: .Resolved:StructWordNamed, generic-arguments: .Array<TypeId>) -> Word {
     $ctx &word.type $generic-arguments monomize-custom-type' @type
+    $ctx.struc-env @outer-struc-env
     $ctx.types $type.index Array:get<Maybe<Key>> Maybe:ref<Key> assert-some<.Key> Key-type match {
         case Custom -> {}
         case _ -> { drop Core:unreachable<.CustomTypeHandle> }
@@ -1810,6 +1811,7 @@ fn monomize-struc-word-named(ctx: .Ctx, word: .Resolved:StructWordNamed, generic
     $ctx &word.words $generic-arguments monomize-words
     0 not
     make StructWordNamed make Word.StructNamed
+    $outer-struc-env #ctx.struc-env
 }
 
 fn monomize-varint-word(ctx: .Ctx, word: .Resolved:VariantWord, generic-arguments: .Array<TypeId>) -> Word {
