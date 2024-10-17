@@ -1,6 +1,6 @@
 {
     inputs = {
-        nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
         flake-utils.url = "github:numtide/flake-utils";
     };
     outputs = { self, nixpkgs, flake-utils }:
@@ -35,7 +35,7 @@
             };
         in {
             devShells.default = pkgs.mkShell {
-                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ watim pkgs.nodePackages.prettier ] ]);
+                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ pkgs.nodePackages.prettier ] ]);
             };
             packages.default = watim;
         });

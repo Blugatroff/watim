@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, TypeVar, Callable, Generic, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
+from typing import Optional, TypeVar, Callable, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
 from functools import reduce
 import sys
 import os
@@ -594,8 +594,6 @@ class ParserException(Exception):
             column = self.token.column
         return f"{self.file_path}:{line}:{column} {self.message}"
 
-T = TypeVar('T')
-
 @dataclass
 class Parser:
     file_path: str
@@ -1090,7 +1088,7 @@ class Parser:
 
         return ParsedFunctionSignature(function_export_name, function_ident, generic_parameters, parameters, returns)
 
-    def parse_triangle_listed(self, elem: Callable[['Parser'], T]) -> List[T]:
+    def parse_triangle_listed[T](self, elem: Callable[['Parser'], T]) -> List[T]:
         token = self.advance(skip_ws=True)
         if token is None or token.ty != TokenType.LEFT_TRIANGLE:
             self.abort("Expected `<`")
@@ -1232,7 +1230,7 @@ class ResolvedPtrType:
     def __str__(self) -> str:
         return f"(Ptr {str(self.child)})"
 
-def listtostr(seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
+def listtostr[T](seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
     if len(seq) == 0:
         return "[]"
     s = "[\n" if multi_line else "["
@@ -1865,7 +1863,7 @@ class ResolvedModule:
         return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))},\n  functions={indent_non_first(format_dict(functions))})"
 
 @dataclass
-class Lazy(Generic[T]):
+class Lazy[T]:
     produce: Callable[[], T]
     inner: T | None = None
 
@@ -1964,7 +1962,7 @@ class ResolvedLocal:
         return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
 
 @dataclass
-class Ref(Generic[T]):
+class Ref[T]:
     value: T
 
 class Env:
