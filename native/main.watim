@@ -1,196 +1,465 @@
-import "../std/alloc.watim" as A
-import "../std/args.watim" as ARGS
-import "../std/core.watim" as CORE
-import "../std/fmt.watim" as FMT
-import "../std/fs.watim" as FS
+import "../std/core.watim" as Core
+import "../std/maybe.watim" as Maybe (Maybe, or-default)
+import "../std/page-alloc.watim" as PageAlloc
+import "../std/arena.watim" as Arena (Arena)
+import "../std/args.watim" as Args
+import "../std/array.watim" as Array (Array)
 import "../std/io.watim" as IO
-import "../std/str.watim" as STR
-import "../std/util.watim" as U
-import "../std/array.watim" as Array
-import "../std/arena.watim" as Arena
-import "../std/arena-graph.watim" as ArenaGraph
-import "../std/byte-array.watim" as ByteArray
+import "../std/fs.watim" as FS (FileSystem)
+import "../std/bytes.watim" as Bytes
+import "../std/byte-array.watim" as ByteArray (ByteArray)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
+import "../std/fmt.watim" as Fmt (ByteSlice-format)
+import "../std/map.watim" as Map (Map)
 
-import "./ast.watim" as AST
-import "./checker.watim" as C
-import "./wat_gen.watim" as GEN
-import "./lexer.watim" as L
-import "./mem.watim" as MEM
-import "./module.watim" as M
-import "./parser.watim" as P
-import "./resolver.watim" as R
-import "./dump.watim" as DUMP
-import "./monomorph.watim" as MONO
-import "./logging.watim" as LOGGING
+import "./active-memory.watim" as ActiveMemory
+import "./logging.watim" as Logging
+import "./lexer.watim" as Lexer (Token, Token-lexeme)
+import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
+import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
+import "./resolver.watim" as Resolver (resolve-modules, ResolveError-print)
+import "./monomizer.watim" as Monomizer (Monomized-format, monomize)
+import "./generator.watim" as Generator
 
 fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
     2 "Usage: watim <watim-source-file>\n" IO:write-all IO:check
+    2 "Commands:\n" IO:write-all IO:check
+    2 "  lex       [path]   Lex code and print the Tokens.\n" IO:write-all IO:check
+    2 "  parse     [path]   Parse code and print the AST\n" IO:write-all IO:check
+    2 "  check     [path]   Typecheck and print the AST\n" IO:write-all IO:check
+    2 "  monomize  [path]   Monomize the entire program\n" IO:write-all IO:check
+    2 "  compile   [path]   Compile the entire program\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
-    2 "  -q, --quiet    Don't print any logs to stderr\n" IO:write-all IO:check
-    2 "  --parse-ast    Parse stdin into a watim AST in print it as JSON\n" IO:write-all IO:check
-    1 CORE:exit
+    2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
+    1 Core:exit
 }
 
-fn find-flag(args: .Array:Array<STR:Str>, ptr: .i32, len: i32) -> bool {
-    $ptr $len STR:Str-new @str
-    $args \STR:Str-eq &str Array:find<STR:Str, .STR:Str> if {
-        $args flip Array:remove<STR:Str> drop
+fn find-flag(args: .Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
+    $ptr $len make ByteSlice @str
+    $args \ByteSlice:eq-by-ref &str Array:find<ByteSlice, .ByteSlice> if {
+        $args flip Array:remove<ByteSlice> drop
         1 1 =
-    } else { 
+    } else {
         drop
         0 1 =
     }
 }
 
+variant CliCommand {
+    case Lex -> Maybe<ByteSlice>
+    case Parse -> Maybe<ByteSlice>
+    case Check -> Maybe<ByteSlice>
+    case Pretty -> Maybe<ByteSlice>
+    case Monomize -> Maybe<ByteSlice>
+    case Compile -> Maybe<ByteSlice>
+}
+struct CliArgs {
+    command: CliCommand
+    quiet: bool
+}
+
+fn parse-args(arena: .Arena) -> CliArgs {
+    $arena Args:get-args @args
+    $args.len 1 le if {
+        print-usage-and-exit
+    }
+    block {
+        &args 1 Array:remove<ByteSlice> @command
+        $args.len 1 gt if {
+            &args 1 Array:remove<ByteSlice> @path
+            $path ByteSlice:unpack "-" Bytes:eq if {
+                make Maybe<ByteSlice>.None
+            } else {
+                $path make Maybe<ByteSlice>.Some
+            }
+        } else { make Maybe<ByteSlice>.None } @path
+        $command ByteSlice:unpack "lex" Bytes:eq if {
+            $path make CliCommand.Lex break
+        }
+        $command ByteSlice:unpack "parse" Bytes:eq if {
+            $path make CliCommand.Parse break
+        }
+        $command ByteSlice:unpack "pretty" Bytes:eq if {
+            $path make CliCommand.Pretty break
+        }
+        $command ByteSlice:unpack "check" Bytes:eq if {
+            $path make CliCommand.Check break
+        }
+        $command ByteSlice:unpack "monomize" Bytes:eq if {
+            $path make CliCommand.Monomize break
+        }
+        $command ByteSlice:unpack "compile" Bytes:eq if {
+            $path make CliCommand.Compile break
+        }
+        print-usage-and-exit loop { }
+    }
+    &args "-q" find-flag &args "--quiet" find-flag or
+    make CliArgs
+}
+
+fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>) -> ByteArray {
+    $file-path match {
+        case None -> { $arena 0 FS:read-all IO:check }
+        case Some -> {
+            @file-path
+            $arena $fs $file-path ByteSlice:unpack FS:read-file IO:check
+        }
+    }
+}
+
+fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
+    $arena Arena:temp @tmp-arena @save
+    "Lexer" Arena:new @lexer-arena
+    $tmp-arena &watim-code Lexer:lex @tokens
+    "Tokens" Arena:new @tokens-arena
+    $arena &tokens Lexer:Tokens-copy
+    $tmp-arena $save Arena:restore
+}
+
 fn main "_start" () {
-    1 mem-grow drop // make sure there is enough stack-space
-
+    5 mem-grow drop
+    PA:page-size 6 * set-stack-size
+    Logging:enable
+    ActiveMemory:init
     Arena:init-temp
-
-    0!.Arena:Arena Arena:temp @temp @save
-    $temp ARGS:get-args @args &args !.Array:Array<STR:Str> ~ @args
-
-    LOGGING:enable
-    COMPILE set-mode
-
-    &args "-q" find-flag 
-    &args "--quiet" find-flag or if { LOGGING:disable }
-    &args "--parse-ast" find-flag if { PARSE_AST set-mode }
-    &args "--lex" find-flag if { LEX set-mode }
-    &args "--arena-graphs" find-flag if { ArenaGraph:enable LOGGING:disable }
-
-    $args.len 1 le if { print-usage-and-exit }
-
-    ArenaGraph:begin
-
     "Main" Arena:new @arena
-    &args 1 Array:remove<STR:Str> &arena flip STR:Str-copy-into @path
-    
-    Arena:clear-temp
-    Arena:init-temp
-    
-    1 16 rotl 32 * @alloc-mem
-    &arena $alloc-mem Arena:alloc-bytes @alloc-ptr
-    $alloc-ptr $alloc-mem A:init
+    &arena FS:init IO:check @fs
+    &arena parse-args @args
+    $args.quiet if { Logging:disable }
 
-    &arena FS:init "Failed to init fs" IO:exit-with-message @fs
-
-    mode COMPILE = if {
-        M:Modules-new @modules
-        ByteArray:new @mem
-        &arena "load-modules" ArenaGraph:mark
-        &arena &fs &modules &mem $path load-module-recursive
-        &arena "R:resolve" ArenaGraph:mark
-        &arena &modules R:resolve
-        &arena "MEM:process" ArenaGraph:mark
-        $mem.len &modules MEM:process @stack-start
-        &arena "C:check" ArenaGraph:mark
-        &arena &modules C:check
-        &arena "Modules-mark-reachable" ArenaGraph:mark
-        &modules M:Modules-mark-reachable
-        &arena "gather-instances" ArenaGraph:mark
-        &arena &modules MONO:gather-instances
-
-        FMT:Formatter-stdout @formatter
-        &arena "GEN:generate" ArenaGraph:mark
-        &formatter $stack-start &mem &modules GEN:generate
-        1 "\n" IO:write-all IO:check
+    $args.command match {
+        case Lex -> {
+            @file-path
+            "Files" Arena:new @files-arena
+            &files-arena FS:init IO:check @fs
+            &files-arena &fs $file-path read-file-or-stdin @watim-code
+            "Tokens" Arena:new @tokens-arena
+            &tokens-arena &watim-code ByteArray:to-slice lex @tokens
+            &files-arena Arena:shred
+            0 @i
+            loop {
+                $tokens.len $i = if { break }
+                1 &tokens $i Array:get<Lexer:Token> Lexer:Token-print
+                1 IO:newline
+                $i 1 + #i
+            }
+            Logging:enabled if {
+                2 "tokens-arena usage: " IO:write-all IO:check
+                2 &tokens-arena Arena:usage IO:print IO:check
+                2 IO:newline
+            }
+            &tokens-arena Arena:clear
+        }
+        case Parse -> {
+            @file-path
+            "Files" Arena:new @files-arena
+            &files-arena FS:init IO:check @fs
+            &files-arena &fs $file-path read-file-or-stdin @watim-code
+            &arena &watim-code ByteArray:to-slice lex @tokens
+            &files-arena Arena:shred
+            &arena $tokens parse match {
+                case Error -> {
+                    2 flip $file-path match {
+                        case None -> { "-" }
+                        case Some -> { ByteSlice:unpack }
+                    } ParseError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Array<TopItem>>
+                }
+                case Success -> {}
+            }
+            @items
+            Logging:enabled if {
+                2 "Successfully parsed " IO:write-all IO:check
+                2 $items.len IO:print IO:check
+                2 " TopItems\n" IO:write-all IO:check
+            }
+            1 Fmt:to-fd @fmt
+            &fmt \TopItem-format &items Array:format-multi-line<TopItem>
+        }
+        case Pretty -> {
+            @file-path
+            "Files" Arena:new @files-arena
+            &files-arena FS:init IO:check @fs
+            &files-arena &fs $file-path read-file-or-stdin @watim-code
+            &arena &watim-code ByteArray:to-slice lex @tokens
+            &files-arena Arena:shred
+            &arena $tokens parse match {
+                case Error -> {
+                    2 flip $file-path match {
+                        case None -> { "-" }
+                        case Some -> { ByteSlice:unpack }
+                    } ParseError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Array<TopItem>>
+                }
+                case Success -> {}
+            }
+            @items
+            \write-stdout  PrettyPrinter-new @pp
+            0 @i
+            loop {
+                $items.len $i = if { break }
+                &items $i Array:get<TopItem> @item
+                $item &pp PrettyPrint:TopItem-pretty IO:check
+                $i 1 + #i
+            }
+            1 IO:newline
+            1 IO:newline
+        }
+        case Check -> {
+            @file-path
+            \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena &fs $file-path &modules load-modules-recursively
+            &arena &modules determine-compilation-order @modules
+            &arena Arena:temp @temp @save
+            $temp Arena:usage @start-usage
+            $temp &modules resolve-modules match {
+                case Error -> {
+                    2 flip &modules ResolveError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Map<ByteSlice, Resolver:Module>>
+                }
+                case Success -> {}
+            } @modules
+            $temp Arena:usage @end-usage
+            $end-usage $start-usage - @usage
+            Logging:enabled if {
+                2 "resolving used: " IO:write-all IO:check
+                2 $usage IO:print IO:check
+                2 " bytes (" IO:write-all IO:check
+                2 $usage print-byte-count IO:check
+                2 ")\n" IO:write-all IO:check
+            }
+            1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
+            &fmt \ByteSlice-format \Resolver:Module-format &modules Map:format-multi-line<ByteSlice, Resolver:Module>
+            &fmt "\n" Fmt:write
+            $buf Fmt:flush
+            $temp $save Arena:restore
+        }
+        case Monomize -> {
+            @file-path
+            \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena &fs $file-path &modules load-modules-recursively
+            &arena &modules determine-compilation-order @modules
+            "Resolving" Arena:new @resolving-arena
+            &resolving-arena &modules resolve-modules match {
+                case Error -> {
+                    2 flip &modules ResolveError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Map<ByteSlice, Resolver:Module>>
+                }
+                case Success -> {}
+            } @modules
+            "Monomizing" Arena:new @monomizing-arena
+            &monomizing-arena &modules monomize @monomized
+            &resolving-arena Arena:shred
+            1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
+            &fmt &monomized Monomized-format
+            &fmt "\n" Fmt:write
+            $buf Fmt:flush
+            &monomizing-arena Arena:shred
+        }
+        case Compile -> {
+            @file-path
+            \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+            &arena &fs $file-path &modules load-modules-recursively
+            &arena &modules determine-compilation-order @modules
+            "Resolving" Arena:new @resolving-arena
+            &resolving-arena &modules resolve-modules match {
+                case Error -> {
+                    2 flip &modules ResolveError-print drop
+                    2 IO:newline
+                    1 Core:exit
+                    Core:unreachable<Map<ByteSlice, Resolver:Module>>
+                }
+                case Success -> {}
+            } @modules
+            "Monomizing" Arena:new @monomizing-arena
+            &monomizing-arena &modules monomize @monomized
+            &resolving-arena Arena:shred
+            1 Fmt:to-fd "\t" Fmt:use-indentation @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
+            &fmt &monomized Generator:generate
+            &fmt "\n" Fmt:write
+            $buf Fmt:flush
+            &monomizing-arena Arena:shred
+        }
     }
-    mode PARSE_AST = if {
-        &arena parse-ast
-    }
-    mode LEX = if {
-        &arena lex
-    }
-
     &arena Arena:clear
-    ArenaGraph:end
+    exit
+}
 
-    LOGGING:enabled if {
+fn print-byte-count(fd: i32, bytes: i32) -> i32 {
+    " KMGTP" @prefixes-len @prefixes
+    loop {
+        $prefixes-len 0 = if { 0 0 / break }
+        $bytes 1024 lt if {
+            $fd $bytes IO:print Core:dup<i32> 0 /= if { break } drop
+            $fd $prefixes load8 IO:write-byte Core:dup<i32> 0 /= if { break } drop
+            $fd "iB" IO:write-all break
+        }
+        $bytes 1024 / #bytes
+        $prefixes 1 + #prefixes
+        $prefixes-len 1 - #prefixes-len
+    }
+}
+
+fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>, modules: .Map<ByteSlice, Array<TopItem>>) { block {
+    $file-path match {
+        case None -> { "-" make ByteSlice }
+        case Some -> {}
+    } @file-path-or-dash
+    $modules &file-path-or-dash Map:get<ByteSlice, Array<TopItem>> match {
+        case None -> {}
+        case Some -> { drop break }
+    }
+    Logging:enabled if {
+        2 "Loading module: " IO:write-all IO:check
+        2 $file-path-or-dash ByteSlice:unpack IO:write-all IO:check
+        2 IO:newline
+    }
+    $arena Arena:temp @temp-arena @save
+    $temp-arena $fs $file-path read-file-or-stdin @watim-code
+    $arena &watim-code ByteArray:to-slice lex @tokens
+    $arena $tokens parse match {
+        case Error -> {
+            2 flip $file-path-or-dash ByteSlice:unpack ParseError-print drop
+            2 IO:newline
+            2 Core:exit
+            Core:unreachable<Array<TopItem>>
+        }
+        case Success -> {}
+    } @top-items
+
+    $arena
+    $modules
+    $file-path match { case Some -> {} case None -> { "-" make ByteSlice } }
+    $top-items
+    Map:insert<ByteSlice, Array<TopItem>> match {
+        case None -> {}
+        case Some -> { drop 0 0 / drop }
+    }
+
+    0 @i
+    loop {
+        $top-items.len $i = if { break }
+        &top-items $i Array:get<TopItem> match {
+            case Import -> {
+                @imp
+                &imp.path Token-lexeme 2 - flip 1 + flip make ByteSlice @imp-path
+                $file-path match {
+                    case None -> {
+                        $arena $fs $imp-path make Maybe<ByteSlice>.Some $modules load-modules-recursively
+                    }
+                    case Some -> {
+                        ByteSlice:unpack FS:path-dir ByteArray:init @path
+                        $temp-arena &path $imp-path ByteSlice:unpack ByteArray:push
+                        $temp-arena $path ByteArray:unpack FS:normalize make ByteSlice @absolute-imp-path
+                        $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
+                        $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some $modules load-modules-recursively
+                    }
+                }
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+
+    $temp-arena $save Arena:restore
+} }
+
+fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> Map<ByteSlice, Array<TopItem>> {
+    $arena Arena:temp @temp @temp-save
+
+    $arena $modules.values.len Array:new-with-capacity<ByteSlice> @ordered-keys
+    $arena $modules.values.len Array:new-with-capacity<Array<TopItem>> @ordered-values
+
+    $temp $modules.values.len Array:new-with-capacity<i32> @unprocessed
+    loop {
+        $unprocessed.len $modules.values.len = if { break }
+        $temp &unprocessed $unprocessed.len Array:push<i32>
+    }
+
+    loop {
+        $unprocessed.len 0 = if { break }
+        0 @i
+        1 1 = @stuck
+        loop {
+            $unprocessed.len $i = if { break }
+            &unprocessed $i Array:get<i32> ~ @module-id
+            $modules $module-id Map:get-value<ByteSlice, Array<TopItem>> @top-items
+            $modules $module-id Map:get-key<ByteSlice, Array<TopItem>> @module-file-path
+            0 @j
+            loop {
+                $top-items.len $j = if { 1 1 = break }
+                $top-items $j Array:get<TopItem> match {
+                    case Import -> {
+                        .path Token-lexeme 2 - @imp-path-len 1 + @imp-path-ptr
+                        $module-file-path ~ ByteSlice:unpack "-" Bytes:eq if {
+                            $imp-path-ptr $imp-path-len make ByteSlice
+                        } else {
+                            ByteArray:new @absolute-path
+                            $temp &absolute-path $module-file-path ~ ByteSlice:unpack FS:path-dir ByteArray:push
+                            $temp &absolute-path $imp-path-ptr $imp-path-len ByteArray:push
+                            $temp $absolute-path ByteArray:unpack FS:normalize make ByteSlice
+                        } @absolute-path
+
+                        // Is this an import of an already `ordered` module?
+                        &ordered-keys \ByteSlice:eq-by-ref &absolute-path Array:find<ByteSlice, .ByteSlice> flip drop not if {
+                            // if not then postpone processing this module.
+                            0 1 = break
+                        }
+                    }
+                    case _ -> { drop }
+                }
+                $j 1 + #j
+            } if {
+                &unprocessed $i Array:remove<i32> drop
+                &ordered-values &modules.values $module-id Array:get<Array<TopItem>> ~ Array:push-assert-no-alloc<Array<TopItem>>
+                &ordered-keys   &modules.keys   $module-id Array:get<ByteSlice>      ~ Array:push-assert-no-alloc<ByteSlice>
+                0 1 = #stuck
+            } else {
+                $i 1 + #i
+            }
+        }
+
+        $stuck if { 0 0 / drop }
+    }
+
+    $temp $temp-save Arena:restore
+    $ordered-keys $ordered-values \ByteSlice:eq-by-ref make Map<ByteSlice, Array<TopItem>>
+}
+
+fn write-stdout(ptr: .i32, len: i32) -> i32 {
+    1 $ptr $len IO:write-all
+}
+
+fn exit() {
+    Logging:enabled if {
         2 "Used " IO:write-all IO:check
         2 0 mem-grow IO:print IO:check
         2 " 64KiB pages of memory = " IO:write-all IO:check
         2 0 mem-grow PA:page-size * 1 20 rotl 1 - + 1 20 rotl / IO:print IO:check
-        2 "MiB\n" IO:write-all IO:check
-    }
-}
-
-fn parse-ast(arena: .Arena:Arena) {
-    $arena Arena:save @save
-    $arena 0 FS:read-all @code 
-    $code 0 /= if {
-        2 "Failed to read stdin, Error Code: " IO:write-all IO:check
-        2 $code IO:print IO:check
-        1 CORE:exit
-    }
-    @input &input ByteArray:unpack STR:Str-new @input
-
-    ByteArray:new @mem
-    $arena 
-    &mem 
-    $arena $input "stdin.watim" STR:Str-new L:lex @tokens
-    &tokens P:parse @fields @types @items
-
-    FMT:Formatter-stdout @formatter
-    &formatter &items DUMP:TopItems-json
-    &formatter "\n" FMT:Formatter-write
-
-    $arena $save Arena:restore
-}
-
-fn lex(arena: .Arena:Arena) {
-    $arena Arena:save @save
-    $arena 0 FS:read-all @code 
-    $code 0 /= if {
-        2 "Failed to read stdin, Error Code: " IO:write-all IO:check
-        2 $code IO:print IO:check
-        1 CORE:exit
-    }
-    @input &input ByteArray:unpack STR:Str-new @input
-
-    $arena $input "stdin.watim" STR:Str-new L:lex @tokens
-
-    FMT:Formatter-stdout @formatter
-    &formatter &tokens DUMP:Tokens-json
-    &formatter "\n" FMT:Formatter-write
-
-    $arena $save Arena:restore
-}
-
-fn load-module-recursive(arena: .Arena:Arena, fs: .FS:FileSystem, modules: .M:Modules, mem: .ByteArray:T, path: STR:Str) {
-    LOGGING:enabled if {
-        2 "Loading module: " IO:write-all IO:check
-        2 $path STR:Str-unpack IO:write-all IO:check
-        2 IO:newline
-    }
-    $arena "loading-module" ArenaGraph:mark
-    $arena $fs $path $mem M:Module-load @module
-    &module M:Module-imports @imps
-    $arena $modules $path $module M:Modules-insert
-    
-    0 @i
-    loop {
-        $i $imps AST:Imports-len = if { break }
-        $modules $imps $i AST:Imports-get-value .path ~ STR:Str-unpack M:Modules-get if {
-            drop
-        } else {
-            drop
-            $arena $fs
-            $modules $mem 
-            $imps $i AST:Imports-get-value .path ~
-            load-module-recursive
+        2 "MiB" IO:write-all IO:check
+        2 ", " IO:write-all IO:check
+        2 PageAlloc:active-pages IO:print IO:check
+        2 " pages active" IO:write-all IO:check
+        ActiveMemory:is-tracking if {
+            2 ", " IO:write-all IO:check
+            2 ActiveMemory:get IO:print IO:check
+            2 " bytes leaked" IO:write-all IO:check
         }
-        $i 1 + #i
+        2 "\n" IO:write-all IO:check
     }
+    0 Core:exit
 }
-
-fn COMPILE() -> i32 { 1 }
-fn PARSE_AST() -> i32 { 2 }
-fn LEX() -> i32 { 3 }
-
-memory MODE: i32 4
-fn set-mode(mode: i32) { $MODE $mode store }
-fn mode() -> i32 { $MODE ~ }
 

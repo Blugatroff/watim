@@ -8,10 +8,7 @@
             pkgs = import nixpkgs {
                 inherit system;
             };
-            pythonPackages = ps: with ps; [
-                termcolor
-                mypy
-            ];
+            pythonPackages = ps: with ps; [ mypy ];
             python = pkgs.python3.withPackages pythonPackages;
             nativeBuildInputs = [
                 pkgs.wasmtime
@@ -21,13 +18,13 @@
                 python
                 pkgs.ruff
             ];
-            buildInputs = [ pkgs.wasmtime ];
+            buildInputs = [ pkgs.python3 pkgs.wasmtime ];
 
             watim = pkgs.stdenv.mkDerivation {
                 inherit nativeBuildInputs buildInputs;
                 name = "watim";
                 src = ./.;
-                buildPhase = ''python bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wat'';
+                buildPhase = ''sh ./bootstrap-native.sh'';
                 installPhase = ''
                     mkdir -p $out/bin
                     cp ./watim.wasm $out/bin/
@@ -38,7 +35,7 @@
             };
         in {
             devShells.default = pkgs.mkShell {
-                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ watim pkgs.nodePackages.prettier] ]);
+                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ watim pkgs.nodePackages.prettier ] ]);
             };
             packages.default = watim;
         });

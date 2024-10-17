@@ -3,7 +3,7 @@
 Watim is a simple, low level, stack-based language which compiles to [Webassembly Text Format (WAT)](https://developer.mozilla.org/en-US/docs/WebAssembly/Understanding_the_text_format).
 Which can then be compiled to wasm and run in your favorite browser or by runtimes like [wasmtime](https://github.com/bytecodealliance/wasmtime) and [wasm3](https://github.com/wasm3/wasm3).
 
-~~The Watim compiler is written in Watim.~~ The native compiler is being rewritten, i currently rely on the bootstrap compiler, see [./bootstrap.py](./bootstrap.py).
+The Watim compiler is written in Watim.
 
 This project was inspired by [Porth](https://gitlab.com/tsoding/porth).
 
@@ -39,7 +39,7 @@ Or manually install:
 
 Then compile:
 ```bash
-wasmtime --dir=. ./watim.wasm <watim-source-file> > out.wat
+watim <watim-source-file> > out.wat
 ```
 
 Then run:
@@ -51,6 +51,7 @@ Or just use the provided script:
 ```bash
 ./run.sh <watim-source-file> [args]...
 ```
+The script will run [`bootstrap.py`](./bootstrap.py) on first use.
 
 For example:
 ```bash
@@ -99,11 +100,11 @@ fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
     $nread
 }
 
-struct Buf { a: i32 b: i32 c: i32 d: i32 e: i32 f: i32 g: i32 h: i32 }
-
 fn print(n: i32) {
-    uninit<Buf> @buf &buf.a @buf
-    uninit<Buf> @buf-reversed &buf-reversed.a @buf-reversed
+    // Watim doesn't (yet?) have arrays, so to allocate 32 bytes on the stack
+    // we can take the pointer of an unitialized tuple with four i64s.
+    uninit<[i64, i64, i64, i64]> @buf &buf !.i32 @buf
+    uninit<[i64, i64, i64, i64]> @buf-reversed &buf-reversed !.i32 @buf-reversed
     0 @l
     $n 0 = if {
         1 #l // length = 1
@@ -162,7 +163,7 @@ fn parse(pt: .i32, len: i32) -> i32 {
 fn dup<T>(a: T) -> T, T { $a $a }
 
 fn main "_start" () {
-    uninit<Buf> @buf &buf.a @buf
+    uninit<[i64, i64, i64, i64]> @buf &buf !.i32 @buf
     0 $buf 32 read @nread
     $nread 0 /= if {
         $buf $nread 1 - + ~ "\n" drop load8 = if { $nread 1 - #nread }

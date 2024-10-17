@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
-./recompile-compiler.sh
-hyperfine --warmup 5 "wasmtime --dir=. ./watim.wasm ./native/main.watim"
+set -xeu
+./bootstrap-native.sh
+hyperfine --warmup 5 "wasmtime --dir=. ./watim.wasm compile ./native/main.watim"
 

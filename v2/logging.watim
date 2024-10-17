@@ -1,7 +1,0 @@
-global LOGGING: bool
-
-fn set(v: bool) { $v #LOGGING }
-fn enable() { 0 0 = #LOGGING }
-fn disable() { 0 1 = #LOGGING }
-fn enabled() -> bool { $LOGGING }
-

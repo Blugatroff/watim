@@ -33,7 +33,7 @@ class CompilerOutput:
 
 watim_bin_path = None
 if "--native" in sys.argv:
-    if subprocess.run("python bootstrap.py ./v2/main.watim > watim.wat", shell=True).returncode != 0:
+    if subprocess.run("python bootstrap.py ./native/main.watim > watim.wat", shell=True).returncode != 0:
         exit(1)
     watim_bin_path = os.path.realpath("./watim.wat")
 

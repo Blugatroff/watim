@@ -19,7 +19,8 @@ jobs:
         sudo apt-get install wabt
         curl https://wasmtime.dev/install.sh -sSf | bash
     - name: Bootstrap
-      run: python ./bootstrap.py ./v2/main.watim > watim.wat && wat2wasm watim.wat
+      run: |
+        PATH="$HOME/.wasmtime/bin:$PATH" bash ./bootstrap-native.sh
     - name: Run tests on bootstrap compiler
       run: |
         PATH="$HOME/.wasmtime/bin:$PATH" ./test.py
