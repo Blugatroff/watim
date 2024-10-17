@@ -3093,12 +3093,11 @@ class Struct:
         return f"Struct(name={str(self.name)})"
 
     def size(self) -> int:
-        fields = self.fields.get()
+        field_sizes = [field.taip.size() for field in self.fields.get()]
         size = 0
-        for i, field in enumerate(fields):
-            field_size = field.taip.size()
+        for i, field_size in enumerate(field_sizes):
             size += field_size
-            if field_size % 4 != 0 and i + 1 < len(fields) and fields[i + 1].taip.size() >= 4:
+            if field_size % 4 != 0 and i + 1 < len(field_sizes) and field_sizes[i + 1] >= 4:
                 size = align_to(size, 4)
         return size
 
@@ -4460,7 +4459,7 @@ class WatGenerator:
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I64: 
-                    self.write_line(f"i64.extend_i32_s")
+                    self.write_line("i64.extend_i32_s")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I8: 
                     self.write_line(f"i32.const 255 i32.and ;; cast to {format_type(taip)}")
