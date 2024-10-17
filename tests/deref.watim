@@ -43,8 +43,10 @@ fn main "_start" () {
 		local.get $foo i32.const 0 i32.add call $intrinsic:flip i32.store
 		local.get $foo i32.load
 		call $0:id
+		;; GetField was no-op
 		local.get $foo
 		call $0:id:1
+		;; GetField was no-op
 		i32.load
 		i32.add
 		call $0:proc_exit

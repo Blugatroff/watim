@@ -226,6 +226,7 @@ fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
 struct StoreLocal {
     name: Token
     var: VarId
+    type: Type
     fields: Array<FieldAccess>
 }
 fn StoreLocal-format(fmt: .Formatter, self: .StoreLocal) {
@@ -233,6 +234,8 @@ fn StoreLocal-format(fmt: .Formatter, self: .StoreLocal) {
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type-format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt ")" Fmt:write
@@ -651,6 +654,7 @@ struct GetField {
     token: Token
     fields: Array<FieldAccess>
     on-ptr: bool
+    type: Type
 }
 fn GetField-format(fmt: .Formatter, self: .GetField) {
     $fmt "(GetField " Fmt:write
@@ -659,30 +663,32 @@ fn GetField-format(fmt: .Formatter, self: .GetField) {
     $fmt \FieldAccess-format &self.fields Array:format<FieldAccess>
     $fmt " " Fmt:write
     $fmt $self.on-ptr bool-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type-format
     $fmt ")" Fmt:write
 }
 
 struct MakeTuple {
     token: Token
-    items: Types
+    type: Type
 }
 fn MakeTuple-format(fmt: .Formatter, self: .MakeTuple) {
     $fmt "(MakeTuple " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.items Types-format'
+    $fmt &self.type Type-format
     $fmt ")" Fmt:write
 }
 
 struct UnpackTuple {
     token: Token
-    items: Types
+    type: Type
 }
 fn UnpackTuple-format(fmt: .Formatter, self: .UnpackTuple) {
     $fmt "(UnpackTuple " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.items Types-format'
+    $fmt &self.type Type-format
     $fmt ")" Fmt:write
 }
 
@@ -1466,6 +1472,11 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
     &ctx.env Env:child @true-env
     $ctx $stack child @true-stack
     $ctx $true-env with-env @true-ctx
+
+    &ctx.env Env:child @false-env
+    $ctx $stack child @false-stack
+    $ctx $false-env with-env @false-ctx
+
     &true-ctx &true-stack &word.true-words.words resolve-words match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
@@ -1485,8 +1496,8 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
                 // the synthesized false-branch made up of all subsequent words match.
                 $ctx &remaining-stack $true-parameters Types-len use drop
 
-                &ctx.env Env:child @remaining-env
-                $ctx $remaining-env with-env @remaining-ctx
+                $false-env @remaining-env
+                $false-ctx @remaining-ctx
 
                 &remaining-ctx &remaining-stack $remaining-words resolve-words match {
                     case Error -> { make Result<[Word, bool], ResolveError>.Error break }
@@ -1511,8 +1522,11 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
                 make If {
                     $word.token @token
                     $ctx.persistent &remaining-stack.negative Types-clone @parameters
-                    $ctx.persistent &remaining-stack.positive Types-clone make Maybe<Types>.Some @returns
-                    $diverges @diverges
+                    $diverges if {
+                        make Maybe<Types>.None
+                    } else {
+                        $ctx.persistent &remaining-stack.positive Types-clone make Maybe<Types>.Some
+                    } @returns
                     $true-words @true-words
                     $remaining-words @false-words
                 } make Word.If $diverges [,2] make Result<[Word, bool], ResolveError>.Success break
@@ -1520,9 +1534,7 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
         }
         case Some -> { .words }
     } @false-words
-    &ctx.env Env:child @false-env
-    $ctx $stack child @false-stack
-    $ctx $false-env with-env @false-ctx
+
     &false-ctx &false-stack $false-words resolve-words match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
@@ -1836,12 +1848,13 @@ fn resolve-unpack-tuple(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[
     $ctx $stack pop match {
         case None -> { $ctx.ctx $token "expected a tuple on the stack" abort<[Word, bool]> break }
         case Some -> {}
-    } match {
+    } @type
+    $type match {
         case Tuple -> {}
         case _ -> { drop $ctx.ctx $token "expected a tuple on the stack" abort<[Word, bool]> break }
     } @tuple
     $ctx $stack &tuple.items.inner push-many
-    $token ~ $tuple.items
+    $token ~ $type
     make UnpackTuple make Word.UnpackTuple 0 1 = [,2] make Result<[Word, bool], ResolveError>.Success
 } }
 
@@ -1859,8 +1872,9 @@ fn resolve-mk-tuple(ctx: .WordCtx, stack: .Stack, word: .P:MakeTuple) -> Result<
         case None -> {}
     }
     &items Types-reverse
-    $ctx $stack $word.token $items make TupleType make Type.Tuple push
-    $word.token $items make MakeTuple
+    $word.token $items make TupleType make Type.Tuple @type
+    $ctx $stack $type push
+    $word.token $type make MakeTuple
     make Word.MakeTuple 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }
@@ -2797,12 +2811,10 @@ fn resolve-get-field(ctx: .WordCtx, stack: .Stack, word: .P:GetField) -> Result<
         case Ptr -> { drop 1 1 = }
         case _ -> { drop 0 1 = }
     } @on-ptr
-    $on-ptr if {
-        $ctx $stack &fields $fields.len 1 - Array:get<FieldAccess>.target-type make Type.Ptr push
-    } else {
-        $ctx $stack &fields $fields.len 1 - Array:get<FieldAccess>.target-type ~ push
-    }
-    $word.token $fields $on-ptr make GetField
+    &fields $fields.len 1 - Array:get<FieldAccess>.target-type @type
+    $on-ptr if { $type make Type.Ptr } else { $type ~ } @type
+    $ctx $stack $type push
+    $word.token $fields $on-ptr $type make GetField
     make Word.GetField 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }
@@ -2892,7 +2904,7 @@ fn resolve-store-local(ctx: .WordCtx, stack: .Stack, word: .P:Store) -> Result<[
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
         case None -> {}
     }
-    $word.name $var-id $fields make StoreLocal
+    $word.name $var-id $expected-type ~ $fields make StoreLocal
     make Word.StoreLocal 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }

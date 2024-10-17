@@ -3086,22 +3086,29 @@ class FunctionType:
 @dataclass
 class Struct:
     name: Token
-    fields: List[NamedType]
+    fields: Lazy[List[NamedType]]
     generic_parameters: List['Type']
-    _size: int
 
     def __str__(self) -> str:
         return f"Struct(name={str(self.name)})"
 
     def size(self) -> int:
-        return self._size
+        fields = self.fields.get()
+        size = 0
+        for i, field in enumerate(fields):
+            field_size = field.taip.size()
+            size += field_size
+            if field_size % 4 != 0 and i + 1 < len(fields) and fields[i + 1].taip.size() >= 4:
+                size = align_to(size, 4)
+        return size
 
     def field_offset(self, field_index: int) -> int:
+        fields = self.fields.get()
         offset = 0
         for i in range(0, field_index):
-            field_size = self.fields[i].taip.size()
+            field_size = fields[i].taip.size()
             offset += field_size
-            if field_size % 4 != 0 and i + 1 < len(self.fields) and self.fields[i + 1].taip.size() >= 4:
+            if field_size % 4 != 0 and i + 1 < len(fields) and fields[i + 1].taip.size() >= 4:
                 offset = align_to(offset, 4)
         return offset
 
@@ -3113,12 +3120,11 @@ class VariantCase:
 @dataclass
 class Variant:
     name: Token
-    cases: List[VariantCase]
+    cases: Lazy[List[VariantCase]]
     generic_arguments: List['Type']
-    _size: int
 
     def size(self) -> int:
-        return self._size
+        return 4 + max((t.taip.size() for t in self.cases.get() if t.taip is not None), default=0)
 
 TypeDefinition = Struct | Variant
 
@@ -3135,7 +3141,7 @@ class StructHandle:
 class StructType:
     name: Token
     struct: StructHandle
-    _size: int
+    _size: Lazy[int]
 
     def __str__(self) -> str:
         return f"StructType(name={str(self.name)}, struct={str(self.struct)})"
@@ -3144,7 +3150,7 @@ class StructType:
         return self.size() <= 4
 
     def size(self):
-        return self._size
+        return self._size.get()
 
 @dataclass
 class TupleType:
@@ -3155,7 +3161,7 @@ class TupleType:
         return self.size() <= 4
 
     def size(self):
-        return sum(map(lambda t: t.size(), self.items))
+        return sum(t.size() for t in self.items)
 
 Type = PrimitiveType | PtrType | StructType | FunctionType | TupleType
 
@@ -3664,8 +3670,10 @@ class Monomizer:
             case ResolvedIndirectCallWord(token, taip):
                 monomized_function_taip = self.monomize_function_type(taip, generics)
                 local_copy_space_offset = copy_space_offset.value
-                copy_space_offset.value += sum(taip.size() for taip in monomized_function_taip.returns)
-                max_struct_ret_count.value = max(max_struct_ret_count.value, len(monomized_function_taip.returns))
+                copy_space = sum(taip.size() for taip in monomized_function_taip.returns if not taip.can_live_in_reg())
+                copy_space_offset.value += copy_space
+                if copy_space != 0:
+                    max_struct_ret_count.value = max(max_struct_ret_count.value, len(monomized_function_taip.returns))
                 return IndirectCallWord(token, monomized_function_taip, local_copy_space_offset)
             case ResolvedGetWord(token, local_id, var_taip, resolved_fields, taip):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
@@ -3776,7 +3784,15 @@ class Monomizer:
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return IfWord(token, parameters, returns, if_words, else_words, diverges)
             case ResolvedFunRefWord(call):
+                # monomize_call_word increments the copy_space, but if we're just taking the pointer
+                # of the function, then we're not actually calling it and no space should be allocated.
+                cso = copy_space_offset.value
+                msrc = max_struct_ret_count.value
                 call_word = self.monomize_call_word(call, copy_space_offset, max_struct_ret_count, generics)
+                # So restore the previous values of copy_space_offset and max_struct_ret_count afterwards.
+                # TODO: extract those parts of monomize_call_word which are common to both actual calls and just FunRefs.
+                copy_space_offset.value = cso
+                max_struct_ret_count.value = msrc
                 table_index = self.insert_function_into_table(call_word.function)
                 return FunRefWord(call_word, table_index)
             case ResolvedLoopWord(token, resolved_words, resolved_parameters, resolved_returns, diverges):
@@ -3821,7 +3837,7 @@ class Monomizer:
                     assert(False)
                 assert(struct_space is not None)
                 field_copy_space_offset: int = struct_space
-                for i,field in enumerate(monomized_struct.fields):
+                for i,field in enumerate(monomized_struct.fields.get()):
                     if field.name.lexeme == token.lexeme:
                         field_copy_space_offset += monomized_struct.field_offset(i)
                         break
@@ -3946,18 +3962,18 @@ class Monomizer:
             return handle_and_instance
         s = self.modules[struct.module].type_definitions[struct.index]
         if isinstance(s, ResolvedVariant):
-            cases: List[VariantCase] = []
-            variant_instance = Variant(s.name, cases, generics, 69)
+            def cases() -> List[VariantCase]:
+                return [VariantCase(c.name, self.monomize_type(c.taip, generics) if c.taip is not None else None) for c in s.cases]
+
+            variant_instance = Variant(s.name, Lazy(cases), generics)
             handle = self.add_struct(struct, variant_instance, generics)
-            for case in map(lambda c: VariantCase(c.name, self.monomize_type(c.taip, generics) if c.taip is not None else None), s.cases):
-                cases.append(case)
-            variant_instance._size = 4 + max((t.taip.size() for t in cases if t.taip is not None), default=0)
             return handle, variant_instance
-        fields: List[NamedType] = []
-        struct_instance = Struct(s.name, fields, generics, 69)
+
+        def fields() -> List[NamedType]:
+            return list(map(lambda t: self.monomize_named_type(t, generics), s.fields))
+
+        struct_instance = Struct(s.name, Lazy(fields), generics)
         handle = self.add_struct(struct, struct_instance, generics)
-        fields.extend(map(lambda t: self.monomize_named_type(t, generics), s.fields))
-        struct_instance._size = struct_instance.field_offset(len(struct_instance.fields) - 1) + struct_instance.fields[-1].taip.size() if len(struct_instance.fields) != 0 else 0
         return handle, struct_instance
 
     def monomize_named_type(self, taip: ResolvedNamedType, generics: List[Type]) -> NamedType:
@@ -3992,7 +4008,7 @@ class Monomizer:
     def monomize_struct_type(self, taip: ResolvedStructType, generics: List[Type]) -> StructType:
         this_generics = list(map(lambda t: self.monomize_type(t, generics), taip.generic_arguments))
         handle,struct = self.monomize_struct(taip.struct, this_generics)
-        return StructType(taip.name, handle, struct.size())
+        return StructType(taip.name, handle, Lazy(lambda: struct.size()))
 
     def monomize_function_type(self, taip: ResolvedFunctionType, generics: List[Type]) -> FunctionType:
         parameters = list(map(lambda t: self.monomize_type(t, generics), taip.parameters))
@@ -4226,8 +4242,10 @@ class WatGenerator:
                 self.write("\n")
             case GetFieldWord(token, source_taip, target_taip, loads, on_ptr, copy_space_offset):
                 if not on_ptr and source_taip.can_live_in_reg():
+                    self.write_line(";; GetField was no-op")
                     return
                 if on_ptr and len(loads) == 1 and loads[0] == 0:
+                    self.write_line(";; GetField was no-op")
                     return
                 self.write_indent()
                 if not on_ptr and not target_taip.can_live_in_reg():
@@ -4241,7 +4259,7 @@ class WatGenerator:
                             self.write(f"i32.const {load} i32.add")
                 else:
                     for i, load in enumerate(loads):
-                        if i + 1 < len(loads) or not isinstance(target_taip, StructType):
+                        if i + 1 < len(loads) or target_taip.can_live_in_reg():
                             self.write(f" i32.load offset={load}")
                         else:
                             if target_taip.can_live_in_reg():
@@ -4442,7 +4460,7 @@ class WatGenerator:
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I64: 
-                    self.write_line(f"i64.extend_i32_s ;; cast to {format_type(taip)}")
+                    self.write_line(f"i64.extend_i32_s")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I8: 
                     self.write_line(f"i32.const 255 i32.and ;; cast to {format_type(taip)}")
@@ -4548,7 +4566,7 @@ class WatGenerator:
                 struct = self.lookup_type_definition(taip.struct)
                 assert(not isinstance(struct, Variant))
                 if taip.size() == 0:
-                    for field in struct.fields:
+                    for field in struct.fields.get():
                         self.write("drop ")
                     self.write(f"i32.const 0 ;; make {format_type(taip)}\n")
                     return
@@ -4556,31 +4574,29 @@ class WatGenerator:
                 self.indent()
                 self.write_words(module, locals, words)
                 self.dedent()
-                self.write_indent()
-                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
+                self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end")
             case UnnamedStructWord(_, taip, copy_space_offset):
                 self.write_indent()
                 struct = self.lookup_type_definition(taip.struct)
                 assert(not isinstance(struct, Variant))
                 if taip.can_live_in_reg():
                     if taip.size() == 0:
-                        for field in struct.fields:
+                        for field in struct.fields.get():
                             self.write("drop ")
                         self.write("i32.const 0 ")
                     self.write(f";; make {format_type(taip)}\n")
                     return
                 self.write(f";; make {format_type(taip)}\n")
                 self.indent()
-                for i in reversed(range(0, len(struct.fields))):
-                    field = struct.fields[i]
+                for i in reversed(range(0, len(struct.fields.get()))):
+                    field = struct.fields.get()[i]
                     field_offset = struct.field_offset(i)
                     self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + field_offset} i32.add call $intrinsic:flip ")
                     self.write_store(field.taip)
                     self.write("\n")
                 self.dedent()
-                self.write_indent()
-                self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end\n")
+                self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ;; make {format_type(taip)} end")
             case StructFieldInitWord(_, taip, copy_space_offset):
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:flip ")
@@ -4601,7 +4617,7 @@ class WatGenerator:
                         return
                     case = cases[0]
                     assert(isinstance(variant, Variant))
-                    case_taip = variant.cases[case.tag].taip
+                    case_taip = variant.cases.get()[case.tag].taip
                     if variant.size() > 4 or by_ref:
                         self.write(f"call $intrinsic:dupi32 i32.load i32.const {case.tag} i32.eq (if (param i32)")
                     else:
@@ -4643,13 +4659,13 @@ class WatGenerator:
             case VariantWord(_, tag, variant_handle, copy_space_offset):
                 variant = self.lookup_type_definition(variant_handle)
                 assert(isinstance(variant, Variant))
-                case_taip = variant.cases[tag].taip
+                case_taip = variant.cases.get()[tag].taip
                 self.write_indent()
                 if variant.size() <= 4:
                     assert(variant.size() == 4)
                     if case_taip is not None:
                         self.write("drop ")
-                    self.write(f"i32.const {tag} ;; store tag {variant.name.lexeme}.{variant.cases[tag].name.lexeme}\n")
+                    self.write(f"i32.const {tag} ;; store tag {variant.name.lexeme}.{variant.cases.get()[tag].name.lexeme}\n")
                     return
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add i32.const {tag} i32.store ;; store tag\n")
                 if case_taip is not None:
@@ -4697,7 +4713,7 @@ class WatGenerator:
                     if i + 1 != len(items):
                         self.write("call $intrinsic:dupi32 ")
                     self.write(f"i32.const {offset} i32.add ")
-                    if item.size() != 4:
+                    if not item.can_live_in_reg():
                         self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
                         self.write("call $intrinsic:rotate-left ")
                         self.write(f"i32.const {item.size()} memory.copy")
@@ -4777,7 +4793,7 @@ class WatGenerator:
             self.write_line(f"local.set $s{i}:a")
         for i in range(len(returns), 0, -1):
             ret = returns[len(returns) - i]
-            if isinstance(ret, StructType):
+            if not ret.can_live_in_reg():
                 self.write_line(f"local.get $locl-copy-spac:e i32.const {offset} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy")
                 offset += ret.size()
             else:
@@ -4823,12 +4839,12 @@ class WatGenerator:
         if len(self.function_table) == 0:
             self.write_line("(table funcref (elem))")
             return
-        self.write_line("(table funcref (elem $intrinsic:flip ")
+        self.write_line("(table funcref (elem $intrinsic:flip")
         self.indent()
         self.write_indent()
         functions = list(self.function_table.items())
         functions.sort(key=lambda kv: kv[1])
-        for handle, _ in functions:
+        for i, (handle, _) in enumerate(functions):
             module = self.modules[handle.module]
             if isinstance(handle, FunctionHandle):
                 function = module.functions[handle.index]
@@ -4840,10 +4856,11 @@ class WatGenerator:
                     name = f"${handle.module}:{function.signature.name.lexeme}"
             else:
                 name = "TODO"
-            self.write(f"{name} ")
-        self.write("\n")
+            self.write(f"{name}")
+            if i + 1 != len(functions):
+                self.write(" ")
+        self.write("))\n")
         self.dedent()
-        self.write_line("))")
 
     def write_globals(self, ptr: int) -> int:
         for global_id, globl in self.globals.items():
@@ -4864,14 +4881,14 @@ class WatGenerator:
                return "\\\\"
             if char == b"\""[0]:
                 return "\\\""
-            if char >= 32 and char <= 126:
-               return chr(char)
             if char == b"\t"[0]:
                return "\\t"
-            if char == "\r"[0]:
+            if char == b"\r"[0]:
                return "\\r"
             if char == b"\n"[0]:
                return "\\n"
+            if char >= 32 and char <= 126:
+               return chr(char)
             hex_digits = "0123456789abcdef"
             return f"\\{hex_digits[char >> 4]}{hex_digits[char & 15]}"
         for char in data:
