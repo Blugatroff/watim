@@ -626,18 +626,18 @@ fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<Type
             $ctx flip ~ $generic-arguments monomize-type make Type.Ptr make Key.Other
         }
         case Tuple -> {
-            $ctx flip .items.inner $generic-arguments monomize-types make Type.Tuple make Key.Other
+            $ctx flip .items $generic-arguments monomize-types make Type.Tuple make Key.Other
         }
         case Fun -> {
             @fun-type
-            $ctx &fun-type.parameters.inner $generic-arguments monomize-types
-            $ctx &fun-type.returns   .inner $generic-arguments monomize-types
+            $ctx &fun-type.parameters $generic-arguments monomize-types
+            $ctx &fun-type.returns    $generic-arguments monomize-types
             make FunType make Type.Fun make Key.Other
         }
         case Custom -> {
             @custom-type
             $custom-type.type-definition 
-            $ctx &custom-type.generic-arguments.inner $generic-arguments monomize-types
+            $ctx &custom-type.generic-arguments $generic-arguments monomize-types
             make Maybe<Type>.None
             make CustomTypeKey make Key.CustomType
         }
@@ -951,8 +951,8 @@ fn monomize-functions(ctx: .Ctx, functions: .Array<Resolved:FunctionOrExtern>) {
 
 fn monomize-signature(ctx: .Ctx, extrn: .Resolved:Signature, generic-arguments: .Array<TypeId>) -> Signature {
     make Signature {
-        $ctx &extrn.parameters    $generic-arguments monomize-named-types @parameters
-        $ctx &extrn.returns.inner $generic-arguments monomize-types       @returns
+        $ctx &extrn.parameters $generic-arguments monomize-named-types @parameters
+        $ctx &extrn.returns    $generic-arguments monomize-types       @returns
     }
 }
 
@@ -1662,7 +1662,7 @@ fn monomize-field-access(ctx: .Ctx, field: .Resolved:FieldAccess, generic-argume
 }
 
 fn monomize-call(ctx: .Ctx, call: .Resolved:Call, generic-arguments: .Array<TypeId>) -> Call { block {
-    $ctx &call.generic-arguments.inner $generic-arguments monomize-types @generic-arguments-of-this-call
+    $ctx &call.generic-arguments $generic-arguments monomize-types @generic-arguments-of-this-call
     $ctx $call.function lookup-resolved-function match {
         case Extern -> {
             drop
@@ -1746,10 +1746,10 @@ fn monomize-store-locl(ctx: .Ctx, word: .Resolved:StoreLocal, generic-arguments:
 
 fn monomize-iff(ctx: .Ctx, word: .Resolved:If, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.parameters.inner $generic-arguments monomize-types
+    $ctx &word.parameters $generic-arguments monomize-types
     &word.returns match {
         case None -> { make Maybe<Array<TypeId>>.None }
-        case Some -> { .inner $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
+        case Some -> { $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
     }
     $ctx &word.true-words  $generic-arguments monomize-words
     $ctx &word.false-words $generic-arguments monomize-words
@@ -1758,10 +1758,10 @@ fn monomize-iff(ctx: .Ctx, word: .Resolved:If, generic-arguments: .Array<TypeId>
 
 fn monomize-lop(ctx: .Ctx, word: .Resolved:Loop, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.parameters.inner $generic-arguments monomize-types
+    $ctx &word.parameters $generic-arguments monomize-types
     &word.returns match {
         case None -> { make Maybe<Array<TypeId>>.None }
-        case Some -> { .inner $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
+        case Some -> { $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
     }
     $ctx &word.words  $generic-arguments monomize-words
     make Loop make Word.Loop
@@ -1769,8 +1769,8 @@ fn monomize-lop(ctx: .Ctx, word: .Resolved:Loop, generic-arguments: .Array<TypeI
 
 fn monomize-blok(ctx: .Ctx, word: .Resolved:Block, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
-    $ctx &word.parameters.inner $generic-arguments monomize-types
-    $ctx &word.returns.inner $generic-arguments monomize-types
+    $ctx &word.parameters $generic-arguments monomize-types
+    $ctx &word.returns $generic-arguments monomize-types
     $ctx &word.words  $generic-arguments monomize-words
     make Block make Word.Block
 }
@@ -1840,8 +1840,8 @@ fn monomize-matsh(ctx: .Ctx, word: .Resolved:Match, generic-arguments: .Array<Ty
             case None -> { make Maybe<Array<Word>>.None }
             case Some -> { $ctx flip $generic-arguments monomize-words make Maybe<Array<Word>>.Some }
         } @default
-        $ctx &word.parameters.inner $generic-arguments monomize-types @parameters
-        $ctx &word.returns.inner    $generic-arguments monomize-types @returns
+        $ctx &word.parameters $generic-arguments monomize-types @parameters
+        $ctx &word.returns    $generic-arguments monomize-types @returns
     } make Word.Match
 }
 

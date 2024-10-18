@@ -128,16 +128,6 @@ variant Type {
     case Tuple -> TupleType
     case Generic -> P:GenericType
 }
-fn Type-contains-generic(self: .Type) -> bool {
-    $self match {
-        case Ptr -> { ~ Type-contains-generic }
-        case Custom -> { CustomTypeType-contains-generic }
-        case Fun -> { FunType-contains-generic }
-        case Tuple -> { .items Types-contains-generic }
-        case Generic -> { drop 1 1 = }
-        case _ -> { drop 0 1 = }
-    }
-}
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "Bool" }
@@ -207,26 +197,23 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
 
 struct FunType {
     token: Token
-    parameters: Types
-    returns: Types
-}
-fn FunType-contains-generic(self: .FunType) -> bool {
-    &self.parameters Types-contains-generic &self.returns Types-contains-generic or
+    parameters: Array<Type>
+    returns: Array<Type>
 }
 fn FunType-format(fmt: .Formatter, self: .FunType) {
     $fmt "(FunType " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.parameters.inner Types-format
+    $fmt &self.parameters Types-format
     $fmt " " Fmt:write
-    $fmt &self.returns.inner Types-format
+    $fmt &self.returns Types-format
     $fmt ")" Fmt:write
 }
 fn FunType-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .FunType) {
     $fmt "(" Fmt:write
-    $fmt $lookup &self.parameters.inner Types-pretty
+    $fmt $lookup &self.parameters Types-pretty
     $fmt " -> " Fmt:write
-    $fmt $lookup &self.returns.inner Types-pretty
+    $fmt $lookup &self.returns Types-pretty
     $fmt ")" Fmt:write
 }
 fn FunType-eq(a: .FunType, b: .FunType) -> bool {
@@ -237,95 +224,11 @@ fn FunType-eq(a: .FunType, b: .FunType) -> bool {
     }
 }
 
-struct Types {
-    inner: Array<Type>
-    index-of-first-generic: i32
-}
-fn Types-contains-generic(self: .Types) -> bool {
-    $self.index-of-first-generic 0 not /=
-}
-fn Types-clone(arena: .Arena, self: .Types) -> Types {
-    $arena &self.inner Array:clone<Type> $self.index-of-first-generic make Types
-}
-fn Types-len(self: .Types) -> i32 {
-    $self.inner.len
-}
-fn Types-push(arena: .Arena, self: .Types, type: Type) {
-    $self.index-of-first-generic 0 not = if {
-        &type Type-contains-generic if {
-            $self.inner.len #self.index-of-first-generic
-        }
-    }
-    $arena &self.inner $type Array:push<Type>
-}
-fn Types-push-assert-no-alloc(self: .Types, type: Type) {
-    $self.index-of-first-generic 0 not = if {
-        &type Type-contains-generic if {
-            $self.inner.len #self.index-of-first-generic
-        }
-    }
-    &self.inner $type Array:push-assert-no-alloc<Type>
-}
-fn update-index-of-first-generic(self: .Types) {
-    0 @i
-    loop {
-        $i $self.inner.len = if { 0 not #self.index-of-first-generic break }
-        &self.inner $i Array:get<Type> Type-contains-generic if {
-            $i #self.index-of-first-generic
-            break
-        }
-        $i 1 + #i
-    }
-}
-fn Types-pop(self: .Types) -> Type {
-    &self.inner Array:pop<Type>
-    $self.inner.len $self.index-of-first-generic = if {
-        0 not #self.index-of-first-generic
-    }
-}
-fn Types-get(self: .Types, index: i32) -> .Type {
-    &self.inner $index Array:get<Type>
-}
-fn Types-new() -> Types {
-    Array:new<Type> 0 not make Types
-}
-fn Types-new-with-capacity(arena: .Arena, cap: i32) -> Types {
-    $arena $cap Array:new-with-capacity<Type> 0 not make Types
-}
-fn Types-wrap(types: Array<Type>) -> Types {
-    $types 0 not make Types @new
-    &new update-index-of-first-generic
-    $new
-}
-fn Types-reverse(self: .Types) {
-    &self.inner Array:reverse<Type>
-    $self update-index-of-first-generic
-}
-fn Types-truncate(self: .Types, len: i32) {
-    $self.index-of-first-generic $len lt if {
-        0 not #self.index-of-first-generic
-    }
-    &self.inner $len Array:truncate<Type>
-}
-fn Types-append(arena: .Arena, self: .Types, other: .Types) {
-    0 @i
-    loop {
-        $i $other Types-len = if { break }
-        $arena $self $other $i Types-get ~ Types-push
-        $i 1 + #i
-    }
-}
-fn Types-clone-inner(arena: .Arena, self: .Types) -> Array<Type> {
-    $arena &self.inner Array:clone<Type>
-}
 fn Types-format(fmt: .Formatter, self: .Array<Type>) {
     $fmt \Type-format $self Array:format<Type>
 }
-fn Types-format'(fmt: .Formatter, self: .Types) {
-    $fmt \Type-format &self.inner Array:format<Type>
-}
-fn Types-eq(a: .Types, b: .Types) -> bool {
-    \Type-eq &a.inner &b.inner Array:eq<Type>
+fn Types-eq(a: .Array<Type>, b: .Array<Type>) -> bool {
+    \Type-eq $a $b Array:eq<Type>
 }
 fn Types-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Array<Type>) {
     0 @i
@@ -345,23 +248,23 @@ fn Types-pretty-bracketed(fmt: .Formatter, lookup: .TypeLookup, self: .Array<Typ
 
 struct TupleType {
     token: Token
-    items: Types
+    items: Array<Type>
 }
 fn TupleType-format(fmt: .Formatter, self: .TupleType) {
     $fmt "(TupleType " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.items.inner Types-format
+    $fmt &self.items Types-format
     $fmt ")" Fmt:write
 }
 fn TupleType-pretty(fmt: .Formatter, thr: .TypeLookup, self: .TupleType) {
     $fmt "[" Fmt:write
     0 @i
     loop {
-        $i $self.items.inner.len = if { break }
-        $fmt $thr &self.items.inner $i Array:get<Type> Type-pretty
+        $i $self.items.len = if { break }
+        $fmt $thr &self.items $i Array:get<Type> Type-pretty
         $i 1 + #i
-        $i $self.items.inner.len = if { break }
+        $i $self.items.len = if { break }
         $fmt ", " Fmt:write
     }
     $fmt "]" Fmt:write
@@ -372,10 +275,7 @@ fn TupleType-eq(a: .TupleType, b: .TupleType) -> bool {
 
 struct CustomTypeType {
     type-definition: CustomTypeHandle
-    generic-arguments: Types
-}
-fn CustomTypeType-contains-generic(self: .CustomTypeType) -> bool {
-    &self.generic-arguments Types-contains-generic
+    generic-arguments: Array<Type>
 }
 fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
     $fmt "(CustomType " Fmt:write
@@ -383,7 +283,7 @@ fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
     $fmt " " Fmt:write
     $fmt $self.type-definition.index i32-format
     $fmt " " Fmt:write
-    $fmt &self.generic-arguments.inner Types-format
+    $fmt &self.generic-arguments Types-format
     $fmt ")" Fmt:write
 }
 fn CustomTypeType-pretty(fmt: .Formatter, thr: .TypeLookup, self: .CustomTypeType) {

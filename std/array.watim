@@ -94,13 +94,13 @@ fn push-assert-no-alloc<T>(self: .Array<T>, val: T) {
         1 CORE:exit
     }
 }
-fn append<T>(arena: .A:Arena, self: .Array<T>, ptr: .T, len: i32) {
+fn append<T>(arena: .A:Arena, self: .Array<T>, other: .Array<T>) {
     // TODO: this could just be a memcopy
+    0 @i
     loop {
-        $len 0 = if { break }
-        $arena $self $ptr ~ push<T>
-        $ptr sizeof(T) + #ptr
-        $len 1 - #len
+        $i $other.len = if { break }
+        $arena $self $other $i get<T> ~ push<T>
+        $i 1 + #i
     }
 }
 fn unpack<T>(self: .Array<T>) -> .T, i32 {
