@@ -2,6 +2,10 @@
 struct Foo {
 	foo: Foo
 }
+[== Args Compiler ==]
+compile
+-
+--quiet
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]

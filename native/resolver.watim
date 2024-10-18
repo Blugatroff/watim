@@ -11,11 +11,21 @@ import "../std/arena.watim" as Arena (Arena)
 import "../std/fs.watim" as FS
 import "../std/util.watim" as Util (i32-format, bool-format)
 import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
+import "../std/list.watim" as List (List)
 
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format, Token-string-content)
 import "./parser.watim" as P (TopItem)
-import "./type.watim" as Type (Type, Type-eq, Type-format, Types, Types-contains-generic, Types-new, Types-new-with-capacity, Types-wrap, Types-truncate, Types-append, Types-eq, Types-clone, Types-len, Types-reverse, Types-get, Types-push, Types-push-assert-no-alloc, Types-pop, Types-format, Types-pretty, FunType-format, Types-format', Type-pretty, Types-pretty-bracketed, NamedType, NamedType-format, CustomType, CustomType-format, ModuleId, TypeLookup, lookup-type, Struct, Variant, VariantCase, CustomTypeHandle, CustomTypeHandle-format, CustomTypeType, CustomTypeType-format, FunType, TupleType, NamedType-type, VariantCase-name)
+import "./type.watim" as Type (
+    Type, Type-eq, Type-format, Type-pretty,
+    Types, Types-contains-generic, Types-new, Types-new-with-capacity, Types-wrap, Types-truncate, Types-append, Types-eq, Types-clone, Types-len, Types-reverse, Types-get, Types-push, Types-push-assert-no-alloc, Types-pop, Types-format, Types-pretty, Types-pretty-bracketed, Types-format',
+    CustomTypeType, CustomTypeType-format, CustomType, CustomType-name, CustomType-format,
+    FunType, FunType-format, TupleType,  VariantCase-name,
+    NamedType, NamedType-format, NamedType-type,
+    ModuleId, TypeLookup, lookup-type,
+    Struct, Variant, VariantCase,
+    CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
+)
 import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
@@ -921,6 +931,11 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
             case Success -> {}
         } @functions
 
+        &ctx &type-lookup forbid-directly-recursive-types match {
+            case Some -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
+            case None -> {}
+        }
+
         &resolved-modules $module-path ~
         $imports $custom-types $globals $functions &ctx.static-data ByteArray:to-slice make Module
         Map:insert-assert-no-alloc<ByteSlice, Module> drop
@@ -930,6 +945,66 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
     }
     $temp $save Arena:restore
 }
+
+fn forbid-directly-recursive-types(ctx: .Ctx, type-lookup: .TypeLookup) -> Maybe<ResolveError> {
+    0 @i
+    loop {
+        $i $type-lookup.types.len = if { make Maybe<ResolveError>.None break }
+        $type-lookup.module-id $i make CustomTypeHandle @handle
+        $ctx $type-lookup &handle List:empty<CustomTypeHandle> @stack &stack is-directly-recursive if {
+            $type-lookup &handle lookup-type CustomType-name @token
+            $ctx $token "structs and variants cannot be recursive" abort-m break
+        }
+        $i 1 + #i
+    }
+}
+
+fn is-directly-recursive(ctx: .Ctx, type-lookup: .TypeLookup, handle: .CustomTypeHandle, stack: .List<CustomTypeHandle>) -> bool { block {
+    \CustomTypeHandle-eq $stack $handle List:contains<CustomTypeHandle> if {
+        1 1 = break
+    }
+    $type-lookup $handle lookup-type match {
+        case Struct -> {
+            @struc
+            0 @i
+            loop {
+                $i $struc.fields.len = if { 0 1 = break }
+                &struc.fields $i Array:get<NamedType> .type match {
+                    case Custom -> {
+                        @custom-type
+                        $handle ~ $stack List:cons<CustomTypeHandle> @stack'
+                        $ctx $type-lookup &custom-type.type-definition &stack' is-directly-recursive if {
+                            1 1 = break
+                        }
+                    }
+                    case _ -> { drop }
+                }
+                $i 1 + #i
+            }
+        }
+        case Variant -> {
+            @varint
+            0 @i
+            loop {
+                $i $varint.cases.len = if { 0 1 = break }
+                &varint.cases $i Array:get<VariantCase> .type match {
+                    case None -> {}
+                    case Some -> { match {
+                        case Custom -> {
+                            @custom-type
+                            $handle ~ $stack List:cons<CustomTypeHandle> @stack'
+                            $ctx $type-lookup &custom-type.type-definition &stack' is-directly-recursive if {
+                                1 1 = break
+                            }
+                        }
+                        case _ -> { drop }
+                    } }
+                }
+                $i 1 + #i
+            }
+        }
+    }
+} }
 
 fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Map<ByteSlice, Global>, ResolveError> {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Global> @globals
@@ -1285,7 +1360,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         case Custom -> {
             @type
             $type
-            $ctx.type-lookup $type.type-definition lookup-type match {
+            $ctx.type-lookup &type.type-definition lookup-type match {
                 case Variant -> {}
                 case _ -> {
                     $ctx.ctx &word.token "can only match on variants" abort<[Word, bool]> break
@@ -1805,7 +1880,7 @@ fn resolve-mk-varint(ctx: .WordCtx, stack: .Stack, word: .P:MakeVariant) -> Resu
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } @varint-type
-    $ctx.type-lookup $varint-type.type-definition lookup-type match {
+    $ctx.type-lookup &varint-type.type-definition lookup-type match {
         case Variant -> {}
         case Struct -> {
             drop
@@ -1884,7 +1959,7 @@ fn resolve-mk-struc(ctx: .WordCtx, stack: .Stack, word: .P:MakeStruct) -> Result
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } @struct-type
-    $ctx.type-lookup $struct-type.type-definition lookup-type match {
+    $ctx.type-lookup &struct-type.type-definition lookup-type match {
         case Struct -> {}
         case Variant -> {
             drop
@@ -1906,7 +1981,7 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } @struct-type
-    $ctx.type-lookup $struct-type.type-definition lookup-type match {
+    $ctx.type-lookup &struct-type.type-definition lookup-type match {
         case Struct -> {}
         case Variant -> {
             drop
@@ -2973,7 +3048,7 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
         $type match {
             case Custom -> {
                 @custom-type
-                $ctx.type-lookup $custom-type.type-definition lookup-type match {
+                $ctx.type-lookup &custom-type.type-definition lookup-type match {
                     case Variant -> {
                         drop $ctx.ctx $field-name "can not access fields of a variant" abort<Array<FieldAccess>> break
                     }
@@ -2984,7 +3059,7 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
                 ~ match {
                     case Custom -> {
                         @custom-type
-                        $ctx.type-lookup $custom-type.type-definition lookup-type match {
+                        $ctx.type-lookup &custom-type.type-definition lookup-type match {
                             case Variant -> { drop $ctx.ctx $field-name "TODO" abort<Array<FieldAccess>> break }
                             case Struct -> {}
                         }

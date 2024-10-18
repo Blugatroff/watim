@@ -98,13 +98,19 @@ fn CustomType-format(fmt: .Formatter, self: .CustomType) {
         case Variant -> { Variant-format }
     }
 }
+fn CustomType-name(self: .CustomType) -> .Token {
+    $self match {
+        case Struct -> { .name }
+        case Variant -> { .name }
+    }
+}
 
 struct TypeLookup {
     module-id: ModuleId
     types: .Array<CustomType>
     other-modules: .Array<.Array<CustomType>>
 }
-fn lookup-type(lookup: .TypeLookup, handle: CustomTypeHandle) -> .CustomType {
+fn lookup-type(lookup: .TypeLookup, handle: .CustomTypeHandle) -> .CustomType {
     $handle.module $lookup.module-id = if {
         $lookup.types $handle.index Array:get<CustomType>
     } else {
@@ -381,7 +387,7 @@ fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
     $fmt ")" Fmt:write
 }
 fn CustomTypeType-pretty(fmt: .Formatter, thr: .TypeLookup, self: .CustomTypeType) {
-    $fmt $thr $self.type-definition lookup-type match {
+    $fmt $thr &self.type-definition lookup-type match {
         case Struct  -> { .name }
         case Variant -> { .name }
     } Token-lexeme Fmt:write

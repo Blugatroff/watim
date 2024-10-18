@@ -35,7 +35,7 @@
             };
         in {
             devShells.default = pkgs.mkShell {
-                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ pkgs.nodePackages.prettier ] ]);
+                nativeBuildInputs = (builtins.concatLists [ nativeBuildInputs [ watim pkgs.nodePackages.prettier ] ]);
             };
             packages.default = watim;
         });

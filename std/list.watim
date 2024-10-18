@@ -1,0 +1,74 @@
+import "./maybe.watim" as Maybe (Maybe)
+import "./fmt.watim" as Fmt (Formatter)
+
+variant List<T> {
+    case Empty
+    case Cons -> ListCons<T>
+}
+struct ListCons<T> {
+    elem: T
+    next: .List<T>
+}
+
+fn empty<T>() -> List<T> {
+    make List<T>.Empty
+}
+
+fn cons<T>(elem: T, tail: .List<T>) -> List<T> {
+    $elem $tail make ListCons<T> make List<T>.Cons
+}
+
+fn head<T>(list: .List<T>) -> Maybe<.T> {
+    $list match {
+        case Empty -> { make Maybe<.T>.None }
+        case Cons -> { .elem make Maybe<.T>.Some }
+    }
+}
+
+fn tail<T>(list: .List<T>) -> Maybe<List<T>> {
+    $list match {
+        case Empty -> { make Maybe<List<T>>.None }
+        case Cons -> { .next~~ make Maybe<List<T>>.Some }
+    }
+}
+
+fn contains<T>(eq: (.T, .T -> bool), list: .List<T>, elem: .T) -> bool { block {
+    loop {
+        $list match {
+            case Empty -> { 0 1 = break }
+            case Cons -> {}
+        } @cons
+        &cons.elem $elem $eq -> if { 1 1 = break }
+        $cons.next #list
+    }
+} }
+
+fn format-multi-line<T>(formatter: .Formatter, fmt-elem: (.Formatter, .T ->), self: .List<T>) { block {
+    $self match {
+        case Empty -> {
+            $formatter "[]" Fmt:write
+            break
+        }
+        case Cons -> { drop }
+    }
+    $formatter "[\n" Fmt:write
+    $formatter Fmt:indent
+    loop {
+        $self match {
+            case Empty -> { break }
+            case Cons -> {}
+        } @cons
+        $formatter Fmt:write-indent
+        $formatter &cons.elem $fmt-elem ->
+        $cons.next match {
+            case Empty -> { break }
+            case Cons -> {
+                .next ~ #self
+                $formatter ",\n" Fmt:write
+            }
+        }
+    }
+    $formatter Fmt:dedent
+    $formatter "]" Fmt:write
+} }
+
