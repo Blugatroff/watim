@@ -19,7 +19,7 @@ import "./parser.watim" as P (TopItem)
 import "./type.watim" as Type (
     Type, Type-eq, Type-format, Type-pretty,
     Types-eq, Types-format, Types-pretty, Types-pretty-bracketed,
-    CustomTypeType, CustomTypeType-format, CustomType, CustomType-name, CustomType-format,
+    CustomTypeType, CustomTypeType-format, CustomType, CustomType-name, CustomType-format, CustomType-generic-parameters,
     FunType, FunType-format, TupleType,  VariantCase-name,
     NamedType, NamedType-format, NamedType-type,
     ModuleId, TypeLookup, lookup-type,
@@ -868,8 +868,11 @@ fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, Arra
     $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.message ByteArray:unpack IO:write-all
 } }
-fn abort<T>(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
+fn error(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> ResolveError {
     $ctx.module-id $token Token-location $ctx.persistent $message-ptr $message-len ByteArray:copy make ResolveError
+}
+fn abort<T>(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
+    $ctx $token $message-ptr $message-len error
     make Result<T, ResolveError>.Error
 }
 fn abort-m(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Maybe<ResolveError> {
@@ -1054,13 +1057,15 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
                     case Error -> { make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Error break }
                     case Success -> {}
                 } [,] @diverges
-                &stack.positive &signature.returns Types-eq not if {
-                    $ctx.temp Fmt:into-new-string @msg @fmt
-                    &fmt "unexpected return values:\n\texpected: " Fmt:write
-                    &fmt $ctx.type-lookup &signature.returns Types-pretty-bracketed
-                    &fmt "\n\tactual:   " Fmt:write
-                    &fmt $ctx.type-lookup &stack.positive Types-pretty-bracketed
-                    $ctx.ctx &fun.name $msg ~ ByteArray:unpack abort<Map<ByteSlice, FunctionOrExtern>> break
+                $diverges not if {
+                    &stack.positive &signature.returns Types-eq not if {
+                        $ctx.temp Fmt:into-new-string @msg @fmt
+                        &fmt "unexpected return values:\n\texpected: " Fmt:write
+                        &fmt $ctx.type-lookup &signature.returns Types-pretty-bracketed
+                        &fmt "\n\tactual:   " Fmt:write
+                        &fmt $ctx.type-lookup &stack.positive Types-pretty-bracketed
+                        $ctx.ctx &fun.name $msg ~ ByteArray:unpack abort<Map<ByteSlice, FunctionOrExtern>> break
+                    }
                 }
                 $ctx.persistent $env.vars-by-id Map:clone<LocalId, Local>
                 make Function
@@ -1422,7 +1427,22 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         case None -> {}
     }
     &word.default match {
-        case None -> { make Maybe<Array<Word>>.None }
+        case None -> {
+            // Check that no case is missing.
+            $remaining-cases.len 0 /= if {
+                $ctx.temp Fmt:into-new-string @msg @fmt
+                &fmt "missing case in match:" Fmt:write
+                0 @i
+                loop {
+                    $i $remaining-cases.len = if { break }
+                    &fmt "\n\t" Fmt:write
+                    &fmt &remaining-cases $i Array:get<ByteSlice> ~ ByteSlice:unpack Fmt:write
+                    $i 1 + #i
+                }
+                $ctx.ctx &word.token $msg ~ ByteArray:unpack abort<[Word, bool]> break
+            }
+            make Maybe<Array<Word>>.None
+        }
         case Some -> {
             @default
             $ctx $stack child @def-stack
@@ -1438,7 +1458,6 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         }
     } @default-case
 
-    // TODO: Check, that all case-stacks are compatible
     0 @i
     make Maybe<Stack>.None @first-non-diverging-case
     loop {
@@ -1497,7 +1516,6 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         // A case without any words, will just return any parameters it got.
         // So, to start, make the returns equal to the parameters.
         $ctx.persistent &parameters Array:clone<Type> @returns
-        // &returns Array:reverse<Type> // TODO: I'm not sure why this is necessary
 
 
         // Use the stack of the first non-diverging stack, to determine the 
@@ -1855,11 +1873,25 @@ fn resolve-indirect-call(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<
 } }
 
 fn type-check-call(ctx: .WordCtx, stack: .Stack, token: .Token, generic-arguments: .Array<Type>, parameters: .Array<NamedType>, returns: .Array<Type>) -> Maybe<ResolveError> {
-    $ctx.temp $parameters \NamedType-type Array:map<NamedType, Type> @unnamed-parameters
-    $ctx $stack $token $generic-arguments &unnamed-parameters $returns type-check-call-unnamed
+    $ctx $stack $token $generic-arguments $parameters expect-arguments match {
+        case None -> {
+            $ctx $stack $returns $generic-arguments push-returns
+            make Maybe<ResolveError>.None
+        }
+        case Some -> { make Maybe<ResolveError>.Some }
+    }
 }
 fn type-check-call-unnamed(ctx: .WordCtx, stack: .Stack, token: .Token, generic-arguments: .Array<Type>, parameters: .Array<Type>, returns: .Array<Type>) -> Maybe<ResolveError> {
-    $ctx $stack $parameters.len drop-n // TODO: actually check the arguments
+    $ctx $stack $token $parameters expect match {
+        case None -> {
+            $ctx $stack $returns $generic-arguments push-returns
+            make Maybe<ResolveError>.None
+        }
+        case Some -> { make Maybe<ResolveError>.Some }
+    }
+}
+
+fn push-returns(ctx: .WordCtx, stack: .Stack, returns: .Array<Type>, generic-arguments: .Array<Type>) {
     0 @i
     loop {
         $i $returns.len = if { break }
@@ -1872,7 +1904,6 @@ fn type-check-call-unnamed(ctx: .WordCtx, stack: .Stack, token: .Token, generic-
         $ctx $stack $concrete-return-type push
         $i 1 + #i
     }
-    make Maybe<ResolveError>.None
 }
 
 fn resolve-mk-varint(ctx: .WordCtx, stack: .Stack, word: .P:MakeVariant) -> Result<[Word, bool], ResolveError> { block {
@@ -2009,7 +2040,23 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
         case Success -> {}
     } [,] @diverges @body
     $struc-lit-ctx.fields.values.len 0 /= if {
-        $ctx.ctx &word.token "missing field in struct literal" abort<[Word, bool]> break
+        $ctx.temp Fmt:into-new-string @msg @fmt
+        &fmt "missing fields in struct literal:" Fmt:write
+        0 @i
+        loop {
+            $i $struc-lit-ctx.fields.values.len = if { break }
+            &fmt "\n\t" Fmt:write
+            &fmt &struc-lit-ctx.fields.keys $i Array:get<ByteSlice> ~ ByteSlice:unpack Fmt:write
+            &fmt ": " Fmt:write
+
+            &fmt
+            $ctx.type-lookup
+            &struc-lit-ctx.fields.values $i Array:get<[i32, Type]> !.Type sizeof(i32) +
+            Type-pretty
+
+            $i 1 + #i
+        }
+        $ctx.ctx &word.token $msg ~ ByteArray:unpack abort<[Word, bool]> break
     }
     $ctx $stack $struct-type make Type.Custom push
 
@@ -2718,6 +2765,14 @@ fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i32, expecte
     } $b $c [,3] make Result<[Type, Type, Type], ResolveError>.Success
 } }
 
+fn type-mismatch-error(ctx: .WordCtx, token: .Token, expected: .Array<Type>, actual: .Array<Type>) -> Maybe<ResolveError> {
+    $ctx.temp Fmt:into-new-string @msg @fmt
+    &fmt "expected:\n\t" Fmt:write
+    &fmt $ctx.type-lookup $expected Types-pretty-bracketed
+    &fmt "\ngot:\n\t" Fmt:write
+    &fmt $ctx.type-lookup $actual   Types-pretty-bracketed
+    $ctx.ctx $token $msg ~ ByteArray:unpack abort-m
+}
 fn expect(ctx: .WordCtx, stack: .Stack, token: .Token, expected: .Array<Type>) -> Maybe<ResolveError> { block {
     $expected.len @i
     $ctx.temp Arena:temp @temp @save
@@ -2728,16 +2783,13 @@ fn expect(ctx: .WordCtx, stack: .Stack, token: .Token, expected: .Array<Type>) -
         $ctx $stack pop match {
             case None -> { 1 1 = }
             case Some -> {
-                @popped-type &popped-type $expected-type Type-eq not
+                @popped-type
+                &popped-type $expected-type Type-eq not
                 &popped $popped-type Array:push-assert-no-alloc<Type>
             }
         } if {
-            $ctx.temp Fmt:into-new-string @msg @fmt
-            &fmt "\nexpected: " Fmt:write
-            &fmt $ctx.type-lookup $expected Types-pretty
-            &fmt "\ngot:      " Fmt:write
-            &fmt $ctx.type-lookup &popped Types-pretty
-            $ctx.ctx $token $msg ~ ByteArray:unpack abort-m break
+            &popped Array:reverse<Type>
+            $ctx $token $expected &popped type-mismatch-error break
         }
         $i 1 - #i
     }
@@ -2759,13 +2811,15 @@ fn expect-arguments(ctx: .WordCtx, stack: .Stack, function-name: .Token, generic
                 $temp &popped $popped-type Array:push<Type>
             }
         } if {
-            $ctx.temp Fmt:into-new-string @msg @fmt
-            &fmt "\nexpected: " Fmt:write
-            $ctx.temp $parameters \NamedType-type Array:map<NamedType, Type> @parameters
-            &fmt $ctx.type-lookup &parameters Types-pretty
-            &fmt "\ngot:      " Fmt:write
-            &fmt $ctx.type-lookup &popped Types-pretty
-            $ctx.ctx $function-name $msg ~ ByteArray:unpack abort-m break
+            loop {
+                $ctx $stack pop match {
+                    case None -> { break }
+                    case Some -> { $temp flip &popped flip Array:push<Type> }
+                }
+            }
+            $ctx.temp $parameters \NamedType-type Array:map<NamedType, Type> @expected
+            &popped Array:reverse<Type>
+            $ctx $function-name &expected &popped type-mismatch-error break
         }
         $i 1 - #i
     }
@@ -3440,31 +3494,48 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                         $imports $i Map:get-value<ByteSlice, Array<Import>> @imports
                         0 @j
                         loop {
-                            $j $imports.len = if { make Maybe<CustomTypeType>.None break }
+                            $j $imports.len = if { make Maybe<CustomTypeType>.None make Result<Maybe<CustomTypeType>, ResolveError>.Success break }
                             $imports $j Array:get<Import> @imp
                             0 @k
                             loop {
-                                $k $imp.items.len = if { make Maybe<CustomTypeType>.None break }
+                                $k $imp.items.len = if {
+                                    make Maybe<CustomTypeType>.None make Result<Maybe<CustomTypeType>, ResolveError>.Success break
+                                }
                                 &imp.items $k Array:get<ImportItem> @item
                                 &item.name Token-lexeme &type.name Token-lexeme Bytes:eq if {
                                     &item.handle match {
                                         case CustomType -> {
-                                            ~
-                                            $generic-arguments
-                                            make CustomTypeType make Maybe<CustomTypeType>.Some break
+                                            @custom-type
+                                            $ctx.resolved-modules $custom-type.module.index Array:get<Module>
+                                            .custom-types.values $custom-type.index Array:get<CustomType>
+                                            CustomType-generic-parameters .len ~ @actual-num-generic-args
+                                            $generic-arguments.len $actual-num-generic-args /= if {
+                                                $ctx &type.name $actual-num-generic-args $generic-arguments.len
+                                                generic-arguments-mismatch-error
+                                                make Result<Maybe<CustomTypeType>, ResolveError>.Error break
+                                            }
+                                            $custom-type ~ $generic-arguments make CustomTypeType
+                                            make Maybe<CustomTypeType>.Some
+                                            make Result<Maybe<CustomTypeType>, ResolveError>.Success break
                                         }
                                         case _ -> { drop }
                                     }
                                 }
                                 $k 1 + #k
                             } match {
-                                case None -> {}
-                                case _ -> { break }
+                                case Success -> { match {
+                                    case None -> {}
+                                    case _ -> { make Result<Maybe<CustomTypeType>, ResolveError>.Success break }
+                                } }
+                                case Error -> { make Result<Maybe<CustomTypeType>, ResolveError>.Error break }
                             }
                             $j 1 + #j
                         } match {
-                            case None -> {}
-                            case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
+                            case Success -> { match {
+                                case None -> {}
+                                case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
+                            } }
+                            case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
                         }
                         $i 1 + #i
                     } break
@@ -3472,7 +3543,13 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                 $ctx.top-items $i Array:get<TopItem>
                 match {
                     case Struct -> {
-                        .name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                        @struc
+                        &struc.name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                            $struc.generic-parameters.len $generic-arguments.len /= if {
+                                $ctx &type.name $struc.generic-parameters.len $generic-arguments.len
+                                generic-arguments-mismatch-error
+                                make Result<CustomTypeType, ResolveError>.Error break
+                            }
                             $ctx.module-id $type-index make CustomTypeHandle
                             $generic-arguments
                             make CustomTypeType
@@ -3481,7 +3558,13 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                         $type-index 1 + #type-index
                     }
                     case Variant -> {
-                        .name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                        @varint
+                        &varint.name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                            $varint.generic-parameters.len $generic-arguments.len /= if {
+                                $ctx &type.name $varint.generic-parameters.len $generic-arguments.len
+                                generic-arguments-mismatch-error
+                                make Result<CustomTypeType, ResolveError>.Error break
+                            }
                             $ctx.module-id $type-index make CustomTypeHandle
                             $generic-arguments
                             make CustomTypeType
@@ -3514,30 +3597,30 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                         $ctx.resolved-modules $imp.module.index Array:get<Module> @module
                         0 @j
                         loop {
-                            $j $module.custom-types.keys.len = if { make Maybe<CustomTypeType>.None break }
-                            &module.custom-types $j Map:get-value<ByteSlice, CustomType> match {
-                                case Struct -> {
-                                    .name Token-lexeme &type.name Token-lexeme Bytes:eq if {
-                                        $imp.module $j make CustomTypeHandle
-                                        $generic-arguments
-                                        make CustomTypeType
-                                        make Maybe<CustomTypeType>.Some break
-                                    }
+                            $j $module.custom-types.keys.len = if {
+                                make Maybe<CustomTypeType>.None make Result<Maybe<CustomTypeType>, ResolveError>.Success break
+                            }
+                            &module.custom-types $j Map:get-value<ByteSlice, CustomType> @custom-type
+                            $custom-type CustomType-name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                                $custom-type CustomType-generic-parameters .len ~ @actual-num-generic-args
+                                $generic-arguments.len $actual-num-generic-args /= if {
+                                    $ctx &type.name $actual-num-generic-args $generic-arguments.len
+                                    generic-arguments-mismatch-error
+                                    make Result<Maybe<CustomTypeType>, ResolveError>.Error break
                                 }
-                                case Variant -> {
-                                    .name Token-lexeme &type.name Token-lexeme Bytes:eq if {
-                                        $imp.module $j make CustomTypeHandle
-                                        $generic-arguments
-                                        make CustomTypeType
-                                        make Maybe<CustomTypeType>.Some break
-                                    }
-                                }
-                                case _ -> { drop }
+                                $imp.module $j make CustomTypeHandle
+                                $generic-arguments
+                                make CustomTypeType
+                                make Maybe<CustomTypeType>.Some
+                                make Result<Maybe<CustomTypeType>, ResolveError>.Success break
                             }
                             $j 1 + #j
                         } match {
-                            case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
-                            case None -> {}
+                            case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
+                            case Success -> { match {
+                                case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
+                                case None -> {}
+                            } }
                         }
                         $i 1 + #i
                     }
@@ -3546,6 +3629,15 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
         }
     }
 } }
+
+fn generic-arguments-mismatch-error(ctx: .Ctx, token: .Token, expected: i32, actual: i32) -> ResolveError {
+    $ctx.temp Fmt:into-new-string @msg @fmt
+    &fmt "expected " Fmt:write
+    &fmt $expected i32-format
+    &fmt " generic arguments, actual: " Fmt:write
+    &fmt $actual i32-format
+    $ctx $token $msg ~ ByteArray:unpack error
+}
 
 fn resolve-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, types: .Array<P:Type>) -> Result<Array<Type>, ResolveError> { block {
     $ctx.persistent $types.len Array:new-with-capacity<Type> @resolved-types

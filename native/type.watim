@@ -104,6 +104,12 @@ fn CustomType-name(self: .CustomType) -> .Token {
         case Variant -> { .name }
     }
 }
+fn CustomType-generic-parameters(self: .CustomType) -> .Array<Token> {
+    $self match {
+        case Struct -> { .generic-parameters }
+        case Variant -> { .generic-parameters }
+    }
+}
 
 struct TypeLookup {
     module-id: ModuleId
