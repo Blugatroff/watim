@@ -2275,10 +2275,7 @@ class FunctionResolver:
                     diverges = diverges or not loop_break_stacks[0].reachable
                     for i in range(1, len(loop_break_stacks)):
                         if not resolved_types_eq(loop_break_stacks[0].types, loop_break_stacks[i].types):
-                            error_message = "break stack mismatch:"
-                            for break_stack in loop_break_stacks:
-                                error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types, format_resolved_type)}"
-                            self.abort(token, error_message)
+                            self.abort(token, self.break_stack_mismatch_error(loop_break_stacks))
                 if not resolved_types_eq(parameters, loop_stack.stack):
                     self.abort(token, "unexpected items remaining on stack at the end of loop")
                 if len(loop_break_stacks) != 0:
@@ -2304,9 +2301,7 @@ class FunctionResolver:
                 if len(block_break_stacks) != 0:
                     diverges = diverges and not block_break_stacks[0].reachable
                     def on_error():
-                        error_message = "break stack mismatch:"
-                        for break_stack in block_break_stacks:
-                            error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types, format_resolved_type)}"
+                        error_message = self.break_stack_mismatch_error(block_break_stacks)
                         end = parsed_words.end
                         error_message += f"\n\t{end.line}:{end.column} {listtostr(block_stack.stack, format_resolved_type)}"
                         self.abort(token, error_message)
@@ -2591,6 +2586,12 @@ class FunctionResolver:
                 return (ResolvedTupleUnpackWord(token, tupl.items), False)
             case other:
                 assert_never(other)
+
+    def break_stack_mismatch_error(self, break_stacks: List[BreakStack]):
+        error_message = "break stack mismatch:"
+        for break_stack in break_stacks:
+            error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types, format_resolved_type)}"
+        return error_message
 
     def resolve_block_annotation(self, annotation: ParsedBlockAnnotation) -> BlockAnnotation:
         return BlockAnnotation(
@@ -2994,7 +2995,7 @@ class ModuleResolver:
                 else:
                     generic_parameters = self.resolved_modules[struct_handle.module].type_definitions[struct_handle.index].generic_parameters
                 if len(generic_parameters) != len(generic_arguments):
-                    self.abort(name, f"expected {len(generic_parameters)} generic arguments, actual: {len(generic_arguments)}")
+                    self.abort(name, f"expected {len(generic_parameters)} generic arguments, not {len(generic_arguments)}")
                 return ResolvedStructType(name, struct_handle, resolved_generic_arguments)
             case ParsedForeignType(module, name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))

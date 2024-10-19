@@ -10,8 +10,9 @@ import difflib
 
 from bootstrap import main, ParserException, ResolverException
 
-if not os.path.isfile("test.wat") and subprocess.run("python bootstrap.py ./test.watim > test.wat", shell=True).returncode != 0:
-    exit(1)
+if not os.path.isfile("test.wat"):
+    if subprocess.run("bash ./run.sh ./native/main.watim compile ./test.watim -q > test.wat", shell=True).returncode != 0:
+        exit(1)
 
 def parse_test_file(path: str) -> dict | None:
     output = subprocess.run(f"wasmtime --dir=. -- test.wat read {path}", shell=True, stdout=subprocess.PIPE)
@@ -38,12 +39,10 @@ if "--native" in sys.argv:
     watim_bin_path = os.path.realpath("./watim.wat")
 
 def run_native_compiler(args: List[str] | None, stdin: str):
-    compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["-"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["compile", "-", "--quiet"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 def run_bootstrap_compiler(args: List[str] | None, stdin: str):
-    # compiler = subprocess.run(["python", "./bootstrap.py", "-"] + args, input=bytes(test["compiler-stdin"], 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
     try:
         stdout = main([sys.argv[0]] + (args or ["-"]), stdin)
         return CompilerOutput(0, stdout.strip(), "")
@@ -117,41 +116,14 @@ class Test:
     stdout: str | None
     stderr: str | None
 
-native_tests = list(map(lambda p: f"./tests/{p}.watim", [
-    "lex-make",
-    "import-struct",
-    "import-list",
-    "resolve-struct",
-    "resolve-global",
-    "resolve-extern",
-    "import-list-unnamed",
-    "import-list-function",
-    "parse-generic-type",
-    "resolve-function",
-    "parse-annotation-no-returns",
-    "resolve-get-local",
-    "resolve-ref-local",
-    "values-left-in-function",
-    "resolve-if",
-    "resolve-loop",
-    "compatible-but-different-stacks",
-    "monomize-function",
-    "generate-global",
-    "generate-empty-function",
-    "generate-basic-words",
-    "generate-local-words",
-    "generate-field-accesses",
-    "promote-param-to-stack",
-    "hello",
-    "generate-make-and-match",
-    "generate-match-on-void",
-    "generate-named-make",
-    "generate-call",
+native_tests_exclude = list(map(lambda p: f"./tests/{p}.watim", [
+    "stack-overflow-guards",
+    "i8",
 ]))
 
 failed = False
 for path in tests:
-    if "--native" in sys.argv and path not in native_tests:
+    if "--native" in sys.argv and path in native_tests_exclude:
         continue
     test = parse_test_file(path)
     previous_failed = failed

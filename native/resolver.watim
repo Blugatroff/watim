@@ -14,7 +14,10 @@ import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "../std/list.watim" as List (List)
 
 import "./logging.watim" as Logging
-import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-format, Token-string-content)
+import "./lexer.watim" as Lexer (
+    Token, Token-lexeme, Token-location, Token-line, Token-column,
+    Token-eq-to-lexeme, Token-string-content, Token-format
+)
 import "./parser.watim" as P (TopItem)
 import "./type.watim" as Type (
     Type, Type-eq, Type-format, Type-pretty,
@@ -1378,6 +1381,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
     } @generic-arguments @varint ~ @varint-type
     $ctx.temp &varint.cases \VariantCase-name Array:map<VariantCase, ByteSlice> @remaining-cases
     $ctx.temp $varint.cases.len 1 + Array:new-with-capacity<[Stack, .Token, bool]> @case-stacks
+    $ctx.temp $varint.cases.len Array:new-with-capacity<Token> @visited-cases
     0 @i
     loop {
         $i $word.cases.len = if { make Maybe<ResolveError>.None break }
@@ -1417,9 +1421,31 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         &cases $case-type $tag $words make MatchCase Array:push-assert-no-alloc<MatchCase>
 
         &parsed-case.name Token-lexeme make ByteSlice @name
-        &remaining-cases \ByteSlice:eq-by-ref &name Array:find-remove<ByteSlice, .ByteSlice> flip drop flip drop not if {
-            $ctx.ctx &word.token "duplicate case in match" abort-m break
+        &remaining-cases \ByteSlice:eq-by-ref &name Array:find-remove<ByteSlice, .ByteSlice> match {
+            case Some -> { drop }
+            case None -> {
+                &visited-cases \Token-eq-to-lexeme &name Array:find-ref<Token, .ByteSlice> if {
+                    @other
+                    $ctx.temp Fmt:into-new-string @msg @fmt
+                    &fmt "duplicate case in match:\n\t" Fmt:write
+                    &fmt $other Token-line i32-format
+                    &fmt ":" Fmt:write
+                    &fmt $other Token-column i32-format
+                    &fmt " " Fmt:write
+                    &fmt $name.ptr $name.len Fmt:write
+                    &fmt "\n\t" Fmt:write
+                    &fmt &parsed-case.name Token-line i32-format
+                    &fmt ":" Fmt:write
+                    &fmt &parsed-case.name Token-column i32-format
+                    &fmt " " Fmt:write
+                    &fmt $name.ptr $name.len Fmt:write
+                    $ctx.ctx &word.token $msg ~ ByteArray:unpack abort-m break
+                } else {
+                    drop
+                }
+            }
         }
+        &visited-cases $parsed-case.name Array:push-assert-no-alloc<Token>
         &case-stacks $case-stack &parsed-case.name $case-diverges [,3] Array:push-assert-no-alloc<[Stack, .Token, bool]>
         $i 1 + #i
     } match {
@@ -1479,14 +1505,14 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
                             $j $case-stacks.len = if { break }
                             &fmt "\n\t" Fmt:write
                             &case-stacks $j Array:get<[Stack, .Token, bool]> ~ [,] drop @case-token @case-stack
-                            &fmt $ctx.type-lookup &case-stack.negative Types-pretty
+                            &fmt $ctx.type-lookup &case-stack.negative Types-pretty-bracketed
                             &fmt " -> " Fmt:write
-                            &fmt $ctx.type-lookup &case-stack.positive Types-pretty
+                            &fmt $ctx.type-lookup &case-stack.positive Types-pretty-bracketed
                             &fmt " in case " Fmt:write
                             &fmt $case-token Token-lexeme Fmt:write
                             $j 1 + #j
                         }
-                        $ctx.ctx $case-token $buf ~ ByteArray:unpack abort-m break
+                        $ctx.ctx &word.token $buf ~ ByteArray:unpack abort-m break
                     }
                 }
             }
@@ -1634,7 +1660,14 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
     } [,] @false-words-diverge @false-words
 
     $true-words-diverge not $false-words-diverge not and if {
-        // TODO: Check that if and else stack are equal.
+        $ctx &true-stack &false-stack stacks-compatible not if {
+            $ctx.temp Fmt:into-new-string @msg @fmt
+            &fmt "stack mismatch between if and else branch:\n\tif   " Fmt:write
+            &fmt $ctx.type-lookup &true-stack.positive Types-pretty-bracketed
+            &fmt "\n\telse " Fmt:write
+            &fmt $ctx.type-lookup &false-stack.positive Types-pretty-bracketed
+            $ctx.ctx &word.token $msg ~ ByteArray:unpack abort<[Word, bool]> break
+        }
     }
 
     // TODO: Check that the negative of the true and false stack are compatible 
@@ -1716,8 +1749,36 @@ fn resolve-lop(ctx: .WordCtx, stack: .Stack, word: .P:Loop) -> Result<[Word, boo
     } Array:clone<Type> @parameters
 
     $loop-break-stacks.len 0 /= if {
-        &loop-break-stacks 0 Array:get<BreakStack>.reachable ~ not #diverges
-        // TODO: Check, that all break stacks are equal!
+        &loop-break-stacks 0 Array:get<BreakStack> @first
+        $first.reachable not #diverges
+
+        1 @i
+        loop {
+            $i $loop-break-stacks.len = if { make Maybe<ResolveError>.None break }
+            &loop-break-stacks $i Array:get<BreakStack> @break-stack
+            $i 1 + #i
+            $break-stack.reachable not if { make Maybe<ResolveError>.None break }
+            \Type-eq &first.types &break-stack.types Array:eq<Type> not if {
+                $ctx.temp Fmt:into-new-string @msg @fmt
+                &fmt "break stack mismatch:" Fmt:write
+                0 @i
+                loop {
+                    $i $loop-break-stacks.len = if { break }
+                    &loop-break-stacks $i Array:get<BreakStack> @break-stack
+                    &fmt "\n\t" Fmt:write
+                    &fmt &break-stack.token Token-line i32-format
+                    &fmt ":" Fmt:write
+                    &fmt &break-stack.token Token-column i32-format
+                    &fmt " " Fmt:write
+                    &fmt $ctx.type-lookup &break-stack.types Types-pretty-bracketed
+                    $i 1 + #i
+                }
+                $ctx.ctx &word.token $msg ~ ByteArray:unpack abort-m break
+            }
+        } match {
+            case None -> {}
+            case Some -> { make Result<[Word, bool], ResolveError>.Error break }
+        }
     }
 
     // The parameters of the loop must match the values remaining on the
@@ -1774,6 +1835,24 @@ fn resolve-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bo
     make Result<[Word, bool], ResolveError>.Success
 } }
 
+fn brek-stack-mismatch-error(ctx: .WordCtx, token: .Token, brek-stacks: .Array<BreakStack>) -> ResolveError {
+    $ctx.temp Fmt:into-new-string @msg @fmt
+    &fmt "break stack mismatch:" Fmt:write
+    0 @i
+    loop {
+        $i $brek-stacks.len = if { break }
+        $brek-stacks $i Array:get<BreakStack> @brek-stack
+        &fmt "\n\t" Fmt:write
+        &fmt &brek-stack.token Token-line i32-format
+        &fmt ":" Fmt:write
+        &fmt &brek-stack.token Token-column i32-format
+        &fmt " " Fmt:write
+        &fmt $ctx.type-lookup &brek-stack.types Types-pretty-bracketed
+        $i 1 + #i
+    }
+    $ctx.ctx $token $msg ~ ByteArray:unpack error
+}
+
 fn resolve-blok(ctx: .WordCtx, stack: .Stack, word: .P:Block) -> Result<[Word, bool], ResolveError> { block {
     &word.annotation match {
         case None -> { make Maybe<BlockAnnotation>.None }
@@ -1806,7 +1885,39 @@ fn resolve-blok(ctx: .WordCtx, stack: .Stack, word: .P:Block) -> Result<[Word, b
 
     $block-break-stacks.len 0 /= if {
         &block-break-stacks 0 Array:get<BreakStack>.reachable ~ not #diverges
-        // TODO: Check, that all break stacks are equal!
+
+        &block-break-stacks 0 Array:get<BreakStack> @first
+        $first.reachable not #diverges
+
+        1 @i
+        loop {
+            $i $block-break-stacks.len = if { make Maybe<ResolveError>.None break }
+            &block-break-stacks $i Array:get<BreakStack> @break-stack
+            $i 1 + #i
+            $break-stack.reachable not if {
+                1 1 = #diverges
+                make Maybe<ResolveError>.None break
+            }
+            &first.types &break-stack.types Types-eq not if {
+                $ctx.persistent &block-break-stacks
+                $word.words.end $block-stack.positive $diverges make BreakStack
+                Array:push<BreakStack>
+                $ctx &word.token &block-break-stacks brek-stack-mismatch-error
+                make Maybe<ResolveError>.Some break
+            }
+        } match {
+            case None -> {}
+            case Some -> { make Result<[Word, bool], ResolveError>.Error break }
+        }
+        $block-end-is-reached if {
+            &block-stack.positive &first.types Types-eq not if {
+                $ctx.persistent &block-break-stacks
+                $word.words.end $block-stack.positive $diverges make BreakStack
+                Array:push<BreakStack>
+                $ctx &word.token &block-break-stacks brek-stack-mismatch-error
+                make Result<[Word, bool], ResolveError>.Error break
+            }
+        }
     }
 
     $ctx.persistent &annotation match {
@@ -2522,62 +2633,21 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 make Word.Intrinsic 0 1 = [,2]
                 make Result<[Word, bool], ResolveError>.Success break
             }
-
-            $ctx $parsed-word resolve-call-word match {
-                case Error -> { make Result<[Word, bool], ResolveError>.Error break }
-                case Success -> {}
-            } @word
-            $ctx &word.function lookup-signature @signature
-            $ctx $stack &word.name &word.generic-arguments &signature.parameters &signature.returns type-check-call match {
-                case None -> {}
-                case Some -> { make Result<[Word, bool], ResolveError>.Error break }
-            }
-
-            $word make Word.Call 0 1 = [,2]
-            make Result<[Word, bool], ResolveError>.Success break
         }
-        case Foreign -> {
-            @word
-            $ctx.ctx $ctx.imports &word.generic-arguments resolve-types match {
-                case Error -> { make Result<[Word, bool], ResolveError>.Error break }
-                case Success -> {}
-            } @resolved-generic-arguments
-            $ctx.imports &word.module Token-lexeme Map:get-bs<Array<Import>> match {
-                case None -> { $ctx.ctx &word.name "module not found" abort<[Word, bool]> break }
-                case Some -> {}
-            } @imports
-            0 @i
-            loop {
-                $imports.len $i = if {
-                    $ctx.ctx &word.name "function not found" abort<[Word, bool]> break
-                }
-                $imports $i Array:get<Import> @imp
-                $ctx.ctx.resolved-modules $imp.module.index Array:get<Module> @module
-                &module.functions &word.name Token-lexeme Map:get-bs-with-index<FunctionOrExtern> match {
-                    case None -> {}
-                    case Some -> {
-                        [,] @function-id @function
-                        $function FunctionOrExtern-signature @signature
-                        $signature.generic-parameters.len $resolved-generic-arguments.len /= if {
-                            $ctx.ctx &word.name "mismatched number of generic arguments" abort<[Word, bool]> break
-                        }
-                        $ctx $stack &word.name &resolved-generic-arguments &signature.parameters &signature.returns type-check-call match {
-                            case None -> {}
-                            case Some -> { make Result<[Word, bool], ResolveError>.Error break }
-                        }
-
-                        $word.name
-                        $imp.module $function-id make FunctionHandle
-                        $resolved-generic-arguments
-                        make Call
-                        make Word.Call 0 1 = [,2]
-                        make Result<[Word, bool], ResolveError>.Success break
-                    }
-                }
-                $i 1 + #i
-            }
-        }
+        case Foreign -> { drop }
     }
+    $ctx $parsed-word resolve-call-word match {
+        case Error -> { make Result<[Word, bool], ResolveError>.Error break }
+        case Success -> {}
+    } @word
+    $ctx &word.function lookup-signature @signature
+    $ctx $stack &word.name &word.generic-arguments &signature.parameters &signature.returns type-check-call match {
+        case None -> {}
+        case Some -> { make Result<[Word, bool], ResolveError>.Error break }
+    }
+
+    $word make Word.Call 0 1 = [,2]
+    make Result<[Word, bool], ResolveError>.Success break
 } }
 
 fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError> { block {
@@ -2594,6 +2664,10 @@ fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError>
                 case Some -> {}
             } @function
             $ctx &function lookup-signature @signature
+            $signature.generic-parameters.len $resolved-generic-arguments.len /= if {
+                $ctx.ctx &word.name $signature.generic-parameters.len $resolved-generic-arguments.len
+                generic-arguments-mismatch-error make Result<Call, ResolveError>.Error break
+            }
             $word.name $function $resolved-generic-arguments make Call
             make Result<Call, ResolveError>.Success break
         }
@@ -2620,7 +2694,8 @@ fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError>
                         [,] @function-id @function
                         $function FunctionOrExtern-signature @signature
                         $signature.generic-parameters.len $resolved-generic-arguments.len /= if {
-                            $ctx.ctx &word.name "mismatched number of generic arguments" abort<Call> break
+                            $ctx.ctx &word.name $signature.generic-parameters.len $resolved-generic-arguments.len
+                            generic-arguments-mismatch-error make Result<Call, ResolveError>.Error break
                         }
                         $word.name
                         $imp.module $function-id make FunctionHandle
@@ -3634,7 +3709,7 @@ fn generic-arguments-mismatch-error(ctx: .Ctx, token: .Token, expected: i32, act
     $ctx.temp Fmt:into-new-string @msg @fmt
     &fmt "expected " Fmt:write
     &fmt $expected i32-format
-    &fmt " generic arguments, actual: " Fmt:write
+    &fmt " generic arguments, not " Fmt:write
     &fmt $actual i32-format
     $ctx $token $msg ~ ByteArray:unpack error
 }

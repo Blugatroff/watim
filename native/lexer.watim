@@ -230,6 +230,9 @@ fn Token-copy(arena: .Arena:Arena, self: .Token) -> Token {
 fn Token-eq-by-lexeme(self: .Token, other: .Token) -> bool {
     $self Token-lexeme $other Token-lexeme Bytes:eq
 }
+fn Token-eq-to-lexeme(self: .Token, other: .ByteSlice) -> bool {
+    $self Token-lexeme $other ~ ByteSlice:unpack Bytes:eq
+}
 fn Tokens-copy(arena: .Arena:Arena, src: .Array:Array<Token>) -> Array:Array<Token> {
     $arena $src.len Array:new-with-capacity<Token> @dst
     0 @i

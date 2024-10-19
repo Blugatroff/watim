@@ -1,4 +1,5 @@
 import "./core.watim" as CORE
+import "./maybe.watim" as Maybe (Maybe)
 import "./io.watim" as IO
 import "./arena.watim" as A
 import "./fmt.watim" as FMT (Formatter)
@@ -287,13 +288,12 @@ fn reverse<T>(self: .Array<T>) { block {
         $i 1 + #i
     }
 } }
-fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> T, i32, bool {
+fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> Maybe<[T, i32]> {
     $self $compare $value find<T, A> if {
         @i
-        $self $i remove<T>
-        $i 1 1 =
+        $self $i remove<T> $i [,2] make Maybe<[T, i32]>.Some
     } else {
-        uninit<T> flip 0 1 =
+        drop make Maybe<[T, i32]>.None
     }
 }
 fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i32, del-len: i32) -> ByteArray {

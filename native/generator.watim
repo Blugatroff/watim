@@ -926,15 +926,15 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt "(then\n" Fmt:write
                 $ctx.fmt Fmt:indent
-                $ctx.fmt Fmt:write-indent
                 $cays.type match {
                     case None -> {
-                        $ctx.fmt "drop" Fmt:write
-                        $ctx.fmt "\n" Fmt:write
+                        $ctx.fmt Fmt:write-indent
+                        $ctx.fmt "drop\n" Fmt:write
                     }
                     case Some -> {
                         @case-type
                         &ctx.program.sizes $case-type type-size 0 /= if {
+                            $ctx.fmt Fmt:write-indent
                             $ctx.fmt "i32.const 4 i32.add" Fmt:write
                             $word.by-ref not if { &ctx.program.sizes $case-type can-live-in-reg if {
                                 $ctx.fmt " " Fmt:write
@@ -1039,6 +1039,16 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                     $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
                     $ctx.fmt $word.copy-space-offset i32-format
                     $ctx.fmt " i32.add call $intrinsic:dupi32 " Fmt:write
+                } else {
+                    $loads.len 0 = if {
+                        // Accessing a field at offset 0 on a value type, is a no-op,
+                        // if the value lives cannot live in a reg and therefore resides
+                        // in linear memory.
+                        // eg.: struct V2 { x: i32 y: i32 }
+                        //      fn example() { 2 3 make V2 .x drop }
+                        $ctx.fmt ";; GetField was no-op" Fmt:write
+                        break
+                    }
                 }
                 0 @i
                 loop {
