@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, TypeVar, Callable, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
+from typing import Optional, TypeVar, Callable, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, TypeAlias, assert_never
 from functools import reduce
 import sys
 import os
 import unittest
+
+# =============================================================================
+#  Lexer
+# =============================================================================
 
 class TokenType(str, Enum):
     NUMBER = "NUMBER"
@@ -79,6 +83,52 @@ class Token:
     @staticmethod
     def dummy(lexeme: str) -> 'Token':
         return Token(TokenType.STRING, 0, 0, lexeme)
+
+LEXEME_TYPE_DICT: dict[str, TokenType] = {
+    "fn":     TokenType.FN,
+    "import": TokenType.IMPORT,
+    "as":     TokenType.AS,
+    "global": TokenType.GLOBAL,
+    "struct": TokenType.STRUCT,
+    "block":  TokenType.BLOCK,
+    "break":  TokenType.BREAK,
+    "loop":   TokenType.LOOP,
+    "if":     TokenType.IF,
+    "else":   TokenType.ELSE,
+    "extern": TokenType.EXTERN,
+    "bool":   TokenType.BOOL,
+    "i8":     TokenType.I8,
+    "i32":    TokenType.I32,
+    "i64":    TokenType.I64,
+    "sizeof": TokenType.SIZEOF,
+    "->":     TokenType.ARROW,
+    "=>":     TokenType.DOUBLE_ARROW,
+    " ":      TokenType.SPACE,
+    "<":      TokenType.LEFT_TRIANGLE,
+    ">":      TokenType.RIGHT_TRIANGLE,
+    "(":      TokenType.LEFT_PAREN,
+    ")":      TokenType.RIGHT_PAREN,
+    "{":      TokenType.LEFT_BRACE,
+    "}":      TokenType.RIGHT_BRACE,
+    "[":      TokenType.LEFT_BRACKET,
+    "]":      TokenType.RIGHT_BRACKET,
+    ":":      TokenType.COLON,
+    ".":      TokenType.DOT,
+    ",":      TokenType.COMMA,
+    "$":      TokenType.DOLLAR,
+    "&":      TokenType.AMPERSAND,
+    "#":      TokenType.HASH,
+    "@":      TokenType.AT,
+    "!":      TokenType.BANG,
+    "~":      TokenType.TILDE,
+    "\\":     TokenType.BACKSLASH,
+    "make":   TokenType.MAKE,
+    "variant":TokenType.VARIANT,
+    "match":  TokenType.MATCH,
+    "case":   TokenType.CASE,
+    "_":      TokenType.UNDERSCORE,
+}
+TYPE_LEXEME_DICT: dict[TokenType, str] = {v: k for k, v in LEXEME_TYPE_DICT.items()}
 
 @dataclass
 class LexerException(Exception):
@@ -214,51 +264,9 @@ class Lexer:
     def allowed_in_ident(char: str) -> bool:
         return char not in "#${}()<> \t\n:&~,.[]"
 
-LEXEME_TYPE_DICT: dict[str, TokenType] = {
-    "fn":     TokenType.FN,
-    "import": TokenType.IMPORT,
-    "as":     TokenType.AS,
-    "global": TokenType.GLOBAL,
-    "struct": TokenType.STRUCT,
-    "block":  TokenType.BLOCK,
-    "break":  TokenType.BREAK,
-    "loop":   TokenType.LOOP,
-    "if":     TokenType.IF,
-    "else":   TokenType.ELSE,
-    "extern": TokenType.EXTERN,
-    "bool":   TokenType.BOOL,
-    "i8":     TokenType.I8,
-    "i32":    TokenType.I32,
-    "i64":    TokenType.I64,
-    "sizeof": TokenType.SIZEOF,
-    "->":     TokenType.ARROW,
-    "=>":     TokenType.DOUBLE_ARROW,
-    " ":      TokenType.SPACE,
-    "<":      TokenType.LEFT_TRIANGLE,
-    ">":      TokenType.RIGHT_TRIANGLE,
-    "(":      TokenType.LEFT_PAREN,
-    ")":      TokenType.RIGHT_PAREN,
-    "{":      TokenType.LEFT_BRACE,
-    "}":      TokenType.RIGHT_BRACE,
-    "[":      TokenType.LEFT_BRACKET,
-    "]":      TokenType.RIGHT_BRACKET,
-    ":":      TokenType.COLON,
-    ".":      TokenType.DOT,
-    ",":      TokenType.COMMA,
-    "$":      TokenType.DOLLAR,
-    "&":      TokenType.AMPERSAND,
-    "#":      TokenType.HASH,
-    "@":      TokenType.AT,
-    "!":      TokenType.BANG,
-    "~":      TokenType.TILDE,
-    "\\":     TokenType.BACKSLASH,
-    "make":   TokenType.MAKE,
-    "variant":TokenType.VARIANT,
-    "match":  TokenType.MATCH,
-    "case":   TokenType.CASE,
-    "_":      TokenType.UNDERSCORE,
-}
-TYPE_LEXEME_DICT: dict[TokenType, str] = {v: k for k, v in LEXEME_TYPE_DICT.items()}
+# =============================================================================
+#  Parser
+# =============================================================================
 
 class PrimitiveType(str, Enum):
     I8 = "TYPE_I8"
@@ -303,10 +311,6 @@ class PrimitiveType(str, Enum):
         return True
 
 @dataclass
-class ParsedPtrType:
-    child: 'ParsedType'
-
-@dataclass
 class GenericType:
     token: Token
     generic_index: int
@@ -314,29 +318,7 @@ class GenericType:
     def __str__(self) -> str:
         return f"(GenericType {self.token} {self.generic_index})"
 
-@dataclass
-class ParsedForeignType:
-    module: Token
-    name: Token
-    generic_arguments: List['ParsedType']
-
-@dataclass
-class ParsedStructType:
-    name: Token
-    generic_arguments: List['ParsedType']
-
-@dataclass
-class ParsedFunctionType:
-    token: Token
-    args: List['ParsedType']
-    rets: List['ParsedType']
-
-@dataclass
-class ParsedTupleType:
-    token: Token
-    items: List['ParsedType']
-
-ParsedType = PrimitiveType | ParsedPtrType | ParsedTupleType | GenericType | ParsedForeignType | ParsedStructType | ParsedFunctionType
+type ParsedType = 'PrimitiveType | Parser.PtrType | Parser.TupleType | GenericType | Parser.ForeignType | Parser.StructType | Parser.FunctionType'
 
 @dataclass
 class NumberWord:
@@ -346,241 +328,17 @@ class NumberWord:
         return f"(Number {self.token})"
 
 @dataclass
-class ParsedStringWord:
-    token: Token
-    string: bytearray
-
-@dataclass
-class ParsedGetWord:
-    token: Token
-    fields: List[Token]
-
-@dataclass
-class ParsedRefWord:
-    token: Token
-    fields: List[Token]
-
-@dataclass
-class ParsedSetWord:
-    token: Token
-    fields: List[Token]
-
-@dataclass
-class ParsedStoreWord:
-    token: Token
-    fields: List[Token]
-
-@dataclass
-class ParsedInitWord:
-    name: Token
-
-@dataclass
-class ParsedForeignCallWord:
-    module: Token
-    name: Token
-    generic_arguments: List[ParsedType]
-
-@dataclass
-class ParsedCallWord:
-    name: Token
-    generic_arguments: List[ParsedType]
-
-@dataclass
-class ParsedFunRefWord:
-    call: ParsedCallWord | ParsedForeignCallWord
-
-@dataclass
-class ParsedIfWord:
-    token: Token
-    if_words: List['ParsedWord']
-    else_words: List['ParsedWord']
-
-@dataclass
-class ParsedLoadWord:
-    token: Token
-
-@dataclass
-class ParsedBlockAnnotation:
-    parameters: List[ParsedType]
-    returns: List[ParsedType]
-
-    def __str__(self) -> str:
-        return f"(BlockAnnotation {listtostr(self.parameters)} {listtostr(self.returns)})"
-
-@dataclass
-class ParsedWords:
-    words: List['ParsedWord']
-    end: Token
-
-    def __str__(self) -> str:
-        return f"(Words {listtostr(self.words)} {self.end})"
-
-@dataclass
-class ParsedLoopWord:
-    token: Token
-    words: ParsedWords
-    annotation: ParsedBlockAnnotation | None
-
-    def __str__(self) -> str:
-        return f"(Loop {self.token} {format_maybe(self.annotation)} {self.words})"
-
-@dataclass
-class ParsedBlockWord:
-    token: Token
-    words: ParsedWords
-    annotation: ParsedBlockAnnotation | None
-
-    def __str__(self) -> str:
-        return f"(Block {self.token} {format_maybe(self.annotation)} {self.words})"
-
-@dataclass
 class BreakWord:
     token: Token
 
     def __str__(self) -> str:
         return f"(Break {self.token})"
 
-@dataclass
-class ParsedCastWord:
-    token: Token
-    taip: ParsedType
+type ParsedWord = 'NumberWord | Parser.StringWord | Parser.CallWord | Parser.GetWord | Parser.RefWord | Parser.SetWord | Parser.StoreWord | Parser.InitWord | Parser.CallWord | Parser.ForeignCallWord | Parser.FunRefWord | Parser.IfWord | Parser.LoadWord | Parser.LoopWord | Parser.BlockWord | BreakWord | Parser.CastWord | Parser.SizeofWord | Parser.GetFieldWord | Parser.IndirectCallWord | Parser.StructWord | Parser.UnnamedStructWord | Parser.MatchWord | Parser.VariantWord | Parser.TupleUnpackWord | Parser.TupleMakeWord'
 
-@dataclass
-class ParsedSizeofWord:
-    token: Token
-    taip: ParsedType
+type ParsedTypeDefinition = 'Parser.Struct | Parser.Variant'
 
-@dataclass
-class ParsedGetFieldWord:
-    token: Token
-    fields: List[Token]
-
-@dataclass
-class ParsedIndirectCallWord:
-    token: Token
-
-@dataclass
-class ParsedStructWord:
-    token: Token
-    taip: ParsedStructType | ParsedForeignType
-    words: List['ParsedWord']
-
-@dataclass
-class ParsedUnnamedStructWord:
-    token: Token
-    taip: ParsedStructType | ParsedForeignType
-
-@dataclass
-class ParsedVariantWord:
-    token: Token
-    taip: ParsedStructType | ParsedForeignType
-    case: Token
-
-@dataclass
-class ParsedMatchCase:
-    token: Token
-    case: Token
-    words: List['ParsedWord']
-
-@dataclass
-class ParsedMatchWord:
-    token: Token
-    cases: List[ParsedMatchCase]
-    default: List['ParsedWord'] | None
-
-@dataclass
-class ParsedTupleUnpackWord:
-    token: Token
-
-@dataclass
-class ParsedTupleMakeWord:
-    token: Token
-    item_count: Token
-
-ParsedWord = NumberWord | ParsedStringWord | ParsedCallWord | ParsedGetWord | ParsedRefWord | ParsedSetWord | ParsedStoreWord | ParsedInitWord | ParsedCallWord | ParsedForeignCallWord | ParsedFunRefWord | ParsedIfWord | ParsedLoadWord | ParsedLoopWord | ParsedBlockWord | BreakWord | ParsedCastWord | ParsedSizeofWord | ParsedGetFieldWord | ParsedIndirectCallWord | ParsedStructWord | ParsedUnnamedStructWord | ParsedMatchWord | ParsedVariantWord | ParsedTupleUnpackWord | ParsedTupleMakeWord
-
-@dataclass
-class ParsedNamedType:
-    name: Token
-    taip: ParsedType
-
-    def __str__(self) -> str:
-        return f"(NamedType {self.name} {self.taip})"
-
-@dataclass
-class ParsedImport:
-    token: Token
-    file_path: Token
-    qualifier: Token
-    items: List[Token]
-
-@dataclass
-class ParsedFunctionSignature:
-    export_name: Optional[Token]
-    name: Token
-    generic_parameters: List[Token]
-    parameters: List[ParsedNamedType]
-    returns: List[ParsedType]
-
-    def __str__(self) -> str:
-        return f"(Signature {listtostr(self.generic_parameters)} {listtostr(self.parameters)} {listtostr(self.returns)})"
-
-@dataclass
-class ParsedExtern:
-    module: Token
-    name: Token
-    signature: ParsedFunctionSignature
-
-@dataclass
-class ParsedGlobal:
-    token: Token
-    name: Token
-    taip: ParsedType
-
-@dataclass
-class ParsedFunction:
-    token: Token
-    signature: ParsedFunctionSignature
-    body: List[ParsedWord]
-
-    def __str__(self) -> str:
-        return f"(Function {self.token} {self.signature.name} {self.signature} {listtostr(self.body, multi_line=True)})"
-
-@dataclass
-class ParsedStruct:
-    token: Token
-    name: Token
-    fields: List[ParsedNamedType]
-    generic_parameters: List[Token]
-
-    def __str__(self) -> str:
-        return f"(Struct {self.token} {self.name} {listtostr(self.generic_parameters)} {listtostr(self.fields, multi_line=True)})"
-
-@dataclass
-class ParsedVariantCase:
-    name: Token
-    taip: ParsedType | None
-
-@dataclass
-class ParsedVariant:
-    name: Token
-    generic_parameters: List[Token]
-    cases: List[ParsedVariantCase]
-
-ParsedTypeDefinition = ParsedStruct | ParsedVariant
-
-@dataclass
-class ParsedModule:
-    path: str
-    file: str
-    top_items: List[ParsedImport | ParsedTypeDefinition | ParsedGlobal | ParsedFunction | ParsedExtern]
-    imports: List[ParsedImport]
-    type_definitions: List[ParsedTypeDefinition]
-    globals: List[ParsedGlobal]
-    functions: List[ParsedFunction | ParsedExtern]
-
-    def __str__(self) -> str:
-        return listtostr(self.top_items, multi_line=True)
+type ParsedTopItem = 'Parser.Import | ParsedTypeDefinition | Parser.Global | Parser.Function | Parser.Extern'
 
 @dataclass
 class ParserException(Exception):
@@ -606,6 +364,277 @@ class Parser:
     tokens: List[Token]
     cursor: int = 0
 
+    # ========================================
+    # Datatypes for parsed types
+    # ========================================
+    @dataclass
+    class PtrType:
+        child: ParsedType
+
+    @dataclass
+    class ForeignType:
+        module: Token
+        name: Token
+        generic_arguments: List[ParsedType]
+
+    @dataclass
+    class TupleType:
+        token: Token
+        items: List[ParsedType]
+
+    @dataclass
+    class StructType:
+        name: Token
+        generic_arguments: List[ParsedType]
+
+    @dataclass
+    class FunctionType:
+        token: Token
+        args: List[ParsedType]
+        rets: List[ParsedType]
+
+    @dataclass
+    class NamedType:
+        name: Token
+        taip: ParsedType
+
+        def __str__(self) -> str:
+            return f"(NamedType {self.name} {self.taip})"
+
+
+    # ========================================
+    # Datatypes for parsed words
+    # ========================================
+    @dataclass
+    class StringWord:
+        token: Token
+        string: bytearray
+
+    @dataclass
+    class GetWord:
+        token: Token
+        fields: List[Token]
+
+    @dataclass
+    class RefWord:
+        token: Token
+        fields: List[Token]
+
+    @dataclass
+    class SetWord:
+        token: Token
+        fields: List[Token]
+
+    @dataclass
+    class StoreWord:
+        token: Token
+        fields: List[Token]
+
+    @dataclass
+    class InitWord:
+        name: Token
+
+    @dataclass
+    class ForeignCallWord:
+        module: Token
+        name: Token
+        generic_arguments: List[ParsedType]
+
+    @dataclass
+    class CallWord:
+        name: Token
+        generic_arguments: List[ParsedType]
+
+    @dataclass
+    class FunRefWord:
+        call: 'Parser.CallWord | Parser.ForeignCallWord'
+
+    @dataclass
+    class IfWord:
+        token: Token
+        if_words: List['ParsedWord']
+        else_words: List['ParsedWord']
+
+    @dataclass
+    class LoadWord:
+        token: Token
+
+    @dataclass
+    class BlockAnnotation:
+        parameters: List[ParsedType]
+        returns: List[ParsedType]
+
+        def __str__(self) -> str:
+            return f"(BlockAnnotation {listtostr(self.parameters)} {listtostr(self.returns)})"
+
+    @dataclass
+    class Words:
+        words: List['ParsedWord']
+        end: Token
+
+        def __str__(self) -> str:
+            return f"(Words {listtostr(self.words)} {self.end})"
+
+    @dataclass
+    class LoopWord:
+        token: Token
+        words: 'Parser.Words'
+        annotation: 'Parser.BlockAnnotation | None'
+
+        def __str__(self) -> str:
+            return f"(Loop {self.token} {format_maybe(self.annotation)} {self.words})"
+
+    @dataclass
+    class BlockWord:
+        token: Token
+        words: 'Parser.Words'
+        annotation: 'Parser.BlockAnnotation | None'
+
+        def __str__(self) -> str:
+            return f"(Block {self.token} {format_maybe(self.annotation)} {self.words})"
+
+    @dataclass
+    class CastWord:
+        token: Token
+        taip: ParsedType
+
+    @dataclass
+    class SizeofWord:
+        token: Token
+        taip: ParsedType
+
+    @dataclass
+    class GetFieldWord:
+        token: Token
+        fields: List[Token]
+
+    @dataclass
+    class IndirectCallWord:
+        token: Token
+
+    @dataclass
+    class StructWord:
+        token: Token
+        taip: 'Parser.StructType | Parser.ForeignType'
+        words: List['ParsedWord']
+
+    @dataclass
+    class UnnamedStructWord:
+        token: Token
+        taip: 'Parser.StructType | Parser.ForeignType'
+
+    @dataclass
+    class VariantWord:
+        token: Token
+        taip: 'Parser.StructType | Parser.ForeignType'
+        case: Token
+
+    @dataclass
+    class MatchCase:
+        token: Token
+        case: Token
+        words: List[ParsedWord]
+
+    @dataclass
+    class MatchWord:
+        token: Token
+        cases: List['Parser.MatchCase']
+        default: List[ParsedWord] | None
+
+    @dataclass
+    class TupleUnpackWord:
+        token: Token
+
+    @dataclass
+    class TupleMakeWord:
+        token: Token
+        item_count: Token
+
+
+    # ========================================
+    # Datatypes for parsed TopItems
+    # ========================================
+    @dataclass
+    class Import:
+        token: Token
+        file_path: Token
+        qualifier: Token
+        items: List[Token]
+
+    @dataclass
+    class FunctionSignature:
+        export_name: Optional[Token]
+        name: Token
+        generic_parameters: List[Token]
+        parameters: List['Parser.NamedType']
+        returns: List[ParsedType]
+
+        def __str__(self) -> str:
+            return f"(Signature {listtostr(self.generic_parameters)} {listtostr(self.parameters)} {listtostr(self.returns)})"
+
+    @dataclass
+    class Extern:
+        module: Token
+        name: Token
+        signature: 'Parser.FunctionSignature'
+
+    @dataclass
+    class Global:
+        token: Token
+        name: Token
+        taip: ParsedType
+
+    @dataclass
+    class Function:
+        token: Token
+        signature: 'Parser.FunctionSignature'
+        body: List[ParsedWord]
+
+        def __str__(self) -> str:
+            return f"(Function {self.token} {self.signature.name} {self.signature} {listtostr(self.body, multi_line=True)})"
+
+    @dataclass
+    class Struct:
+        token: Token
+        name: Token
+        fields: List['Parser.NamedType']
+        generic_parameters: List[Token]
+
+        def __str__(self) -> str:
+            return f"(Struct {self.token} {self.name} {listtostr(self.generic_parameters)} {listtostr(self.fields, multi_line=True)})"
+
+    @dataclass
+    class VariantCase:
+        name: Token
+        taip: ParsedType | None
+
+    @dataclass
+    class Variant:
+        name: Token
+        generic_parameters: List[Token]
+        cases: List['Parser.VariantCase']
+
+
+    # ========================================
+    # A parsed module, output of the parser
+    # ========================================
+    @dataclass
+    class Module:
+        path: str
+        file: str
+        top_items: List[ParsedTopItem]
+        imports: List['Parser.Import']
+        type_definitions: List['ParsedTypeDefinition']
+        globals: List['Parser.Global']
+        functions: List['Parser.Function | Parser.Extern']
+
+        def __str__(self) -> str:
+            return listtostr(self.top_items, multi_line=True)
+
+
+    # ========================================
+    # Utility functions for the parser
+    # ========================================
     def peek(self, skip_ws: bool = False) -> Token | None:
         i = self.cursor
         while True:
@@ -634,8 +663,12 @@ class Parser:
     def abort(self, message: str) -> NoReturn:
         raise ParserException(self.file_path, self.file, self.tokens[self.cursor] if self.cursor < len(self.tokens) else None, message)
 
-    def parse(self) -> ParsedModule:
-        top_items: List[ParsedImport | ParsedTypeDefinition | ParsedGlobal | ParsedFunction | ParsedExtern] = []
+
+    # ========================================
+    # Parsing routines
+    # ========================================
+    def parse(self) -> 'Parser.Module':
+        top_items: List[Parser.Import | ParsedTypeDefinition | Parser.Global | Parser.Function | Parser.Extern] = []
         while len(self.tokens) != 0:
             token = self.advance(skip_ws=True)
             if token is None:
@@ -669,7 +702,7 @@ class Parser:
                             break
                         if comma.ty != TokenType.COMMA:
                             self.abort("expected `)`")
-                top_items.append(ParsedImport(token, file_path, module_qualifier, items))
+                top_items.append(Parser.Import(token, file_path, module_qualifier, items))
                 continue
 
             if token.ty == TokenType.FN:
@@ -687,7 +720,7 @@ class Parser:
                 if fn is None or fn.ty != TokenType.FN:
                     self.abort("Expected `fn`")
                 signature = self.parse_function_signature()
-                top_items.append(ParsedExtern(module, name, signature))
+                top_items.append(Parser.Extern(module, name, signature))
                 continue
 
             if token.ty == TokenType.STRUCT:
@@ -710,8 +743,8 @@ class Parser:
                     if colon is None or colon.ty != TokenType.COLON:
                         self.abort("Expected `:` after field name")
                     taip = self.parse_type(generic_parameters)
-                    fields.append(ParsedNamedType(field_name, taip))
-                top_items.append(ParsedStruct(token, name, fields, generic_parameters))
+                    fields.append(Parser.NamedType(field_name, taip))
+                top_items.append(Parser.Struct(token, name, fields, generic_parameters))
                 continue
 
             if token.ty == TokenType.VARIANT:
@@ -722,7 +755,7 @@ class Parser:
                 brace = self.advance(skip_ws=True)
                 if brace is None or brace.ty != TokenType.LEFT_BRACE:
                     self.abort("Expected `{`")
-                cases: List[ParsedVariantCase] = []
+                cases: List[Parser.VariantCase] = []
                 while True:
                     next = self.peek(skip_ws=True)
                     if next is None or next.ty == TokenType.RIGHT_BRACE:
@@ -736,11 +769,11 @@ class Parser:
                         self.abort("expected an identifier")
                     arrow = self.peek(skip_ws=True)
                     if arrow is None or arrow.ty != TokenType.ARROW:
-                        cases.append(ParsedVariantCase(ident, None))
+                        cases.append(Parser.VariantCase(ident, None))
                         continue
                     self.advance(skip_ws=True)
-                    cases.append(ParsedVariantCase(ident, self.parse_type(generic_parameters)))
-                top_items.append(ParsedVariant(name, generic_parameters, cases))
+                    cases.append(Parser.VariantCase(ident, self.parse_type(generic_parameters)))
+                top_items.append(Parser.Variant(name, generic_parameters, cases))
                 continue
 
             if token.ty == TokenType.GLOBAL:
@@ -751,23 +784,23 @@ class Parser:
                 if colon is None or colon.ty != TokenType.COLON:
                     self.abort("Expected `:`")
                 taip = self.parse_type([])
-                top_items.append(ParsedGlobal(token, name, taip))
+                top_items.append(Parser.Global(token, name, taip))
                 continue
 
             self.abort("Expected function import or struct definition")
-        def is_import(obj: object) -> TypeGuard[ParsedImport]:
-            return isinstance(obj, ParsedImport)
+        def is_import(obj: object) -> TypeGuard[Parser.Import]:
+            return isinstance(obj, Parser.Import)
         def is_type_definition(obj: object) -> TypeGuard[ParsedTypeDefinition]:
-            return isinstance(obj, ParsedStruct) or isinstance(obj, ParsedVariant)
-        def is_global(obj: object) -> TypeGuard[ParsedGlobal]:
-           return isinstance(obj, ParsedGlobal)
-        imports: List[ParsedImport] = list(filter(is_import, top_items))
+            return isinstance(obj, Parser.Struct) or isinstance(obj, Parser.Variant)
+        def is_global(obj: object) -> TypeGuard[Parser.Global]:
+           return isinstance(obj, Parser.Global)
+        imports: List[Parser.Import] = list(filter(is_import, top_items))
         type_definitions: List[ParsedTypeDefinition] = list(filter(is_type_definition, top_items))
-        globals: List[ParsedGlobal] = list(filter(is_global, top_items))
-        functions: List[ParsedFunction | ParsedExtern] = [f for f in top_items if isinstance(f, ParsedFunction) or isinstance(f, ParsedExtern)]
-        return ParsedModule(self.file_path, self.file, top_items, imports, type_definitions, globals, functions)
+        globals: List[Parser.Global] = list(filter(is_global, top_items))
+        functions: List[Parser.Function | Parser.Extern] = [f for f in top_items if isinstance(f, Parser.Function) or isinstance(f, Parser.Extern)]
+        return Parser.Module(self.file_path, self.file, top_items, imports, type_definitions, globals, functions)
 
-    def parse_function(self, start: Token) -> ParsedFunction:
+    def parse_function(self, start: Token) -> 'Parser.Function':
         signature = self.parse_function_signature()
         token = self.advance(skip_ws=True)
         if token is None or token.ty != TokenType.LEFT_BRACE:
@@ -777,7 +810,7 @@ class Parser:
 
         token = self.advance(skip_ws=True)
         assert(token is not None and token.ty == TokenType.RIGHT_BRACE)
-        return ParsedFunction(start, signature, body)
+        return Parser.Function(start, signature, body)
 
     def parse_words(self, generic_parameters: List[Token]) -> List[ParsedWord]:
         words = []
@@ -815,7 +848,7 @@ class Parser:
                 else:
                     assert(False)
                 i += 2
-            return ParsedStringWord(token, string)
+            return Parser.StringWord(token, string)
         if token.ty in [TokenType.DOLLAR, TokenType.AMPERSAND, TokenType.HASH, TokenType.DOUBLE_ARROW]:
             indicator_token = token
             name = self.advance(skip_ws=True)
@@ -825,13 +858,13 @@ class Parser:
             def construct(name: Token, fields: List[Token]) -> ParsedWord:
                 match indicator_token.ty:
                     case TokenType.DOLLAR:
-                        return ParsedGetWord(name, fields)
+                        return Parser.GetWord(name, fields)
                     case TokenType.AMPERSAND:
-                        return ParsedRefWord(name, fields)
+                        return Parser.RefWord(name, fields)
                     case TokenType.HASH:
-                        return ParsedSetWord(name, fields)
+                        return Parser.SetWord(name, fields)
                     case TokenType.DOUBLE_ARROW:
-                        return ParsedStoreWord(name, fields)
+                        return Parser.StoreWord(name, fields)
                     case _:
                         assert(False)
             if token is None or token.ty == TokenType.SPACE:
@@ -842,13 +875,13 @@ class Parser:
             token = self.advance(skip_ws=False)
             if token is None or token.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as variable name")
-            return ParsedInitWord(token)
+            return Parser.InitWord(token)
         if token.ty == TokenType.IDENT:
             return self.parse_call_word(generic_parameters, token)
         if token.ty == TokenType.BACKSLASH:
             token = self.advance(skip_ws=True) # skip `\`
             assert(token is not None)
-            return ParsedFunRefWord(self.parse_call_word(generic_parameters, token))
+            return Parser.FunRefWord(self.parse_call_word(generic_parameters, token))
         if token.ty == TokenType.IF:
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
@@ -859,7 +892,7 @@ class Parser:
                 self.abort("Expected `}`")
             next = self.peek(skip_ws=True)
             if next is None or next.ty != TokenType.ELSE:
-                return ParsedIfWord(token, if_words, [])
+                return Parser.IfWord(token, if_words, [])
             self.advance(skip_ws=True) # skip `else`
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
@@ -868,9 +901,9 @@ class Parser:
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                 self.abort("Expected `}`")
-            return ParsedIfWord(token, if_words, else_words)
+            return Parser.IfWord(token, if_words, else_words)
         if token.ty == TokenType.TILDE:
-            return ParsedLoadWord(token)
+            return Parser.LoadWord(token)
         if token.ty == TokenType.LOOP or token.ty == TokenType.BLOCK:
             brace = self.advance(skip_ws=True)
             if brace is None:
@@ -913,19 +946,19 @@ class Parser:
                         break
                     if comma.ty != TokenType.COMMA:
                         self.abort("Expected `,`")
-            annotation = None if parameters is None and returns is None else ParsedBlockAnnotation(parameters or [], returns or [])
+            annotation = None if parameters is None and returns is None else Parser.BlockAnnotation(parameters or [], returns or [])
             words = self.parse_words(generic_parameters)
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                 self.abort("Expected `}`")
             if token.ty == TokenType.LOOP:
-                return ParsedLoopWord(token, ParsedWords(words, brace), annotation)
+                return Parser.LoopWord(token, Parser.Words(words, brace), annotation)
             if token.ty == TokenType.BLOCK:
-                return ParsedBlockWord(token, ParsedWords(words, brace), annotation)
+                return Parser.BlockWord(token, Parser.Words(words, brace), annotation)
         if token.ty == TokenType.BREAK:
             return BreakWord(token)
         if token.ty == TokenType.BANG:
-            return ParsedCastWord(token, self.parse_type(generic_parameters))
+            return Parser.CastWord(token, self.parse_type(generic_parameters))
         if token.ty == TokenType.SIZEOF:
             paren = self.advance(skip_ws=True)
             if paren is None or paren.ty != TokenType.LEFT_PAREN:
@@ -934,12 +967,12 @@ class Parser:
             paren = self.advance(skip_ws=True)
             if paren is None or paren.ty != TokenType.RIGHT_PAREN:
                 self.abort("Expected `)`")
-            return ParsedSizeofWord(token, taip)
+            return Parser.SizeofWord(token, taip)
         if token.ty == TokenType.DOT:
             self.retreat()
-            return ParsedGetFieldWord(token, self.parse_field_accesses())
+            return Parser.GetFieldWord(token, self.parse_field_accesses())
         if token.ty == TokenType.ARROW:
-            return ParsedIndirectCallWord(token)
+            return Parser.IndirectCallWord(token)
         if token.ty == TokenType.MAKE:
             struct_name_token = self.advance(skip_ws=True)
             taip = self.parse_struct_type(struct_name_token, generic_parameters)
@@ -949,7 +982,7 @@ class Parser:
                 case_name = self.advance(skip_ws=False)
                 if case_name is None or case_name.ty != TokenType.IDENT:
                     self.abort("expected an identifier")
-                return ParsedVariantWord(token, taip, case_name)
+                return Parser.VariantWord(token, taip, case_name)
             brace = self.peek(skip_ws=True)
             if brace is not None and brace.ty == TokenType.LEFT_BRACE:
                 brace = self.advance(skip_ws=True)
@@ -957,18 +990,18 @@ class Parser:
                 brace = self.advance(skip_ws=True)
                 if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                     self.abort("Expected `}`")
-                return ParsedStructWord(token, taip, words)
-            return ParsedUnnamedStructWord(token, taip)
+                return Parser.StructWord(token, taip, words)
+            return Parser.UnnamedStructWord(token, taip)
         if token.ty == TokenType.MATCH:
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
                 self.abort("Expected `{`")
-            cases: List[ParsedMatchCase] = []
+            cases: List[Parser.MatchCase] = []
             while True:
                 next = self.peek(skip_ws=True)
                 if next is None or next.ty == TokenType.RIGHT_BRACE:
                     self.advance(skip_ws=True)
-                    return ParsedMatchWord(token, cases, None)
+                    return Parser.MatchWord(token, cases, None)
                 case = self.advance(skip_ws=True)
                 if case is None or case.ty != TokenType.CASE:
                     self.abort("expected `case`")
@@ -989,8 +1022,8 @@ class Parser:
                     brace = self.advance(skip_ws=True)
                     if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                         self.abort("Expected `}`")
-                    return ParsedMatchWord(token, cases, words)
-                cases.append(ParsedMatchCase(next, case_name, words))
+                    return Parser.MatchWord(token, cases, words)
+                cases.append(Parser.MatchCase(next, case_name, words))
         if token.ty == TokenType.LEFT_BRACKET:
             comma = self.advance(skip_ws=True)
             if comma is None or comma.ty != TokenType.COMMA:
@@ -999,14 +1032,14 @@ class Parser:
             if number_or_close is None or (number_or_close.ty != TokenType.NUMBER and number_or_close.ty != TokenType.RIGHT_BRACKET):
                 self.abort("Expected `,` or `]`")
             if number_or_close.ty == TokenType.RIGHT_BRACKET:
-                return ParsedTupleUnpackWord(token)
+                return Parser.TupleUnpackWord(token)
             close = self.advance(skip_ws=True)
             if close is None or close.ty != TokenType.RIGHT_BRACKET:
                 self.abort("Expected `]`")
-            return ParsedTupleMakeWord(token, number_or_close)
+            return Parser.TupleMakeWord(token, number_or_close)
         self.abort("Expected word")
 
-    def parse_call_word(self, generic_parameters: List[Token], token: Token) -> ParsedCallWord | ParsedForeignCallWord:
+    def parse_call_word(self, generic_parameters: List[Token], token: Token) -> 'Parser.CallWord | Parser.ForeignCallWord':
         next = self.peek(skip_ws=False)
         if next is not None and next.ty == TokenType.COLON:
             module = token
@@ -1016,10 +1049,10 @@ class Parser:
                 self.abort("Expected an identifier")
             next = self.peek()
             generic_arguments = self.parse_generic_arguments(generic_parameters) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
-            return ParsedForeignCallWord(module, name, generic_arguments)
+            return Parser.ForeignCallWord(module, name, generic_arguments)
         name = token
         generic_arguments = self.parse_generic_arguments(generic_parameters) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
-        return ParsedCallWord(name, generic_arguments)
+        return Parser.CallWord(name, generic_arguments)
 
     def parse_field_accesses(self) -> List[Token]:
         fields = []
@@ -1034,7 +1067,7 @@ class Parser:
             fields.append(token)
         return fields
 
-    def parse_function_signature(self) -> ParsedFunctionSignature:
+    def parse_function_signature(self) -> 'Parser.FunctionSignature':
         function_ident = self.advance(skip_ws=True)
         if function_ident is None or function_ident.ty != TokenType.IDENT:
             self.abort("Expected identifier as function name")
@@ -1072,7 +1105,7 @@ class Parser:
                 self.abort("Expected `:` after function parameter name")
 
             parameter_type = self.parse_type(generic_parameters)
-            parameters.append(ParsedNamedType(parameter_name, parameter_type))
+            parameters.append(Parser.NamedType(parameter_name, parameter_type))
             token = self.advance(skip_ws=True)
             if token is not None and token.ty == TokenType.RIGHT_PAREN:
                 break
@@ -1091,7 +1124,7 @@ class Parser:
                     break
                 self.advance(skip_ws=True) # skip the `,`
 
-        return ParsedFunctionSignature(function_export_name, function_ident, generic_parameters, parameters, returns)
+        return Parser.FunctionSignature(function_export_name, function_ident, generic_parameters, parameters, returns)
 
     def parse_triangle_listed[T](self, elem: Callable[['Parser'], T]) -> List[T]:
         token = self.advance(skip_ws=True)
@@ -1126,7 +1159,7 @@ class Parser:
         next = self.peek(skip_ws=False)
         return self.parse_triangle_listed(parse_ident) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
 
-    def parse_struct_type(self, token: Token | None, generic_parameters: List[Token]) -> ParsedStructType | ParsedForeignType:
+    def parse_struct_type(self, token: Token | None, generic_parameters: List[Token]) -> 'Parser.StructType | Parser.ForeignType':
         if token is None or token.ty != TokenType.IDENT:
             self.abort("Expected an identifer as struct name")
         next = self.peek(skip_ws=True)
@@ -1136,12 +1169,12 @@ class Parser:
             struct_name = self.advance(skip_ws=True)
             if struct_name is None or struct_name.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as struct name")
-            return ParsedForeignType(module, struct_name, self.parse_generic_arguments(generic_parameters))
+            return Parser.ForeignType(module, struct_name, self.parse_generic_arguments(generic_parameters))
         else:
             struct_name = token
             if struct_name is None or struct_name.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as struct name")
-            return ParsedStructType(struct_name, self.parse_generic_arguments(generic_parameters))
+            return Parser.StructType(struct_name, self.parse_generic_arguments(generic_parameters))
 
     def parse_type(self, generic_parameters: List[Token]) -> ParsedType:
         token = self.advance(skip_ws=True)
@@ -1156,7 +1189,7 @@ class Parser:
         if token.ty == TokenType.BOOL:
             return PrimitiveType.BOOL
         if token.ty == TokenType.DOT:
-            return ParsedPtrType(self.parse_type(generic_parameters))
+            return Parser.PtrType(self.parse_type(generic_parameters))
         if token.ty == TokenType.IDENT:
             for generic_index, lexeme in enumerate(map(lambda t: t.lexeme, generic_parameters)):
                 if lexeme == token.lexeme:
@@ -1191,7 +1224,7 @@ class Parser:
                 comma = self.advance(skip_ws=True)
                 if comma is None or comma.ty != TokenType.COMMA:
                     self.abort("Expected `,` in return list of function type.")
-            return ParsedFunctionType(token, args, rets)
+            return Parser.FunctionType(token, args, rets)
         if token.ty == TokenType.LEFT_BRACKET:
             items = []
             while True:
@@ -1206,7 +1239,7 @@ class Parser:
                 comma = next
                 if comma is None or comma.ty != TokenType.COMMA:
                     self.abort("Expected `,` in tuple type.")
-            return ParsedTupleType(token, items)
+            return Parser.TupleType(token, items)
         self.abort("Expected type")
 
 @dataclass
@@ -1887,7 +1920,7 @@ class Lazy[T]:
 
 sys_stdin = Lazy(lambda: sys.stdin.read())
 
-def load_recursive(modules: Dict[str, ParsedModule], path: str, stdin: str | None = None, import_stack: List[str]=[]):
+def load_recursive(modules: Dict[str, Parser.Module], path: str, stdin: str | None = None, import_stack: List[str]=[]):
     if path == "-":
         file = stdin if stdin is not None else sys_stdin.get()
     else:
@@ -1912,8 +1945,8 @@ def load_recursive(modules: Dict[str, ParsedModule], path: str, stdin: str | Non
         load_recursive(modules, p, stdin, import_stack)
         import_stack.pop()
 
-def determine_compilation_order(unprocessed: List[ParsedModule]) -> List[ParsedModule]:
-    ordered: List[ParsedModule] = []
+def determine_compilation_order(unprocessed: List[Parser.Module]) -> List[Parser.Module]:
+    ordered: List[Parser.Module] = []
     while len(unprocessed) > 0:
         i = 0
         while i < len(unprocessed):
@@ -2173,7 +2206,7 @@ class FunctionResolver:
     module_resolver: 'ModuleResolver'
     signatures: List[ResolvedFunctionSignature]
     type_definitions: List[ResolvedTypeDefinition]
-    function: ParsedFunction
+    function: Parser.Function
     signature: ResolvedFunctionSignature
 
     def abort(self, token: Token, message: str) -> NoReturn:
@@ -2209,7 +2242,7 @@ class FunctionResolver:
             case NumberWord():
                 stack.append(PrimitiveType.I32)
                 return (word, False)
-            case ParsedStringWord(token, string):
+            case Parser.StringWord(token, string):
                 stack.append(ResolvedPtrType(PrimitiveType.I32))
                 stack.append(PrimitiveType.I32)
                 offset = self.module_resolver.data.find(string)
@@ -2217,14 +2250,14 @@ class FunctionResolver:
                     offset = len(self.module_resolver.data)
                     self.module_resolver.data.extend(string)
                 return (StringWord(token, offset, len(string)), False)
-            case ParsedCastWord(token, parsed_taip):
+            case Parser.CastWord(token, parsed_taip):
                 source_type = stack.pop()
                 if source_type is None:
                     self.abort(token, "expected a non-empty stack")
                 resolved_type = self.module_resolver.resolve_type(parsed_taip)
                 stack.append(resolved_type)
                 return (ResolvedCastWord(token, source_type, resolved_type), False)
-            case ParsedIfWord(token, parsed_if_words, parsed_else_words):
+            case Parser.IfWord(token, parsed_if_words, parsed_else_words):
                 if len(stack) == 0 or stack[-1] != PrimitiveType.BOOL:
                     self.abort(token, "expected a boolean on stack")
                 stack.pop()
@@ -2269,7 +2302,7 @@ class FunctionResolver:
                     stack.apply(else_stack)
                 diverges = if_words_diverge and else_words_diverge
                 return (ResolvedIfWord(token, if_parameters, if_returns, if_words, else_words, diverges), diverges)
-            case ParsedLoopWord(token, parsed_words, parsed_annotation):
+            case Parser.LoopWord(token, parsed_words, parsed_annotation):
                 loop_stack = stack.make_child()
                 loop_env = Env(context.env)
                 loop_break_stacks: List[BreakStack] = []
@@ -2294,7 +2327,7 @@ class FunctionResolver:
                     returns = annotation.returns if annotation is not None else loop_stack.stack
                     stack.apply(loop_stack)
                 return (ResolvedLoopWord(token, words, parameters, returns, diverges), diverges)
-            case ParsedBlockWord(token, parsed_words, parsed_annotation):
+            case Parser.BlockWord(token, parsed_words, parsed_annotation):
                 block_stack = stack.make_child()
                 block_env = Env(context.env)
                 block_break_stacks: List[BreakStack] = []
@@ -2326,7 +2359,7 @@ class FunctionResolver:
                     returns = block_stack.stack
                     stack.apply(block_stack)
                 return (ResolvedBlockWord(token, words, parameters, returns), diverges)
-            case ParsedCallWord(name):
+            case Parser.CallWord(name):
                 if name.lexeme in INTRINSICS:
                     intrinsic = INTRINSICS[name.lexeme]
                     resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
@@ -2335,18 +2368,18 @@ class FunctionResolver:
                 signature = self.module_resolver.get_signature(resolved_call_word.function)
                 self.type_check_call(stack, resolved_call_word.name, resolved_call_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_call_word, False)
-            case ParsedForeignCallWord(name):
+            case Parser.ForeignCallWord(name):
                 resolved_word = self.resolve_foreign_call_word(word)
                 signature = self.module_resolver.get_signature(resolved_word.function)
                 self.type_check_call(stack, name, resolved_word.generic_arguments, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns)
                 return (resolved_word, False)
-            case ParsedGetWord(token, fields):
+            case Parser.GetWord(token, fields):
                 (var_taip, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_taip, fields)
                 resolved_taip = var_taip if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 stack.append(resolved_taip)
                 return (ResolvedGetWord(token, local, var_taip, resolved_fields, resolved_taip), False)
-            case ParsedInitWord(name):
+            case Parser.InitWord(name):
                 if context.struct_context is not None and name.lexeme in context.struct_context.fields:
                     field = context.struct_context.fields.pop(name.lexeme)
                     field = FunctionResolver.resolve_generic(context.struct_context.generic_arguments)(field)
@@ -2358,7 +2391,7 @@ class FunctionResolver:
                 named_taip = ResolvedNamedType(name, taip)
                 local_id = context.env.insert(ResolvedLocal.make(named_taip))
                 return (ResolvedInitWord(name, local_id, taip), False)
-            case ParsedRefWord(token, fields):
+            case Parser.RefWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 if all(not isinstance(f.source_taip, ResolvedPtrType) for f in resolved_fields):
@@ -2373,13 +2406,13 @@ class FunctionResolver:
                 res_type = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 stack.append(ResolvedPtrType(res_type))
                 return (ResolvedRefWord(token, local, resolved_fields), False)
-            case ParsedSetWord(token, fields):
+            case Parser.SetWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
                 self.expect_stack(token, stack, [expected_taip])
                 return (ResolvedSetWord(token, local, resolved_fields), False)
-            case ParsedStoreWord(token, fields):
+            case Parser.StoreWord(token, fields):
                 (var_type, local) = self.resolve_var_name(context.env, token)
                 resolved_fields = self.resolve_fields(var_type, fields)
                 expected_taip = var_type if len(resolved_fields) == 0 else resolved_fields[-1].target_taip
@@ -2387,21 +2420,21 @@ class FunctionResolver:
                     self.abort(word.token, "`=>` can only store into ptr types")
                 self.expect_stack(token, stack, [expected_taip.child])
                 return (ResolvedStoreWord(token, local, resolved_fields), False)
-            case ParsedFunRefWord(call):
+            case Parser.FunRefWord(call):
                 match call:
-                    case ParsedCallWord(name, _):
+                    case Parser.CallWord(name, _):
                         resolved_call_word = self.resolve_call_word(call)
                         signature = self.module_resolver.get_signature(resolved_call_word.function)
                         stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
                         return (ResolvedFunRefWord(resolved_call_word), False)
-                    case ParsedForeignCallWord(name):
+                    case Parser.ForeignCallWord(name):
                         resolved_foreign_call_word = self.resolve_foreign_call_word(call)
                         signature = self.module_resolver.get_signature(resolved_foreign_call_word.function)
                         stack.append(ResolvedFunctionType(name, list(map(lambda nt: nt.taip, signature.parameters)), signature.returns))
                         return (ResolvedFunRefWord(resolved_foreign_call_word), False)
                     case other:
                         assert_never(other)
-            case ParsedLoadWord(token):
+            case Parser.LoadWord(token):
                 if len(stack) == 0:
                     self.abort(token, "expected a non-empty stack")
                 top = stack.pop()
@@ -2423,10 +2456,10 @@ class FunctionResolver:
                     self.abort(token, "`break` can only be used inside of blocks and loops")
                 context.break_stacks.append(BreakStack(token, dump, context.reachable))
                 return (word, True)
-            case ParsedSizeofWord(token, parsed_taip):
+            case Parser.SizeofWord(token, parsed_taip):
                 stack.append(PrimitiveType.I32)
                 return (ResolvedSizeofWord(token, self.module_resolver.resolve_type(parsed_taip)), False)
-            case ParsedGetFieldWord(token, fields):
+            case Parser.GetFieldWord(token, fields):
                 taip = stack.pop()
                 if taip is None:
                     self.abort(word.token, "GetField expected a struct on the stack")
@@ -2437,7 +2470,7 @@ class FunctionResolver:
                 else:
                     stack.append(resolved_fields[-1].target_taip)
                 return (ResolvedGetFieldWord(token, resolved_fields, on_ptr), False)
-            case ParsedIndirectCallWord(token):
+            case Parser.IndirectCallWord(token):
                 if len(stack) == 0:
                     self.abort(token, "`->` expected a function on the stack")
                 function_type = stack.pop()
@@ -2445,7 +2478,7 @@ class FunctionResolver:
                     self.abort(token, "`->` expected a function on the stack")
                 self.type_check_call(stack, token, None, function_type.parameters, function_type.returns)
                 return (ResolvedIndirectCallWord(token, function_type), False)
-            case ParsedStructWord(token, taip, parsed_words):
+            case Parser.StructWord(token, taip, parsed_words):
                 resolved_struct_taip = self.module_resolver.resolve_struct_type(taip)
                 struct = self.module_resolver.get_type_definition(resolved_struct_taip.struct)
                 if isinstance(struct, ResolvedVariant):
@@ -2459,7 +2492,7 @@ class FunctionResolver:
                     self.abort(token, error_message)
                 stack.append(resolved_struct_taip)
                 return (ResolvedStructWord(token, resolved_struct_taip, words), diverges)
-            case ParsedUnnamedStructWord(token, taip):
+            case Parser.UnnamedStructWord(token, taip):
                 resolved_struct_taip = self.module_resolver.resolve_struct_type(taip)
                 struct = self.module_resolver.get_type_definition(resolved_struct_taip.struct)
                 if isinstance(struct, ResolvedVariant):
@@ -2468,7 +2501,7 @@ class FunctionResolver:
                 self.expect_stack(token, stack, struct_field_types)
                 stack.append(resolved_struct_taip)
                 return (ResolvedUnnamedStructWord(token, resolved_struct_taip), False)
-            case ParsedVariantWord(token, taip, case_name):
+            case Parser.VariantWord(token, taip, case_name):
                 resolved_variant_taip = self.module_resolver.resolve_struct_type(taip)
                 variant = self.module_resolver.get_type_definition(resolved_variant_taip.struct)
                 assert(isinstance(variant, ResolvedVariant))
@@ -2484,7 +2517,7 @@ class FunctionResolver:
                     self.expect_stack(token, stack, [FunctionResolver.resolve_generic(resolved_variant_taip.generic_arguments)(case_taip)])
                 stack.append(resolved_variant_taip)
                 return (ResolvedVariantWord(token, tag, resolved_variant_taip), False)
-            case ParsedMatchWord(token, cases, default):
+            case Parser.MatchWord(token, cases, default):
                 resolved_cases: List[ResolvedMatchCase] = []
                 match_diverges = True
                 arg = stack.pop()
@@ -2574,7 +2607,7 @@ class FunctionResolver:
                     self.abort(token, error_message)
                 match_diverges = match_diverges
                 return (ResolvedMatchWord(token, arg, by_ref, resolved_cases, default_case, parameters, returns), match_diverges)
-            case ParsedTupleMakeWord(token, num_items_token):
+            case Parser.TupleMakeWord(token, num_items_token):
                 num_items = int(num_items_token.lexeme)
                 items = []
                 for _ in range(num_items):
@@ -2585,7 +2618,7 @@ class FunctionResolver:
                 items.reverse()
                 stack.append(ResolvedTupleType(token, items))
                 return (ResolvedTupleMakeWord(token, ResolvedTupleType(token, items)), False)
-            case ParsedTupleUnpackWord(token):
+            case Parser.TupleUnpackWord(token):
                 tupl = stack.pop()
                 if tupl is None or not isinstance(tupl, ResolvedTupleType):
                     self.abort(token, "expected a tuple on the stack")
@@ -2600,7 +2633,7 @@ class FunctionResolver:
             error_message += f"\n\t{break_stack.token.line}:{break_stack.token.column} {listtostr(break_stack.types, format_resolved_type)}"
         return error_message
 
-    def resolve_block_annotation(self, annotation: ParsedBlockAnnotation) -> BlockAnnotation:
+    def resolve_block_annotation(self, annotation: Parser.BlockAnnotation) -> BlockAnnotation:
         return BlockAnnotation(
             list(map(self.module_resolver.resolve_type, annotation.parameters)),
             list(map(self.module_resolver.resolve_type, annotation.returns)),
@@ -2784,7 +2817,7 @@ class FunctionResolver:
                 abort()
         return list(reversed(popped))
 
-    def resolve_call_word(self, word: ParsedCallWord) -> ResolvedCallWord:
+    def resolve_call_word(self, word: Parser.CallWord) -> ResolvedCallWord:
         resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
         function = self.module_resolver.resolve_function_name(word.name)
         signature = self.module_resolver.get_signature(function)
@@ -2818,7 +2851,7 @@ class FunctionResolver:
                     return other
         return inner
 
-    def resolve_foreign_call_word(self, word: ParsedForeignCallWord) -> ResolvedCallWord:
+    def resolve_foreign_call_word(self, word: Parser.ForeignCallWord) -> ResolvedCallWord:
         resolved_generic_arguments = list(map(self.module_resolver.resolve_type, word.generic_arguments))
         for (qualifier, imps) in self.module_resolver.imports.items():
             if qualifier == word.module.lexeme:
@@ -2887,7 +2920,7 @@ def bag(items: Iterator[Tuple[K, V]]) -> Dict[K, List[V]]:
 class ModuleResolver:
     resolved_modules: Dict[int, ResolvedModule]
     resolved_modules_by_path: Dict[str, ResolvedModule]
-    module: ParsedModule
+    module: Parser.Module
     id: int
     imports: Dict[str, List[Import]] = field(default_factory=dict)
     resolved_type_definitions: List[ResolvedTypeDefinition] = field(default_factory=list)
@@ -2924,8 +2957,8 @@ class ModuleResolver:
         resolved_functions = list(map(lambda f: self.resolve_function(f[0], f[1]), zip(resolved_signatures, self.module.functions)))
         return ResolvedModule(self.module.path, self.id, resolved_imports, resolved_type_definitions, self.globals, resolved_functions, self.data)
 
-    def resolve_function(self, signature: ResolvedFunctionSignature, function: ParsedFunction | ParsedExtern) -> ResolvedFunction | ResolvedExtern:
-        if isinstance(function, ParsedExtern):
+    def resolve_function(self, signature: ResolvedFunctionSignature, function: Parser.Function | Parser.Extern) -> ResolvedFunction | ResolvedExtern:
+        if isinstance(function, Parser.Extern):
             return ResolvedExtern(function.module, function.name, self.resolve_function_signature(function.signature))
         return FunctionResolver(self, self.signatures, self.resolved_type_definitions, function, signature).resolve()
 
@@ -2940,10 +2973,10 @@ class ModuleResolver:
                         return item.handle
         self.abort(name, f"function {name.lexeme} not found")
 
-    def resolve_global(self, globl: ParsedGlobal) -> ResolvedGlobal:
+    def resolve_global(self, globl: Parser.Global) -> ResolvedGlobal:
         return ResolvedGlobal(ResolvedNamedType(globl.name, self.resolve_type(globl.taip)))
 
-    def resolve_import(self, imp: ParsedImport) -> Import:
+    def resolve_import(self, imp: Parser.Import) -> Import:
         if os.path.dirname(self.module.path) != "":
             path = os.path.normpath(os.path.dirname(self.module.path) + "/" + imp.file_path.lexeme[1:-1])
         else:
@@ -2972,29 +3005,29 @@ class ModuleResolver:
             self.abort(item, "not found")
         return Import(imp.token, imp.file_path.lexeme, imp.qualifier, imported_module.id, resolved_items)
 
-    def resolve_named_type(self, named_type: ParsedNamedType) -> ResolvedNamedType:
+    def resolve_named_type(self, named_type: Parser.NamedType) -> ResolvedNamedType:
         return ResolvedNamedType(named_type.name, self.resolve_type(named_type.taip))
 
     def resolve_type(self, taip: ParsedType) -> ResolvedType:
         match taip:
             case PrimitiveType():
                 return taip
-            case ParsedPtrType(child):
+            case Parser.PtrType(child):
                 return ResolvedPtrType(self.resolve_type(child))
             case GenericType():
                 return taip
-            case ParsedFunctionType(token, parsed_args, parsed_rets):
+            case Parser.FunctionType(token, parsed_args, parsed_rets):
                 args = list(map(self.resolve_type, parsed_args))
                 rets = list(map(self.resolve_type, parsed_rets))
                 return ResolvedFunctionType(token, args, rets)
-            case ParsedTupleType(token, items):
+            case Parser.TupleType(token, items):
                 return ResolvedTupleType(token, list(map(self.resolve_type, items)))
             case struct_type:
                 return self.resolve_struct_type(struct_type)
 
-    def resolve_struct_type(self, taip: ParsedStructType | ParsedForeignType) -> ResolvedStructType:
+    def resolve_struct_type(self, taip: Parser.StructType | Parser.ForeignType) -> ResolvedStructType:
         match taip:
-            case ParsedStructType(name, generic_arguments):
+            case Parser.StructType(name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
                 struct_handle = self.resolve_struct_name(name)
                 if struct_handle.module == self.id:
@@ -3004,7 +3037,7 @@ class ModuleResolver:
                 if len(generic_parameters) != len(generic_arguments):
                     self.abort(name, f"expected {len(generic_parameters)} generic arguments, not {len(generic_arguments)}")
                 return ResolvedStructType(name, struct_handle, resolved_generic_arguments)
-            case ParsedForeignType(module, name, generic_arguments):
+            case Parser.ForeignType(module, name, generic_arguments):
                 resolved_generic_arguments = list(map(self.resolve_type, generic_arguments))
                 for qualifier, imps in self.imports.items():
                     if qualifier == taip.module.lexeme:
@@ -3029,14 +3062,14 @@ class ModuleResolver:
 
     def resolve_type_definition(self, definition: ParsedTypeDefinition) -> ResolvedTypeDefinition:
         match definition:
-            case ParsedStruct():
+            case Parser.Struct():
                 return self.resolve_struct(definition)
-            case ParsedVariant():
+            case Parser.Variant():
                 return self.resolve_variant(definition)
             case other:
                 assert_never(other)
 
-    def resolve_struct(self, struct: ParsedStruct) -> ResolvedStruct:
+    def resolve_struct(self, struct: Parser.Struct) -> ResolvedStruct:
         return ResolvedStruct(struct.name, list(map(self.resolve_named_type, struct.fields)), struct.generic_parameters)
 
     def is_struct_recursive(self, struct_handle: ResolvedCustomTypeHandle, stack: List[ResolvedStruct | ResolvedVariant] = []) -> bool:
@@ -3049,10 +3082,10 @@ class ModuleResolver:
             return any(isinstance(case.taip, ResolvedStructType) and self.is_struct_recursive(case.taip.struct, stack + [struct]) for case in struct.cases)
         assert_never(struct)
 
-    def resolve_variant(self, variant: ParsedVariant) -> ResolvedVariant:
+    def resolve_variant(self, variant: Parser.Variant) -> ResolvedVariant:
         return ResolvedVariant(variant.name, list(map(lambda t: ResolvedVariantCase(t.name, self.resolve_type(t.taip) if t.taip is not None else None), variant.cases)), variant.generic_parameters)
 
-    def resolve_function_signature(self, signature: ParsedFunctionSignature) -> ResolvedFunctionSignature:
+    def resolve_function_signature(self, signature: Parser.FunctionSignature) -> ResolvedFunctionSignature:
         parameters = list(map(self.resolve_named_type, signature.parameters))
         rets = list(map(self.resolve_type, signature.returns))
         return ResolvedFunctionSignature(signature.export_name, signature.name, signature.generic_parameters, parameters, rets)
@@ -5364,7 +5397,7 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
     if mode == "parse":
         module = Parser(path, file, tokens).parse()
         return str(module)
-    modules: Dict[str, ParsedModule] = {}
+    modules: Dict[str, Parser.Module] = {}
     load_recursive(modules, os.path.normpath(path), stdin)
 
     resolved_modules: Dict[int, ResolvedModule] = {}
