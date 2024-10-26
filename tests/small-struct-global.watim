@@ -6,6 +6,7 @@ global ALLOCATOR: PageAllocator
 struct Page {
 	next: .Page
 	foo: i32
+    bar: i32
 }
 
 struct PageAllocator {
@@ -36,10 +37,10 @@ fn main "_start" () {
 		(local $locl-copy-spac:e i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
-		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $locl-copy-spac:e
-		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $p1
+		global.get $stac:k global.get $stac:k i32.const 12 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		global.get $stac:k global.get $stac:k i32.const 12 i32.add global.set $stac:k local.set $p1
 		local.get $locl-copy-spac:e i32.const 0 i32.add
-		local.get $p1 call $intrinsic:flip i32.const 8 memory.copy
+		local.get $p1 call $intrinsic:flip i32.const 12 memory.copy
 		local.get $p1
 		global.set $ALLOCATOR:0
 		i32.const 3

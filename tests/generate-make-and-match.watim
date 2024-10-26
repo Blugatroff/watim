@@ -30,21 +30,17 @@ compile
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
 	(func $0:main (export "_start")
-		(local $foo:2:0 i32)
+		(local $foo:2:0 i64)
 		(local $locl-copy-spac:e i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
-		global.get $stac:k global.get $stac:k i32.const 20 i32.add global.set $stac:k local.set $locl-copy-spac:e
-		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $foo:2:0
+		global.get $stac:k global.get $stac:k i32.const 12 i32.add global.set $stac:k local.set $locl-copy-spac:e
 		i32.const 1
 		i32.const 2
-		;; make Foo
-			local.get $locl-copy-spac:e i32.const 4 i32.add call $intrinsic:flip i32.store
-			local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:flip i32.store
-		local.get $locl-copy-spac:e i32.const 0 i32.add ;; make Foo end
-		local.get $locl-copy-spac:e i32.const 8 i32.add i32.const 0 i32.store ;; store tag
-		local.get $locl-copy-spac:e i32.const 12 i32.add call $intrinsic:flip i32.const 8 memory.copy ;; store value
-		local.get $locl-copy-spac:e i32.const 8 i32.add
+		call $intrinsic:pack-i32s ;; make Foo
+		local.get $locl-copy-spac:e i32.const 0 i32.add i32.const 0 i32.store ;; store tag
+		local.get $locl-copy-spac:e i32.const 4 i32.add call $intrinsic:flip-i64-i32 i64.store ;; store value
+		local.get $locl-copy-spac:e i32.const 0 i32.add ;; make FooOrI32.Foo
 		;; match on FooOrI32
 		call $intrinsic:dupi32 i32.load i32.const 1 i32.eq (if (param i32)
 		(then
@@ -53,10 +49,10 @@ compile
 		)
 		(else call $intrinsic:dupi32 i32.load i32.const 0 i32.eq (if (param i32)
 		(then
-			i32.const 4 i32.add
-			local.get $foo:2:0 call $intrinsic:flip i32.const 8 memory.copy
-			local.get $foo:2:0 i32.load offset=0
-			local.get $foo:2:0 i32.load offset=4
+			i32.const 4 i32.add i64.load
+			local.set $foo:2:0
+			local.get $foo:2:0 i32.wrap_i64
+			local.get $foo:2:0 i64.const 32 i64.shr_u i32.wrap_i64
 			i32.add
 			drop
 		)
@@ -68,4 +64,5 @@ compile
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
 	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
 	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+	(func $intrinsic:pack-i32s (param $a i32) (param $b i32) (result i64) local.get $a i64.extend_i32_u local.get $b i64.extend_i32_u i64.const 32 i64.shl i64.or)
 )

@@ -40,7 +40,7 @@ fn main "_start" () {
 		i32.const 0
 		local.get $foo call $intrinsic:flip i32.store
 		i32.const 21
-		local.get $foo i32.const 0 i32.add call $intrinsic:flip i32.store
+		local.get $foo call $intrinsic:flip i32.store
 		local.get $foo i32.load
 		call $0:id
 		;; GetField was no-op

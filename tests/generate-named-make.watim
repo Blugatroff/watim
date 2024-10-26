@@ -32,7 +32,7 @@ compile
 			local.get $locl-copy-spac:e i32.const 4 i32.add call $intrinsic:flip i32.store
 			i32.const 0
 			local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:flip i32.store
-		local.get $locl-copy-spac:e i32.const 0 i32.add ;; make Foo end
+		local.get $locl-copy-spac:e i32.const 0 i32.add i64.load ;; make Foo end
 		drop
 		local.get $stac:k global.set $stac:k
 	)

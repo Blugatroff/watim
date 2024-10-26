@@ -2,6 +2,7 @@
 struct Foo {
 	x: i32
 	y: i32
+	z: i32
 }
 fn baz "baz" (foo: Foo, quox: .i32) {
 	0 @i
@@ -23,7 +24,7 @@ fn baz "baz" (foo: Foo, quox: .i32) {
 		(local $locl-copy-spac:e i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
-		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $locl-copy-spac:e
+		global.get $stac:k global.get $stac:k i32.const 12 i32.add global.set $stac:k local.set $locl-copy-spac:e
 		i32.const 0
 		local.set $i
 		local.get $i
@@ -33,7 +34,7 @@ fn baz "baz" (foo: Foo, quox: .i32) {
 		local.get $quox
 		i32.load
 		drop
-		local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:dupi32 local.get $foo i32.const 8 memory.copy
+		local.get $locl-copy-spac:e i32.const 0 i32.add call $intrinsic:dupi32 local.get $foo i32.const 12 memory.copy
 		drop
 		local.get $stac:k global.set $stac:k
 	)

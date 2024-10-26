@@ -121,18 +121,16 @@ compile
 	(func $0:write (param $file i32) (param $ptr i32) (param $len i32) (result i32)
 		(local $iov i32)
 		(local $written i32)
-		(local $locl-copy-spac:e i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
-		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $locl-copy-spac:e
 		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $iov
 		global.get $stac:k global.get $stac:k i32.const 4 i32.add global.set $stac:k local.set $written
-		local.get $locl-copy-spac:e i32.const 0 i32.add
-		local.get $iov call $intrinsic:flip i32.const 8 memory.copy
+		i64.const 0
+		local.get $iov call $intrinsic:flip-i64-i32 i64.store
 		i32.const 0
 		local.get $written call $intrinsic:flip i32.store
 		local.get $ptr
-		local.get $iov i32.const 0 i32.add call $intrinsic:flip i32.store
+		local.get $iov call $intrinsic:flip i32.store
 		local.get $len
 		local.get $iov i32.const 4 i32.add call $intrinsic:flip i32.store
 		local.get $file
@@ -166,18 +164,16 @@ compile
 	(func $0:read (param $file i32) (param $buf-addr i32) (param $buf-size i32) (result i32)
 		(local $nread i32)
 		(local $iov i32)
-		(local $locl-copy-spac:e i32)
 		(local $stac:k i32)
 		global.get $stac:k local.set $stac:k
-		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $locl-copy-spac:e
 		global.get $stac:k global.get $stac:k i32.const 4 i32.add global.set $stac:k local.set $nread
 		global.get $stac:k global.get $stac:k i32.const 8 i32.add global.set $stac:k local.set $iov
 		i32.const 0
 		local.get $nread call $intrinsic:flip i32.store
-		local.get $locl-copy-spac:e i32.const 0 i32.add
-		local.get $iov call $intrinsic:flip i32.const 8 memory.copy
+		i64.const 0
+		local.get $iov call $intrinsic:flip-i64-i32 i64.store
 		local.get $buf-addr
-		local.get $iov i32.const 0 i32.add call $intrinsic:flip i32.store
+		local.get $iov call $intrinsic:flip i32.store
 		local.get $buf-size
 		local.get $iov i32.const 4 i32.add call $intrinsic:flip i32.store
 		local.get $file
@@ -204,11 +200,11 @@ compile
 		global.get $stac:k global.get $stac:k i32.const 32 i32.add global.set $stac:k local.set $buf-reversed
 		local.get $locl-copy-spac:e i32.const 0 i32.add
 		local.get $buf call $intrinsic:flip i32.const 32 memory.copy
-		local.get $buf i32.const 0 i32.add
+		local.get $buf
 		local.set $buf:0:1
 		local.get $locl-copy-spac:e i32.const 32 i32.add
 		local.get $buf-reversed call $intrinsic:flip i32.const 32 memory.copy
-		local.get $buf-reversed i32.const 0 i32.add
+		local.get $buf-reversed
 		local.set $buf-reversed:0:1
 		i32.const 0
 		local.set $l
@@ -408,7 +404,7 @@ compile
 		global.get $stac:k global.get $stac:k i32.const 32 i32.add global.set $stac:k local.set $buf
 		local.get $locl-copy-spac:e i32.const 0 i32.add
 		local.get $buf call $intrinsic:flip i32.const 32 memory.copy
-		local.get $buf i32.const 0 i32.add
+		local.get $buf
 		local.set $buf:0:1
 		i32.const 0
 		local.get $buf:0:1
@@ -453,6 +449,7 @@ compile
 		local.get $stac:k global.set $stac:k
 	)
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:flip-i64-i32 (param $a i64) (param $b i32) (result i32 i64) local.get $b local.get $a)
 	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
 	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
 )

@@ -24,7 +24,7 @@ fn main "_start" () {
 	(global $stac:k (mut i32) (i32.const 0))
 	(data (i32.const 0) "")
 	(func $0:foo (param $s i32)
-		local.get $s i32.const 0 i32.add
+		local.get $s
 		drop
 	)
 	(func $0:main (export "_start")
@@ -37,11 +37,11 @@ fn main "_start" () {
 		local.get $a call $intrinsic:flip i32.store
 		local.get $a i32.load
 		drop
-		local.get $a i32.load offset=0
+		local.get $a i32.load
 		drop
 		local.get $a
 		call $0:foo
-		local.get $a i32.load offset=0
+		local.get $a i32.load
 		call $0:proc_exit
 		local.get $stac:k global.set $stac:k
 	)
