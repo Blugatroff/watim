@@ -8,6 +8,42 @@ import os
 import unittest
 
 # =============================================================================
+#  Utils
+# =============================================================================
+
+def listtostr[T](seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
+    if len(seq) == 0:
+        return "[]"
+    s = "[\n" if multi_line else "["
+    for e in seq:
+        v = str(e) if tostr is None else tostr(e)
+        s += indent(v) if multi_line else v
+        s += ",\n" if multi_line else ", "
+    return s[0:-2] + "]" if multi_line else s[0:-2] + "]"
+
+@dataclass
+class Lazy[T]:
+    produce: Callable[[], T]
+    inner: T | None = None
+
+    def get(self) -> T:
+        if self.inner is not None:
+            return self.inner
+        v = self.produce()
+        self.inner = v
+        self.produce = lambda: v
+        return self.inner
+
+    def has_value(self) -> bool:
+        return self.inner is not None
+
+sys_stdin = Lazy(lambda: sys.stdin.read())
+
+@dataclass
+class Ref[T]:
+    value: T
+
+# =============================================================================
 #  Lexer
 # =============================================================================
 
@@ -1242,24 +1278,34 @@ class Parser:
             return Parser.TupleType(token, items)
         self.abort("Expected type")
 
-@dataclass
-class ImportItem:
-    name: Token
-    handle: 'ResolvedFunctionHandle | ResolvedCustomTypeHandle'
+def load_recursive(modules: Dict[str, Parser.Module], path: str, stdin: str | None = None, import_stack: List[str]=[]):
+    if path == "-":
+        file = stdin if stdin is not None else sys_stdin.get()
+    else:
+        with open(path, 'r') as reader:
+            file = reader.read()
+    tokens = Lexer(file).lex()
+    module = Parser(path, file, tokens).parse()
+    modules[path] = module
+    for imp in module.imports:
+        if os.path.dirname(path) != "":
+            p = os.path.normpath(os.path.dirname(path) + "/" + imp.file_path.lexeme[1:-1])
+        else:
+            p = os.path.normpath(imp.file_path.lexeme[1:-1])
+        if p in import_stack:
+            error_message = "Module import cycle detected: "
+            for a in import_stack:
+                error_message += f"{a} -> "
+            raise ParserException(path, file, imp.file_path, error_message)
+        if p in modules:
+            continue
+        import_stack.append(p)
+        load_recursive(modules, p, stdin, import_stack)
+        import_stack.pop()
 
-    def __str__(self) -> str:
-        return f"(ImportItem {self.name} {self.handle})"
-
-@dataclass
-class Import:
-    token: Token
-    file_path: str
-    qualifier: Token
-    module: int
-    items: List[ImportItem]
-
-    def __str__(self) -> str:
-        return f"(Import {self.token} {self.module} {self.file_path} {self.qualifier} {listtostr(self.items, multi_line=True)})"
+# =============================================================================
+#  Resolved Types
+# =============================================================================
 
 @dataclass
 class ResolvedPtrType:
@@ -1267,16 +1313,6 @@ class ResolvedPtrType:
 
     def __str__(self) -> str:
         return f"(Ptr {str(self.child)})"
-
-def listtostr[T](seq: Sequence[T], tostr: Callable[[T], str] | None = None, multi_line: bool = False) -> str:
-    if len(seq) == 0:
-        return "[]"
-    s = "[\n" if multi_line else "["
-    for e in seq:
-        v = str(e) if tostr is None else tostr(e)
-        s += indent(v) if multi_line else v
-        s += ",\n" if multi_line else ", "
-    return s[0:-2] + "]" if multi_line else s[0:-2] + "]"
 
 @dataclass(frozen=True, eq=True)
 class ResolvedCustomTypeHandle:
@@ -1322,37 +1358,6 @@ class ResolvedFunctionType:
 
     def __str__(self) -> str:
         return f"(FunType {self.token} {listtostr(self.parameters)} {listtostr(self.returns)})"
-
-@dataclass
-class ResolvedStruct:
-    name: Token
-    fields: List['ResolvedNamedType']
-    generic_parameters: List[Token]
-
-    def __str__(self) -> str:
-        return "(Struct\n" + indent(f"name={self.name},\ngeneric-parameters={listtostr(self.generic_parameters)},\nfields={listtostr(self.fields, multi_line=True)}") + ")"
-
-def format_maybe(v, format = None) -> str:
-    return "None" if v is None else (f"(Some {v})" if format is None else f"(Some {format(v)})")
-
-@dataclass
-class ResolvedVariantCase:
-    name: Token
-    taip: 'ResolvedType | None'
-
-    def __str__(self) -> str:
-        return f"(VariantCase {self.name} {format_maybe(self.taip)})"
-
-@dataclass
-class ResolvedVariant:
-    name: Token
-    cases: List[ResolvedVariantCase]
-    generic_parameters: List[Token]
-
-    def __str__(self) -> str:
-        return "(Variant\n" + indent(f"name={self.name},\ngeneric-parameters={indent_non_first(listtostr(self.generic_parameters))},\ncases={listtostr(self.cases, multi_line=True)}") + ")"
-
-ResolvedTypeDefinition = ResolvedStruct | ResolvedVariant
 
 ResolvedType = PrimitiveType | ResolvedPtrType | ResolvedTupleType | GenericType | ResolvedStructType | ResolvedFunctionType
 
@@ -1427,6 +1432,61 @@ class ResolvedNamedType:
     def __str__(self) -> str:
         return f"(NamedType {str(self.name)} {str(self.taip)})"
 
+
+# =============================================================================
+#  Resolved TopItems
+# =============================================================================
+
+@dataclass
+class ImportItem:
+    name: Token
+    handle: 'ResolvedFunctionHandle | ResolvedCustomTypeHandle'
+
+    def __str__(self) -> str:
+        return f"(ImportItem {self.name} {self.handle})"
+
+@dataclass
+class Import:
+    token: Token
+    file_path: str
+    qualifier: Token
+    module: int
+    items: List[ImportItem]
+
+    def __str__(self) -> str:
+        return f"(Import {self.token} {self.module} {self.file_path} {self.qualifier} {listtostr(self.items, multi_line=True)})"
+
+@dataclass
+class ResolvedStruct:
+    name: Token
+    fields: List['ResolvedNamedType']
+    generic_parameters: List[Token]
+
+    def __str__(self) -> str:
+        return "(Struct\n" + indent(f"name={self.name},\ngeneric-parameters={listtostr(self.generic_parameters)},\nfields={listtostr(self.fields, multi_line=True)}") + ")"
+
+def format_maybe(v, format = None) -> str:
+    return "None" if v is None else (f"(Some {v})" if format is None else f"(Some {format(v)})")
+
+@dataclass
+class ResolvedVariantCase:
+    name: Token
+    taip: 'ResolvedType | None'
+
+    def __str__(self) -> str:
+        return f"(VariantCase {self.name} {format_maybe(self.taip)})"
+
+@dataclass
+class ResolvedVariant:
+    name: Token
+    cases: List[ResolvedVariantCase]
+    generic_parameters: List[Token]
+
+    def __str__(self) -> str:
+        return "(Variant\n" + indent(f"name={self.name},\ngeneric-parameters={indent_non_first(listtostr(self.generic_parameters))},\ncases={listtostr(self.cases, multi_line=True)}") + ")"
+
+ResolvedTypeDefinition = ResolvedStruct | ResolvedVariant
+
 @dataclass
 class ResolvedFunctionSignature:
     export_name: Optional[Token]
@@ -1450,32 +1510,6 @@ class ResolvedGlobal:
     def __str__(self) -> str:
         return f"(Global {self.taip.name} {self.taip.taip} {self.was_reffed})"
 
-@dataclass
-class ResolvedFieldAccess:
-    name: Token
-    source_taip: ResolvedStructType | ResolvedPtrType
-    target_taip: ResolvedType
-    field_index: int
-
-    def __str__(self) -> str:
-        return f"(FieldAccess {self.name} {self.source_taip} {self.target_taip} {self.field_index})"
-
-@dataclass
-class ResolvedBody:
-    words: List['ResolvedWord']
-    locals: Dict['LocalId', 'ResolvedLocal']
-
-@dataclass
-class StringWord:
-    token: Token
-    offset: int
-    len: int
-
-@dataclass
-class ResolvedLoadWord:
-    token: Token
-    taip: ResolvedType
-
 @dataclass(frozen=True, eq=True)
 class GlobalId:
     module: int
@@ -1489,6 +1523,93 @@ class LocalId:
 
     def __str__(self) -> str:
         return f"(LocalId \"{self.name}\" {self.scope} {self.shadow})"
+@dataclass
+class ResolverException(Exception):
+    path: str
+    file: str
+    token: Token
+    message: str
+
+    def display(self) -> str:
+        if self.token is None:
+            lines = self.file.splitlines()
+            line = len(lines) + 1
+            column = len(lines[-1]) + 1 if len(lines) != 0 else 1
+        else:
+            line = self.token.line
+            column = self.token.column
+        return f"{self.path}:{line}:{column} {self.message}"
+
+@dataclass
+class ResolvedLocal:
+    name: Token
+    taip: ResolvedType
+    is_parameter: bool
+    was_reffed: bool = False
+
+    @staticmethod
+    def make(taip: ResolvedNamedType) -> 'ResolvedLocal':
+        return ResolvedLocal(taip.name, taip.taip, False)
+
+    @staticmethod
+    def make_parameter(taip: ResolvedNamedType) -> 'ResolvedLocal':
+        return ResolvedLocal(taip.name, taip.taip, True)
+
+    def __str__(self) -> str:
+        return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
+
+@dataclass
+class ResolvedBody:
+    words: List['ResolvedWord']
+    locals: Dict[LocalId, ResolvedLocal]
+
+@dataclass
+class ResolvedFunction:
+    signature: ResolvedFunctionSignature
+    body: ResolvedBody
+
+    def __str__(self) -> str:
+        s = "(Function\n"
+        s += f"  name={self.signature.name},\n"
+        s += f"  export={format_maybe(self.signature.export_name)},\n"
+        s += f"  signature={indent_non_first(str(self.signature))},\n"
+        s += f"  locals={indent_non_first(format_dict(self.body.locals))},\n"
+        s += f"  words={indent_non_first(listtostr(self.body.words, multi_line=True))}"
+        return s + ")"
+
+@dataclass
+class ResolvedExtern:
+    module: Token
+    name: Token
+    signature: ResolvedFunctionSignature
+
+    def __str__(self) -> str:
+        return f"(Extern {self.signature.name} {self.module.lexeme} {self.name.lexeme} {str(self.signature)})"
+
+# =============================================================================
+#  Resolved Words
+# =============================================================================
+
+@dataclass
+class ResolvedFieldAccess:
+    name: Token
+    source_taip: ResolvedStructType | ResolvedPtrType
+    target_taip: ResolvedType
+    field_index: int
+
+    def __str__(self) -> str:
+        return f"(FieldAccess {self.name} {self.source_taip} {self.target_taip} {self.field_index})"
+
+@dataclass
+class StringWord:
+    token: Token
+    offset: int
+    len: int
+
+@dataclass
+class ResolvedLoadWord:
+    token: Token
+    taip: ResolvedType
 
 @dataclass
 class ResolvedInitWord:
@@ -1663,6 +1784,11 @@ class ResolvedTupleUnpackWord:
     token: Token
     items: List[ResolvedType]
 
+
+# =============================================================================
+#  Resolved Intrinsics
+# =============================================================================
+
 class IntrinsicType(str, Enum):
     ADD = "ADD"
     STORE = "STORE"
@@ -1690,11 +1816,6 @@ class IntrinsicType(str, Enum):
     FLIP = "FLIP"
     UNINIT = "UNINIT"
     SET_STACK_SIZE = "SET_STACK_SIZE"
-
-@dataclass
-class ParsedIntrinsicWord:
-    ty: IntrinsicType
-    token: Token
 
 INTRINSICS: dict[str, IntrinsicType] = {
         "drop": IntrinsicType.DROP,
@@ -1863,28 +1984,9 @@ ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicD
 
 ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord | ResolvedTupleMakeWord | ResolvedTupleUnpackWord
 
-@dataclass
-class ResolvedFunction:
-    signature: ResolvedFunctionSignature
-    body: ResolvedBody
-
-    def __str__(self) -> str:
-        s = "(Function\n"
-        s += f"  name={self.signature.name},\n"
-        s += f"  export={format_maybe(self.signature.export_name)},\n"
-        s += f"  signature={indent_non_first(str(self.signature))},\n"
-        s += f"  locals={indent_non_first(format_dict(self.body.locals))},\n"
-        s += f"  words={indent_non_first(listtostr(self.body.words, multi_line=True))}"
-        return s + ")"
-
-@dataclass
-class ResolvedExtern:
-    module: Token
-    name: Token
-    signature: ResolvedFunctionSignature
-
-    def __str__(self) -> str:
-        return f"(Extern {self.signature.name} {self.module.lexeme} {self.name.lexeme} {str(self.signature)})"
+# =============================================================================
+#  Resolver / Typechecker
+# =============================================================================
 
 @dataclass
 class ResolvedModule:
@@ -1901,49 +2003,6 @@ class ResolvedModule:
         globals = { g.taip.name.lexeme: g for g in self.globals }
         functions = { f.signature.name.lexeme: f for f in self.functions }
         return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  custom-types={indent_non_first(format_dict(type_definitions))},\n  globals={indent_non_first(format_dict(globals))},\n  functions={indent_non_first(format_dict(functions))})"
-
-@dataclass
-class Lazy[T]:
-    produce: Callable[[], T]
-    inner: T | None = None
-
-    def get(self) -> T:
-        if self.inner is not None:
-            return self.inner
-        v = self.produce()
-        self.inner = v
-        self.produce = lambda: v
-        return self.inner
-
-    def has_value(self) -> bool:
-        return self.inner is not None
-
-sys_stdin = Lazy(lambda: sys.stdin.read())
-
-def load_recursive(modules: Dict[str, Parser.Module], path: str, stdin: str | None = None, import_stack: List[str]=[]):
-    if path == "-":
-        file = stdin if stdin is not None else sys_stdin.get()
-    else:
-        with open(path, 'r') as reader:
-            file = reader.read()
-    tokens = Lexer(file).lex()
-    module = Parser(path, file, tokens).parse()
-    modules[path] = module
-    for imp in module.imports:
-        if os.path.dirname(path) != "":
-            p = os.path.normpath(os.path.dirname(path) + "/" + imp.file_path.lexeme[1:-1])
-        else:
-            p = os.path.normpath(imp.file_path.lexeme[1:-1])
-        if p in import_stack:
-            error_message = "Module import cycle detected: "
-            for a in import_stack:
-                error_message += f"{a} -> "
-            raise ParserException(path, file, imp.file_path, error_message)
-        if p in modules:
-            continue
-        import_stack.append(p)
-        load_recursive(modules, p, stdin, import_stack)
-        import_stack.pop()
 
 def determine_compilation_order(unprocessed: List[Parser.Module]) -> List[Parser.Module]:
     ordered: List[Parser.Module] = []
@@ -1965,45 +2024,6 @@ def determine_compilation_order(unprocessed: List[Parser.Module]) -> List[Parser
                 continue
             ordered.append(unprocessed.pop(i))
     return ordered
-
-@dataclass
-class ResolverException(Exception):
-    path: str
-    file: str
-    token: Token
-    message: str
-
-    def display(self) -> str:
-        if self.token is None:
-            lines = self.file.splitlines()
-            line = len(lines) + 1
-            column = len(lines[-1]) + 1 if len(lines) != 0 else 1
-        else:
-            line = self.token.line
-            column = self.token.column
-        return f"{self.path}:{line}:{column} {self.message}"
-
-@dataclass
-class ResolvedLocal:
-    name: Token
-    taip: ResolvedType
-    is_parameter: bool
-    was_reffed: bool = False
-
-    @staticmethod
-    def make(taip: ResolvedNamedType) -> 'ResolvedLocal':
-        return ResolvedLocal(taip.name, taip.taip, False)
-
-    @staticmethod
-    def make_parameter(taip: ResolvedNamedType) -> 'ResolvedLocal':
-        return ResolvedLocal(taip.name, taip.taip, True)
-
-    def __str__(self) -> str:
-        return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
-
-@dataclass
-class Ref[T]:
-    value: T
 
 class Env:
     parent: 'Env | None'
