@@ -12,4 +12,3 @@ fn foo() -> i32 {
 -:2:2 break stack mismatch:
 	3:3 []
 	4:5 [i32]
-	6:2 [bool]
