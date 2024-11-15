@@ -32,6 +32,53 @@ fn tail<T>(list: .List<T>) -> Maybe<List<T>> {
     }
 }
 
+fn is-empty<T>(list: .List<T>) -> bool {
+    $list match {
+        case Empty -> { 1 1 = }
+        case _ -> { drop 0 1 = }
+    }
+}
+
+fn last<T>(list: .List<T>) -> Maybe<.T> {
+    make Maybe<.T>.None @last
+    loop {
+        $list match {
+            case Empty -> { $last break }
+            case Cons -> {
+                @cons
+                &cons.elem make Maybe<.T>.Some #last
+                $cons.next #list
+            }
+        }
+    }
+}
+
+fn all<T>(pred: (.T -> bool), list: .List<T>) -> bool {
+    loop {
+        $list match {
+            case Empty -> { 1 1 = break }
+            case Cons -> {
+                @cons
+                &cons.elem $pred -> not if {
+                    0 1 = break
+                }
+                $cons.next #list
+            }
+        }
+    }
+}
+
+fn skip<T>(list: .List<T>, n: i32) -> List<T> {
+    $n 0 = if {
+        $list ~
+    } else {
+        $list match {
+            case Empty -> { make List<T>.Empty }
+            case Cons -> { .next ~ $n 1 - skip<T> }
+        }
+    }
+}
+
 fn contains<T>(eq: (.T, .T -> bool), list: .List<T>, elem: .T) -> bool { block {
     loop {
         $list match {

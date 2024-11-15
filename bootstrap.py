@@ -107,6 +107,13 @@ class IndexedDict[K, V]:
     def index_of(self, key: K) -> int:
         return self.inner[key].value[1]
 
+    def __contains__(self, key: K) -> bool:
+        return key in self.inner
+
+    def __iter__(self) -> Iterable[K]:
+        for k in self.inner:
+            yield k
+
     def __getitem__(self, key: K) -> V:
         return self.inner[key].value[0]
 
@@ -1426,11 +1433,11 @@ class ResolvedCustomTypeHandle:
 @dataclass
 class ResolvedCustomTypeType:
     name: Token
-    struct: ResolvedCustomTypeHandle # TODO: rename this field to type_definition
+    type_definition: ResolvedCustomTypeHandle
     generic_arguments: List['ResolvedType']
 
     def __str__(self) -> str:
-        return f"(CustomType {self.struct.module} {self.struct.index} {listtostr(self.generic_arguments)})"
+        return f"(CustomType {self.type_definition.module} {self.type_definition.index} {listtostr(self.generic_arguments)})"
 
 @dataclass
 class ResolvedTupleType:
@@ -1457,7 +1464,9 @@ def resolved_type_eq(a: ResolvedType, b: ResolvedType):
     if isinstance(a, ResolvedPtrType) and isinstance(b, ResolvedPtrType):
         return resolved_type_eq(a.child, b.child)
     if isinstance(a, ResolvedCustomTypeType) and isinstance(b, ResolvedCustomTypeType):
-        return a.struct.module == b.struct.module and a.struct.index == b.struct.index and resolved_types_eq(a.generic_arguments, b.generic_arguments)
+        module_eq = a.type_definition.module == b.type_definition.module
+        index_eq  = a.type_definition.index == b.type_definition.index
+        return resolved_types_eq(a.generic_arguments, b.generic_arguments) if module_eq and index_eq else False
     if isinstance(a, ResolvedFunctionType) and isinstance(b, ResolvedFunctionType):
         if len(a.parameters) != len(b.parameters) or len(a.returns) != len(b.returns):
             return False
@@ -2055,13 +2064,17 @@ class ResolvedModule:
     path: str
     id: int
     imports: Dict[str, List[Import]]
-    type_definitions: IndexedDict[str, ResolvedCustomType] # TODO: rename to be same as in resolver.watim
+    custom_types: IndexedDict[str, ResolvedCustomType]
     globals: IndexedDict[str, ResolvedGlobal]
     functions: IndexedDict[str, ResolvedFunction | ResolvedExtern]
     data: bytes
 
     def __str__(self):
-        return f"(Module\n  imports={indent_non_first(format_dict(self.imports))},\n  custom-types={indent_non_first(str(self.type_definitions))},\n  globals={indent_non_first(str(self.globals))},\n  functions={indent_non_first(str(self.functions))})"
+        imports = indent_non_first(format_dict(self.imports))
+        custom_types = indent_non_first(str(self.custom_types))
+        globals = indent_non_first(str(self.globals))
+        functions = indent_non_first(str(self.functions))
+        return f"(Module\n  imports={imports},\n  custom-types={custom_types},\n  globals={globals},\n  functions={functions})"
 
 def determine_compilation_order(unprocessed: List[Parser.Module]) -> List[Parser.Module]:
     ordered: List[Parser.Module] = []
@@ -2368,7 +2381,7 @@ class TypeLookup:
         if isinstance(taip, ResolvedPtrType):
             return f".{self.type_pretty(taip.child)}"
         if isinstance(taip, ResolvedCustomTypeType):
-            return self.lookup(taip.struct).name.lexeme
+            return self.lookup(taip.type_definition).name.lexeme
         if isinstance(taip, ResolvedFunctionType):
             return f"({self.types_pretty(taip.parameters)} -> {self.types_pretty(taip.returns)})"
         if isinstance(taip, ResolvedTupleType):
@@ -2517,11 +2530,11 @@ class ResolveCtx:
                     for item in imp.items:
                         if isinstance(item.handle, ResolvedCustomTypeHandle) and item.name.lexeme == taip.name.lexeme:
                             return ResolvedCustomTypeType(taip.name, item.handle, generic_arguments)
-            assert(False)
+            self.abort(taip.name, "type not found")
         if isinstance(taip, Parser.ForeignType):
             for i,imp in enumerate(imports[taip.module.lexeme]):
                 module = self.resolved_modules.index(imp.module)
-                for j,custom_type in enumerate(module.type_definitions.values()):
+                for j,custom_type in enumerate(module.custom_types.values()):
                     if custom_type.name.lexeme == taip.name.lexeme:
                         assert(len(custom_type.generic_parameters) == len(generic_arguments))
                         return ResolvedCustomTypeType(taip.name, ResolvedCustomTypeHandle(imp.module, j), generic_arguments)
@@ -2568,13 +2581,13 @@ class ResolveCtx:
         if isinstance(taip, ResolvedStruct):
             for field in taip.fields:
                 if isinstance(field.taip, ResolvedCustomTypeType):
-                    if self.is_directly_recursive(type_lookup, field.taip.struct, [handle] + stack):
+                    if self.is_directly_recursive(type_lookup, field.taip.type_definition, [handle] + stack):
                         return True
             return False
         if isinstance(taip, ResolvedVariant):
             for case in taip.cases:
                 if isinstance(case.taip, ResolvedCustomTypeType):
-                    if self.is_directly_recursive(type_lookup, case.taip.struct, [handle] + stack):
+                    if self.is_directly_recursive(type_lookup, case.taip.type_definition, [handle] + stack):
                         return True
             return False
         assert_never(taip)
@@ -2738,6 +2751,8 @@ class WordCtx:
             taip = local.taip
             var_id: LocalId | GlobalId = local_id
         else:
+            if word.ident.lexeme not in self.globals:
+                self.abort(word.ident, f"var `{word.ident.lexeme}` not found")
             global_id = self.globals.index_of(word.ident.lexeme)
             globl = self.globals[word.ident.lexeme]
             def set_reffed():
@@ -2785,6 +2800,8 @@ class WordCtx:
         if local_and_id is not None:
             local,local_id = local_and_id
             return (local_id, local.taip)
+        if name.lexeme not in self.globals:
+            self.abort(name, f"local {name.lexeme} not found")
         global_id = self.globals.index_of(name.lexeme)
         globl = self.globals[name.lexeme]
         return (GlobalId(self.ctx.module_id, global_id), globl.taip)
@@ -2825,9 +2842,11 @@ class WordCtx:
                 if len(signature.generic_parameters) != len(resolved_generic_arguments):
                     self.ctx.generic_arguments_mismatch_error(word.ident, len(signature.generic_parameters), len(resolved_generic_arguments))
                 return ResolvedCallWord(word.ident, ResolvedFunctionHandle(imp.module, function_id), resolved_generic_arguments)
-            self.abort(word.ident, "function not found")
+            self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
         resolved_generic_arguments = [self.ctx.resolve_type(self.imports, taip) for taip in word.generic_arguments]
         function = self.find_function(word.ident)
+        if function is None:
+            self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
         assert(function is not None)
         signature = self.lookup_signature(function)
         if len(signature.generic_parameters) != len(resolved_generic_arguments):
@@ -2848,7 +2867,7 @@ class WordCtx:
 
     def resolve_make_struct(self, stack: Stack, word: Parser.UnnamedStructWord) -> Tuple[ResolvedWord, bool]:
         struct_type = self.ctx.resolve_custom_type(self.imports, word.taip)
-        struc = self.type_lookup.lookup(struct_type.struct)
+        struc = self.type_lookup.lookup(struct_type.type_definition)
         assert(not isinstance(struc, ResolvedVariant))
         self.expect_arguments(stack, word.token, struct_type.generic_arguments, struc.fields)
         stack.push(struct_type)
@@ -2856,12 +2875,12 @@ class WordCtx:
 
     def resolve_make_struct_named(self, stack: Stack, word: Parser.StructWord) -> Tuple[ResolvedWord, bool]:
         struct_type = self.ctx.resolve_custom_type(self.imports, word.taip)
-        struct = self.type_lookup.lookup(struct_type.struct)
+        struct = self.type_lookup.lookup(struct_type.type_definition)
         if isinstance(struct, ResolvedVariant):
             self.abort(word.token, "can only make struct types, not variants")
         outer_struct_lit_ctx = self.struct_lit_ctx
         self.struct_lit_ctx = StructLitContext(
-                struct_type.struct,
+                struct_type.type_definition,
                 struct_type.generic_arguments,
                 { field.name.lexeme: (i,field.taip) for i,field in enumerate(struct.fields) })
         words,diverges = self.resolve_words(stack, word.words)
@@ -3090,7 +3109,7 @@ class WordCtx:
             self.abort(word.token, "can only match n variants")
         generic_arguments = arg.generic_arguments
         variant_type = arg
-        variant = self.type_lookup.lookup(arg.struct)
+        variant = self.type_lookup.lookup(arg.type_definition)
         if not isinstance(variant, ResolvedVariant):
             self.abort(word.token, "can only match on variants")
         remaining_cases: List[str] = [case.name.lexeme for case in variant.cases]
@@ -3187,7 +3206,7 @@ class WordCtx:
 
     def resolve_make_variant(self, stack: Stack, word: Parser.VariantWord) -> Tuple[ResolvedWord, bool]:
         variant_type = self.ctx.resolve_custom_type(self.imports, word.taip)
-        variant = self.type_lookup.lookup(variant_type.struct)
+        variant = self.type_lookup.lookup(variant_type.type_definition)
         if not isinstance(variant, ResolvedVariant):
             self.abort(word.token, "can not make this type")
         tag: None | int = None
@@ -3492,10 +3511,9 @@ class WordCtx:
             unpointered = taip.child if isinstance(taip, ResolvedPtrType) else taip
             assert(isinstance(unpointered, ResolvedCustomTypeType))
             custom_type: ResolvedCustomTypeType = unpointered
-            type_definition = self.type_lookup.lookup(custom_type.struct)
+            type_definition = self.type_lookup.lookup(custom_type.type_definition)
             if isinstance(type_definition, ResolvedVariant):
-                assert(False) # can not acces fields of a variant
-
+                self.abort(field_name, "variants do not have fields")
             struct: ResolvedStruct = type_definition
             found_field = False
             for field_index,struct_field in enumerate(struct.fields):
@@ -3505,7 +3523,8 @@ class WordCtx:
                     taip = target_type
                     found_field = True
                     break
-            assert(found_field)
+            if not found_field:
+                self.abort(field_name, "field not found")
         return resolved
 
     def resolve_generic(self, generics: List[ResolvedType], taip: ResolvedType) -> ResolvedType:
@@ -3514,7 +3533,7 @@ class WordCtx:
         if isinstance(taip, ResolvedPtrType):
             return ResolvedPtrType(self.resolve_generic(generics, taip.child))
         if isinstance(taip, ResolvedCustomTypeType):
-            return ResolvedCustomTypeType(taip.name, taip.struct, self.resolve_generic_many(generics, taip.generic_arguments))
+            return ResolvedCustomTypeType(taip.name, taip.type_definition, self.resolve_generic_many(generics, taip.generic_arguments))
         if isinstance(taip, ResolvedFunctionType):
             return ResolvedFunctionType(
                 taip.token,
@@ -4416,7 +4435,7 @@ class Monomizer:
                 return StructFieldInitWord(token, self.monomize_type(taip, generics), field_copy_space_offset)
             case ResolvedVariantWord(token, case, resolved_variant_type):
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
-                (variant_handle, variant) = self.monomize_struct(resolved_variant_type.struct, this_generics)
+                (variant_handle, variant) = self.monomize_struct(resolved_variant_type.type_definition, this_generics)
                 offset = copy_space_offset.value
                 if variant.size() > 8:
                     copy_space_offset.value += variant.size()
@@ -4428,7 +4447,7 @@ class Monomizer:
                     monomized_cases.append(MatchCase(resolved_case.tag, words))
                 monomized_default_case = None if default_case is None else self.monomize_words(default_case, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
-                monomized_variant = self.monomize_struct(resolved_variant_type.struct, this_generics)[0]
+                monomized_variant = self.monomize_struct(resolved_variant_type.type_definition, this_generics)[0]
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
@@ -4471,12 +4490,12 @@ class Monomizer:
 
         if isinstance(field.source_taip, ResolvedCustomTypeType):
             source_taip: PtrType | StructType = self.monomize_struct_type(field.source_taip, generics)
-            resolved_struct = field.source_taip.struct
+            resolved_struct = field.source_taip.type_definition
             generic_arguments = field.source_taip.generic_arguments
         else:
             assert(isinstance(field.source_taip.child, ResolvedCustomTypeType))
             source_taip = PtrType(self.monomize_type(field.source_taip.child, generics))
-            resolved_struct = field.source_taip.child.struct
+            resolved_struct = field.source_taip.child.type_definition
             generic_arguments = field.source_taip.child.generic_arguments
         [_, struct] = self.monomize_struct(resolved_struct, list(map(lambda t: self.monomize_type(t, generics), generic_arguments)))
         assert(not isinstance(struct, Variant))
@@ -4532,7 +4551,7 @@ class Monomizer:
         handle_and_instance = self.lookup_struct(struct, generics)
         if handle_and_instance is not None:
             return handle_and_instance
-        s = self.modules.index(struct.module).type_definitions.index(struct.index)
+        s = self.modules.index(struct.module).custom_types.index(struct.index)
         if isinstance(s, ResolvedVariant):
             def cases() -> List[VariantCase]:
                 return [VariantCase(c.name, self.monomize_type(c.taip, generics) if c.taip is not None else None) for c in s.cases]
@@ -4579,7 +4598,7 @@ class Monomizer:
 
     def monomize_struct_type(self, taip: ResolvedCustomTypeType, generics: List[Type]) -> StructType:
         this_generics = list(map(lambda t: self.monomize_type(t, generics), taip.generic_arguments))
-        handle,struct = self.monomize_struct(taip.struct, this_generics)
+        handle,struct = self.monomize_struct(taip.type_definition, this_generics)
         return StructType(taip.name, handle, Lazy(lambda: struct.size()))
 
     def monomize_function_type(self, taip: ResolvedFunctionType, generics: List[Type]) -> FunctionType:
@@ -5461,10 +5480,11 @@ class WatGenerator:
                     else:
                         self.write(f"call $intrinsic:dupi32 i32.const {case.tag} i32.eq (if")
                     self.write_parameters(parameters)
-                    if variant.size() > 8 or by_ref or variant.size() <= 4:
-                        self.write(" (param i32)")
-                    else:
+                    variant_inhabits_i64 = variant.size() <= 8 and variant.size() > 4 and not by_ref
+                    if variant_inhabits_i64:
                         self.write(" (param i64)")
+                    else:
+                        self.write(" (param i32)")
 
                     self.write_returns(returns)
                     self.write("\n")
@@ -5484,6 +5504,8 @@ class WatGenerator:
                         else:
                             self.write("i64.const 32 i64.shr_u i32.wrap_i64")
                         self.write("\n")
+                    elif variant_inhabits_i64:
+                        self.write_line("i32.wrap_i64")
                     self.write_words(module, locals, case.words)
                     self.dedent()
                     self.write_line(")")
@@ -5527,6 +5549,7 @@ class WatGenerator:
                     self.write_indent()
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset + 4} i32.add ")
                     if case_taip.size() > 4 and case_taip.size() <= 8:
+                        self.flip_i64_i32_used = True
                         self.write("call $intrinsic:flip-i64-i32 ")
                     else:
                         self.write("call $intrinsic:flip ")
@@ -5624,8 +5647,6 @@ class WatGenerator:
                 case other:
                     assert_never(other)
         if not target_lives_in_memory and len(loads) == 0:
-            # The local does not live in linear memory, so the target_taip must also already be on the stack unpacked.
-            assert(target_taip.can_live_in_reg())
             if isinstance(local_id, LocalId):
                 self.write("local.set ")
             else:

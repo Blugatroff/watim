@@ -20,6 +20,7 @@ import "./env.watim" as Resolved (LocalId, LocalId-format, LocalId-eq)
 import "./resolver.watim" as Resolved (
     StringWord, StringWord-format,
     VarId, VarId-format,
+    fields-go-through-ptr,
 )
 
 // =============================================================================
@@ -1076,6 +1077,7 @@ struct SetLocal {
     name: Token
     var: VarId
     fields: Array<FieldAccess>
+    target-type: TypeId
 }
 fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt "(SetLocal " Fmt:write
@@ -1084,6 +1086,8 @@ fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt &self.var VarId-format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt " " Fmt:write
+    $fmt &self.target-type TypeId-format
     $fmt ")" Fmt:write
 }
 
@@ -1541,6 +1545,21 @@ fn UnpackTuple-format(fmt: .Formatter, self: .UnpackTuple) {
     $fmt ")" Fmt:write
 }
 
+struct Flip {
+    token: Token
+    lower: TypeId
+    upper: TypeId
+}
+fn Flip-format(fmt: .Formatter, self: .Flip) {
+    $fmt "(Flip " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.lower TypeId-format
+    $fmt " " Fmt:write
+    $fmt &self.upper TypeId-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case String -> StringWord
@@ -1555,7 +1574,7 @@ variant Word {
     case Drop -> Token
     case If -> If
     case Loop -> Loop
-    case Flip -> Token
+    case Flip -> Flip
     case Break -> Token
     case Block -> Block
     case Sizeof -> TypeId
@@ -1585,7 +1604,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Call -> { Call-format break }
         case Intrinsic -> { IntrinsicWord-format break }
         case Drop -> { $fmt "(Drop " Fmt:write Token-format $fmt ")" }
-        case Flip -> { $fmt "(Flip " Fmt:write Token-format $fmt ")" }
+        case Flip -> { Flip-format break }
         case Break -> { $fmt "(Break " Fmt:write Token-format $fmt ")" }
         case If -> { If-format break }
         case Loop -> { Loop-format break }
@@ -1637,6 +1656,7 @@ fn monomize-set-locl(ctx: .Ctx, word: .Resolved:SetLocal, generic-arguments: .Ar
         $word.name @name
         $word.var @var
         $ctx &word.fields $generic-arguments monomize-field-accesses @fields
+        $ctx &word.target-type $generic-arguments monomize-type @target-type
     }
     make Word.SetLocal
 }
@@ -1779,6 +1799,13 @@ fn monomize-sizeof(ctx: .Ctx, word: .Resolved:Sizeof, generic-arguments: .Array<
     $ctx &word.type $generic-arguments monomize-type make Word.Sizeof
 }
 
+fn monomize-flip(ctx: .Ctx, word: .Resolved:Flip, generic-arguments: .Array<TypeId>) -> Word {
+    $word.token
+    $ctx &word.lower $generic-arguments monomize-type
+    $ctx &word.upper $generic-arguments monomize-type
+    make Flip make Word.Flip
+}
+
 fn monomize-uninit(ctx: .Ctx, word: .Resolved:Uninit, generic-arguments: .Array<TypeId>) -> Word {
     $ctx &word.type $generic-arguments monomize-type
     0 not
@@ -1897,7 +1924,7 @@ fn monomize-word(ctx: .Ctx, word: .Resolved:Word, generic-arguments: .Array<Type
         case Loop -> { $generic-arguments monomize-lop }
         case Block -> { $generic-arguments monomize-blok }
         case Sizeof -> { $generic-arguments monomize-sizeof }
-        case Flip -> { flip drop ~ make Word.Flip }
+        case Flip -> { $generic-arguments monomize-flip }
         case Uninit -> { $generic-arguments monomize-uninit }
         case FieldInit -> { $generic-arguments monomize-field-init }
         case Load -> { $generic-arguments monomize-load }
@@ -1991,9 +2018,7 @@ fn field-offset(sizes: .Array<i32>, struc: .Struct, field-index: i32) -> i32 {
 }
 
 fn can-live-in-reg(sizes: .Array<i32>, type: TypeId) -> bool {
-    $sizes $type.index Array:get<i32> ~
-    4 // TODO: make this 8, because i64 could be used for small structs like ByteSlice 8
-    le
+    $sizes $type.index Array:get<i32> ~ 8 le
 }
 
 struct CopySpaceCtx {
@@ -2040,14 +2065,13 @@ fn word-measure-copy-space(word: .Word, ctx: .CopySpaceCtx, offset: .i32) { bloc
         case Struct -> { @word $word.type &word.copy-space-offset }
         case StructNamed -> {
             @word
-            $ctx.sizes $word.type can-live-in-reg not if {
-                $offset ~ #word.copy-space-offset
-                $offset ~ $ctx.sizes $word.type type-size + =>offset
-                $ctx.struc-offset
-                $word.copy-space-offset #ctx.struc-offset
-                &word.words $ctx $offset words-measure-copy-space
-                #ctx.struc-offset
-            } break
+            $offset ~ #word.copy-space-offset
+            $offset ~ $ctx.sizes $word.type type-size + =>offset
+            $ctx.struc-offset
+            $word.copy-space-offset #ctx.struc-offset
+            &word.words $ctx $offset words-measure-copy-space
+            #ctx.struc-offset
+            break
         }
         case Variant -> { @word $word.type &word.copy-space-offset }
         case FieldInit -> {

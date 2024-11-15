@@ -1,0 +1,46 @@
+[== Stdin Compiler ==]
+struct ParseError {}
+variant Result<T> {
+    case Success -> T
+    case Error -> ParseError
+}
+fn main "_start" () {
+    make ParseError make Result<i32>.Error match {
+        case Error -> { drop }
+        case Success -> { drop }
+    }
+}
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:main (export "_start")
+		i32.const 0 ;; make ParseError
+		i64.extend_i32_u i64.const 32 i64.shl ;; store value
+		i64.const 1 ;; store tag
+		i64.or ;; make Result.Error
+		;; match on Result
+		call $intrinsic:dupi64 i32.wrap_i64 i32.const 1 i32.eq (if (param i64)
+		(then
+			i32.wrap_i64
+			drop
+		)
+		(else call $intrinsic:dupi64 i32.wrap_i64 i32.const 0 i32.eq (if (param i64)
+		(then
+			i64.const 32 i64.shr_u i32.wrap_i64
+			drop
+		)
+		(else unreachable))))
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:dupi64 (param $a i64) (result i64 i64) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)
+[== Status ==]
+0

@@ -158,6 +158,13 @@ fn slice<T>(self: .Array<T>, start: i32, len: i32) -> Array<T> {
     0 $start $len + $self.len le !i32 / drop
     $self.ptr $start sizeof(T) * + $len init-no-copy<T>
 }
+fn tail<T>(self: .Array<T>) -> Array<T> {
+    $self.len 0 = if {
+        $self ~
+    } else {
+        $self 1 $self.len 1 - slice<T>
+    }
+}
 fn pop-front<T>(self: .Array<T>) -> T {
     $self.len 0 = if {
         2 "Cannot pop from empty Array" IO:write-all IO:check

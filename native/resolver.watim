@@ -225,6 +225,7 @@ struct SetLocal {
     name: Token
     var: VarId
     fields: Array<FieldAccess>
+    target-type: Type
 }
 fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt "(SetLocal " Fmt:write
@@ -233,6 +234,8 @@ fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt &self.var VarId-format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt " " Fmt:write
+    $fmt &self.target-type Type-format
     $fmt ")" Fmt:write
 }
 
@@ -373,6 +376,21 @@ fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
     $fmt &self.token Token-format
     $fmt " " Fmt:write
     $fmt &self.intrinsic Intrinsic-format
+    $fmt ")" Fmt:write
+}
+
+struct Flip {
+    token: Token
+    lower: Type
+    upper: Type
+}
+fn Flip-format(fmt: .Formatter, self: .Flip) {
+    $fmt "(Flip " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.lower Type-format
+    $fmt " " Fmt:write
+    $fmt &self.upper Type-format
     $fmt ")" Fmt:write
 }
 
@@ -718,7 +736,7 @@ variant Word {
     case Sizeof -> Sizeof
     case Call -> Call
     case Drop -> Token
-    case Flip -> Token
+    case Flip -> Flip
     case Uninit -> Uninit
     case FieldInit -> FieldInit
     case StructWord -> StructWord
@@ -750,7 +768,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case Sizeof -> { $fmt flip Sizeof-format }
         case Call -> { $fmt flip Call-format }
         case Drop -> { $fmt "(Drop " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
-        case Flip -> { $fmt "(Flip " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+        case Flip -> { $fmt flip Flip-format }
         case Uninit -> { $fmt flip Uninit-format }
         case FieldInit -> { $fmt flip FieldInit-format }
         case StructWord -> { $fmt flip StructWord-format }
@@ -1052,7 +1070,6 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
                 } @signature
                 $ctx.temp Env:new @env
                 $ctx.temp &env &signature.parameters Env:insert-parameters
-                0 @i
                 Stack-new-root @stack
                 $ctx.temp $ctx $imports $env $type-lookup $signatures $globals WordCtx-new @ctx
                 $signature
@@ -1215,7 +1232,7 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
         case SetLocal -> { $ctx flip $stack flip resolve-set-local break }
         case Block -> { $ctx flip $stack flip resolve-blok break }
         case IndirectCall -> { $ctx flip $stack flip resolve-indirect-call break }
-        case Store -> { $ctx flip $stack flip resolve-store-local break }
+        case Store -> { $ctx flip $stack flip resolve-store break }
         case Load -> { $ctx flip $stack flip resolve-load break }
         case Match -> { $ctx flip $stack flip resolve-matsh break }
         case MakeVariant -> { $ctx flip $stack flip resolve-mk-varint break }
@@ -1615,7 +1632,6 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
                 // the synthesized false-branch made up of all subsequent words match.
                 $ctx &remaining-stack $true-parameters.len use drop
 
-                $false-env @remaining-env
                 $false-ctx @remaining-ctx
 
                 &remaining-ctx &remaining-stack $remaining-words resolve-words match {
@@ -1791,7 +1807,7 @@ fn resolve-lop(ctx: .WordCtx, stack: .Stack, word: .P:Loop) -> Result<[Word, boo
         case Some -> { .returns }
         case None -> {
             $loop-break-stacks.len 0 = if {
-                &loop-stack.positive
+                &loop-stack.positive // TODO: why not just Array:new<Type> ?
             } else {
                 &loop-break-stacks 0 Array:get<BreakStack> .types
             }
@@ -1828,7 +1844,7 @@ fn resolve-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bo
     make BreakStack {
         $token ~ @token
         $dump @types
-        $ctx.reachable @reachable
+        $ctx.reachable @reachable // TODO: ctx.reachable is never assigned anywhere, that seems wrong!
     }
     Array:push<BreakStack>
     $token ~ make Word.Break 1 1 = [,2]
@@ -1884,8 +1900,6 @@ fn resolve-blok(ctx: .WordCtx, stack: .Stack, word: .P:Block) -> Result<[Word, b
     } Array:clone<Type> @parameters
 
     $block-break-stacks.len 0 /= if {
-        &block-break-stacks 0 Array:get<BreakStack>.reachable ~ not #diverges
-
         &block-break-stacks 0 Array:get<BreakStack> @first
         $first.reachable not #diverges
 
@@ -1899,9 +1913,11 @@ fn resolve-blok(ctx: .WordCtx, stack: .Stack, word: .P:Block) -> Result<[Word, b
                 make Maybe<ResolveError>.None break
             }
             &first.types &break-stack.types Types-eq not if {
-                $ctx.persistent &block-break-stacks
-                $word.words.end $block-stack.positive $diverges make BreakStack
-                Array:push<BreakStack>
+                $block-end-is-reached if {
+                    $ctx.persistent &block-break-stacks
+                    $word.words.end $block-stack.positive $diverges make BreakStack
+                    Array:push<BreakStack>
+                }
                 $ctx &word.token &block-break-stacks brek-stack-mismatch-error
                 make Maybe<ResolveError>.Some break
             }
@@ -2467,10 +2483,11 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 $ctx $stack &word.name "drop expected two values" pop2 match {
                     case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                     case Success -> {}
-                } [,]
-                $ctx flip $stack flip push
-                $ctx flip $stack flip push
-                $word.name make Word.Flip 0 1 = [,2] make Result<[Word, bool], ResolveError>.Success break
+                } [,] @upper @lower
+                $ctx $stack $upper push
+                $ctx $stack $lower push
+                $word.name $lower $upper make Flip make Word.Flip
+                0 1 = [,2] make Result<[Word, bool], ResolveError>.Success break
             }
             $name-ptr $name-len "load8" Bytes:eq if {
                 $ctx $stack &word.name $ctx.ptr-I32 "`load8` expected [.i32]" expect1 match {
@@ -2660,7 +2677,9 @@ fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError>
             } @resolved-generic-arguments
             &word.name Token-lexeme @name-len @name-ptr
             $ctx &word.name find-function match {
-                case None -> { $ctx.ctx &word.name "function not found" abort<Call> break }
+                case None -> {
+                    $ctx.ctx &word.name function-not-found-error make Result<Call, ResolveError>.Error break
+                }
                 case Some -> {}
             } @function
             $ctx &function lookup-signature @signature
@@ -2684,7 +2703,7 @@ fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError>
             0 @i
             loop {
                 $imports.len $i = if {
-                    $ctx.ctx &word.name "function not found" abort<Call> break
+                    $ctx.ctx &word.name function-not-found-error make Result<Call, ResolveError>.Error break
                 }
                 $imports $i Array:get<Import> @imp
                 $ctx.ctx.resolved-modules $imp.module.index Array:get<Module> @module
@@ -2709,6 +2728,14 @@ fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError>
         }
     }
 } }
+
+fn function-not-found-error(ctx: .Ctx, name: .Token) -> ResolveError {
+    $ctx.temp Fmt:into-new-string @buf @fmt
+    &fmt "function `" Fmt:write
+    &fmt $name Token-lexeme Fmt:write
+    &fmt "` not found" Fmt:write
+    $ctx $name $buf ~ ByteArray:unpack error
+}
 
 fn find-function(ctx: .WordCtx, name: .Token) -> Maybe<FunctionHandle> {
     0 @i
@@ -3082,12 +3109,12 @@ fn resolve-set-local(ctx: .WordCtx, stack: .Stack, word: .P:SetLocal) -> Result<
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
         case None -> {}
     }
-    $word.ident $var-id $fields make SetLocal
+    $word.ident $var-id $fields $resolved-type ~ make SetLocal
     make Word.SetLocal 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }
 
-fn resolve-store-local(ctx: .WordCtx, stack: .Stack, word: .P:Store) -> Result<[Word, bool], ResolveError> { block {
+fn resolve-store(ctx: .WordCtx, stack: .Stack, word: .P:Store) -> Result<[Word, bool], ResolveError> { block {
     $ctx &word.name resolve-var-name match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
@@ -3113,6 +3140,25 @@ fn resolve-store-local(ctx: .WordCtx, stack: .Stack, word: .P:Store) -> Result<[
     make Result<[Word, bool], ResolveError>.Success
 } }
 
+fn fields-go-through-ptr(fields: .Array<FieldAccess>) -> bool {
+    0 @i
+    loop {
+        $i $fields.len = if {
+            // No field access went through a pointer,
+            0 1 = break
+        }
+        $fields $i Array:get<FieldAccess> .source-type match {
+            case Ptr -> {
+                drop
+                // At least one field access goes through a pointer,
+                1 1 = break
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+}
+
 fn resolve-ref-local(ctx: .WordCtx, stack: .Stack, word: .P:RefLocal) -> Result<[Word, bool], ResolveError> { block {
     &ctx.env &word.ident Env:lookup match {
         case None -> {
@@ -3137,24 +3183,10 @@ fn resolve-ref-local(ctx: .WordCtx, stack: .Stack, word: .P:RefLocal) -> Result<
         case Success -> {}
     } @fields
 
-    0 @i
-    loop {
-        $i $word.fields.len = if {
-            // No field access went through a pointer,
-            // therefore this local really was reffed.
-            1 1 = =>reffed-slot
-            break
-        }
-        &fields $i Array:get<FieldAccess> .source-type match {
-            case Ptr -> {
-                drop
-                // At least one field access goes through a pointer,
-                // therefore this isn't a real ref of the local!
-                break
-            }
-            case _ -> { drop }
-        }
-        $i 1 + #i
+    &fields fields-go-through-ptr not if {
+        // No field access went through a pointer,
+        // therefore this local really was reffed.
+        1 1 = =>reffed-slot
     }
 
     $fields.len 0 = if {
@@ -3179,7 +3211,7 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
                 @custom-type
                 $ctx.type-lookup &custom-type.type-definition lookup-type match {
                     case Variant -> {
-                        drop $ctx.ctx $field-name "can not access fields of a variant" abort<Array<FieldAccess>> break
+                        drop $ctx.ctx $field-name "variants do not have fields" abort<Array<FieldAccess>> break
                     }
                     case Struct -> {}
                 } $custom-type
@@ -3189,7 +3221,7 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
                     case Custom -> {
                         @custom-type
                         $ctx.type-lookup &custom-type.type-definition lookup-type match {
-                            case Variant -> { drop $ctx.ctx $field-name "TODO" abort<Array<FieldAccess>> break }
+                            case Variant -> { drop $ctx.ctx $field-name "variants do not have fields" abort<Array<FieldAccess>> break }
                             case Struct -> {}
                         }
                         $custom-type

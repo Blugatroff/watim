@@ -1,0 +1,13 @@
+[== Stdin Compiler ==]
+variant Foo {}
+fn foo(foo: Foo) {
+    $foo.x drop
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:3:10 variants do not have fields

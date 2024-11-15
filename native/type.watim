@@ -264,16 +264,7 @@ fn TupleType-format(fmt: .Formatter, self: .TupleType) {
     $fmt ")" Fmt:write
 }
 fn TupleType-pretty(fmt: .Formatter, thr: .TypeLookup, self: .TupleType) {
-    $fmt "[" Fmt:write
-    0 @i
-    loop {
-        $i $self.items.len = if { break }
-        $fmt $thr &self.items $i Array:get<Type> Type-pretty
-        $i 1 + #i
-        $i $self.items.len = if { break }
-        $fmt ", " Fmt:write
-    }
-    $fmt "]" Fmt:write
+    $fmt $thr &self.items Types-pretty-bracketed
 }
 fn TupleType-eq(a: .TupleType, b: .TupleType) -> bool {
     &a.items &b.items Types-eq
