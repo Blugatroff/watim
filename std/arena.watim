@@ -199,7 +199,7 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
         1 $self.size / drop // $self.size 0 /= assert
         loop {
             $self.used-pages $point.used-pages = if { break }
-            $self.used-pages.next 
+            $self.used-pages.next
             $self.used-pages free-page
             #self.used-pages
         }
@@ -219,8 +219,8 @@ global TEMP1: Arena
 global TEMP2: Arena
 
 fn init-temp() {
-    "Temp1" new @TEMP1
-    "Temp2" new @TEMP2
+    "Temp1" new #TEMP1
+    "Temp2" new #TEMP2
 }
 fn clear-temp() {
     &TEMP1 clear
