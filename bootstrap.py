@@ -57,7 +57,7 @@ def bag[K, V](items: Iterator[Tuple[K, V]]) -> Dict[K, List[V]]:
 def normalize_path(path: str) -> str:
     if not path.startswith("./"):
         path = "./" + path
-    path = path.replace("//", "/").replace("/./", "/").replace("./.", ".")
+    path = path.replace("//", "/").replace("/./", "/")
     splits = path.split("/")
     outsplits = []
     i = 0

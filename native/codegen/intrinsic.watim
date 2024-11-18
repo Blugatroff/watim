@@ -1,0 +1,116 @@
+import "../../std/fmt.watim" as Fmt (Formatter)
+
+import "../monomizer.watim" as Monomized (
+    Monomized, Module, ExternOrInstances,
+    Extern, Function, FunctionHandle, Signature, Local, Global,
+    Type, Key, Key-type, NamedTypeId, TypeId, TypeId-format,
+    CustomType, CustomType-name, FunType,
+    Variant, VariantCase, Struct,
+    Word, Intrinsic, FieldAccess, MatchCase,
+    I32-id, I64-id, type-size, field-offset, can-live-in-reg
+)
+
+import "./ctx.watim" as Ctx (Ctx, lookup-type)
+import "./common.watim" as Common (generate-store)
+
+fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block () -> {
+    $ctx.fmt $intrinsic match {
+        case Add -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.add" }
+            case _ -> { drop "i32.add" }
+        } }
+        case Sub -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.sub" }
+            case _ -> { drop "i32.sub" }
+        } }
+        case Eq -> {
+            ~ @type
+            $ctx.program $type lookup-type match {
+                case I64 -> { "i64.eq" }
+                case _ -> {
+                    0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
+                    drop "i32.eq"
+                }
+            }
+        }
+        case NotEq -> {
+            ~ @type
+            $ctx.program $type lookup-type match {
+                case I64 -> { "i64.ne" }
+                case _ -> {
+                    0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
+                    drop "i32.ne"
+                }
+            }
+        }
+        case Mod -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.rem_u" }
+            case I64 -> { "i64.rem_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Mul -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.mul" }
+            case I64 -> { "i64.mul" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Div -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.div_u" }
+            case I64 -> { "i64.div_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Lt -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.lt_u" }
+            case I64 -> { "i64.lt_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Gt -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.gt_u" }
+            case I64 -> { "i64.gt_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Le -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.le_u" }
+            case I64 -> { "i64.le_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Ge -> { $ctx.program flip ~ lookup-type match {
+            case I32 -> { "i32.ge_u" }
+            case I64 -> { "i64.ge_u" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case And -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.and" }
+            case I32 -> { "i32.and" }
+            case Bool -> { "i32.and" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Or -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.or" }
+            case I32 -> { "i32.or" }
+            case Bool -> { "i32.or" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Not -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.const -1 i64.xor" }
+            case I32 -> { "i32.const -1 i32.xor" }
+            case Bool -> { "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and" }
+            case _ -> { !.i32 0 0 / }
+        } }
+        case Load8 -> { "i32.load8_u" }
+        case Store8 -> { "i32.store8" }
+        case Rotl -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.extend_i32_s i64.rotl" }
+            case _ -> { drop "i32.rotl" }
+        } }
+        case Rotr -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.extend_i32_s i64.rotr" }
+            case _ -> { drop "i32.rotr" }
+        } }
+        case MemCopy -> { "memory.copy" }
+        case MemFill -> { "memory.fill" }
+        case MemGrow -> { "memory.grow" }
+        case Store -> { $ctx flip ~ generate-store break }
+        case SetStackSize -> { "drop" } // TODO: support stack guards
+        case _ -> { drop "TODO" }
+    } Fmt:write
+} }

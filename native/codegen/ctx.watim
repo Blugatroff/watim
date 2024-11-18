@@ -1,0 +1,116 @@
+import "../../std/core.watim" as Core
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/array.watim" as Array (Array)
+import "../../std/map.watim" as Map (Map)
+import "../../std/fmt.watim" as Fmt (Formatter)
+
+import "../lexer.watim" as Lexer (Token)
+import "../type.watim" as ResolvedType (CustomTypeHandle)
+import "../env.watim" as Env (LocalId)
+import "../resolver.watim" as Resolver (GlobalId, VarId)
+import "../monomizer.watim" as Monomized (
+    Monomized, Type, TypeId, Key, Key-type,
+    CustomType, FunctionHandle, Local, Global,
+    Module, Extern, Function, ExternOrInstances,
+    can-live-in-reg
+)
+
+struct Ctx {
+    fmt: .Formatter
+    program: .Monomized
+    module-data-offsets: Array<i32>
+    flip-i32-i32-used: bool
+    flip-i32-i64-used: bool
+    flip-i64-i32-used: bool
+    flip-i64-i64-used: bool
+    pack-i32s-used: bool
+    unpack-i32s-used: bool
+    dup-i64-used: bool
+}
+
+variant FunctionOrExtern {
+    case Extern -> .Extern
+    case Function -> .Function
+}
+fn FunctionOrExtern-name(self: .FunctionOrExtern) -> .Token {
+    $self match {
+        case Extern -> { ~ .name }
+        case Function -> { ~ .name }
+    }
+}
+
+fn lookup-type(program: .Monomized, type: TypeId) -> .Type {
+    &program.types $type.index Array:get<Maybe<Key>> match {
+        case None -> { Core:unreachable<.Type> }
+        case Some -> { Key-type }
+    }
+}
+
+fn lookup-custom-type(program: .Monomized, handle: .CustomTypeHandle) -> .CustomType {
+    &program.modules.values $handle.module.index Array:get<Module> .custom-types
+    $handle.index Array:get<CustomType>
+}
+
+fn lookup-function(program: .Monomized, handle: .FunctionHandle) -> FunctionOrExtern {
+    &program.modules.values $handle.module.index Array:get<Module> @module
+    &module.functions $handle.index Array:get<ExternOrInstances> match {
+        case Extern -> { make FunctionOrExtern.Extern }
+        case Instances -> { $handle.instance Array:get<.Function> ~ make FunctionOrExtern.Function }
+    }
+}
+
+fn lookup-globl(program: .Monomized, id: .GlobalId) -> .Global {
+    &program.modules.values $id.module.index Array:get<Module> .globals $id.index Array:get<Global>
+}
+
+fn globl-lives-in-memory(ctx: .Ctx, globl: .Global) -> bool {
+    &ctx.program.sizes $globl.type can-live-in-reg not
+    $globl.reffed or
+}
+
+fn local-lives-in-memory(ctx: .Ctx, local: .Local) -> bool {
+    &ctx.program.sizes $local.type can-live-in-reg not
+    $local.reffed or
+}
+
+fn var-lives-in-memory(ctx: .Ctx, locals: .Map<LocalId, Local>, var: .VarId) -> bool {
+    $ctx $var match {
+        case Local -> {
+            $locals flip Map:get<LocalId, Local> Maybe:assert-some<.Local> local-lives-in-memory
+        }
+        case Global -> {
+            $ctx.program flip lookup-globl globl-lives-in-memory
+        }
+    }
+}
+
+fn generate-flip-i32-i32(ctx: .Ctx) {
+    1 1 = #ctx.flip-i32-i32-used
+    // TODO: rename these to builtins
+    $ctx.fmt "call $intrinsic:flip" Fmt:write
+}
+fn generate-flip-i32-i64(ctx: .Ctx) {
+    1 1 = #ctx.flip-i32-i64-used
+    $ctx.fmt "call $intrinsic:flip-i32-i64" Fmt:write
+}
+fn generate-flip-i64-i32(ctx: .Ctx) {
+    1 1 = #ctx.flip-i64-i32-used
+    $ctx.fmt "call $intrinsic:flip-i64-i32" Fmt:write
+}
+fn generate-flip-i64-i64(ctx: .Ctx) {
+    1 1 = #ctx.flip-i64-i64-used
+    $ctx.fmt "call $intrinsic:flip-i64-i64" Fmt:write
+}
+fn generate-pack-i32s(ctx: .Ctx) {
+    1 1 = #ctx.pack-i32s-used
+    $ctx.fmt "call $intrinsic:pack-i32s" Fmt:write
+}
+fn generate-unpack-i32s(ctx: .Ctx) {
+    1 1 = #ctx.unpack-i32s-used
+    $ctx.fmt "call $intrinsic:unpack-i32s" Fmt:write
+}
+fn generate-dup-i64(ctx: .Ctx) {
+    1 1 = #ctx.dup-i64-used
+    $ctx.fmt "call $intrinsic:dupi64" Fmt:write
+}
+

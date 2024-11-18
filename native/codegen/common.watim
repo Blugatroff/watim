@@ -1,0 +1,152 @@
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/map.watim" as Map (Map)
+import "../../std/array.watim" as Array (Array)
+import "../../std/util.watim" as Util (i32-format)
+
+import "../lexer.watim" as Lexer (Token-lexeme)
+import "../env.watim" as Env (LocalId)
+import "../resolver.watim" as Resolver (VarId)
+import "../monomizer.watim" as Monomized (
+    TypeId, type-size, Local, CustomType-name
+)
+
+import "./ctx.watim" as Ctx (Ctx, lookup-type, lookup-globl, lookup-custom-type)
+
+fn generate-store(ctx: .Ctx, type: TypeId) { block {
+    &ctx.program.sizes $type type-size @type-size
+    $type-size 8 gt if {
+        $ctx.fmt "i32.const " Fmt:write
+        $ctx.fmt $type-size i32-format
+        $ctx.fmt " memory.copy" Fmt:write
+        break
+    }
+    $type-size 4 gt if {
+        $ctx.fmt "i64.store" Fmt:write break
+    }
+    $ctx.fmt "i32.store" Fmt:write
+} }
+
+fn generate-var-ident(ctx: .Ctx, locals: .Map<LocalId, Local>, var-id: .VarId) {
+    $ctx $var-id match {
+        case Local -> {
+            $locals flip generate-local-ident-by-id
+        }
+        case Global -> {
+            @global-id
+            .fmt ~ "$" Fmt:write
+            $ctx.program $global-id lookup-globl @globl
+            $ctx.fmt &globl.name Token-lexeme Fmt:write
+            $ctx.fmt ":" Fmt:write
+            $ctx.fmt $global-id.module.index i32-format
+        }
+    }
+}
+
+fn generate-local-ident-by-id(ctx: .Ctx, locals: .Map<LocalId, Local>, local-id: .LocalId) {
+    $ctx.fmt 
+    $locals $local-id Map:get<LocalId, Local> Maybe:assert-some<.Local>
+    $local-id generate-local-ident
+}
+
+fn generate-local-ident(fmt: .Formatter, local: .Local, local-id: .LocalId) {
+    $fmt "$" Fmt:write
+    $fmt &local.name Token-lexeme Fmt:write
+    $local-id.scope 0 /= $local-id.shadow 0 /= or if {
+        $fmt ":" Fmt:write
+        $fmt $local-id.scope i32-format
+        $fmt ":" Fmt:write
+        $fmt $local-id.shadow i32-format
+    }
+}
+
+fn generate-type(ctx: .Ctx, type: TypeId) { block {
+    &ctx.program.sizes $type type-size @size
+    $ctx.fmt $size 4 gt $size 8 le and if {
+        "i64"
+    } else {
+        "i32"
+    } Fmt:write
+} }
+
+fn generate-type-pretty(ctx: .Ctx, type: TypeId) { block {
+    $ctx.fmt $ctx.program $type lookup-type match {
+        case I32 -> { "i32" }
+        case I64 -> { "i64" }
+        case Bool -> { "bool" }
+        case Ptr -> { $ctx.fmt "." Fmt:write $ctx flip ~ generate-type-pretty drop break }
+        case Tuple -> {
+            @items
+            "[" Fmt:write
+            0 @i
+            loop {
+                $i $items.len = if { break }
+                $ctx $items $i Array:get<TypeId> ~ generate-type-pretty
+                $i 1 + #i
+                $items.len $i /= if {
+                    $ctx.fmt ", " Fmt:write
+                }
+            }
+            $ctx.fmt "]" Fmt:write
+            break
+        }
+        case Fun -> {
+            @type
+            "(" Fmt:write
+            0 @i
+            loop {
+                $i $type.parameters.len = if { break }
+                $ctx &type.parameters $i Array:get<TypeId> ~ generate-type-pretty
+                $i 1 + #i
+                $i $type.parameters.len /= if {
+                    $ctx.fmt ", " Fmt:write
+                } else {
+                    $ctx.fmt " " Fmt:write
+                }
+            }
+            $ctx.fmt "->" Fmt:write
+            0 @i
+            loop {
+                $i $type.returns.len = if { break }
+                $i 0 = if {
+                    $ctx.fmt " " Fmt:write
+                } else {
+                    $i 1 + $type.returns.len /= if {
+                        $ctx.fmt ", " Fmt:write
+                    }
+                }
+                $ctx &type.returns $i Array:get<TypeId> ~ generate-type-pretty
+                $i 1 + #i
+            }
+            $ctx.fmt ")" Fmt:write
+            break
+        }
+        case Custom -> {
+            $ctx.program flip lookup-custom-type CustomType-name Token-lexeme
+        }
+    } Fmt:write
+} }
+
+fn generate-parameters-unnamed(ctx: .Ctx, parameters: .Array<TypeId>) {
+    0 @i
+    loop {
+        $i $parameters.len = if { break }
+        $parameters $i Array:get<TypeId> ~ @parameter
+        $ctx.fmt " (param " Fmt:write
+        $ctx $parameter generate-type
+        $ctx.fmt ")" Fmt:write
+        $i 1 + #i
+    }
+}
+
+fn generate-returns(ctx: .Ctx, returns: .Array<TypeId>) {
+    0 @i
+    loop {
+        $i $returns.len = if { break }
+        $ctx.fmt " (result " Fmt:write
+        $ctx $returns $i Array:get<TypeId> ~ generate-type
+        $ctx.fmt ")" Fmt:write
+        $i 1 + #i
+    }
+}
+
