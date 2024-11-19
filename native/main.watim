@@ -119,8 +119,9 @@ fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
 }
 
 fn main "_start" () {
-    5 mem-grow drop
-    PA:page-size 6 * set-stack-size
+    6 @stack-size
+    $stack-size 1 - mem-grow drop
+    PA:page-size $stack-size * set-stack-size
     Logging:enable
     ActiveMemory:init
     Arena:init-temp
