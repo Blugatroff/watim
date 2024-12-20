@@ -13,12 +13,11 @@ fn main "_start" () {
 	main
 }
 [== Args Compiler ==]
+compile
 -
 --guard-stack
 [== Status Compiler ==]
 0
-[== Status ==]
-134
 [== Stdout Compiler ==]
 (module
 	(import "wasi_snapshot_preview1" "proc_exit" (func $0:proc_exit (param $code i32)))
@@ -44,28 +43,29 @@ fn main "_start" () {
 	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
 	(func $stack-overflow-guar:d i32.const 1 global.get $stac:k global.get $stack-siz:e i32.lt_u i32.div_u drop)
 )
+[== Status ==]
+134
 [== Stderr ==]
 Error: failed to run main module `./out.wat`
 
 Caused by:
     0: failed to invoke command default
     1: error while executing at wasm backtrace:
-           0:   0xd7 - <unknown>!stack-overflow-guar:d
-           1:   0xa8 - <unknown>!0:main
-           2:   0xb0 - <unknown>!0:main
-           3:   0xb0 - <unknown>!0:main
-           4:   0xb0 - <unknown>!0:main
-           5:   0xb0 - <unknown>!0:main
-           6:   0xb0 - <unknown>!0:main
-           7:   0xb0 - <unknown>!0:main
-           8:   0xb0 - <unknown>!0:main
-           9:   0xb0 - <unknown>!0:main
-          10:   0xb0 - <unknown>!0:main
-          11:   0xb0 - <unknown>!0:main
-          12:   0xb0 - <unknown>!0:main
-          13:   0xb0 - <unknown>!0:main
-          14:   0xb0 - <unknown>!0:main
-          15:   0xb0 - <unknown>!0:main
-          16:   0xb0 - <unknown>!0:main
+           0:   0xd9 - <unknown>!stack-overflow-guar:d
+           1:   0xaa - <unknown>!0:main
+           2:   0xb2 - <unknown>!0:main
+           3:   0xb2 - <unknown>!0:main
+           4:   0xb2 - <unknown>!0:main
+           5:   0xb2 - <unknown>!0:main
+           6:   0xb2 - <unknown>!0:main
+           7:   0xb2 - <unknown>!0:main
+           8:   0xb2 - <unknown>!0:main
+           9:   0xb2 - <unknown>!0:main
+          10:   0xb2 - <unknown>!0:main
+          11:   0xb2 - <unknown>!0:main
+          12:   0xb2 - <unknown>!0:main
+          13:   0xb2 - <unknown>!0:main
+          14:   0xb2 - <unknown>!0:main
+          15:   0xb2 - <unknown>!0:main
+          16:   0xb2 - <unknown>!0:main
     2: wasm trap: integer divide by zero
-

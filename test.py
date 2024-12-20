@@ -117,8 +117,6 @@ class Test:
     stderr: str | None
 
 native_tests_exclude = list(map(lambda p: f"./tests/{p}.watim", [
-    "stack-overflow-guards",
-    "i8",
 ]))
 
 failed = False

@@ -32,7 +32,7 @@ import "./common.watim" as Common (
 )
 import "./word.watim" as WordGen (generate-words)
 
-fn generate(fmt: .Formatter, program: .Monomized) {
+fn generate(fmt: .Formatter, program: .Monomized, guard-stack: bool) {
     $fmt "(module\n" Fmt:write
     $fmt Fmt:indent
 
@@ -51,7 +51,7 @@ fn generate(fmt: .Formatter, program: .Monomized) {
         $i 1 + #i
     }
 
-    $fmt $program $static-data-offsets 0 1 = 0 1 = 0 1 = 0 1 = 0 1 = 0 1 = 0 1 = make Ctx @ctx
+    $fmt $program $static-data-offsets $guard-stack 0 1 = 0 1 = 0 1 = 0 1 = 0 1 = 0 1 = 0 1 = make Ctx @ctx
 
     0 @i
     loop {
@@ -79,6 +79,11 @@ fn generate(fmt: .Formatter, program: .Monomized) {
     $fmt "(global $stac:k (mut i32) (i32.const " Fmt:write
     $fmt $stack-start i32-format
     $fmt "))\n" Fmt:write
+
+    $guard-stack if {
+        $fmt Fmt:write-indent
+        $fmt "(global $stack-siz:e (mut i32) (i32.const 65536))\n" Fmt:write
+    }
 
     $fmt &all-static-data ByteArray:to-slice generate-data
 
@@ -219,6 +224,13 @@ fn generate-intrinsic-functions(ctx: .Ctx) {
         $ctx.fmt "local.get $a i32.wrap_i64 local.get $a i64.const 32 i64.shr_u i32.wrap_i64" Fmt:write
         $ctx.fmt ")\n" Fmt:write
     }
+    $ctx.guard-stack if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "(func $stack-overflow-guar:d " Fmt:write
+        $ctx.fmt "i32.const 1 " Fmt:write
+        $ctx.fmt "global.get $stac:k global.get $stack-siz:e " Fmt:write
+        $ctx.fmt "i32.lt_u i32.div_u drop)\n" Fmt:write
+    }
 }
 
 fn generate-functions(ctx: .Ctx) {
@@ -306,6 +318,11 @@ fn generate-function(
     }
 
     $ctx &function.locals generate-memory-slots-for-locals
+
+    $uses-stack $ctx.guard-stack and if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "call $stack-overflow-guar:d\n" Fmt:write
+    }
 
     $ctx $module &function.locals &function.words generate-words
 

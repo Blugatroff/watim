@@ -19,6 +19,7 @@ struct Ctx {
     fmt: .Formatter
     program: .Monomized
     module-data-offsets: Array<i32>
+    guard-stack: bool
     flip-i32-i32-used: bool
     flip-i32-i64-used: bool
     flip-i64-i32-used: bool
