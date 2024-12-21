@@ -327,8 +327,6 @@ variant Intrinsic {
     case MemGrow
     case MemCopy
     case MemFill
-    case Store8
-    case Load8
     case Rotl -> Type
     case Rotr -> Type
     case And -> Type
@@ -353,8 +351,6 @@ fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
         case MemGrow -> { $fmt "MemGrow" Fmt:write }
         case MemCopy -> { $fmt "MemCopy" Fmt:write }
         case MemFill -> { $fmt "MemFill" Fmt:write }
-        case Store8 -> { $fmt "Store8" Fmt:write }
-        case Load8 -> { $fmt "Load8" Fmt:write }
         case Rotl -> { $fmt "(Rotl " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
         case Rotr -> { $fmt "(Rotr " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
         case And -> { $fmt "(And " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
@@ -2492,25 +2488,6 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 $ctx $stack $lower push
                 $word.name $lower $upper make Flip make Word.Flip
                 0 1 = [,2] make Result<[Word, bool], ResolveError>.Success break
-            }
-            $name-ptr $name-len "load8" Bytes:eq if {
-                $ctx $stack &word.name $ctx.ptr-I32 "`load8` expected [.i32]" expect1 match {
-                    case Some -> { make Result<[Word, bool], ResolveError>.Error break }
-                    case None -> {}
-                }
-                $ctx $stack $ctx.I32 ~ push
-                $word.name make Intrinsic.Load8 make IntrinsicWord
-                make Word.Intrinsic 0 1 = [,2]
-                make Result<[Word, bool], ResolveError>.Success break
-            }
-            $name-ptr $name-len "store8" Bytes:eq if {
-                $ctx $stack &word.name $ctx.ptr-I32 $ctx.I32 "`store8` expected [.i32, i32]" expect2 match {
-                    case Some -> { make Result<[Word, bool], ResolveError>.Error break }
-                    case None -> {}
-                }
-                $word.name make Intrinsic.Store8 make IntrinsicWord
-                make Word.Intrinsic 0 1 = [,2]
-                make Result<[Word, bool], ResolveError>.Success break
             }
             $name-ptr $name-len "not" Bytes:eq if {
                 "`not` expected [bool | i32 | i64]" @msg-len @msg-ptr

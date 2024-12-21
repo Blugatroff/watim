@@ -107,8 +107,6 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block () -> {
             case Bool -> { "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and" }
             case _ -> { !.i8 0 0 / }
         } }
-        case Load8 -> { "i32.load8_u" }
-        case Store8 -> { "i32.store8" }
         case Rotl -> { $ctx.program flip ~ lookup-type match {
             case I64 -> { "i64.extend_i32_s i64.rotl" }
             case _ -> { drop "i32.rotl" }
@@ -122,6 +120,5 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block () -> {
         case MemGrow -> { "memory.grow" }
         case Store -> { $ctx flip ~ generate-store break }
         case SetStackSize -> { "drop" } // TODO: support stack guards
-        case _ -> { drop "TODO" }
     } Fmt:write
 } }

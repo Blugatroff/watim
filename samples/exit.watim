@@ -3,11 +3,11 @@ extern "wasi_snapshot_preview1" "fd_write" fn raw_write(file: i32, iovs: .Iov, i
 extern "wasi_snapshot_preview1" "proc_exit" fn exit(code: i32)
 
 struct Iov {
-    ptr: .i32
+    ptr: .i8
     len: i32
 }
 
-fn write(file: i32, ptr: .i32, len: i32) -> i32 {
+fn write(file: i32, ptr: .i8, len: i32) -> i32 {
     uninit<Iov> @iov
     0 @written
     $ptr #iov.ptr
@@ -20,7 +20,7 @@ fn write(file: i32, ptr: .i32, len: i32) -> i32 {
     }
 }
 
-fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
+fn read(file: i32, buf-addr: .i8, buf-size: i32) -> i32 {
     0 @nread
     uninit<Iov> @iov
     $buf-addr #iov.ptr
@@ -32,19 +32,19 @@ fn read(file: i32, buf-addr: .i32, buf-size: i32) -> i32 {
 fn print(n: i32) {
     // Watim doesn't (yet?) have arrays, so to allocate 32 bytes on the stack
     // we can take the pointer of an unitialized tuple with four i64s.
-    uninit<[i64, i64, i64, i64]> @buf &buf !.i32 @buf
-    uninit<[i64, i64, i64, i64]> @buf-reversed &buf-reversed !.i32 @buf-reversed
+    uninit<[i64, i64, i64, i64]> @buf &buf !.i8 @buf
+    uninit<[i64, i64, i64, i64]> @buf-reversed &buf-reversed !.i8 @buf-reversed
     0 @l
     $n 0 = if {
         1 #l // length = 1
-        $buf 48 store8 // put '0' in buf
+        48 !i8 =>buf // put '0' in buf
     } else {
         loop {
             $n 0 = if { break }
             $buf $l +
             $n 10 % // rightmost digit
-            48 + // + ascii 'a'
-            store8
+            48 + !i8 // + ascii 'a'
+            store
             $n 10 / #n // shift right in decimal
             $l 1 + #l
         }
@@ -52,8 +52,8 @@ fn print(n: i32) {
     0 @i
     loop {
         $buf-reversed $i +
-        $buf $l 1 - $i - + load8
-        store8
+        $buf $l 1 - $i - + ~
+        store
         $i 1 + #i
         $i $l = if { break }
     }
@@ -61,17 +61,16 @@ fn print(n: i32) {
 }
 
 fn write_byte(file: i32, b: i32) {
-    uninit<i32> @buf
-    &buf $b store8
-    $file &buf 1 write drop
+    $b @buf
+    $file &buf !.i8 1 write drop
 }
 
-fn parse(pt: .i32, len: i32) -> i32 {
+fn parse(pt: .i8, len: i32) -> i32 {
     $pt @original-ptr
     $len @original-len
     0 @n
     loop {
-        $pt load8 @d
+        $pt ~ !i32 @d
         $d 48 ge $d 58 le and if { // 48 is ascii '0'
             $n $d 48 - + #n
         } else {
@@ -92,10 +91,10 @@ fn parse(pt: .i32, len: i32) -> i32 {
 fn dup<T>(a: T) -> T, T { $a $a }
 
 fn main "_start" () {
-    uninit<[i64, i64, i64, i64]> @buf &buf !.i32 @buf
+    uninit<[i64, i64, i64, i64]> @buf &buf !.i8 @buf
     0 $buf 32 read @nread
     $nread 0 /= if {
-        $buf $nread 1 - + ~ "\n" drop load8 = if { $nread 1 - #nread }
+        $buf $nread 1 - + ~ "\n" drop ~ = if { $nread 1 - #nread }
     }
     $buf $nread parse
     dup<i32> print 
