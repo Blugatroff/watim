@@ -112,7 +112,7 @@ fn TokenTy-name(self: TokenTy) -> .i8, i32 {
 
 struct ImmediateString {
     len: i32
-    // the data
+    data: i8 // ... the data keeps going here beyond the field ...
 }
 struct Token {
     // l = line, c = column, t = type
@@ -143,8 +143,7 @@ fn Token-lexeme(self: .Token) -> .i8, i32 { block {
     $self Token-hardcoded-lexeme @len @ptr
     $ptr 0 !.i8 /= if { $ptr $len break }
     $self.lexeme 0 !.ImmediateString = if { 0 0 / drop }
-    $self.lexeme sizeof(ImmediateString) + !.i8
-    $self.lexeme.len break
+    &self.lexeme.data $self.lexeme.len break
 } }
 fn Token-string-content(arena: .Arena:Arena, self: .Token) -> ByteSlice {
     $arena $self Token-lexeme 2 - flip 1 + flip
@@ -220,17 +219,10 @@ fn Token-location(self: .Token) -> i32, i32 {
 }
 fn Token-copy(arena: .Arena:Arena, self: .Token) -> Token {
     $self ~ @copy
-    2 $self !i32 IO:print IO:check
-    2 " " IO:write-all IO:check
-    2 "foo" $self Token-location print-location IO:check
-    2 IO:newline
     $self.lexeme 0 !.ImmediateString /= if {
-        2 "lexeme.len: " IO:write-all IO:check
-        2 $self.lexeme.len IO:print IO:check
-        2 IO:newline
-        $arena $self.lexeme.len sizeof(i32) + 4 + Arena:alloc-bytes !i32 4 Core:align-to !.ImmediateString #copy.lexeme
+        $arena $self.lexeme.len sizeof(i32) + Arena:alloc-bytes !.ImmediateString #copy.lexeme
         $self.lexeme.len #copy.lexeme.len
-        $self.lexeme sizeof(i32) + !.i8 $copy.lexeme sizeof(i32) + !.i8 $self.lexeme.len Core:copy-bytes
+        &self.lexeme.data &copy.lexeme.data $self.lexeme.len Core:copy-bytes
     }
     $copy
 }
@@ -245,25 +237,7 @@ fn Tokens-copy(arena: .Arena:Arena, src: .Array:Array<Token>) -> Array:Array<Tok
     0 @i
     loop {
         $i $src.len = if { break }
-
-        2 $src $i Array:get<Token> Token-print
-        2 " ptr: " IO:write-all IO:check
-        2 $src $i Array:get<Token> !i32 IO:print IO:check
-        2 ", lexeme: " IO:write-all IO:check
-        2 $src $i Array:get<Token> .lexeme ~ !i32 IO:print IO:check
-        2 IO:newline
-        // 0 @j
-        // loop {
-        //     $j $src.len = if { break }
-        //     2 $src $j Array:get<Token> Token-print
-        //     2 IO:newline
-        //     $j 1 + #j
-        // }
         &dst $arena $src $i Array:get<Token> Token-copy Array:push-assert-no-alloc<Token>
-
-        2 &dst $i Array:get<Token> Token-print
-        2 IO:newline
-
         $i 1 + #i
     }
     $dst
@@ -293,7 +267,7 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
     1 @column
     0 @cursor
     1 1 = @done
-    $arena 50000 Array:new-with-capacity<Token> @tokens
+    Array:new<Token> @tokens
     loop {
         block {
             $cursor $code.len = if { $done break }
@@ -361,8 +335,8 @@ fn lex(arena: .Arena:Arena, code: .ByteSlice) -> Array:Array<Token> {
                 @index
                 $one-char-tokens $index + 1 make ByteSlice @lexeme
                 $arena sizeof(i32) 1 + Arena:alloc-bytes !.ImmediateString @lexeme
-                $lexeme !.i8 1 !i8 store
-                $lexeme !.i8 4 + $one-char-tokens $index + ~ store
+                1 #lexeme.len
+                $lexeme sizeof(i32) + !.i8 $one-char-tokens $index + ~ store
                 $arena &tokens make TokenTy.TOKEN_LEFT_TRIANGLE !i32 $index + !TokenTy $line $column $lexeme Token-new Array:push<Token>
                 $cursor 1 + #cursor
                 $column 1 + #column

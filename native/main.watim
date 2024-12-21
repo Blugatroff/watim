@@ -117,14 +117,13 @@ fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice
 }
 
 fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
-    // $arena Arena:temp @tmp-arena @save
+    $arena Arena:temp @tmp-arena @save
     "Lexer" Arena:new @lexer-arena
-    // $tmp-arena &watim-code Lexer:lex @tokens
+    $tmp-arena &watim-code Lexer:lex @tokens
     $arena &watim-code Lexer:lex @tokens
-    // "Tokens" Arena:new @tokens-arena
-    $tokens
-    // $arena &tokens Lexer:Tokens-copy
-    // $tmp-arena $save Arena:restore
+    "Tokens" Arena:new @tokens-arena
+    $arena &tokens Lexer:Tokens-copy
+    $tmp-arena $save Arena:restore
 }
 
 fn main "_start" () {
@@ -341,6 +340,7 @@ fn load-modules-recursively(arena: .Arena, fs: .FileSystem, file-path: Maybe<Byt
     $arena Arena:temp @temp-arena @save
     $temp-arena $fs $file-path read-file-or-stdin @watim-code
     $arena &watim-code ByteArray:to-slice lex @tokens
+    $arena &tokens Lexer:Tokens-copy drop
     $arena $tokens parse match {
         case Error -> {
             2 flip $file-path-or-dash ByteSlice:unpack ParseError-print drop
