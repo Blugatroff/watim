@@ -1924,7 +1924,7 @@ INTRINSIC_TO_LEXEME: dict[IntrinsicType, str] = {v: k for k, v in INTRINSICS.ite
 @dataclass
 class ResolvedIntrinsicAdd:
     token: Token
-    taip: ResolvedPtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: ResolvedPtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
     def __str__(self) -> str:
         return f"(Intrinsic {self.token} (Add {self.taip}))"
@@ -1932,7 +1932,7 @@ class ResolvedIntrinsicAdd:
 @dataclass
 class ResolvedIntrinsicSub:
     token: Token
-    taip: ResolvedPtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: ResolvedPtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicDrop:
@@ -1979,22 +1979,22 @@ class ResolvedIntrinsicRotl:
 @dataclass
 class ResolvedIntrinsicGreater:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class ResolvedIntrinsicLess:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class ResolvedIntrinsicGreaterEq:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class ResolvedIntrinsicLessEq:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicLoad8:
@@ -2785,7 +2785,8 @@ class WordCtx:
             if word.ident.lexeme in self.struct_lit_ctx.fields:
                 field_index,field_type = self.struct_lit_ctx.fields[word.ident.lexeme]
                 field_type = self.resolve_generic(self.struct_lit_ctx.generic_arguments, field_type)
-                assert(resolved_type_eq(field_type, taip))
+                if not resolved_type_eq(field_type, taip):
+                    self.abort(word.ident, "wrong type for field")
                 del self.struct_lit_ctx.fields[word.ident.lexeme]
                 return (ResolvedStructFieldInitWord(
                     word.ident,
@@ -3308,10 +3309,14 @@ class WordCtx:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
                 if isinstance(taip, ResolvedPtrType):
-                    narrow_type: ResolvedPtrType | Literal[PrimitiveType.I32, PrimitiveType.I64] = taip
+                    narrow_type: ResolvedPtrType | Literal[PrimitiveType.I8, PrimitiveType.I32, PrimitiveType.I64] = taip
                     if stack[-1] != PrimitiveType.I32:
                         self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, i32]")
                     stack.pop()
+                elif taip == PrimitiveType.I8:
+                    narrow_type = PrimitiveType.I8
+                    popped = self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
+                    stack.append(taip)
                 elif taip == PrimitiveType.I32:
                     narrow_type = PrimitiveType.I32
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
@@ -3355,6 +3360,8 @@ class WordCtx:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-1]
                 match taip:
+                    case PrimitiveType.I8:
+                        popped = self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
                     case PrimitiveType.I32:
                         popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                     case PrimitiveType.I64:
@@ -3362,7 +3369,7 @@ class WordCtx:
                     case PrimitiveType.BOOL:
                         popped = self.expect_stack(token, stack, [PrimitiveType.BOOL, PrimitiveType.BOOL])
                     case _:
-                        self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` can only add i32, i64 and bool")
+                        self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` can only and i8, i32, i64 and bool")
                 stack.append(popped[0])
                 if intrinsic == IntrinsicType.AND:
                     return ResolvedIntrinsicAnd(token, taip)
@@ -3372,7 +3379,9 @@ class WordCtx:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
-                if taip == PrimitiveType.I32:
+                if taip == PrimitiveType.I8:
+                    popped = self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
+                elif taip == PrimitiveType.I32:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 else:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I32])
@@ -3385,14 +3394,17 @@ class WordCtx:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-1]
-                if taip == PrimitiveType.I32:
+                if taip == PrimitiveType.I8:
+                    narrow_type = PrimitiveType.I8
+                    self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
+                elif taip == PrimitiveType.I32:
                     narrow_type = PrimitiveType.I32
                     self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 elif taip == PrimitiveType.I64:
                     narrow_type = PrimitiveType.I64
                     self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                 else:
-                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [i32, i32] or [i64, i64] on stack")
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [i8, i8] or [i32, i32] or [i64, i64] on stack")
                 stack.append(PrimitiveType.BOOL)
                 if intrinsic == IntrinsicType.GREATER:
                     return ResolvedIntrinsicGreater(token, narrow_type)
@@ -4008,27 +4020,27 @@ class RefWord:
 @dataclass
 class IntrinsicAdd:
     token: Token
-    taip: PtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: PtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicSub:
     token: Token
-    taip: PtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: PtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicMul:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicDiv:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicMod:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicEqual:
@@ -4059,22 +4071,22 @@ class IntrinsicNot:
 @dataclass
 class IntrinsicGreaterEq:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicLessEq:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicGreater:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicLess:
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
 class IntrinsicRotl:
@@ -4624,9 +4636,9 @@ class Monomizer:
             case other:
                 assert_never(other)
 
-    def monomize_addable_type(self, taip: ResolvedPtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64], generics: List[Type]) -> PtrType | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]:
+    def monomize_addable_type(self, taip: ResolvedPtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64], generics: List[Type]) -> PtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]:
         match taip:
-            case PrimitiveType.I32 | PrimitiveType.I64:
+            case PrimitiveType.I8 | PrimitiveType.I32 | PrimitiveType.I64:
                 return taip
             case ResolvedPtrType():
                 return PtrType(self.monomize_type(taip.child, generics))
@@ -5160,7 +5172,7 @@ class WatGenerator:
                 self.write_store(taip)
                 self.write("\n")
             case IntrinsicAdd(token, taip):
-                if isinstance(taip, PtrType) or taip == PrimitiveType.I32:
+                if isinstance(taip, PtrType) or taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
                     self.write_line("i32.add")
                     return
                 if taip == PrimitiveType.I64:
@@ -5168,7 +5180,7 @@ class WatGenerator:
                     return
                 assert_never(taip)
             case IntrinsicSub(token, taip):
-                if isinstance(taip, PtrType) or taip == PrimitiveType.I32:
+                if isinstance(taip, PtrType) or taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
                     self.write_line("i32.sub")
                     return
                 if taip == PrimitiveType.I64:
@@ -5196,7 +5208,7 @@ class WatGenerator:
                 assert(taip.can_live_in_reg())
                 self.write_line("i32.ne")
             case IntrinsicGreaterEq(_, taip):
-                if taip == PrimitiveType.I32:
+                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
                     self.write_line("i32.ge_u")
                     return
                 if taip == PrimitiveType.I64:
@@ -5204,7 +5216,7 @@ class WatGenerator:
                     return
                 assert_never(taip)
             case IntrinsicGreater(_, taip):
-                if taip == PrimitiveType.I32:
+                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
                     self.write_line("i32.gt_u")
                     return
                 if taip == PrimitiveType.I64:
@@ -5212,7 +5224,7 @@ class WatGenerator:
                     return
                 assert_never(taip)
             case IntrinsicLessEq(_, taip):
-                if taip == PrimitiveType.I32:
+                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
                     self.write_line("i32.le_u")
                     return
                 if taip == PrimitiveType.I64:
@@ -5220,7 +5232,7 @@ class WatGenerator:
                     return
                 assert_never(taip)
             case IntrinsicLess(_, taip):
-                if taip == PrimitiveType.I32:
+                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
                     self.write_line("i32.lt_u")
                     return
                 if taip == PrimitiveType.I64:
@@ -5281,7 +5293,7 @@ class WatGenerator:
                 self.write_line("i32.store8")
             case IntrinsicMod(_, taip):
                 match taip:
-                    case PrimitiveType.I32:
+                    case PrimitiveType.I8 | PrimitiveType.I32:
                         self.write_line("i32.rem_u")
                     case PrimitiveType.I64:
                         self.write_line("i64.rem_u")
@@ -5289,7 +5301,7 @@ class WatGenerator:
                         assert_never(taip)
             case IntrinsicDiv(_, taip):
                 match taip:
-                    case PrimitiveType.I32:
+                    case PrimitiveType.I32 | PrimitiveType.I8:
                         self.write_line("i32.div_u")
                     case PrimitiveType.I64:
                         self.write_line("i64.div_u")
