@@ -5324,7 +5324,7 @@ class WatGenerator:
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I64: 
-                    self.write_line("i64.extend_i32_u")
+                    self.write_line("i64.extend_i32_u ;; cast to i64")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I8: 
                     self.write_line(f"i32.const 0xFF i32.and ;; cast to {format_type(taip)}")
