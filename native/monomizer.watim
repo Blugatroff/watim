@@ -17,7 +17,7 @@ import "./type.watim" as Resolved (
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
 import "./env.watim" as Resolved (LocalId, LocalId-format, LocalId-eq)
-import "./resolver.watim" as Resolved (
+import "./resolver/resolver.watim" as Resolved (
     StringWord, StringWord-format,
     VarId, VarId-format,
     fields-go-through-ptr,
@@ -74,6 +74,7 @@ fn FunType-format(fmt: .Formatter, self: .FunType) {
 
 variant Type {
     case Bool
+    case I8
     case I32
     case I64
     case Ptr -> TypeId
@@ -112,6 +113,7 @@ fn Type-eq(a: .Type, b: .Type) -> bool { block {
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "Bool" }
+        case I8 -> { "I8" }
         case I32 -> { "I32" }
         case I64 -> { "I64" }
         case Ptr -> { $fmt "(Ptr " Fmt:write TypeId-format $fmt ")" Fmt:write break }
@@ -534,7 +536,7 @@ fn insert-into-function-table(ctx: .Ctx, handle: FunctionHandle) -> i32 {
     }
 }
 
-struct PrimitiveTypes { a: Maybe<Key> b: Maybe<Key> c: Maybe<Key> }
+struct PrimitiveTypes { a: Maybe<Key> b: Maybe<Key> c: Maybe<Key> d: Maybe<Key> }
 global PRIMITIVE_TYPES: PrimitiveTypes
 
 fn primitive-types() -> Array<Maybe<Key>> {
@@ -542,15 +544,17 @@ fn primitive-types() -> Array<Maybe<Key>> {
     &zeroed !.i32 0 sizeof(PrimitiveTypes) mem-fill
     &PRIMITIVE_TYPES !.i32 &zeroed !.i32 sizeof(PrimitiveTypes) Core:bytes-eq if {
         make Type.Bool make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.a
-        make Type.I32  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.b
-        make Type.I64  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.c
+        make Type.I8   make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.b
+        make Type.I32  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.c
+        make Type.I64  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.d
     }
     &PRIMITIVE_TYPES.a sizeof(PrimitiveTypes) sizeof(Maybe<Key>) / Array:init-no-copy<Maybe<Key>>
 }
 
 fn Bool-id() -> TypeId { 0 make TypeId }
-fn I32-id () -> TypeId { 1 make TypeId }
-fn I64-id () -> TypeId { 2 make TypeId }
+fn I8-id () -> TypeId { 1 make TypeId }
+fn I32-id () -> TypeId { 2 make TypeId }
+fn I64-id () -> TypeId { 3 make TypeId }
 
 
 // =============================================================================
@@ -613,6 +617,7 @@ fn MaybeKey-format(fmt: .Formatter, self: .Maybe<Key>) {
 fn monomize-type(ctx: .Ctx, type: .Resolved:Type, generic-arguments: .Array<TypeId>) -> TypeId { block {
     $type match {
         case Bool -> { Bool-id break }
+        case I8 -> { I8-id break }
         case I32 -> { I32-id break }
         case I64 -> { I64-id break }
         case Generic -> { .index ~ $generic-arguments flip Array:get<TypeId> ~ break }
@@ -981,6 +986,7 @@ fn compute-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Ar
                 Key-type match {
                     case Ptr -> { drop 4 }
                     case Bool -> { 4 }
+                    case I8 -> { 1 }
                     case I32 -> { 4 }
                     case I64 -> { 8 }
                     case Custom -> {
@@ -1028,8 +1034,16 @@ fn compute-struc-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, type
     loop {
         $i $struc.fields.len = if { $size break }
         $modules $sizes $types
-        &struc.fields $i Array:get<NamedTypeId> .type ~ compute-typeid-size
-        $size + #size
+        &struc.fields $i Array:get<NamedTypeId> .type ~ compute-typeid-size @field-size
+        $size $field-size + #size
+
+        $i 1 + $struc.fields.len lt if {
+            $field-size 4 % 0 /=
+            $modules $sizes $types &struc.fields $i 1 + Array:get<NamedTypeId> .type ~ compute-typeid-size 4 ge
+            and if {
+                $size 4 Core:align-to #size
+            }
+        }
         $i 1 + #i
     }
 }
@@ -2013,6 +2027,15 @@ fn field-offset(sizes: .Array<i32>, struc: .Struct, field-index: i32) -> i32 {
         &struc.fields $i Array:get<NamedTypeId> @field
         $sizes $field.type type-size @field-size
         $offset $field-size + #offset
+
+        $i 1 + $struc.fields.len lt if {
+            $field-size 4 % 0 /=
+            $sizes &struc.fields $i 1 + Array:get<NamedTypeId> .type ~ type-size 4 ge
+            and if {
+                $offset 4 Core:align-to #offset
+            }
+        }
+
         $i 1 + #i
     }
 }

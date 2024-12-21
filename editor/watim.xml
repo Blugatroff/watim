@@ -24,6 +24,7 @@
       <item>make</item>
     </list>
     <list name="builtinTypes">
+      <item>i8</item>
       <item>i32</item>
       <item>i64</item>
       <item>bool</item>

@@ -35,7 +35,7 @@ syntax match watimRef "&[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimStore "=>[0-9,a-z,A-Z,\-,*,_]*"
 syntax match watimDeclare "@[0-9,a-z,A-Z,\-,*,_]*"
 
-syntax keyword watimPrimitiveTypes i64 i32 bool
+syntax keyword watimPrimitiveTypes i64 i32 i8 bool
 
 " Set highlights
 highlight default link watimTodos Todo

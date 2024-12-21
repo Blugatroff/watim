@@ -7,7 +7,7 @@ import "../../std/fmt.watim" as Fmt (Formatter)
 import "../lexer.watim" as Lexer (Token)
 import "../type.watim" as ResolvedType (CustomTypeHandle)
 import "../env.watim" as Env (LocalId)
-import "../resolver.watim" as Resolver (GlobalId, VarId)
+import "../resolver/resolver.watim" as Resolver (GlobalId, VarId)
 import "../monomizer.watim" as Monomized (
     Monomized, Type, TypeId, Key, Key-type,
     CustomType, FunctionHandle, Local, Global,

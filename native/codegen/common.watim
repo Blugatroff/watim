@@ -6,7 +6,7 @@ import "../../std/util.watim" as Util (i32-format)
 
 import "../lexer.watim" as Lexer (Token-lexeme)
 import "../env.watim" as Env (LocalId)
-import "../resolver.watim" as Resolver (VarId)
+import "../resolver/resolver.watim" as Resolver (VarId)
 import "../monomizer.watim" as Monomized (
     TypeId, type-size, Local, CustomType-name
 )
@@ -23,6 +23,9 @@ fn generate-store(ctx: .Ctx, type: TypeId) { block {
     }
     $type-size 4 gt if {
         $ctx.fmt "i64.store" Fmt:write break
+    }
+    $type-size 1 = if {
+        $ctx.fmt "i32.store8" Fmt:write break
     }
     $ctx.fmt "i32.store" Fmt:write
 } }
@@ -74,6 +77,7 @@ fn generate-type-pretty(ctx: .Ctx, type: TypeId) { block {
         case I32 -> { "i32" }
         case I64 -> { "i64" }
         case Bool -> { "bool" }
+        case I8 -> { "i8" }
         case Ptr -> { $ctx.fmt "." Fmt:write $ctx flip ~ generate-type-pretty drop break }
         case Tuple -> {
             @items

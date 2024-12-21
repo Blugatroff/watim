@@ -116,6 +116,7 @@ fn TupleType-format(fmt: .Formatter, self: .TupleType) {
 
 variant Type {
     case Bool -> Token
+    case I8 -> Token
     case I32 -> Token
     case I64 -> Token
     case Ptr -> PtrType
@@ -127,6 +128,7 @@ variant Type {
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $self match {
         case Bool -> { drop "bool" }
+        case I8 -> { drop "I8" }
         case I32 -> { drop "I32" }
         case I64 -> { drop "I64" }
         case Ptr -> { .type $fmt "." Fmt:write ~ $fmt flip Type-format break }
@@ -2001,6 +2003,7 @@ fn tuple-type(parser: .Parser, token: .Token) -> Result<TupleType, ParseError> {
 fn type(parser: .Parser, token: .Token) -> Result<Type, ParseError> { block () -> Result<Type, ParseError> {
     $token Token-ty match {
         case TOKEN_BOOL -> { $token ~ make Type.Bool }
+        case TOKEN_I8 -> { $token ~ make Type.I8 }
         case TOKEN_I32 -> { $token ~ make Type.I32 }
         case TOKEN_I64 -> { $token ~ make Type.I64 }
         case TOKEN_DOT -> {

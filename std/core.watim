@@ -46,6 +46,68 @@ fn unreachable<T>() -> T {
     uninit<T>
 }
 
+fn i32-to-str-hex(buf: .i8, n: i32) -> i32 {
+    "0123456789ABCDEF" drop !.i8 @alphabet
+    0 !i64 @buf-reversed &buf-reversed !.i8 @buf-reversed
+    0 @l
+    $n 0 = if {
+        1 #l
+        $alphabet ~ =>buf-reversed // put '0' in buf
+    } else {
+        loop {
+            $n 0 = if { break }
+            $buf-reversed $l +
+            $n 16 % // rightmost digit
+            $alphabet flip + ~
+            store
+            $n 16 / #n // shift right in hex
+            $l 1 + #l
+        }
+    }
+    $buf     $buf-reversed $l 1 - + ~ store
+    $buf 1 + $buf-reversed $l 2 - + ~ store
+    $buf 2 + $buf-reversed $l 3 - + ~ store
+    $buf 3 + $buf-reversed $l 4 - + ~ store
+
+    $buf 4 + $buf-reversed $l 5 - + ~ store
+    $buf 5 + $buf-reversed $l 6 - + ~ store
+    $buf 6 + $buf-reversed $l 7 - + ~ store
+    $buf 7 + $buf-reversed $l 8 - + ~ store
+
+    $l
+}
+
+fn i64-to-str-hex(buf: .i8, n: i64) -> i32 {
+    "0123456789ABCDEF" drop !.i8 @alphabet
+    uninit<[i64, i64]> @buf-reversed &buf-reversed !.i8 @buf-reversed
+    0 @l
+    $n 0 !i64 = if {
+        1 #l
+        $alphabet ~ =>buf-reversed // put '0' in buf
+    } else {
+        loop {
+            $n 0 !i64 = if { break }
+            $buf-reversed $l +
+            $n 16 !i64 % !i32 // rightmost digit
+            $alphabet flip + ~
+            store
+            $n 16 !i64 / #n // shift right in hex
+            $l 1 + #l
+        }
+    }
+
+    0 @i
+    loop {
+        $buf $i +
+        $buf-reversed $l 1 - $i - + ~
+        store
+        $i 1 + #i
+        $i $l = if { break }
+    }
+
+    $l
+}
+
 fn escape(char: i32, dest: .i32) -> i32 {
     "0123456789abcdef" @hex-digits-len @hex-digits-ptr
     loop {

@@ -27,17 +27,17 @@ fn init() {
     0 !.Page #ALLOCATOR.free-list
 }
 
-fn do-the-mem-grow() -> .i32 {
-    0 mem-grow page-size * !.i32
+fn do-the-mem-grow() -> .i8 {
+    0 mem-grow page-size * !.i8
     1 mem-grow 1 31 rotl and 0 /= if {
         2 "Failed to allocate another page of memory\n" IO:write-all IO:check
         1 CORE:exit
     }
 }
 
-fn alloc-page() -> .i32 {
+fn alloc-page() -> .i8 {
     $ALLOCATOR.free-list 0 !.Page /= if {
-        $ALLOCATOR.free-list !.i32
+        $ALLOCATOR.free-list !.i8
         $ALLOCATOR.free-list.next #ALLOCATOR.free-list
     } else {
         do-the-mem-grow
@@ -76,7 +76,7 @@ fn search-free-list-for-contiguous(list: .Page, n: i32) -> .Page { block {
         }
     }
 } }
-fn contiguous-pages(n: i32) -> .i32 {
+fn contiguous-pages(n: i32) -> .i8 {
     $ACTIVE_PAGES $n + #ACTIVE_PAGES
     $ALLOCATOR.free-list $n search-free-list-for-contiguous @contiguous-free
     $contiguous-free 0!.Page /= if {
@@ -111,7 +111,7 @@ fn contiguous-pages(n: i32) -> .i32 {
                 $list.next #list
             }
         }
-        $contiguous-free !.i32
+        $contiguous-free !.i8
     } else {
         do-the-mem-grow @first
         loop {
@@ -122,7 +122,7 @@ fn contiguous-pages(n: i32) -> .i32 {
         $first
     }
 }
-fn discard-page(page: .i32) {
+fn discard-page(page: .i8) {
     $page !.Page @page
     // $page !.i32 page-size CORE:clear
     $ALLOCATOR.free-list #page.next

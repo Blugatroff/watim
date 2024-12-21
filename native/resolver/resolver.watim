@@ -1,25 +1,25 @@
-import "../std/core.watim" as Core
-import "../std/result.watim" as Result (Result)
-import "../std/bytes.watim" as Bytes
-import "../std/io.watim" as IO
-import "../std/maybe.watim" as Maybe (Maybe, assert-some)
-import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
-import "../std/byte-array.watim" as ByteArray (ByteArray)
-import "../std/array.watim" as Array (Array)
-import "../std/map.watim" as Map (Map)
-import "../std/arena.watim" as Arena (Arena)
-import "../std/fs.watim" as FS
-import "../std/util.watim" as Util (i32-format, bool-format)
-import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
-import "../std/list.watim" as List (List)
+import "../../std/core.watim" as Core
+import "../../std/result.watim" as Result (Result)
+import "../../std/bytes.watim" as Bytes
+import "../../std/io.watim" as IO
+import "../../std/maybe.watim" as Maybe (Maybe, assert-some)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/byte-array.watim" as ByteArray (ByteArray)
+import "../../std/array.watim" as Array (Array)
+import "../../std/map.watim" as Map (Map)
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/fs.watim" as FS
+import "../../std/util.watim" as Util (i32-format, bool-format)
+import "../../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
+import "../../std/list.watim" as List (List)
 
-import "./logging.watim" as Logging
-import "./lexer.watim" as Lexer (
+import "../logging.watim" as Logging
+import "../lexer.watim" as Lexer (
     Token, Token-lexeme, Token-location, Token-line, Token-column,
     Token-eq-to-lexeme, Token-string-content, Token-format
 )
-import "./parser.watim" as P (TopItem)
-import "./type.watim" as Type (
+import "../parser.watim" as P (TopItem)
+import "../type.watim" as Type (
     Type, Type-eq, Type-format, Type-pretty,
     Types-eq, Types-format, Types-pretty, Types-pretty-bracketed,
     CustomTypeType, CustomTypeType-format, CustomType, CustomType-name, CustomType-format, CustomType-generic-parameters,
@@ -29,7 +29,7 @@ import "./type.watim" as Type (
     Struct, Variant, VariantCase,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
-import "./env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
+import "../env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
 fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
@@ -3284,6 +3284,7 @@ fn resolve-generic(ctx: .WordCtx, generics: .Array<Type>, type: .Type) -> Type {
             make Type.Tuple
         }
         case Bool -> { make Type.Bool }
+        case I8 -> { make Type.I8 }
         case I32 -> { make Type.I32 }
         case I64 -> { make Type.I64 }
     }
@@ -3543,6 +3544,7 @@ fn resolve-named-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, named
 fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Type) -> Result<Type, ResolveError> { block () -> Result<Type, ResolveError> {
     $type match {
         case Bool -> { drop make Type.Bool }
+        case I8 -> { drop make Type.I8 }
         case I32 -> { drop make Type.I32 }
         case I64 -> { drop make Type.I64 }
         case Generic -> { ~ make Type.Generic }

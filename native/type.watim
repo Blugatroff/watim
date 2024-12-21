@@ -126,6 +126,7 @@ fn lookup-type(lookup: .TypeLookup, handle: .CustomTypeHandle) -> .CustomType {
 
 variant Type {
     case Bool
+    case I8
     case I32
     case I64
     case Ptr -> .Type
@@ -137,6 +138,7 @@ variant Type {
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "Bool" }
+        case I8 -> { "I8" }
         case I32 -> { "I32" }
         case I64 -> { "I64" }
         case Ptr -> {
@@ -154,6 +156,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
 fn Type-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "bool" }
+        case I8 -> { "i8" }
         case I32 -> { "i32" }
         case I64 -> { "i64" }
         case Ptr -> { $fmt "." Fmt:write ~ $lookup flip Type-pretty break }
@@ -166,6 +169,7 @@ fn Type-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
 fn Type-eq(a: .Type, b: .Type) -> bool {
     $a match {
         case Bool -> { $b match { case Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I8 -> { $b match { case I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case I32 -> { $b match { case I32 -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case I64 -> { $b match { case I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case Ptr -> {

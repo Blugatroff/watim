@@ -451,6 +451,7 @@ fn GenericParameters-pretty(self: .Array<Token>, pp: .PrettyPrinter) -> i32 { bl
 fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block () -> i32 {
     $pp $self match {
         case Bool -> {}
+        case I8 -> {}
         case I32 -> {}
         case I64 -> {}
         case Ptr -> {

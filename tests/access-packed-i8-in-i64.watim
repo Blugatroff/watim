@@ -1,15 +1,13 @@
 [== Stdin Compiler ==]
 extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 
-struct Small {
-	a: i32
-	b: i32
-}
+struct Foo { a: i32 b: i8 c: i8 }
 
 fn main "_start" () {
-	3 4 make Small @foo
-	$foo.a $foo.b + proc_exit
+    4123 2 !i8 32 !i8  make Foo @foo
+    $foo.c !i32 proc_exit
 }
+
 [== Status Compiler ==]
 0
 [== Stdout Compiler ==]
@@ -22,13 +20,15 @@ fn main "_start" () {
 	(data (i32.const 0) "")
 	(func $0:main (export "_start")
 		(local $foo i64)
-		i32.const 3
-		i32.const 4
-		i64.extend_i32_u i64.const 32 i64.shl call $intrinsic:flip-i32-i64 i64.extend_i32_u i64.or ;; make Small
+		i32.const 4123
+		i32.const 2
+		i32.const 0xFF i32.and ;; cast to i8
+		i32.const 32
+		i32.const 0xFF i32.and ;; cast to i8
+		i64.extend_i32_u i64.const 40 i64.shl call $intrinsic:flip-i32-i64 i64.extend_i32_u i64.const 32 i64.shl i64.or call $intrinsic:flip-i32-i64 i64.extend_i32_u i64.or ;; make Foo
 		local.set $foo
-		local.get $foo i32.wrap_i64
-		local.get $foo i64.const 32 i64.shr_u i32.wrap_i64
-		i32.add
+		local.get $foo i64.const 40 i64.shr_u i32.wrap_i64 i32.const 0xFF i32.and
+		;; cast to i32
 		call $0:proc_exit
 	)
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
@@ -37,4 +37,4 @@ fn main "_start" () {
 	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
 )
 [== Status ==]
-7
+32

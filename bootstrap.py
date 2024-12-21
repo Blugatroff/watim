@@ -75,6 +75,9 @@ def normalize_path(path: str) -> str:
 
     return out
 
+def uhex(n: int) -> str:
+    return "0x" + hex(n)[2:].upper()
+
 class IndexedDict[K, V]:
     inner: Dict[K, Ref[Tuple[V, int]]]
     pairs: List[Tuple[K, Ref[Tuple[V, int]]]]
@@ -3448,8 +3451,8 @@ class WordCtx:
                 return ResolvedIntrinsicStore(token, taip)
             case IntrinsicType.NOT:
                 taip = stack[-1]
-                if len(stack) == 0 or (taip != PrimitiveType.I32 and taip != PrimitiveType.BOOL) or not isinstance(taip, PrimitiveType):
-                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected a i32 or bool on the stack")
+                if len(stack) == 0 or (taip != PrimitiveType.I64 and taip != PrimitiveType.I32 and taip != PrimitiveType.BOOL) or not isinstance(taip, PrimitiveType):
+                    self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected an i64, i32 or bool on the stack")
                 return ResolvedIntrinsicNot(token, taip)
             case IntrinsicType.UNINIT:
                 if len(generic_arguments) != 1:
@@ -3902,6 +3905,9 @@ class Offset:
     def __str__(self) -> str:
         return f"i32.const {self.offset} i32.add"
 
+    def is_bitshift(self) -> bool:
+        return False
+
 @dataclass
 class OffsetLoad:
     offset: int
@@ -3909,6 +3915,8 @@ class OffsetLoad:
 
     def __str__(self) -> str:
         size = self.taip.size()
+        if size == 1:
+            return f"i32.load8_u offset={self.offset}" if self.offset != 0 else "i32.load8_u"
         if size <= 4:
             return f"i32.load offset={self.offset}" if self.offset != 0 else "i32.load"
         if size <= 8:
@@ -3918,17 +3926,46 @@ class OffsetLoad:
         else:
             return f"i32.const {self.offset} i32.add i32.const {size} memory.copy"
 
-class BitShiftLoad(Enum):
-    Upper32 = 0
-    Lower32 = 1
+    def is_bitshift(self) -> bool:
+        return False
+
+@dataclass
+class I32InI64:
+    offset: int
 
     def __str__(self) -> str:
-        if self == BitShiftLoad.Upper32:
-            return "i64.const 32 i64.shr_u i32.wrap_i64"
-        if self == BitShiftLoad.Lower32:
+        if self.offset == 0:
             return "i32.wrap_i64"
+        return f"i64.const {self.offset * 8} i64.shr_u i32.wrap_i64"
 
-type Load = Offset | OffsetLoad | BitShiftLoad
+    def is_bitshift(self) -> bool:
+        return True
+
+@dataclass
+class I8InI32:
+    offset: int
+
+    def __str__(self) -> str:
+        if self.offset == 0:
+            return "i32.const 0xFF i32.and"
+        return f"i32.const {self.offset * 8} i32.shr_u i32.const 0xFF i32.and"
+
+    def is_bitshift(self) -> bool:
+        return True
+
+@dataclass
+class I8InI64:
+    offset: int
+
+    def __str__(self) -> str:
+        if self.offset == 0:
+            return "i32.wrap_i64 i32.const 0xFF i32.and"
+        return f"i64.const {self.offset * 8} i64.shr_u i32.wrap_i64 i32.const 0xFF i32.and"
+
+    def is_bitshift(self) -> bool:
+        return True
+
+type Load = Offset | OffsetLoad | I32InI64 | I8InI32 | I8InI64
 
 @dataclass
 class GetFieldWord:
@@ -4631,7 +4668,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
             FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), PrimitiveType.I32, 0)
         ])
         self.assertTrue(len(loads) == 1)
-        self.assertTrue(loads[0] == BitShiftLoad.Lower32)
+        self.assertTrue(loads[0] == I32InI64(0))
 
     def test_packed_value_on_struct_in_mem(self) -> None:
         loads = determine_loads([
@@ -4717,7 +4754,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
             FieldAccess(Token.dummy("value"), PtrType(node), PrimitiveType.I32, 0),
         ])
         self.assertTrue(len(loads) == 2)
-        self.assertTrue(loads[0] == BitShiftLoad.Upper32)
+        self.assertTrue(loads[0] == I32InI64(4))
         self.assertTrue(loads[1] == OffsetLoad(0, PrimitiveType.I32))
 
     def test_ref_field_in_big_struct(self) -> None:
@@ -4803,16 +4840,13 @@ class DetermineLoadsToValueTests(unittest.TestCase):
             FieldAccess(Token.dummy("lexeme"), token, PtrType(immediate_string), 4),
             FieldAccess(Token.dummy("len"), PtrType(immediate_string), PrimitiveType.I32, 0),
         ], just_ref=True)
-        self.assertEqual(loads, [BitShiftLoad.Upper32])
+        self.assertEqual(loads, [I32InI64(4)])
 
 def merge_loads(loads: List[Load]) -> List[Load]:
     if len(loads) <= 1:
         return loads
-    if isinstance(loads[0], OffsetLoad) and isinstance(loads[1], BitShiftLoad):
-        if loads[1] == BitShiftLoad.Lower32:
-            return [OffsetLoad(loads[0].offset + 0, PrimitiveType.I32)] + loads[2:]
-        if loads[0] == BitShiftLoad.Upper32:
-            return [OffsetLoad(loads[0].offset + 4, PrimitiveType.I32)] + loads[2:]
+    if isinstance(loads[0], OffsetLoad) and (isinstance(loads[1], I32InI64) or isinstance(loads[1], I8InI32) or isinstance(loads[1], I8InI64)):
+        return [OffsetLoad(loads[0].offset + loads[1].offset, PrimitiveType.I32)] + loads[2:]
     if isinstance(loads[0], Offset) and isinstance(loads[1], Offset):
         return [Offset(loads[0].offset + loads[1].offset)] + loads[2:]
     if isinstance(loads[0], Offset) and isinstance(loads[1], OffsetLoad):
@@ -4835,13 +4869,21 @@ def determine_loads(fields: List[FieldAccess], just_ref: bool = False, base_in_m
                 return determine_loads(fields[1:], just_ref, base_in_mem=True)
             return merge_loads([load] + determine_loads(fields[1:], just_ref, base_in_mem=True))
 
-        if field.source_taip.size() > 4: # source_taip is between >=4 and <=8 bytes
-            assert(offset == 4 or offset == 0) # alternative is TODO
-            if offset == 0:
-               load = BitShiftLoad.Lower32
-            elif offset == 4:
-               load = BitShiftLoad.Upper32
+        source_type_size = field.source_taip.size()
+        target_type_size = field.target_taip.size()
+        if source_type_size > 4: # source_taip is between >=4 and <=8 bytes
+            if target_type_size == 1:
+                load = I8InI64(offset)
+            elif target_type_size == 4:
+                load = I32InI64(offset)
+            else:
+                assert(False) # TODO
             return merge_loads([load] + determine_loads(fields[1:], just_ref, base_in_mem))
+
+        if target_type_size != source_type_size:
+            if target_type_size == 1:
+                return merge_loads([I8InI32(offset)] + determine_loads(fields[1:], just_ref, base_in_mem))
+            assert(False) # TODO
 
         assert(field.source_taip.size() == 4) # alternative is TODO
         return determine_loads(fields[1:], just_ref, base_in_mem)
@@ -5285,10 +5327,10 @@ class WatGenerator:
                     self.write_line("i64.extend_i32_u")
                     return
                 if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I8: 
-                    self.write_line(f"i32.const 255 i32.and ;; cast to {format_type(taip)}")
+                    self.write_line(f"i32.const 0xFF i32.and ;; cast to {format_type(taip)}")
                     return
                 if source == PrimitiveType.I64 and taip == PrimitiveType.I8: 
-                    self.write_line(f"i64.const 255 i64.and i32.wrap_i64 ;; cast to {format_type(taip)}")
+                    self.write_line(f"i64.const 0xFF i64.and i32.wrap_i64 ;; cast to {format_type(taip)}")
                     return
                 if source == PrimitiveType.I64 and taip != PrimitiveType.I64:
                     self.write_line(f"i32.wrap_i64 ;; cast to {format_type(taip)}")
@@ -5325,7 +5367,7 @@ class WatGenerator:
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset}")
                     self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy\n")
                 elif taip == PrimitiveType.I8:
-                    self.write("i32.load8\n")
+                    self.write("i32.load8_u\n")
                 else:
                     self.write_type(taip)
                     self.write(".load\n")
@@ -5415,21 +5457,31 @@ class WatGenerator:
                             self.write("drop ")
                         self.write(f"i32.const 0 ;; make {format_type(taip)}\n")
                         return
-                    if taip.size() <= 4:
-                        assert(len(fields) == 1) # alternative is TODO
+                    if taip.size() <= 8:
+                        offset = taip.size()
+                        for i in range(len(fields), 0, -1):
+                            field_size = fields[i - 1].taip.size()
+                            offset = offset - field_size
+                            if i != len(fields) and (offset != 0 or taip.size() > 4):
+                                if taip.size() <= 4:
+                                    self.write("call $intrinsic:flip ")
+                                else:
+                                    self.write("call $intrinsic:flip-i32-i64 ")
+                                    self.flip_i32_i64_used = True
+                            if taip.size() > 4:
+                                self.write("i64.extend_i32_u ")
+                            if offset != 0:
+                                if taip.size() <= 4:
+                                    self.write(f"i32.const {offset * 8} i32.shl ")
+                                else:
+                                    self.write(f"i64.const {offset * 8} i64.shl ")
+                            if i != len(fields):
+                                if taip.size() <= 4:
+                                    self.write("i32.or ")
+                                else:
+                                    self.write("i64.or ")
                         self.write(f";; make {format_type(taip)}\n")
                         return
-                    if taip.size() <= 8:
-                        assert(len(fields) == 1 or len(fields) == 2) # alternative is TODO
-                        if len(fields) == 1:
-                            self.write(f";; make {format_type(taip)}\n")
-                            return
-                        if len(fields) == 2:
-                            assert(fields[0].taip.size() == 4 and fields[1].taip.size() == 4) # alternative is TODO
-                            self.write(f"call $intrinsic:pack-i32s ;; make {format_type(taip)}\n")
-                            self.pack_i32s_used = True
-                            return
-                        assert(False) # TODO
                 self.write(f";; make {format_type(taip)}\n")
                 self.indent()
                 for i in reversed(range(0, len(struct.fields.get()))):
@@ -5668,20 +5720,24 @@ class WatGenerator:
             self.write_store(target_taip)
             self.write("\n")
             return
-        if not target_lives_in_memory and isinstance(loads[-1], BitShiftLoad):
+        last_load = loads[-1]
+        if not target_lives_in_memory and last_load.is_bitshift():
             for i, load in enumerate(loads):
-                if all(isinstance(load, BitShiftLoad) for load in loads[i:]):
+                if all(load.is_bitshift() for load in loads[i:]):
                     break
                 self.write(f" {load}")
-            if loads[-1] == BitShiftLoad.Upper32:
-                self.write(" i64.const 0xFFFFFFFF i64.and")
-            if loads[-1] == BitShiftLoad.Lower32:
-                self.write(" i64.const 0xFFFFFFFF00000000 i64.and")
-            self.write(" call $intrinsic:flip-i32-i64 i64.extend_i32_u ")
+            if isinstance(last_load, I32InI64) or isinstance(last_load, I8InI64):
+                self.write(f" i64.const {uhex(0xFFFFFFFF_FFFFFFFF ^ (0xFFFFFFFF << (last_load.offset * 8)))} i64.and ")
+            if isinstance(last_load, I8InI32):
+                self.write(f" i32.const {uhex(0xFF << (last_load.offset * 8))} i32.and ")
+
+            self.write("call $intrinsic:flip-i32-i64 i64.extend_i32_u ")
             self.flip_i32_i64_used = True
-            if loads[-1] == BitShiftLoad.Upper32:
-                self.write("i64.const 32 i64.shl ")
-            self.write("i64.or ")
+            if isinstance(last_load, I32InI64) and last_load.offset != 0:
+                self.write(f"i64.const {last_load.offset * 8} i64.shl ")
+            if isinstance(last_load, I8InI32) and last_load.offset != 0:
+                self.write(f"i32.const {last_load.offset * 8} i32.shl ")
+            self.write("i32.or " if isinstance(last_load, I8InI32) else "i64.or ")
             if not target_lives_in_memory:
                 if isinstance(local_id, LocalId):
                     self.write("local.set ")
@@ -5698,12 +5754,7 @@ class WatGenerator:
                 write_ident()
                 self.write(" call $intrinsic:flip-i64-i32 ")
                 self.flip_i64_i32_used = True
-                if isinstance(loads[-1], BitShiftLoad):
-                    # In case of a value being packed into an i64, we need to store
-                    # the modified i64 back, not the target type.
-                    self.write_store(PrimitiveType.I64)
-                else:
-                    self.write_store(target_taip)
+                self.write_store(target_taip)
                 self.write("\n")
                 return
 
@@ -5773,10 +5824,10 @@ class WatGenerator:
 
     def write_intrinsics(self) -> None:
         self.write_line("(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)")
-        if self.flip_i64_i32_used:
-            self.write_line("(func $intrinsic:flip-i64-i32 (param $a i64) (param $b i32) (result i32 i64) local.get $b local.get $a)")
         if self.flip_i32_i64_used:
             self.write_line("(func $intrinsic:flip-i32-i64 (param $a i32) (param $b i64) (result i64 i32) local.get $b local.get $a)")
+        if self.flip_i64_i32_used:
+            self.write_line("(func $intrinsic:flip-i64-i32 (param $a i64) (param $b i32) (result i32 i64) local.get $b local.get $a)")
         if self.flip_i64_i64_used:
             self.write_line("(func $intrinsic:flip-i64-i64 (param $a i64) (param $b i64) (result i64 i64) local.get $b local.get $a)")
         self.write_line("(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)")

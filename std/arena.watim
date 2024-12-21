@@ -32,14 +32,14 @@ struct Arena {
 
 fn free-page(page: .Page) { block {
     $page.type SINGLE_PAGE = if {
-        $page !.i32 PA:discard-page
+        $page !.i8 PA:discard-page
         break
     }
     $page.type MULTIPLE_PAGE = if {
         loop {
             $page.num-pages 0 = if { break }
             $page.num-pages 1 - #page.num-pages
-            $page $page.num-pages PA:page-size * + !.i32 PA:discard-page
+            $page $page.num-pages PA:page-size * + !.i8 PA:discard-page
         }
         break
     }
