@@ -112,7 +112,7 @@ fn is-string-array(arena: .Arena, array: Array<Value>) -> Array<ByteSlice> {
     &strings Array:reverse<ByteSlice>
 }
 
-fn get-optional-string(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: i32) -> Maybe<ByteSlice> {
+fn get-optional-string(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: i32) -> Maybe<ByteSlice> {
     $object $name-ptr $name-len Map:get-ba<Value> match {
         case Some -> { match {
             case String -> { ByteArray:to-slice make Maybe<ByteSlice>.Some }
@@ -129,7 +129,7 @@ fn get-optional-string(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len:
     }
 }
 
-fn get-optional-number(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: i32) -> Maybe<i32> {
+fn get-optional-number(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: i32) -> Maybe<i32> {
     $object $name-ptr $name-len Map:get-ba<Value> match {
         case Some -> { match {
             case Number -> { ~ make Maybe<i32>.Some }
@@ -140,7 +140,7 @@ fn get-optional-number(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len:
     }
 }
 
-fn get-optional-array(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: i32) -> Array<Value> {
+fn get-optional-array(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: i32) -> Array<Value> {
     $object $name-ptr $name-len Map:get-ba<Value> match {
         case Some -> { match {
             case Array -> { ~ }
@@ -151,10 +151,10 @@ fn get-optional-array(object: .Map<ByteArray, Value>, name-ptr: .i32, name-len: 
     }
 }
 
-fn is-whitespace(char: i32) -> bool {
-    $char " " drop load8 =
-    $char "\n" drop load8 = or
-    $char "\r" drop load8 = or
+fn is-whitespace(char: i8) -> bool {
+    $char " " drop ~ =
+    $char "\n" drop ~ = or
+    $char "\r" drop ~ = or
 }
 
 struct Test {
@@ -304,7 +304,7 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
 
         $section-header $compiler-stdin-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.compiler-stdin }
         $section-header $compiler-args-header ByteSlice:eq if {
-            $arena $value 10 Util:split-bytes @args
+            $arena $value 10 !i8 Util:split-bytes @args
             $arena &args \ByteSlice:is-not-empty Array:filter<ByteSlice> @args
             $args #test.compiler-args
         }
@@ -343,7 +343,7 @@ fn serialize-test(arena: .Arena, test: .Test) -> ByteArray {
     $out
 }
 
-fn serialize-field(arena: .Arena, out: .ByteArray, name-ptr: .i32, name-len: i32, value: .Maybe<ByteSlice>) {
+fn serialize-field(arena: .Arena, out: .ByteArray, name-ptr: .i8, name-len: i32, value: .Maybe<ByteSlice>) {
     $value match {
         case Some -> {
             @val
@@ -356,7 +356,7 @@ fn serialize-field(arena: .Arena, out: .ByteArray, name-ptr: .i32, name-len: i32
     }
 }
 
-fn serialize-number-field(arena: .Arena, out: .ByteArray, name-ptr: .i32, name-len: i32, value: Maybe<i32>) {
+fn serialize-number-field(arena: .Arena, out: .ByteArray, name-ptr: .i8, name-len: i32, value: Maybe<i32>) {
     $value match {
         case Some -> {
             @val
@@ -372,6 +372,6 @@ fn serialize-number-field(arena: .Arena, out: .ByteArray, name-ptr: .i32, name-l
 
 fn perhaps-append-newline(arena: .Arena, out: .ByteArray) {
     1 $out.len 0 /= !i32 / drop // out.len 0 /= assert
-    $out.ptr $out.len 1 - + load8 10 /= if { $arena $out "\n" ByteArray:push }
+    $out.ptr $out.len 1 - + ~ 10 !i8 /= if { $arena $out "\n" ByteArray:push }
 }
 

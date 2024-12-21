@@ -889,14 +889,14 @@ fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, Arra
     $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.message ByteArray:unpack IO:write-all
 } }
-fn error(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> ResolveError {
+fn error(ctx: .Ctx, token: .Token, message-ptr: .i8, message-len: i32) -> ResolveError {
     $ctx.module-id $token Token-location $ctx.persistent $message-ptr $message-len ByteArray:copy make ResolveError
 }
-fn abort<T>(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Result<T, ResolveError> {
+fn abort<T>(ctx: .Ctx, token: .Token, message-ptr: .i8, message-len: i32) -> Result<T, ResolveError> {
     $ctx $token $message-ptr $message-len error
     make Result<T, ResolveError>.Error
 }
-fn abort-m(ctx: .Ctx, token: .Token, message-ptr: .i32, message-len: i32) -> Maybe<ResolveError> {
+fn abort-m(ctx: .Ctx, token: .Token, message-ptr: .i8, message-len: i32) -> Maybe<ResolveError> {
     $ctx.module-id $token Token-location $ctx.persistent $message-ptr $message-len ByteArray:copy make ResolveError
     make Maybe<ResolveError>.Some
 }
@@ -1133,6 +1133,7 @@ struct WordCtx {
     imports: .Map<ByteSlice, Array<Import>>
     env: Env
     type-lookup: .TypeLookup
+    ptr-I8: .Type
     ptr-I32: .Type
     I32: .Type
     Bool: .Type
@@ -1151,8 +1152,10 @@ fn WordCtx-new(temp: .Arena, ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>,
         $imports @imports
         $env @env
         $type-lookup @type-lookup
+        $ctx.persistent make Type.I8 Arena:push<Type> @i8_
         $ctx.persistent make Type.I32 Arena:push<Type> @i32_
         $i32_ @I32
+        $ctx.persistent $i8_ make Type.Ptr Arena:push<Type> @ptr-I8
         $ctx.persistent $i32_ make Type.Ptr Arena:push<Type> @ptr-I32
         $ctx.persistent make Type.Bool Arena:push<Type> @Bool
         $signatures @signatures
@@ -1210,7 +1213,7 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
         }
         case String -> {
             @word
-            $ctx $stack $ctx.ptr-I32 ~ push
+            $ctx $stack $ctx.ptr-I8 ~ push
             $ctx $stack make Type.I32 push
             $word.token
             $ctx.ctx $word.data ByteSlice:unpack allocate-static-data
@@ -1242,7 +1245,7 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
     } make Result<[Word, bool], ResolveError>.Success
 } }
 
-fn allocate-static-data(ctx: .Ctx, ptr: .i32, len: i32) -> i32, i32 {
+fn allocate-static-data(ctx: .Ctx, ptr: .i8, len: i32) -> i32, i32 {
     $ctx.static-data.ptr $ctx.static-data.len $ptr $len Bytes:find-seq if {
         @a $a // TODO: this should not be necessary
         $len
@@ -2283,6 +2286,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
                 $a match {
+                    case I8 -> {}
                     case I32 -> {}
                     case I64 -> {}
                     case _ -> {
@@ -2290,7 +2294,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         $ctx.temp Fmt:into-new-string @msg @fmt
                         &fmt "`" Fmt:write
                         &fmt $name-ptr $name-len Fmt:write
-                        &fmt "` expected [i32, i32] or [i64, i64], got [" Fmt:write
+                        &fmt "` expected [i8, i8] or [i32, i32] or [i64, i64], got [" Fmt:write
                         &fmt $ctx.type-lookup &a Type-pretty
                         &fmt ", " Fmt:write
                         &fmt $ctx.type-lookup &b Type-pretty
@@ -2428,7 +2432,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 make Result<[Word, bool], ResolveError>.Success break
             }
             $name-ptr $name-len "mem-copy" Bytes:eq if {
-                $ctx $stack &word.name $ctx.ptr-I32 $ctx.ptr-I32 $ctx.I32 "`mem-copy` expected [.i32, .i32, i32]" expect3 match {
+                $ctx $stack &word.name $ctx.ptr-I8 $ctx.ptr-I8 $ctx.I32 "`mem-copy` expected [.i8, .i8, i32]" expect3 match {
                     case Some -> { make Result<[Word, bool], ResolveError>.Error break }
                     case None -> {}
                 }
@@ -2467,7 +2471,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 }
                 $ctx $stack make Type.Bool push
                 $word.name
-                $a $name-ptr load8 "=" drop load8 = if { make Intrinsic.Eq } else { make Intrinsic.NotEq }
+                $a $name-ptr ~ "=" drop ~ = if { make Intrinsic.Eq } else { make Intrinsic.NotEq }
                 make IntrinsicWord
                 make Word.Intrinsic 0 1 = [,2]
                 make Result<[Word, bool], ResolveError>.Success break
@@ -2796,7 +2800,7 @@ fn find-function(ctx: .WordCtx, name: .Token) -> Maybe<FunctionHandle> {
     }
 }
 
-fn pop1(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i32, expected-len: i32) -> Result<Type, ResolveError> { block {
+fn pop1(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<Type, ResolveError> { block {
     $ctx $stack pop match {
         case None -> {
             $ctx.temp Fmt:into-new-string @msg @fmt
@@ -2808,7 +2812,7 @@ fn pop1(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i32, expecte
     } make Result<Type, ResolveError>.Success
 } }
 
-fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i32, expected-len: i32) -> Result<[Type, Type], ResolveError> { block {
+fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<[Type, Type], ResolveError> { block {
     $ctx $stack pop match {
         case None -> {
             $ctx.temp Fmt:into-new-string @msg @fmt
@@ -2831,7 +2835,7 @@ fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i32, expecte
     } $b [,2] make Result<[Type, Type], ResolveError>.Success
 } }
 
-fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i32, expected-len: i32) -> Result<[Type, Type, Type], ResolveError> { block {
+fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<[Type, Type, Type], ResolveError> { block {
     $ctx $stack pop match {
         case None -> {
             $ctx.temp Fmt:into-new-string @msg @fmt
@@ -2927,7 +2931,7 @@ fn expect-arguments(ctx: .WordCtx, stack: .Stack, function-name: .Token, generic
     }
     $temp $save Arena:restore
 } }
-fn expect1(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, expected-ptr: .i32, expected-len: i32) -> Maybe<ResolveError> { block {
+fn expect1(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, expected-ptr: .i8, expected-len: i32) -> Maybe<ResolveError> { block {
     $ctx $stack $token $expected-ptr $expected-len pop1 match {
         case Error -> { make Maybe<ResolveError>.Some break }
         case Success -> {}
@@ -2941,7 +2945,7 @@ fn expect1(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, expected-ptr: 
         make Maybe<ResolveError>.None
     }
 } }
-fn expect2(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, expected-ptr: .i32, expected-len: i32) -> Maybe<ResolveError> { block {
+fn expect2(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, expected-ptr: .i8, expected-len: i32) -> Maybe<ResolveError> { block {
     $ctx $stack $token $expected-ptr $expected-len pop2 match {
         case Error -> { make Maybe<ResolveError>.Some break }
         case Success -> {}
@@ -2961,7 +2965,7 @@ fn expect2(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, expe
         make Maybe<ResolveError>.None
     }
 } }
-fn expect3(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, c: .Type, expected-ptr: .i32, expected-len: i32) -> Maybe<ResolveError> { block {
+fn expect3(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, c: .Type, expected-ptr: .i8, expected-len: i32) -> Maybe<ResolveError> { block {
     $ctx $stack $token $expected-ptr $expected-len pop3 match {
         case Error -> { make Maybe<ResolveError>.Some break }
         case Success -> {}

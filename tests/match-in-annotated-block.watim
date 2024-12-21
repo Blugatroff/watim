@@ -21,7 +21,7 @@ fn main "_start" () {
 }
 
 fn dup<T>(a: T) -> T, T { $a $a }
-fn write(ptr: .i32, len: i32) -> i32 { 0 }
+fn write(ptr: .i8, len: i32) -> i32 { 0 }
 [== Status Compiler ==]
 0
 [== Stdout Compiler ==]

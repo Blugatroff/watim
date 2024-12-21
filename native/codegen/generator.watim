@@ -388,7 +388,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
     }
 }
 
-fn generate-memory-slot(ctx: .Ctx, name-ptr: .i32, name-len: i32, size: i32, scope: i32, shadow: i32) {
+fn generate-memory-slot(ctx: .Ctx, name-ptr: .i8, name-len: i32, size: i32, scope: i32, shadow: i32) {
     $ctx.fmt Fmt:write-indent
     $ctx.fmt "global.get $stac:k global.get $stac:k i32.const " Fmt:write
     $ctx.fmt $size 4 align-to i32-format

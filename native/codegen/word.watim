@@ -1258,7 +1258,7 @@ fn generate-set(
                     ~ @offset
                     $ctx.fmt " i64.const 0x" Fmt:write
                     4294967295 !i64 $offset 8 * rotl not @mask
-                    $ctx.fmt $buf !.i32 $buf $mask Core:i64-to-str-hex Fmt:write
+                    $ctx.fmt $buf $buf $mask Core:i64-to-str-hex Fmt:write
                     " i64.and "
                 }
                 case I8InI32 -> {
@@ -1268,17 +1268,17 @@ fn generate-set(
                     // offset 3 -> i32.const 0x00FFFFFF i32.and
                     ~ @offset
                     $ctx.fmt " i32.const 0x" Fmt:write
-                    $ctx.fmt $buf !.i32 $buf 255 $offset 8 * rotl not Core:i32-to-str-hex Fmt:write
+                    $ctx.fmt $buf $buf 255 $offset 8 * rotl not Core:i32-to-str-hex Fmt:write
                     " i32.and "
                 }
                 case I8InI64 -> {
                     ~ @offset
                     $ctx.fmt " i64.const 0x" Fmt:write
-                    $ctx.fmt $buf !.i32 $buf 255 !i64 $offset 8 * rotl not Core:i64-to-str-hex Fmt:write
+                    $ctx.fmt $buf $buf 255 !i64 $offset 8 * rotl not Core:i64-to-str-hex Fmt:write
                     " i64.and "
                 }
             } }
-            case _ -> { !.i32 0 0 / }
+            case _ -> { !.i8 0 0 / }
         } Fmt:write
         $ctx generate-flip-i32-i64
         $ctx.fmt " i64.extend_i32_u " Fmt:write

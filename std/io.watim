@@ -3,11 +3,11 @@ extern "wasi_snapshot_preview1" "fd_read" fn raw_read(file: i32, iovs: .Iov, iov
 extern "wasi_snapshot_preview1" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
 
 struct Iov {
-    ptr: .i32
+    ptr: .i8
     len: i32
 }
 
-fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
+fn write(fd: i32, pt: .i8, len: i32) -> i32, i32 {
     uninit<Iov> @space
     uninit<CORE:I32> @writ
     0 #writ.inner
@@ -17,7 +17,7 @@ fn write(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     $writ.inner flip
 }
 
-fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
+fn write-all-inner(fd: i32, pt: .i8, len: i32) -> i32, i32 {
     $fd $pt $len write @code @written
     $code 0 = if {
         $written $len = if {
@@ -34,30 +34,29 @@ fn write-all-inner(fd: i32, pt: .i32, len: i32) -> i32, i32 {
     }
 }
 
-fn write-all(fd: i32, pt: .i32, len: i32) -> i32 {
+fn write-all(fd: i32, pt: .i8, len: i32) -> i32 {
     $fd $pt $len write-all-inner flip drop
 }
 
-fn write-byte(file: i32, b: i32) -> i32 {
-    uninit<CORE:I32> @buf
-    &buf.inner $b store8
-    $file &buf.inner 1 write-all
+fn write-byte(file: i32, b: i8) -> i32 {
+    $b !i32 @buf
+    $file &buf !.i8 1 write-all
 }
 
 fn newline(fd: i32) {
-    $fd 10 write-byte check
+    $fd 10 !i8 write-byte check
 }
 
-fn read(file: i32, buf_addr: .i32, buf_size: i32) -> i32, i32 {
+fn read(file: i32, buf_addr: .i8, buf_size: i32) -> i32, i32 {
     uninit<Iov> @iov
-    uninit<CORE:I32> @read
+    0 @read
     $buf_addr #iov.ptr
     $buf_size #iov.len
-    $file &iov 1 &read.inner raw_read
-    $read.inner flip
+    $file &iov 1 &read raw_read
+    $read flip
 }
 
-fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
+fn read-all(file: i32, buf-addr: .i8, buf-size: i32) -> i32, i32 {
     0 @read-total
     loop {
         $file $buf-addr $read-total + $buf-size $read-total - read @code @read
@@ -73,29 +72,26 @@ fn read-all(file: i32, buf-addr: .i32, buf-size: i32) -> i32, i32 {
     }
 }
 
-struct Buf32 { a: i32 b: i32 c: i32 d: i32 e: i32 f: i32 g: i32 h: i32 }
-
 fn print-ref(fd: i32, n: .i32) -> i32 {
     $fd $n ~ print
 }
 fn print(fd: i32, n: i32) -> i32 {
-    uninit<Buf32> @buf-reversed
-    $fd &buf-reversed.a $n &buf-reversed.a print-i32-into write-all
+    uninit<[i64, i64, i64, i64]> @buf-reversed &buf-reversed !.i8 @buf-reversed
+    $fd $buf-reversed $n $buf-reversed print-i32-into write-all
 }
-fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
-    uninit<Buf32> @buf
-    &buf.a @buf
+fn print-i32-into(n: i32, buf-reversed: .i8) -> i32 {
+    uninit<[i64, i64, i64, i64]> @buf &buf !.i8 @buf
     0 @l
     $n 0 = if {
         1 #l // length = 1
-        $buf 48 store8 // put '0' in buf
+        "0" drop ~ =>buf // put '0' in buf
     } else {
         loop {
             $n 0 = if { break }
             $buf $l +
             $n 10 % // rightmost digit
-            48 + // + ascii 'a'
-            store8
+            48 + !i8 // + ascii 'a'
+            store
             $n 10 / #n // shift right in decimal
             $l 1 + #l
         }
@@ -103,8 +99,8 @@ fn print-i32-into(n: i32, buf-reversed: .i32) -> i32 {
     0 @i
     loop {
         $buf-reversed $i +
-        $buf $l 1 - $i - + load8
-        store8
+        $buf $l 1 - $i - + ~
+        store
         $i 1 + #i
         $i $l = if { break }
     }
@@ -120,7 +116,7 @@ fn check(code: i32) {
     }
 }
 
-fn exit-with-message(code: i32, ptr: .i32, len: i32) {
+fn exit-with-message(code: i32, ptr: .i8, len: i32) {
     $code 0 /= if {
         2 $ptr $len write-all check
         2 "\n\tcode: " write-all check
@@ -130,17 +126,17 @@ fn exit-with-message(code: i32, ptr: .i32, len: i32) {
     }
 }
 
-fn abort(msg-ptr: .i32, msg-len: i32) {
+fn abort(msg-ptr: .i8, msg-len: i32) {
     2 $msg-ptr $msg-len write-all check
     1 CORE:exit
 }
 
-fn write-escaped(fd: i32, ptr: .i32, len: i32) -> i32 {
-    uninit<CORE:I32> @escaped-char
+fn write-escaped(fd: i32, ptr: .i8, len: i32) -> i32 {
+    0 !i8 @escaped-char
     0 @i
     loop {
         $i $len = if { 0 break }
-        $fd &escaped-char.inner $ptr $i + load8 &escaped-char.inner CORE:escape write-all @code
+        $fd &escaped-char $ptr $i + ~ &escaped-char CORE:escape write-all @code
         $code 0 /= if { $code break }
         $i 1 + #i
     }

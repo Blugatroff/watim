@@ -4,24 +4,24 @@ import "./arena.watim" as Arena
 import "./bytes.watim" as Bytes
 
 struct ByteSlice {
-    ptr: .i32
+    ptr: .i8
     len: i32
 }
-fn unpack(self: ByteSlice) -> .i32, i32 {
+fn unpack(self: ByteSlice) -> .i8, i32 {
     $self.ptr $self.len
 }
 fn empty() -> ByteSlice {
-    0 !.i32 0 make ByteSlice
+    0 !.i8 0 make ByteSlice
 }
 fn copy(arena: .Arena:Arena, self: ByteSlice) -> ByteSlice {
     $arena $self.ptr $self.len Arena:push-bytes $self.len make ByteSlice
 }
-fn get-byte(self: .ByteSlice, index: i32) -> i32 {
+fn get-byte(self: .ByteSlice, index: i32) -> i8 {
     $index $self.len ge if { 
         1 "ByteArray:get-byte Index out of bounds\n" IO:write-all IO:check
         1 CORE:exit
     }
-    $self.ptr $index + load8
+    $self.ptr $index + ~
 }
 fn slice(self: .ByteSlice, index: i32, len: i32) -> ByteSlice {
     $index $len + $self.len gt if { 
@@ -54,24 +54,24 @@ fn drop-end(self: ByteSlice, n: i32) -> ByteSlice {
     $self.len $n -
     make ByteSlice
 }
-fn find-byte(self: ByteSlice, b: i32) -> i32, bool {
+fn find-byte(self: ByteSlice, b: i8) -> i32, bool {
     0 @i
     loop {
         $self.len $i = if { 0 not 0 1 = break }
-        $self.ptr $i + load8 $b = if {
+        $self.ptr $i + ~ $b = if {
             $i 1 1 = break
         }
         $i 1 + #i
     }
 }
-fn find-bytes(self: ByteSlice, ptr: .i32, len: i32) -> i32, bool { block {
+fn find-bytes(self: ByteSlice, ptr: .i8, len: i32) -> i32, bool { block {
     $len 0 = if {
         0 1 1 = break
     }
     0 @i
     loop {
         $i $len + $self.len gt if { 0 not 0 1 = break }
-        $self.ptr $i + load8 $ptr load8 = if {
+        $self.ptr $i + ~ $ptr ~ = if {
             $self.ptr $i + $len $ptr $len Bytes:eq if {
                 $i 1 1 = break
             }
@@ -82,24 +82,24 @@ fn find-bytes(self: ByteSlice, ptr: .i32, len: i32) -> i32, bool { block {
 fn find-slice(self: ByteSlice, slice: ByteSlice) -> i32, bool {
     $self $slice unpack find-bytes
 }
-fn trim-start-with(self: ByteSlice, f: (i32 -> bool)) -> ByteSlice {
+fn trim-start-with(self: ByteSlice, f: (i8 -> bool)) -> ByteSlice {
     loop {
         $self.len 0 = if { break }
-        $self.ptr load8 $f -> not if { break }
+        $self.ptr ~ $f -> not if { break }
         $self.len 1 - #self.len
         $self.ptr 1 + #self.ptr
     }
     $self
 }
-fn trim-end-with(self: ByteSlice, f: (i32 -> bool)) -> ByteSlice {
+fn trim-end-with(self: ByteSlice, f: (i8 -> bool)) -> ByteSlice {
     loop {
         $self.len 0 = if { break }
-        $self.ptr $self.len 1 - + load8 $f -> not if { break }
+        $self.ptr $self.len 1 - + ~ $f -> not if { break }
         $self.len 1 - #self.len
     }
     $self
 }
-fn trim-with(self: ByteSlice, f: (i32 -> bool)) -> ByteSlice {
+fn trim-with(self: ByteSlice, f: (i8 -> bool)) -> ByteSlice {
     $self $f trim-start-with $f trim-end-with
 }
 fn write-unescaped(fd: i32, self: .ByteSlice) -> i32 {

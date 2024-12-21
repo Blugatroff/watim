@@ -5,14 +5,12 @@ import "./array.watim" as Array
 import "./core.watim" as CORE
 
 extern "wasi_snapshot_preview1" "args_sizes_get" fn args_sizes_get(number: .i32, size: .i32) -> i32
-extern "wasi_snapshot_preview1" "args_get" fn args_get(argv: ..i32, argv_buf: .i32) -> i32
+extern "wasi_snapshot_preview1" "args_get" fn args_get(argv: ..i32, argv_buf: .i8) -> i32
 
 fn get-args(arena: .Arena) -> Array:Array<ByteSlice> {
-    uninit<CORE:I32> @arg_number_ptr
-    uninit<CORE:I32> @arg_sizes_ptr
-    &arg_number_ptr.inner &arg_sizes_ptr.inner args_sizes_get IO:check
-    $arg_number_ptr.inner @arg_number
-    $arg_sizes_ptr.inner @arg_sizes
+    0 @arg_number
+    0 @arg_sizes
+    &arg_number &arg_sizes args_sizes_get IO:check
     $arena Arena:temp @temp @temp-save
     $arena $arg_sizes Arena:alloc-bytes @arg_buf
     $temp $arg_number Arena:alloc-many<.i32> @ptr_buf
@@ -24,7 +22,7 @@ fn get-args(arena: .Arena) -> Array:Array<ByteSlice> {
     0 @i
     loop {
         $i $arg_number ge if { break }
-        $ptr_buf $i 4 * + ~ !.i32 @ptr
+        $ptr_buf $i 4 * + ~ !.i8 @ptr
         $arena &strings 
         $ptr $ptr cstr-len make ByteSlice
         Array:push<ByteSlice>
@@ -34,10 +32,10 @@ fn get-args(arena: .Arena) -> Array:Array<ByteSlice> {
     $strings
 }
 
-fn cstr-len(ptr: .i32) -> i32 {
+fn cstr-len(ptr: .i8) -> i32 {
     0 @i
     loop {
-        $ptr load8 0 = if { $i break }
+        $ptr ~ 0 !i8 = if { $i break }
         $i 1 + #i
         $ptr 1 + #ptr
     }

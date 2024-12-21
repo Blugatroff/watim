@@ -542,7 +542,7 @@ global PRIMITIVE_TYPES: PrimitiveTypes
 fn primitive-types() -> Array<Maybe<Key>> {
     uninit<PrimitiveTypes> @zeroed
     &zeroed !.i32 0 sizeof(PrimitiveTypes) mem-fill
-    &PRIMITIVE_TYPES !.i32 &zeroed !.i32 sizeof(PrimitiveTypes) Core:bytes-eq if {
+    &PRIMITIVE_TYPES !.i8 &zeroed !.i8 sizeof(PrimitiveTypes) Core:bytes-eq if {
         make Type.Bool make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.a
         make Type.I8   make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.b
         make Type.I32  make Key.Other make Maybe<Key>.Some #PRIMITIVE_TYPES.c

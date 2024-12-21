@@ -303,7 +303,7 @@ fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> May
         drop make Maybe<[T, i32]>.None
     }
 }
-fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i32, del-len: i32) -> ByteArray {
+fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i8, del-len: i32) -> ByteArray {
     ByteArray:new @out
     0 @i
     loop {

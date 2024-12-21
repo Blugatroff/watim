@@ -728,7 +728,7 @@ fn advance(parser: .Parser) -> Maybe<.Token> {
         }
     }
 }
-fn abort<T>(parser: .Parser, message-ptr: .i32, message-len: i32) -> Result<T, ParseError> {
+fn abort<T>(parser: .Parser, message-ptr: .i8, message-len: i32) -> Result<T, ParseError> {
     $parser.tokens.len 0 = if {
         0 0 / drop // parsing an empty file always should always succeed
     }
@@ -742,7 +742,7 @@ struct ParseError {
     column: i32
     message: ByteArray
 }
-fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i32, file-path: i32) -> i32 { block {
+fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i8, file-path: i32) -> i32 { block {
     $fd $file-path-ptr $file-path IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.line IO:print Core:dup<i32> 0 /= if { break } drop

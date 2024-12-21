@@ -19,20 +19,20 @@ fn align-to(n: i32, to: i32) -> i32 {
 }
 
 fn copy<T>(a: .T, b: .T, len: i32) {
-    $b !.i32 $a !.i32 $len sizeof(T) * mem-copy
+    $b !.i8 $a !.i8 $len sizeof(T) * mem-copy
 }
 
-fn copy-bytes(a: .i32, b: .i32, len: i32) {
+fn copy-bytes(a: .i8, b: .i8, len: i32) {
     $len 0 /= if {
-        $b !.i32 $a !.i32 $len mem-copy
+        $b $a $len mem-copy
     }
 }
 
-fn bytes-eq(a: .i32, b: .i32, len: i32) -> bool {
+fn bytes-eq(a: .i8, b: .i8, len: i32) -> bool {
     0 @i
     loop {
         $i $len = if { 1 1 = break }
-        $a $i + load8 $b $i + load8 /= if { 0 1 = break }
+        $a $i + ~ $b $i + ~ /= if { 0 1 = break }
         $i 1 + #i
     }
 }
@@ -108,20 +108,20 @@ fn i64-to-str-hex(buf: .i8, n: i64) -> i32 {
     $l
 }
 
-fn escape(char: i32, dest: .i32) -> i32 {
+fn escape(char: i8, dest: .i8) -> i32 {
     "0123456789abcdef" @hex-digits-len @hex-digits-ptr
     loop {
-        $char "\t" drop load8 = if { "\\t" $dest flip copy-bytes 2 break }
-        $char "\r" drop load8 = if { "\\r" $dest flip copy-bytes 2 break }
-        $char "\n" drop load8 = if { "\\n" $dest flip copy-bytes 2 break }
-        $char "\\" drop load8 = if { "\\\\" $dest flip copy-bytes 2 break }
-        $char "\"" drop load8 = if { "\\\"" $dest flip copy-bytes 2 break}
-        $char 32 ge $char 126 le and if { $dest $char store8 1 break }
+        $char "\t" drop ~ = if { "\\t" $dest flip copy-bytes 2 break }
+        $char "\r" drop ~ = if { "\\r" $dest flip copy-bytes 2 break }
+        $char "\n" drop ~ = if { "\\n" $dest flip copy-bytes 2 break }
+        $char "\\" drop ~ = if { "\\\\" $dest flip copy-bytes 2 break }
+        $char "\"" drop ~ = if { "\\\"" $dest flip copy-bytes 2 break}
+        $char 32 !i8 ge $char 126 !i8 le and if { $char =>dest 1 break }
         "\\x" $dest flip copy-bytes
         $dest 2 + #dest
-        $dest $hex-digits-ptr $char 4 rotr 255 and + load8 store8
+        $hex-digits-ptr $char !i32 4 rotr 255 and + ~ =>dest
         $dest 1 + #dest
-        $dest $hex-digits-ptr $char 255 and + load8 store8
+        $hex-digits-ptr $char !i32 255 and + ~ =>dest
         4 break
     }
 }

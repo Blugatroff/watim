@@ -8,16 +8,16 @@ import "./byte-array.watim" as ByteArray (ByteArray)
 import "./util.watim" as Util
 
 extern "wasi_snapshot_preview1" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
-extern "wasi_snapshot_preview1" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i32, len: i32) -> i32
+extern "wasi_snapshot_preview1" "fd_prestat_dir_name" fn fd_prestat_dir_name(fd: i32, path: .i8, len: i32) -> i32
 extern "wasi_snapshot_preview1" "path_open" fn path_open(
-    fd: i32, 
-    dirflags: i32, 
-    path: .i32, 
-    path_len: i32, 
-    oflags: i32, 
-    fs_rights_base: i64, 
-    fs_rights_inheriting: i64, 
-    fd_flags: i32, 
+    fd: i32,
+    dirflags: i32,
+    path: .i8,
+    path_len: i32,
+    oflags: i32,
+    fs_rights_base: i64,
+    fs_rights_inheriting: i64,
+    fd_flags: i32,
     res_fd: .i32
 ) -> i32
 extern "wasi_snapshot_preview1" "fd_close" fn close(fd: i32) -> i32
@@ -103,8 +103,8 @@ struct Prestat {
     path_len: i32
 }
 
-fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
-    $path-ptr $path-len "/" drop load8 Bytes:find-rev if {
+fn path-dir(path-ptr: .i8, path-len: i32) -> .i8, i32 {
+    $path-ptr $path-len "/" drop ~ Bytes:find-rev if {
         $path-ptr flip
     } else {
         drop $path-ptr $path-len
@@ -112,7 +112,7 @@ fn path-dir(path-ptr: .i32, path-len: i32) -> .i32, i32 {
 }
 
 
-fn str-replace(arena: .Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len: i32, replacement-ptr: .i32, replacement-len: i32) -> ByteArray {
+fn str-replace(arena: .Arena, ptr: .i8, len: i32, target-ptr: .i8, target-len: i32, replacement-ptr: .i8, replacement-len: i32) -> ByteArray {
     ByteArray:new @new
     $ptr $len $target-ptr $target-len Bytes:find-seq if {
         @index
@@ -135,7 +135,7 @@ fn str-replace(arena: .Arena, ptr: .i32, len: i32, target-ptr: .i32, target-len:
     }
 }
 
-fn normalize(arena: .Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
+fn normalize(arena: .Arena, path-ptr: .i8, path-len: i32) -> .i8, i32 {
     $arena Arena:temp @temp @temp-save
     ByteArray:new @out
 
@@ -147,7 +147,7 @@ fn normalize(arena: .Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $temp $out ByteArray:unpack "//" "/" str-replace #out
     $temp $out ByteArray:unpack "/./" "/" str-replace #out
 
-    $temp &out ByteArray:to-slice "/" drop load8 Util:split-bytes @splits
+    $temp &out ByteArray:to-slice "/" drop ~ Util:split-bytes @splits
     Array:new<ByteSlice> @outsplits
     0 @i
     loop {
@@ -174,7 +174,7 @@ fn normalize(arena: .Arena, path-ptr: .i32, path-len: i32) -> .i32, i32 {
     $temp $temp-save Arena:restore
 }
 
-fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting_rights: i64, oflags: i32) -> i32, i32 {
+fn open-file(fs: .FileSystem, path: .i8, path_len: i32, rights: i64, inheriting_rights: i64, oflags: i32) -> i32, i32 {
     $fs find-current-dir @code @parent-fd
     $code 0 /= if {
         0 $code
@@ -185,7 +185,7 @@ fn open-file(fs: .FileSystem, path: .i32, path_len: i32, rights: i64, inheriting
     }
 }
 
-fn read-file(arena: .Arena, fs: .FileSystem, path: .i32, path-len: i32) -> ByteArray, i32 { block {
+fn read-file(arena: .Arena, fs: .FileSystem, path: .i8, path-len: i32) -> ByteArray, i32 { block {
     $fs
     $path $path-len
     0 0 = 0 1 = create-rights

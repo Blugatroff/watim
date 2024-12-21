@@ -5,7 +5,7 @@ import "./bytes.watim" as Bytes
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
 
 struct ByteArray {
-    ptr: .i32
+    ptr: .i8
     len: i32
     cap: i32
     arena: .Arena
@@ -13,7 +13,7 @@ struct ByteArray {
 
 fn new() -> ByteArray {
     make ByteArray {
-        0 !.i32 @ptr
+        0 !.i8 @ptr
         0 @len
         0 @cap
         0 !.Arena @arena
@@ -29,7 +29,7 @@ fn with-capacity(arena: .Arena, cap: i32) -> ByteArray {
     }
 }
 
-fn init(ptr: .i32, len: i32) -> ByteArray {
+fn init(ptr: .i8, len: i32) -> ByteArray {
     make ByteArray {
         $ptr @ptr
         $len @len
@@ -38,7 +38,7 @@ fn init(ptr: .i32, len: i32) -> ByteArray {
     }
 }
 
-fn copy(arena: .Arena, ptr: .i32, len: i32) -> ByteArray {
+fn copy(arena: .Arena, ptr: .i8, len: i32) -> ByteArray {
     new @self
     $arena &self $ptr $len push
     $self
@@ -55,10 +55,10 @@ fn check-same-arena(self: .ByteArray, arena: .Arena) {
     }
 }
 
-fn push(arena: .Arena, self: .ByteArray, ptr: .i32, len: i32) {
+fn push(arena: .Arena, self: .ByteArray, ptr: .i8, len: i32) {
     $ptr $arena $self $len alloc-bytes $len CORE:copy-bytes
 }
-fn alloc-bytes(arena: .Arena, self: .ByteArray, len: i32) -> .i32 {
+fn alloc-bytes(arena: .Arena, self: .ByteArray, len: i32) -> .i8 {
     $self $arena check-same-arena
     $self.len $len + $self.cap le if {
         $self.ptr $self.len +
@@ -80,27 +80,23 @@ fn alloc-bytes(arena: .Arena, self: .ByteArray, len: i32) -> .i32 {
         }
     }
 }
-fn push-byte(arena: .Arena, self: .ByteArray, byte: i32) {
-    uninit<CORE:I32> @ptr
-    $byte #ptr.inner
-    $arena $self &ptr.inner 1 push
+fn push-byte(arena: .Arena, self: .ByteArray, byte: i8) {
+    $arena $self &byte 1 push
 }
 fn push-i32(arena: .Arena, self: .ByteArray, v: i32) {
-    uninit<CORE:I32> @ptr
-    $v #ptr.inner
-    $arena $self &ptr.inner 4 push
+    $arena $self &v !.i8 4 push
 }
 
-fn get(self: .ByteArray, index: i32) -> i32 {
+fn get(self: .ByteArray, index: i32) -> i8 {
     $index $self.len ge if {
         2 "Index out of bounds\n" IO:write-all IO:check
         0 0 / drop
         1 CORE:exit
     }
-    $self.ptr $index + load8
+    $self.ptr $index + ~
 }
 
-fn unpack(self: ByteArray) -> .i32, i32 {
+fn unpack(self: ByteArray) -> .i8, i32 {
     $self.ptr $self.len
 }
 
@@ -117,28 +113,28 @@ fn unescape(arena: .Arena:Arena, self: ByteSlice) -> ByteArray {
     0 @i
     loop {
         $i $self.len = if { break }
-        $self.ptr $i + load8 @char
-        $char "\\" drop load8 = if {
+        $self.ptr $i + ~ @char
+        $char "\\" drop ~ = if {
             $i 1 + $self.len = if {
                 $arena &out $char push-byte
                 break
             } else {
-                $self.ptr $i + 1 + load8 @char
+                $self.ptr $i + 1 + ~ @char
                 block {
-                    $char "\"" drop load8 = if {
-                        $arena &out "\"" drop load8 push-byte break
+                    $char "\"" drop ~ = if {
+                        $arena &out "\"" drop ~ push-byte break
                     }
-                    $char "n" drop load8 = if {
-                        $arena &out "\n" drop load8 push-byte break
+                    $char "n" drop ~ = if {
+                        $arena &out "\n" drop ~ push-byte break
                     }
-                    $char "t" drop load8 = if {
-                        $arena &out "\t" drop load8 push-byte break
+                    $char "t" drop ~ = if {
+                        $arena &out "\t" drop ~ push-byte break
                     }
-                    $char "r" drop load8 = if {
-                        $arena &out "\r" drop load8 push-byte break
+                    $char "r" drop ~ = if {
+                        $arena &out "\r" drop ~ push-byte break
                     }
-                    $char "\\" drop load8 = if {
-                        $arena &out "\\" drop load8 push-byte break
+                    $char "\\" drop ~ = if {
+                        $arena &out "\\" drop ~ push-byte break
                     }
                     0 0 / drop
                 }

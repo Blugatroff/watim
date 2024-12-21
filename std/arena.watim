@@ -26,7 +26,7 @@ struct Page {
 struct Arena {
     used-pages: .Page
     size: i32
-    name-ptr: .i32
+    name-ptr: .i8
     name-len: i32
 }
 
@@ -67,7 +67,7 @@ fn add-page(self: .Arena) {
     0 #new-page.pos
 }
 
-fn add-multiple-page(self: .Arena, n: i32) -> .i32 {
+fn add-multiple-page(self: .Arena, n: i32) -> .i8 {
     1 $n / drop // n 0 /= assert
     $n PA:contiguous-pages !.Page @new-page
     MULTIPLE_PAGE #new-page.type
@@ -75,10 +75,10 @@ fn add-multiple-page(self: .Arena, n: i32) -> .i32 {
     PA:page-size sizeof(Page) - #new-page.pos
     $n #new-page.num-pages
     $new-page #self.used-pages
-    $new-page sizeof(Page) + !.i32
+    $new-page sizeof(Page) + !.i8
 }
 
-fn new(name-ptr: .i32, name-len: i32) -> Arena {
+fn new(name-ptr: .i8, name-len: i32) -> Arena {
     make Arena {
         0 !.Page @used-pages
         $name-ptr @name-ptr
@@ -113,7 +113,7 @@ fn shred(self: .Arena) {
     $self \CORE:clear visit-mem
     $self clear
 }
-fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
+fn alloc-bytes(self: .Arena, size: i32) -> .i8 { block {
     $ON_ALLOC 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC -> }
     $size 0 = if {
         $self.used-pages 0 !.Page = if {
@@ -122,7 +122,7 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
             $self 1 alloc-bytes break
             // Is there a better solution? Can allocating an entire page for otherwise empty Arenas be avoided here?
         }
-        $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i32 break
+        $self.used-pages sizeof(Page) + $self.used-pages.pos + !.i8 break
     }
     $self.size $size + #self.size
     $size PA:page-size sizeof(Page) - gt if {
@@ -140,7 +140,7 @@ fn alloc-bytes(self: .Arena, size: i32) -> .i32 { block {
             break
         }
         $page.pos sizeof(Page) + $size + PA:page-size le if { // there is enough space in this page
-            $page sizeof(Page) + $page.pos + !.i32
+            $page sizeof(Page) + $page.pos + !.i8
             $page.pos $size + #page.pos
             break
         }
@@ -153,7 +153,7 @@ fn alloc<T>(self: .Arena) -> .T {
 fn alloc-many<T>(self: .Arena, n: i32) -> .T {
     $self sizeof(T) $n * alloc-bytes !.T
 }
-fn push-bytes(self: .Arena, ptr: .i32, len: i32) -> .i32 {
+fn push-bytes(self: .Arena, ptr: .i8, len: i32) -> .i8 {
     $self $len alloc-bytes @dst
     $ptr $dst $len CORE:copy-bytes
     $dst
@@ -164,14 +164,14 @@ fn push<T>(self: .Arena, value: T) -> .T {
     $ptr
 }
 fn push-many<T>(self: .Arena, ptr: .T, n: i32) -> .T {
-    $self $ptr !.i32 sizeof(T) $n * push-bytes !.T
+    $self $ptr !.i8 sizeof(T) $n * push-bytes !.T
 }
-fn push-byte(self: .Arena, byte: i32) {
-    $self 1 alloc-bytes $byte store8
+fn push-byte(self: .Arena, byte: i8) {
+    $self 1 alloc-bytes $byte store
 }
 fn copy<T>(self: .Arena, value: .T) -> .T {
     $self alloc<T> @ptr
-    $value !.i32 $ptr !.i32 sizeof(T) CORE:copy-bytes
+    $value !.i8 $ptr !.i8 sizeof(T) CORE:copy-bytes
     $ptr
 }
 fn usage(self: .Arena) -> i32 {

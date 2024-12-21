@@ -6,13 +6,13 @@ import "./arena.watim" as Arena (Arena)
 
 struct Formatter {
     indent-level: i32
-    write: (i32, .i32, i32 ->)
+    write: (i32, .i8, i32 ->)
     user-data: i32
-    indentation-ptr: .i32
+    indentation-ptr: .i8
     indentation-len: i32
 }
 
-fn new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
+fn new(write: (i32, .i8, i32 ->), user-data: i32) -> Formatter {
     make Formatter {
         $write @write
         $user-data @user-data
@@ -20,7 +20,7 @@ fn new(write: (i32, .i32, i32 ->), user-data: i32) -> Formatter {
         "  " @indentation-len @indentation-ptr
     }
 }
-fn use-indentation(fmt: Formatter, indentation-ptr: .i32, indentation-len: i32) -> Formatter {
+fn use-indentation(fmt: Formatter, indentation-ptr: .i8, indentation-len: i32) -> Formatter {
     make Formatter {
         $fmt.write @write
         $fmt.user-data @user-data
@@ -29,7 +29,7 @@ fn use-indentation(fmt: Formatter, indentation-ptr: .i32, indentation-len: i32) 
         $indentation-len @indentation-len
     }
 }
-fn write(self: .Formatter, ptr: .i32, len: i32) {
+fn write(self: .Formatter, ptr: .i8, len: i32) {
     $self.user-data $ptr $len $self.write ->
 }
 fn write-indent(self: .Formatter) {
@@ -51,7 +51,7 @@ fn dedent(self: .Formatter) {
 }
 
 struct Buffer {
-    ptr: .i32
+    ptr: .i8
     cap: i32
     len: i32
     parent: .Formatter
@@ -60,7 +60,7 @@ fn flush(self: .Buffer) {
     $self.parent.user-data $self.ptr $self.len $self.parent.write ->
     0 #self.len
 }
-fn write-buffered(user-data: i32, ptr: .i32, len: i32) {
+fn write-buffered(user-data: i32, ptr: .i8, len: i32) {
     $user-data !.Buffer @buffer
     $buffer.len $len + $buffer.cap gt if {
         $buffer flush
@@ -87,7 +87,7 @@ fn buffered(arena: .Arena, fmt: .Formatter, buf-size: i32) -> Formatter, .Buffer
     $buffer
 }
 
-fn write-to-fd(fd: i32, ptr: .i32, len: i32) {
+fn write-to-fd(fd: i32, ptr: .i8, len: i32) {
     $fd $ptr $len IO:write-all IO:check
 }
 
@@ -109,7 +109,7 @@ struct FormatterIntoStringUserData {
     arena: .Arena
 }
 
-fn append-string(user-data: i32, ptr: .i32, len: i32) {
+fn append-string(user-data: i32, ptr: .i8, len: i32) {
     $user-data !.FormatterIntoStringUserData @user-data
     $user-data.arena $user-data.string $ptr $len ByteArray:push
 }
@@ -127,11 +127,11 @@ fn into-new-string(arena: .Arena) -> Formatter, .ByteArray {
 
 fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
     $fmt "\"" write
-    uninit<CORE:I32> @escaped-char
+    0 @escaped-char
     0 @i
     loop {
         $i $self.len = if { break }
-        $fmt &escaped-char.inner $self.ptr $i + load8 &escaped-char.inner CORE:escape write
+        $fmt &escaped-char !.i8 $self.ptr $i + ~ &escaped-char !.i8 CORE:escape write
         $i 1 + #i
     }
     $fmt "\"" write

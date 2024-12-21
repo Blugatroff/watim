@@ -36,7 +36,7 @@ fn print-usage-and-exit() {
     1 Core:exit
 }
 
-fn find-flag(args: .Array<ByteSlice>, ptr: .i32, len: i32) -> bool {
+fn find-flag(args: .Array<ByteSlice>, ptr: .i8, len: i32) -> bool {
     $ptr $len make ByteSlice @str
     $args \ByteSlice:eq-by-ref &str Array:find<ByteSlice, .ByteSlice> if {
         $args flip Array:remove<ByteSlice> drop
@@ -117,16 +117,18 @@ fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice
 }
 
 fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
-    $arena Arena:temp @tmp-arena @save
+    // $arena Arena:temp @tmp-arena @save
     "Lexer" Arena:new @lexer-arena
-    $tmp-arena &watim-code Lexer:lex @tokens
-    "Tokens" Arena:new @tokens-arena
-    $arena &tokens Lexer:Tokens-copy
-    $tmp-arena $save Arena:restore
+    // $tmp-arena &watim-code Lexer:lex @tokens
+    $arena &watim-code Lexer:lex @tokens
+    // "Tokens" Arena:new @tokens-arena
+    $tokens
+    // $arena &tokens Lexer:Tokens-copy
+    // $tmp-arena $save Arena:restore
 }
 
 fn main "_start" () {
-    6 @stack-size
+    20 @stack-size
     $stack-size 1 - mem-grow drop
     PA:page-size $stack-size * set-stack-size
     Logging:enable
@@ -313,7 +315,7 @@ fn print-byte-count(fd: i32, bytes: i32) -> i32 {
         $prefixes-len 0 = if { 0 0 / break }
         $bytes 1024 lt if {
             $fd $bytes IO:print Core:dup<i32> 0 /= if { break } drop
-            $fd $prefixes load8 IO:write-byte Core:dup<i32> 0 /= if { break } drop
+            $fd $prefixes ~ IO:write-byte Core:dup<i32> 0 /= if { break } drop
             $fd "iB" IO:write-all break
         }
         $bytes 1024 / #bytes
@@ -448,7 +450,7 @@ fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<Top
     $ordered-keys $ordered-values \ByteSlice:eq-by-ref make Map<ByteSlice, Array<TopItem>>
 }
 
-fn write-stdout(ptr: .i32, len: i32) -> i32 {
+fn write-stdout(ptr: .i8, len: i32) -> i32 {
     1 $ptr $len IO:write-all
 }
 

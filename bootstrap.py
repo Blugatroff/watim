@@ -2688,7 +2688,7 @@ class WordCtx:
             stack.push(PrimitiveType.I32)
             return (word, False)
         if isinstance(word, Parser.StringWord):
-            stack.push(ResolvedPtrType(PrimitiveType.I32))
+            stack.push(ResolvedPtrType(PrimitiveType.I8))
             stack.push(PrimitiveType.I32)
             offset = self.ctx.allocate_static_data(word.data)
             return (StringWord(word.token, offset, len(word.data)), False)
@@ -3422,7 +3422,7 @@ class WordCtx:
                 self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32])
                 return IntrinsicStore8(token)
             case IntrinsicType.MEM_COPY:
-                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32])
+                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I8), ResolvedPtrType(PrimitiveType.I8), PrimitiveType.I32])
                 return IntrinsicMemCopy(token)
             case IntrinsicType.MEM_FILL:
                 self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32, PrimitiveType.I32])
@@ -5059,7 +5059,7 @@ class WatGenerator:
                     self.write("v:")
                 self.write(f"{local.name.lexeme} ")
                 self.write_type(local.taip)
-                self.write(f".store local.tee ${local.name.lexeme} i32.const {local.taip.size()} i32.add global.set $stac:k\n")
+                self.write(f".store local.tee ${local.name.lexeme} i32.const {align_to(local.taip.size(), 4)} i32.add global.set $stac:k\n")
 
     def write_locals(self, body: Body) -> None:
         for local_id, local in body.locals.items():

@@ -7,20 +7,20 @@ import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-prin
 struct PrettyPrinter {
     line: i32
     column: i32
-    write: (.i32, i32 -> i32)
+    write: (.i8, i32 -> i32)
 }
 
-fn PrettyPrinter-new(write: (.i32, i32 -> i32)) -> PrettyPrinter {
+fn PrettyPrinter-new(write: (.i8, i32 -> i32)) -> PrettyPrinter {
     1 1 $write make PrettyPrinter
 }
 
-fn write(pp: .PrettyPrinter, ptr: .i32, len: i32) -> i32 {
+fn write(pp: .PrettyPrinter, ptr: .i8, len: i32) -> i32 {
     $ptr $len $pp.write -> @code
     loop {
         $len 0 = if { break }
         $pp.column 1 + #pp.column
         $len 1 - #len
-        $ptr $len + load8 10 = if {
+        $ptr $len + ~ 10 !i8 = if {
             $pp.line 1 + #pp.line
             1 #pp.column
         }
