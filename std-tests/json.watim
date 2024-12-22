@@ -9,7 +9,7 @@ import "../std/map.watim" as Map
 import "../std/arena.watim" as Arena (Arena)
 import "../std/json.watim" as Json (Value)
 
-fn crash(ptr: .i32, len: i32) {
+fn crash(ptr: .i8, len: i32) {
     2 $ptr $len IO:write-all IO:check
     0 0 / drop
 }

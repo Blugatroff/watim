@@ -1123,12 +1123,7 @@ fn words(parser: .Parser, token: .Token) -> Result<Words, ParseError> { block {
             case _ -> { drop }
         }
         $parser $token word match {
-            case Error -> {
-                2 Fmt:to-fd @fmt
-                &fmt \Word-format &words Array:format-multi-line<Word>
-                2 IO:newline
-                make Result<Words, ParseError>.Error break
-            }
+            case Error -> { make Result<Words, ParseError>.Error break }
             case Success -> {}
         } @word
         $parser.arena &words $word Array:push<Word>

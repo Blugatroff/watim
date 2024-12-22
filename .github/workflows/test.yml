@@ -27,4 +27,8 @@ jobs:
     - name: Run tests on native compiler
       run: |
         PATH="$HOME/.wasmtime/bin:$PATH" ./test.py --native
+    - name: Run standard library tests
+      run: |
+        PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/page-alloc.watim
+        PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/json.watim
 
