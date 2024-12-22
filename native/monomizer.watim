@@ -167,6 +167,8 @@ fn CustomType-name(self: .CustomType) -> .Token {
 struct Struct {
     name: Token
     fields: Array<NamedTypeId>
+    sizes-used-for-offset-cache: .[]
+    field-offsets: Array<i32>
 }
 fn Struct-eq(a: .Struct, b: .Struct) -> bool {
     \NamedTypeId-eq &a.fields &b.fields Array:eq<NamedTypeId>
@@ -719,6 +721,7 @@ fn monomize-custom-type(
             $resolved-struct.name
             $ctx &resolved-struct.fields $generic-arguments monomize-named-types @fields
             $fields
+            0 !.[] $ctx.arena $fields.len Array:new-with-capacity<i32>
             make Struct make CustomType.Struct $ctx flip add-monomized-custom-type
         }
         case Variant -> {
@@ -1031,18 +1034,18 @@ fn compute-custom-type-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>
 fn compute-struc-size(modules: .Map<ByteSlice, Module>, sizes: .Array<i32>, types: .Array<Maybe<Key>>, struc: .Struct) -> i32 {
     0 @size
     0 @i
+    0 @largest-field
     loop {
-        $i $struc.fields.len = if { $size break }
+        $i $struc.fields.len = if { $size $largest-field Core:align-to break }
         $modules $sizes $types
         &struc.fields $i Array:get<NamedTypeId> .type ~ compute-typeid-size @field-size
+        $largest-field $field-size Core:max #largest-field
         $size $field-size + #size
 
         $i 1 + $struc.fields.len lt if {
-            $field-size 4 % 0 /=
-            $modules $sizes $types &struc.fields $i 1 + Array:get<NamedTypeId> .type ~ compute-typeid-size 4 ge
-            and if {
-                $size 4 Core:align-to #size
-            }
+            $modules $sizes $types &struc.fields $i 1 + Array:get<NamedTypeId>.type ~ compute-typeid-size @next-field-size
+
+            $size $next-field-size 4 Core:min Core:align-to #size
         }
         $i 1 + #i
     }
@@ -2014,23 +2017,30 @@ fn type-size(sizes: .Array<i32>, type: TypeId) -> i32 {
 }
 
 fn field-offset(sizes: .Array<i32>, struc: .Struct, field-index: i32) -> i32 {
-    0 @offset
-    0 @i
-    loop {
-        $i $field-index = if { $offset break }
-        &struc.fields $i Array:get<NamedTypeId> @field
-        $sizes $field.type type-size @field-size
-        $offset $field-size + #offset
+    $sizes !.[] $struc.sizes-used-for-offset-cache = if {
+        &struc.field-offsets $field-index Array:get<i32> ~
+    } else {
+        $sizes !.[] #struc.sizes-used-for-offset-cache
+        &struc.field-offsets 0 Array:truncate<i32>
+        0 @i
+        0 @offset
+        loop {
+            $i $struc.fields.len = if { break }
 
-        $i 1 + $struc.fields.len lt if {
-            $field-size 4 % 0 /=
-            $sizes &struc.fields $i 1 + Array:get<NamedTypeId> .type ~ type-size 4 ge
-            and if {
-                $offset 4 Core:align-to #offset
+            &struc.field-offsets $offset Array:push-assert-no-alloc<i32>
+
+            &struc.fields $i Array:get<NamedTypeId> @field
+            $sizes $field.type type-size @field-size
+            $offset $field-size + #offset
+
+            $i 1 + $struc.fields.len lt if {
+                $sizes &struc.fields $i 1 + Array:get<NamedTypeId> .type ~ type-size @next-field-size
+                $offset $next-field-size 4 Core:min Core:align-to #offset
             }
-        }
 
-        $i 1 + #i
+            $i 1 + #i
+        }
+        $sizes $struc $field-index field-offset
     }
 }
 

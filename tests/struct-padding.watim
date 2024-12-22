@@ -1,0 +1,25 @@
+[== Stdin Compiler ==]
+extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
+
+struct OneByte { a: i8 }
+struct TwoByte { a: i8 b: i8 }
+struct ThreeByte { a: i8 b: i8 c: i8 }
+struct FourByte { a: i8 b: i8 c: i8 d: i8 }
+struct I32AfterI8 { a: i8 b: i32 }
+struct I8AfterI32 { a: i32 b: i8 }
+
+fn main "_start" () {
+    sizeof(OneByte) 1 = assert
+    sizeof(TwoByte) 2 = assert
+    sizeof(ThreeByte) 3 = assert
+    sizeof(FourByte) 4 = assert
+    sizeof(I32AfterI8) 8 = assert
+    sizeof(I8AfterI32) 8 = assert
+}
+
+fn assert(a: bool) { 0 $a !i32 / drop }
+
+[== Status Compiler ==]
+0
+[== Status ==]
+0

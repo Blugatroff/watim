@@ -3624,11 +3624,14 @@ class Struct:
     def size(self) -> int:
         field_sizes = [field.taip.size() for field in self.fields.get()]
         size = 0
+        largest_field = 0
         for i, field_size in enumerate(field_sizes):
+            largest_field = max(largest_field, field_size)
             size += field_size
-            if field_size % 4 != 0 and i + 1 < len(field_sizes) and field_sizes[i + 1] >= 4:
-                size = align_to(size, 4)
-        return size
+            if i + 1 < len(field_sizes):
+                next_field_size = field_sizes[i + 1]
+                size = align_to(size, min(next_field_size, 4))
+        return align_to(size, largest_field)
 
     def field_offset(self, field_index: int) -> int:
         fields = self.fields.get()
@@ -3636,8 +3639,9 @@ class Struct:
         for i in range(0, field_index):
             field_size = fields[i].taip.size()
             offset += field_size
-            if field_size % 4 != 0 and i + 1 < len(fields) and fields[i + 1].taip.size() >= 4:
-                offset = align_to(offset, 4)
+            if i + 1 < len(fields):
+                next_field_size = fields[i + 1].taip.size()
+                offset = align_to(offset, min(next_field_size, 4))
         return offset
 
 @dataclass
@@ -4637,6 +4641,8 @@ class Monomizer:
         return Extern(extern.name, extern.extern_module, extern.extern_name, signature)
 
 def align_to(n: int, to: int) -> int:
+    if to == 0:
+        return n
     return n + (to - (n % to)) * ((n % to) > 0)
 
 
@@ -5443,10 +5449,8 @@ class WatGenerator:
                         self.write(f"i32.const 0 ;; make {format_type(taip)}\n")
                         return
                     if taip.size() <= 8:
-                        offset = taip.size()
                         for i in range(len(fields), 0, -1):
-                            field_size = fields[i - 1].taip.size()
-                            offset = offset - field_size
+                            offset = struct.field_offset(i - 1)
                             if i != len(fields) and (offset != 0 or taip.size() > 4):
                                 if taip.size() <= 4:
                                     self.write("call $intrinsic:flip ")

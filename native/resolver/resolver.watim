@@ -2398,6 +2398,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     case Some -> {}
                 } @a
                 &a match {
+                    case I8 -> { &a &b Type-eq }
                     case I32 -> { &a &b Type-eq }
                     case I64 -> { &a &b Type-eq }
                     case Ptr -> { drop &b match {
@@ -2409,7 +2410,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     $ctx.temp Fmt:into-new-string @msg @fmt
                     &fmt "`" Fmt:write
                     &fmt $name-ptr $name-len Fmt:write
-                    &fmt "` expected [i32, i32], [.{any}, i32] or [i64, i64], got [" Fmt:write
+                    &fmt "` expected [i8, i8], [i32, i32], [.{any}, i32] or [i64, i64], got [" Fmt:write
                     &fmt $ctx.type-lookup &a Type-pretty
                     &fmt ", " Fmt:write
                     &fmt $ctx.type-lookup &b Type-pretty

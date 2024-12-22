@@ -1982,6 +1982,10 @@ fn tuple-type(parser: .Parser, token: .Token) -> Result<TupleType, ParseError> {
             case None -> { $parser "expected a type or `]`" abort<TupleType> break }
             case Some -> {}
         } @next
+        $next Token-ty make TokenTy.TOKEN_RIGHT_BRACKET = if {
+            $token ~ Array:new<Type> make TupleType
+            make Result<TupleType, ParseError>.Success break
+        }
         $parser.arena &items $parser $next type match {
             case Error -> { make Result<TupleType, ParseError>.Error break }
             case Success -> {}

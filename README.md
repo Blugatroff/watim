@@ -35,7 +35,6 @@ Or manually install:
 - [Wasmtime](https://wasmtime.dev/) 
 - [Wabt](https://github.com/WebAssembly/wabt).
 - [Python3](https://www.python.org/)
-- [termcolor](https://pypi.org/project/termcolor/)
 
 Then compile:
 ```bash

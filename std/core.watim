@@ -15,7 +15,9 @@ fn min(a: i32, b: i32) -> i32 {
 }
 
 fn align-to(n: i32, to: i32) -> i32 {
-    $n $to $n $to % - $n $to % 0 gt !i32 * +
+    $to 0 = if { $n } else {
+        $n $to $n $to % - $n $to % 0 gt !i32 * +
+    }
 }
 
 fn copy<T>(a: .T, b: .T, len: i32) {

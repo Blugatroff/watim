@@ -815,54 +815,44 @@ fn generate-struc-word(ctx: .Ctx, word: .StructWord) { block {
             $ctx $word.type generate-type-pretty
             break
         }
-        $type-size 4 le if {
-            $struc.fields.len @i
-            $type-size @offset
-            loop {
-                $i 0 = if { break }
-                &ctx.program.sizes &struc.fields $i 1 - Array:get<NamedTypeId> .type ~ type-size @field-size
-                $offset $field-size - #offset
-
-                $offset 0 /= if {
-                    $i $struc.fields.len /= if {
-                        $ctx.fmt "call $intrinsic:flip " Fmt:write
-                    }
-                    $ctx.fmt "i32.const " Fmt:write
-                    $ctx.fmt $offset 8 * i32-format
-                    $ctx.fmt " i32.shl " Fmt:write
-                }
-
-
-                $i $struc.fields.len /= if {
-                    $ctx.fmt "i32.or " Fmt:write
-                }
-                $i 1 - #i
-            }
-            $ctx.fmt ";; make " Fmt:write
-            $ctx $word.type generate-type-pretty
-            break
-        }
         $type-size 8 le if {
             $struc.fields.len @i
-            $type-size @offset
             loop {
                 $i 0 = if { break }
                 &ctx.program.sizes &struc.fields $i 1 - Array:get<NamedTypeId> .type ~ type-size @field-size
-                $offset $field-size - #offset
+                &ctx.program.sizes $struc $i 1 - field-offset @offset
 
-                $i $struc.fields.len /= if {
-                    $ctx generate-flip-i32-i64
+                $i $struc.fields.len /=
+                $offset 0 /= $type-size 4 gt or
+                and if {
+                    $type-size 4 le if {
+                        $ctx generate-flip-i32-i32
+                    } else {
+                        $ctx generate-flip-i32-i64
+                    }
                     $ctx.fmt " " Fmt:write
                 }
-                $ctx.fmt "i64.extend_i32_u " Fmt:write
+                $type-size 4 gt if {
+                    $ctx.fmt "i64.extend_i32_u " Fmt:write
+                }
                 $offset 0 /= if {
-                    $ctx.fmt "i64.const " Fmt:write
-                    $ctx.fmt $offset 8 * i32-format
-                    $ctx.fmt " i64.shl " Fmt:write
+                    $type-size 4 le if {
+                        $ctx.fmt "i32.const " Fmt:write
+                        $ctx.fmt $offset 8 * i32-format
+                        $ctx.fmt " i32.shl " Fmt:write
+                    } else {
+                        $ctx.fmt "i64.const " Fmt:write
+                        $ctx.fmt $offset 8 * i32-format
+                        $ctx.fmt " i64.shl " Fmt:write
+                    }
                 }
 
                 $i $struc.fields.len /= if {
-                    $ctx.fmt "i64.or " Fmt:write
+                    $type-size 4 le if {
+                        $ctx.fmt "i32.or " Fmt:write
+                    } else {
+                        $ctx.fmt "i64.or " Fmt:write
+                    }
                 }
                 $i 1 - #i
             }
