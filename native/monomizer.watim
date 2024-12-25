@@ -528,10 +528,8 @@ fn lookup-resolved-function(ctx: .Ctx, handle: Resolved:FunctionHandle) -> .Reso
     .functions.values $handle.index Array:get<Resolved:FunctionOrExtern>
 }
 fn insert-into-function-table(ctx: .Ctx, handle: FunctionHandle) -> i32 {
-    $ctx.function-table \FunctionHandle-eq  &handle Array:find<FunctionHandle, .FunctionHandle> if {
-        // TODO: This should not be necessary
-        @a $a
-    } else {
+    $ctx.function-table \FunctionHandle-eq  &handle Array:find<FunctionHandle, .FunctionHandle> 
+    if {} else {
         drop
         $ctx.function-table.len
         $ctx.arena $ctx.function-table $handle Array:push<FunctionHandle>

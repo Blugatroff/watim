@@ -1201,6 +1201,7 @@ fn resolve-words(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>) 
             case Error -> { make Result<[Array<Word>, bool], ResolveError>.Error break }
             case Success -> {}
         } [,] $diverges or #diverges
+        $diverges not #ctx.reachable
         Array:push<Word>
     }
 }
@@ -1246,10 +1247,8 @@ fn resolve-word(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, w
 } }
 
 fn allocate-static-data(ctx: .Ctx, ptr: .i8, len: i32) -> i32, i32 {
-    $ctx.static-data.ptr $ctx.static-data.len $ptr $len Bytes:find-seq if {
-        @a $a // TODO: this should not be necessary
-        $len
-    } else {
+    $ctx.static-data.ptr $ctx.static-data.len $ptr $len Bytes:find-seq
+    if { $len } else {
         drop
         $ctx.static-data.len
         $ctx.persistent &ctx.static-data $ptr $len ByteArray:push

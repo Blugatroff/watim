@@ -1,8 +1,8 @@
 [== Stdin Compiler ==]
 fn foo() -> i32 {
 	block {
-		break
-		0 break
+		0 1 = if { break }
+		0 1 = if { 0 break }
 		0 1 =
 	}
 }
@@ -10,5 +10,6 @@ fn foo() -> i32 {
 1
 [== Stderr Compiler ==]
 -:2:2 break stack mismatch:
-	3:3 []
-	4:5 [i32]
+	3:14 []
+	4:16 [i32]
+	6:2 [bool]

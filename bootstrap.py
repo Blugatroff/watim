@@ -2738,6 +2738,7 @@ class WordCtx:
             parsed_word = remaining_words.pop(0)
             resolved_word,word_diverges = self.resolve_word(stack, remaining_words, parsed_word)
             diverges = diverges or word_diverges
+            self.reachable = not diverges
             resolved.append(resolved_word)
         return (resolved, diverges)
 
