@@ -1322,7 +1322,7 @@ fn dump(ctx: .WordCtx, self: .Stack) -> Array<Type> {
     &dump Array:reverse<Type>
     $dump
 }
-fn stacks-compatible(ctx: .WordCtx, a: .Stack, b: .Stack) -> bool {
+fn maek-stacks-compatible(ctx: .WordCtx, a: .Stack, b: .Stack) -> bool {
     $ctx $a $b.positive.len use drop
     $ctx $b $a.positive.len use drop
 
@@ -1516,7 +1516,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
                 }
                 case Some -> {
                     @first
-                    $ctx $first &case-stack stacks-compatible not if {
+                    $ctx $first &case-stack maek-stacks-compatible not if {
                         $ctx.temp Fmt:into-new-string @buf @fmt
                         &fmt "arms of match case have different types:" Fmt:write
                         0 @j
@@ -1602,6 +1602,16 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
     make Word.Match $match-diverges [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }
+
+fn ifel-stack-mismatch-error(ctx: .WordCtx, word: .P:If, true-stack: .Stack, false-stack: .Stack) -> ResolveError {
+    $ctx.temp Fmt:into-new-string @msg @fmt
+    &fmt "stack mismatch between if and else branch:\n\tif   " Fmt:write
+    &fmt $ctx.type-lookup &true-stack.positive Types-pretty-bracketed
+    &fmt "\n\telse " Fmt:write
+    &fmt $ctx.type-lookup &false-stack.positive Types-pretty-bracketed
+    $ctx.ctx &word.token $msg ~ ByteArray:unpack error
+}
+
 fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, word: .P:If) -> Result<[Word, bool], ResolveError> { block {
     $ctx $stack &word.token $ctx.Bool "expected a bool for `if`" expect1 match {
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
@@ -1678,19 +1688,39 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
     } [,] @false-words-diverge @false-words
 
     $true-words-diverge not $false-words-diverge not and if {
-        $ctx &true-stack &false-stack stacks-compatible not if {
-            $ctx.temp Fmt:into-new-string @msg @fmt
-            &fmt "stack mismatch between if and else branch:\n\tif   " Fmt:write
-            &fmt $ctx.type-lookup &true-stack.positive Types-pretty-bracketed
-            &fmt "\n\telse " Fmt:write
-            &fmt $ctx.type-lookup &false-stack.positive Types-pretty-bracketed
-            $ctx.ctx &word.token $msg ~ ByteArray:unpack abort<[Word, bool]> break
+        $ctx &true-stack &false-stack maek-stacks-compatible not if {
+            $ctx $word &true-stack &false-stack ifel-stack-mismatch-error
+            make Result<[Word, bool], ResolveError>.Error break
         }
-    }
+        // Because of `maek-stacks-compatible`, the stacks of both branches
+        //  must have the same parameters, so always picking the true-stack here is fine.
+        $ctx.persistent &true-stack.negative Array:clone<Type>
+    } else {
+        // Check that the parameters of both branches are the same,
+        // or that on is the prefix of the other.
+        0 @i
+        loop {
+            $i  $true-stack.negative.len =
+            $i $false-stack.negative.len =
+            or if { [,0] make Result<[], ResolveError>.Success break }
+            &true-stack.negative  $i Array:get<Type>
+            &false-stack.negative $i Array:get<Type>
+            Type-eq not if {
+                $ctx $word &true-stack &false-stack ifel-stack-mismatch-error
+                make Result<[], ResolveError>.Error break
+            }
+            $i 1 + #i
+        } match {
+            case Success -> {}
+            case Error -> { make Result<[Word, bool], ResolveError>.Error break }
+        } drop
 
-    // TODO: Check that the negative of the true and false stack are compatible 
-    // and choose the "deeper" instead of always $true-stack.negative
-    $ctx.persistent &true-stack.negative Array:clone<Type> @parameters
+        $ctx.persistent $true-stack.negative.len $false-stack.negative.len gt if {
+            &true-stack.negative
+        } else {
+            &false-stack.negative
+        } Array:clone<Type>
+    } @parameters
 
     block {
          $true-words-diverge not if { $ctx.persistent  &true-stack.positive Array:clone<Type> make Maybe<Array<Type>>.Some break }

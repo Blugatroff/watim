@@ -3005,8 +3005,10 @@ class WordCtx:
                 msg += "\n\telse "
                 msg += self.type_lookup.types_pretty_bracketed(false_stack.stack)
                 self.abort(word.token, msg)
-
-        parameters = list(true_stack.negative)
+            parameters = list(true_stack.negative)
+        else:
+            # TODO: Check, that the parameters of both branches are compatible
+            parameters = true_stack.negative if len(true_stack.negative) > len(false_stack.negative) else false_stack.negative
 
         if not true_words_diverge:
             returns = true_stack.stack
