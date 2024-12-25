@@ -107,12 +107,20 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block () -> {
             case Bool -> { "i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and" }
             case _ -> { !.i8 0 0 / }
         } }
+        case Shl -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.shl" }
+            case _ -> { drop "i32.shl" }
+        } }
+        case Shr -> { $ctx.program flip ~ lookup-type match {
+            case I64 -> { "i64.shr_u" }
+            case _ -> { drop "i32.shr_u" }
+        } }
         case Rotl -> { $ctx.program flip ~ lookup-type match {
-            case I64 -> { "i64.extend_i32_s i64.rotl" }
+            case I64 -> { "i64.rotl" }
             case _ -> { drop "i32.rotl" }
         } }
         case Rotr -> { $ctx.program flip ~ lookup-type match {
-            case I64 -> { "i64.extend_i32_s i64.rotr" }
+            case I64 -> { "i64.rotr" }
             case _ -> { drop "i32.rotr" }
         } }
         case MemCopy -> { "memory.copy" }

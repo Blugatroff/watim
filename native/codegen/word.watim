@@ -1247,7 +1247,7 @@ fn generate-set(
                 case I32InI64 -> {
                     ~ @offset
                     $ctx.fmt " i64.const 0x" Fmt:write
-                    4294967295 !i64 $offset 8 * rotl not @mask
+                    4294967295 !i64 $offset 8 * !i64 shl not @mask
                     $ctx.fmt $buf $buf $mask Core:i64-to-str-hex Fmt:write
                     " i64.and "
                 }
@@ -1258,13 +1258,13 @@ fn generate-set(
                     // offset 3 -> i32.const 0x00FFFFFF i32.and
                     ~ @offset
                     $ctx.fmt " i32.const 0x" Fmt:write
-                    $ctx.fmt $buf $buf 255 $offset 8 * rotl not Core:i32-to-str-hex Fmt:write
+                    $ctx.fmt $buf $buf 255 $offset 8 * shl not Core:i32-to-str-hex Fmt:write
                     " i32.and "
                 }
                 case I8InI64 -> {
                     ~ @offset
                     $ctx.fmt " i64.const 0x" Fmt:write
-                    $ctx.fmt $buf $buf 255 !i64 $offset 8 * rotl not Core:i64-to-str-hex Fmt:write
+                    $ctx.fmt $buf $buf 255 !i64 $offset 8 * !i64 shl not Core:i64-to-str-hex Fmt:write
                     " i64.and "
                 }
             } }

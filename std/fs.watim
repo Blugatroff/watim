@@ -23,13 +23,13 @@ extern "wasi_snapshot_preview1" "path_open" fn path_open(
 extern "wasi_snapshot_preview1" "fd_close" fn close(fd: i32) -> i32
 
 fn create-rights(read: bool, write: bool) -> i64 {
-    $read !i64 1 rotl // 1 << 1
-    $write !i64 6 rotl
+    $read !i64 1 !i64 shl
+    $write !i64 6 !i64 shl
     or
 }
 
 fn create-oflags(truncate: bool) -> i32 {
-    $truncate !i32 3 rotl
+    $truncate !i32 3 shl
 }
 
 struct PreopenedFd {

@@ -327,6 +327,8 @@ variant Intrinsic {
     case MemGrow
     case MemCopy
     case MemFill
+    case Shl -> Type
+    case Shr -> Type
     case Rotl -> Type
     case Rotr -> Type
     case And -> Type
@@ -351,6 +353,8 @@ fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
         case MemGrow -> { $fmt "MemGrow" Fmt:write }
         case MemCopy -> { $fmt "MemCopy" Fmt:write }
         case MemFill -> { $fmt "MemFill" Fmt:write }
+        case Shl -> { $fmt "(Shl " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
+        case Shr -> { $fmt "(Shr " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
         case Rotl -> { $fmt "(Rotl " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
         case Rotr -> { $fmt "(Rotr " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
         case And -> { $fmt "(And " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
@@ -2543,34 +2547,51 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                 make Word.Intrinsic 0 1 = [,2]
                 make Result<[Word, bool], ResolveError>.Success break
             }
-            $name-ptr $name-len "rotl" Bytes:eq
+            $name-ptr $name-len "shl" Bytes:eq
+            $name-ptr $name-len "shr" Bytes:eq or
+            $name-ptr $name-len "rotl" Bytes:eq or
             $name-ptr $name-len "rotr" Bytes:eq or
             if {
-                $ctx $stack &word.name "expected [i32 | i64, i32]" pop2 match {
+                $ctx $stack &word.name "expected [i8, i8] or [i32, i32] or [i64, i64]" pop2 match {
                     case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                     case Success -> {}
                 } [,] @shift @value
                 $value match {
-                    case I32 -> {}
-                    case I64 -> {}
+                    case I8 -> { 1 1 = }
+                    case I32 -> { 1 1 = }
+                    case I64 -> { 1 1 = }
                     case _ -> {
                         drop
-                        $ctx.temp Fmt:into-new-string @msg @fmt
-                        &fmt "`" Fmt:write
-                        &fmt &word.name Token-lexeme Fmt:write
-                        &fmt "` expected [i32 | i64, i32]" Fmt:write
-                        &fmt ", got: [" Fmt:write
-                        &fmt $ctx.type-lookup &value Type-pretty
-                        &fmt ", " Fmt:write
-                        &fmt $ctx.type-lookup &shift Type-pretty
-                        &fmt "]" Fmt:write
-                        $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
+                        0 1 =
                     }
+                } if {
+                    &value &shift Type-eq
+                } else {
+                    1 0 =
+                } not if {
+                    $ctx.temp Fmt:into-new-string @msg @fmt
+                    &fmt "`" Fmt:write
+                    &fmt &word.name Token-lexeme Fmt:write
+                    &fmt "` " Fmt:write
+                    &fmt "expected [i8, i8] or [i32, i32] or [i64, i64]" Fmt:write
+                    &fmt ", got: [" Fmt:write
+                    &fmt $ctx.type-lookup &value Type-pretty
+                    &fmt ", " Fmt:write
+                    &fmt $ctx.type-lookup &shift Type-pretty
+                    &fmt "]" Fmt:write
+                    $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
                 $ctx $stack $value push
-                $word.name $value $name-ptr $name-len "rotl" Bytes:eq if {
-                    make Intrinsic.Rotl
-                } else {
+                $word.name $value block (Type) -> Intrinsic {
+                    $name-ptr $name-len "shl" Bytes:eq if {
+                        make Intrinsic.Shl break
+                    }
+                    $name-ptr $name-len "shr" Bytes:eq if {
+                        make Intrinsic.Shr break
+                    }
+                    $name-ptr $name-len "rotl" Bytes:eq if {
+                        make Intrinsic.Rotl break
+                    }
                     make Intrinsic.Rotr
                 } make IntrinsicWord
                 make Word.Intrinsic 0 1 = [,2]

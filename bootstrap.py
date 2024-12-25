@@ -1880,8 +1880,10 @@ class IntrinsicType(str, Enum):
     LESS_EQ = "LESS_EQ"
     GREATER_EQ = "GREATER_EQ"
     MUL = "MUL"
-    ROTR = "ROTR"
+    SHL = "SHL"
+    SHR = "SHR"
     ROTL = "ROTL"
+    ROTR = "ROTR"
     MEM_GROW = "MEM_GROW"
     MEM_COPY = "MEM_COPY"
     MEM_FILL = "MEM_FILL"
@@ -1908,6 +1910,8 @@ INTRINSICS: dict[str, IntrinsicType] = {
         "*": IntrinsicType.MUL,
         "mem-copy": IntrinsicType.MEM_COPY,
         "mem-fill": IntrinsicType.MEM_FILL,
+        "shl": IntrinsicType.SHL,
+        "shr": IntrinsicType.SHR,
         "rotl": IntrinsicType.ROTL,
         "rotr": IntrinsicType.ROTR,
         "or": IntrinsicType.OR,
@@ -1959,6 +1963,16 @@ class ResolvedIntrinsicAnd:
 
 @dataclass
 class ResolvedIntrinsicOr:
+    token: Token
+    taip: ResolvedType
+
+@dataclass
+class ResolvedIntrinsicShl:
+    token: Token
+    taip: ResolvedType
+
+@dataclass
+class ResolvedIntrinsicShr:
     token: Token
     taip: ResolvedType
 
@@ -2042,9 +2056,65 @@ class ResolvedIntrinsicUninit:
     token: Token
     taip: ResolvedType
 
-ResolvedIntrinsicWord = ResolvedIntrinsicAdd | ResolvedIntrinsicSub | IntrinsicDrop | ResolvedIntrinsicMod | ResolvedIntrinsicMul | ResolvedIntrinsicDiv | ResolvedIntrinsicAnd | ResolvedIntrinsicOr | ResolvedIntrinsicRotr | ResolvedIntrinsicRotl | ResolvedIntrinsicGreater | ResolvedIntrinsicLess | ResolvedIntrinsicGreaterEq | ResolvedIntrinsicLessEq | IntrinsicMemCopy | IntrinsicMemFill | ResolvedIntrinsicEqual | ResolvedIntrinsicNotEqual | ResolvedIntrinsicFlip | IntrinsicMemGrow | ResolvedIntrinsicStore | ResolvedIntrinsicNot | ResolvedIntrinsicUninit | IntrinsicSetStackSize
+ResolvedIntrinsicWord = (
+      ResolvedIntrinsicAdd
+    | ResolvedIntrinsicSub
+    | IntrinsicDrop
+    | ResolvedIntrinsicMod
+    | ResolvedIntrinsicMul
+    | ResolvedIntrinsicDiv
+    | ResolvedIntrinsicAnd
+    | ResolvedIntrinsicOr
+    | ResolvedIntrinsicShl
+    | ResolvedIntrinsicShr
+    | ResolvedIntrinsicRotl
+    | ResolvedIntrinsicRotr
+    | ResolvedIntrinsicGreater
+    | ResolvedIntrinsicLess
+    | ResolvedIntrinsicGreaterEq
+    | ResolvedIntrinsicLessEq
+    | IntrinsicMemCopy
+    | IntrinsicMemFill
+    | ResolvedIntrinsicEqual
+    | ResolvedIntrinsicNotEqual
+    | ResolvedIntrinsicFlip
+    | IntrinsicMemGrow
+    | ResolvedIntrinsicStore
+    | ResolvedIntrinsicNot
+    | ResolvedIntrinsicUninit
+    | IntrinsicSetStackSize
+)
 
-ResolvedWord = NumberWord | StringWord | ResolvedCallWord | ResolvedGetWord | ResolvedRefWord | ResolvedSetWord | ResolvedStoreWord | ResolvedCallWord | ResolvedCallWord | ResolvedFunRefWord | ResolvedIfWord | ResolvedLoadWord | ResolvedLoopWord | ResolvedBlockWord | BreakWord | ResolvedCastWord | ResolvedSizeofWord | ResolvedGetFieldWord | ResolvedIndirectCallWord | ResolvedIntrinsicWord | ResolvedInitWord | ResolvedStructFieldInitWord | ResolvedStructWord | ResolvedUnnamedStructWord | ResolvedVariantWord | ResolvedMatchWord | ResolvedTupleMakeWord | ResolvedTupleUnpackWord
+ResolvedWord = (
+      NumberWord
+    | StringWord
+    | ResolvedCallWord
+    | ResolvedGetWord
+    | ResolvedRefWord
+    | ResolvedSetWord
+    | ResolvedStoreWord
+    | ResolvedCallWord
+    | ResolvedCallWord
+    | ResolvedFunRefWord
+    | ResolvedIfWord
+    | ResolvedLoadWord
+    | ResolvedLoopWord
+    | ResolvedBlockWord
+    | BreakWord
+    | ResolvedCastWord
+    | ResolvedSizeofWord
+    | ResolvedGetFieldWord
+    | ResolvedIndirectCallWord
+    | ResolvedIntrinsicWord
+    | ResolvedInitWord
+    | ResolvedStructFieldInitWord
+    | ResolvedStructWord
+    | ResolvedUnnamedStructWord
+    | ResolvedVariantWord
+    | ResolvedMatchWord
+    | ResolvedTupleMakeWord
+    | ResolvedTupleUnpackWord
+)
 
 # =============================================================================
 #  Resolver / Typechecker
@@ -3363,7 +3433,7 @@ class WordCtx:
                     return ResolvedIntrinsicAnd(token, taip)
                 if intrinsic == IntrinsicType.OR:
                     return ResolvedIntrinsicOr(token, taip)
-            case IntrinsicType.ROTR | IntrinsicType.ROTL:
+            case IntrinsicType.SHR | IntrinsicType.SHL | IntrinsicType.ROTR | IntrinsicType.ROTL:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
@@ -3372,8 +3442,12 @@ class WordCtx:
                 elif taip == PrimitiveType.I32:
                     popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
                 else:
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I32])
+                    popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
                 stack.append(popped[0])
+                if intrinsic == IntrinsicType.SHL:
+                    return ResolvedIntrinsicShl(token, taip)
+                if intrinsic == IntrinsicType.SHR:
+                    return ResolvedIntrinsicShr(token, taip)
                 if intrinsic == IntrinsicType.ROTR:
                     return ResolvedIntrinsicRotr(token, taip)
                 if intrinsic == IntrinsicType.ROTL:
@@ -4074,6 +4148,16 @@ class IntrinsicLess:
     taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
 
 @dataclass
+class IntrinsicShl:
+    token: Token
+    taip: Type
+
+@dataclass
+class IntrinsicShr:
+    token: Token
+    taip: Type
+
+@dataclass
 class IntrinsicRotl:
     token: Token
     taip: Type
@@ -4159,7 +4243,34 @@ class TupleUnpackWord:
     item: List[Type]
     copy_space_offset: int
 
-IntrinsicWord = IntrinsicAdd | IntrinsicSub | IntrinsicEqual | IntrinsicNotEqual | IntrinsicAnd | IntrinsicDrop | IntrinsicGreaterEq | IntrinsicLessEq | IntrinsicMul | IntrinsicMod | IntrinsicDiv | IntrinsicGreater | IntrinsicLess | IntrinsicFlip | IntrinsicRotl | IntrinsicRotr | IntrinsicOr | IntrinsicStore | IntrinsicMemCopy | IntrinsicMemFill | IntrinsicMemGrow | IntrinsicNot | IntrinsicUninit | IntrinsicSetStackSize
+IntrinsicWord = (
+      IntrinsicAdd
+    | IntrinsicSub
+    | IntrinsicEqual
+    | IntrinsicNotEqual
+    | IntrinsicAnd
+    | IntrinsicDrop
+    | IntrinsicGreaterEq
+    | IntrinsicLessEq
+    | IntrinsicMul
+    | IntrinsicMod
+    | IntrinsicDiv
+    | IntrinsicGreater
+    | IntrinsicLess
+    | IntrinsicFlip
+    | IntrinsicShl
+    | IntrinsicShr
+    | IntrinsicRotl
+    | IntrinsicRotr
+    | IntrinsicOr
+    | IntrinsicStore
+    | IntrinsicMemCopy
+    | IntrinsicMemFill
+    | IntrinsicMemGrow
+    | IntrinsicNot
+    | IntrinsicUninit
+    | IntrinsicSetStackSize
+)
 
 Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord | TupleMakeWord | TupleUnpackWord
 
@@ -4368,6 +4479,10 @@ class Monomizer:
                 return word
             case ResolvedIntrinsicFlip(token, lower, upper):
                 return IntrinsicFlip(token, self.monomize_type(lower, generics), self.monomize_type(upper, generics))
+            case ResolvedIntrinsicShl(token, taip):
+                return IntrinsicShl(token, self.monomize_type(taip, generics))
+            case ResolvedIntrinsicShr(token, taip):
+                return IntrinsicShr(token, self.monomize_type(taip, generics))
             case ResolvedIntrinsicRotl(token, taip):
                 return IntrinsicRotl(token, self.monomize_type(taip, generics))
             case ResolvedIntrinsicRotr(token, taip):
@@ -5075,7 +5190,7 @@ class WatGenerator:
         else:
             self.write(f"${name}")
 
-    def write_word(self, module: int, locals: Dict[LocalId, str], word: Word):
+    def write_word(self, module: int, locals: Dict[LocalId, str], word: Word) -> None:
         match word:
             case NumberWord(token):
                 self.write_line(f"i32.const {token.lexeme}")
@@ -5238,14 +5353,24 @@ class WatGenerator:
                     return
                 self.flip_i64_i64_used = True
                 self.write_line("call $intrinsic:flip-i64-i64")
+            case IntrinsicShl(token, taip):
+                if taip == PrimitiveType.I64:
+                    self.write_line("i64.rotl")
+                else:
+                    self.write_line("i32.shl")
+            case IntrinsicShr(token, taip):
+                if taip == PrimitiveType.I64:
+                    self.write_line("i64.shr")
+                else:
+                    self.write_line("i32.shr_u")
             case IntrinsicRotl(token, taip):
                 if taip == PrimitiveType.I64:
-                    self.write_line("i64.extend_i32_u i64.rotl")
+                    self.write_line("i64.rotl")
                 else:
                     self.write_line("i32.rotl")
             case IntrinsicRotr(token, taip):
                 if taip == PrimitiveType.I64:
-                    self.write_line("i64.extend_i32_u i64.rotr")
+                    self.write_line("i64.rotr")
                 else:
                     self.write_line("i32.rotr")
             case IntrinsicAnd(_, taip):
@@ -5659,9 +5784,7 @@ class WatGenerator:
                     offset += item.size()
                 self.dedent()
             case other:
-                print(other, file=sys.stderr)
                 assert_never(other)
-        return False
 
     def write_store(self, taip: Type):
         if not taip.can_live_in_reg():

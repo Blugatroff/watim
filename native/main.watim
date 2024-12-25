@@ -459,7 +459,7 @@ fn exit() {
         2 "Used " IO:write-all IO:check
         2 0 mem-grow IO:print IO:check
         2 " 64KiB pages of memory = " IO:write-all IO:check
-        2 0 mem-grow PA:page-size * 1 20 rotl 1 - + 1 20 rotl / IO:print IO:check
+        2 0 mem-grow PA:page-size * 1 20 shl 1 - + 1 20 shl / IO:print IO:check
         2 "MiB" IO:write-all IO:check
         2 ", " IO:write-all IO:check
         2 PageAlloc:active-pages IO:print IO:check

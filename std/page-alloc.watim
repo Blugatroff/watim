@@ -1,11 +1,8 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
 
-fn page-size() -> i32 { 1 16 rotl }
-fn div-by-page-size(n: i32) -> i32 {
-    // $n 16 shr // TODO: implement shr
-    $n page-size /
-}
+fn page-size() -> i32 { 1 16 shl }
+fn div-by-page-size(n: i32) -> i32 { $n 16 shr }
 fn div-by-page-size-round-up(n: i32) -> i32 { $n page-size 1 - + div-by-page-size }
 
 fn current-number-of-pages() -> i32 {
@@ -29,7 +26,7 @@ fn init() {
 
 fn do-the-mem-grow() -> .i8 {
     0 mem-grow page-size * !.i8
-    1 mem-grow 1 31 rotl and 0 /= if {
+    1 mem-grow 1 31 shl and 0 /= if {
         2 "Failed to allocate another page of memory\n" IO:write-all IO:check
         1 CORE:exit
     }

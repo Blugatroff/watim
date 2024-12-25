@@ -121,7 +121,7 @@ fn escape(char: i8, dest: .i8) -> i32 {
         $char 32 !i8 ge $char 126 !i8 le and if { $char =>dest 1 break }
         "\\x" $dest flip copy-bytes
         $dest 2 + #dest
-        $hex-digits-ptr $char !i32 4 rotr 255 and + ~ =>dest
+        $hex-digits-ptr $char !i32 4 shr + ~ =>dest
         $dest 1 + #dest
         $hex-digits-ptr $char !i32 255 and + ~ =>dest
         4 break

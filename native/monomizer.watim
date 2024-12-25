@@ -1238,6 +1238,8 @@ variant Intrinsic {
     case MemGrow
     case MemCopy
     case MemFill
+    case Shl -> TypeId
+    case Shr -> TypeId
     case Rotl -> TypeId
     case Rotr -> TypeId
     case And -> TypeId
@@ -1262,6 +1264,8 @@ fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
         case MemGrow -> { $fmt "MemGrow" Fmt:write }
         case MemCopy -> { $fmt "MemCopy" Fmt:write }
         case MemFill -> { $fmt "MemFill" Fmt:write }
+        case Shl -> { $fmt "(Shl " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
+        case Shr -> { $fmt "(Shr " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
         case Rotl -> { $fmt "(Rotl " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
         case Rotr -> { $fmt "(Rotr " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
         case And -> { $fmt "(And " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
@@ -1741,6 +1745,8 @@ fn monomize-intrinsic(ctx: .Ctx, word: .Resolved:IntrinsicWord, generic-argument
         case MemGrow -> { drop make Intrinsic.MemGrow }
         case MemCopy -> { drop make Intrinsic.MemCopy }
         case MemFill -> { drop make Intrinsic.MemFill }
+        case Shl -> { $generic-arguments monomize-type make Intrinsic.Shl }
+        case Shr -> { $generic-arguments monomize-type make Intrinsic.Shr }
         case Rotl -> { $generic-arguments monomize-type make Intrinsic.Rotl }
         case Rotr -> { $generic-arguments monomize-type make Intrinsic.Rotr }
         case And -> { $generic-arguments monomize-type make Intrinsic.And }

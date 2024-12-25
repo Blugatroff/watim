@@ -123,7 +123,7 @@ struct Token {
 }
 fn Token-new(ty: TokenTy, line: i32, column: i32, lexeme: .ImmediateString) -> Token {
     make Token {
-        $line 16 rotl $column 6 rotl $ty !i32 or or @ty-and-line-and-column
+        $line 16 shl $column 6 shl $ty !i32 or or @ty-and-line-and-column
         $lexeme @lexeme
     }
 }
@@ -134,10 +134,10 @@ fn Token-new-keyword(ty: TokenTy, line: i32, column: i32) -> Token {
     $ty $line $column 0 !.ImmediateString Token-new
 }
 fn Token-line(self: .Token) -> i32 {
-    $self.ty-and-line-and-column 16 rotr 65535 and
+    $self.ty-and-line-and-column 16 shr 65535 and
 }
 fn Token-column(self: .Token) -> i32 {
-    $self.ty-and-line-and-column 6 rotr 1023 and
+    $self.ty-and-line-and-column 6 shr 1023 and
 }
 fn Token-lexeme(self: .Token) -> .i8, i32 { block {
     $self Token-hardcoded-lexeme @len @ptr
