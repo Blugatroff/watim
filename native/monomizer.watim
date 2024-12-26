@@ -2151,16 +2151,9 @@ fn word-measure-copy-space(word: .Word, ctx: .CopySpaceCtx, offset: .i32) { bloc
         }
         case _ -> { drop break }
     } @offset-slot @type
-    $ctx.types $type.index Array:get<Maybe<Key>> Maybe:ref<Key> assert-some<.Key> Key-type match {
-        // TODO: This special case for I64s can be removed, once i64 structs are supported
-        case I64 -> {}
-        case _ -> {
-            drop
-            $ctx.sizes $type can-live-in-reg not if {
-                $offset ~ =>offset-slot
-                $offset ~ $ctx.sizes $type type-size + =>offset
-            }
-        }
+    $ctx.sizes $type can-live-in-reg not if {
+        $offset ~ =>offset-slot
+        $offset ~ $ctx.sizes $type type-size + =>offset
     }
 } }
 
@@ -2171,14 +2164,7 @@ fn returns-measure-copy-space(returns: .Array<TypeId>, types: .Array<Maybe<Key>>
         $i $returns.len = if { break }
         $returns $i Array:get<TypeId> ~ @type
         $sizes $type can-live-in-reg not if {
-            $types $type.index Array:get<Maybe<Key>> Maybe:ref<Key> assert-some<.Key> Key-type match {
-                // TODO: This special case for I64s can be removed, once i64 structs are supported
-                case I64 -> {}
-                case _ -> {
-                    drop
-                    $offset ~ $sizes $type type-size + =>offset
-                }
-            }
+            $offset ~ $sizes $type type-size + =>offset
         }
         $i 1 + #i
     }

@@ -1154,7 +1154,7 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_LEFT_BRACKET -> { $parser $token tuple break }
         case _ -> {
             drop
-            $parser "word TODO" abort<Word> break
+            $parser "expected a word" abort<Word> break
         }
     } make Result<Word, ParseError>.Success
 } }

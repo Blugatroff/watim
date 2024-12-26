@@ -904,14 +904,7 @@ fn generate-return-receivers(ctx: .Ctx, offset: i32, returns: .Array<TypeId>) {
             0 1 = break
         }
         &ctx.program.sizes $returns $i Array:get<TypeId> ~ can-live-in-reg not if {
-            $ctx.program $returns $i Array:get<TypeId> ~ lookup-type match {
-                // TODO: this special case for I64s can be removed, once i64 structs are supported
-                case I64 -> {}
-                case _ -> {
-                    drop
-                    1 1 = break
-                }
-            }
+            1 1 = break
         }
         $i 1 + #i
     } if {

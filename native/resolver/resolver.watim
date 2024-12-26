@@ -1876,7 +1876,7 @@ fn resolve-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bo
     make BreakStack {
         $token ~ @token
         $dump @types
-        $ctx.reachable @reachable // TODO: ctx.reachable is never assigned anywhere, that seems wrong!
+        $ctx.reachable @reachable
     }
     Array:push<BreakStack>
     $token ~ make Word.Break 1 1 = [,2]
