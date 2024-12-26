@@ -1580,6 +1580,13 @@ class ResolvedGlobal:
         return f"(Global {self.name} {self.taip} {self.was_reffed})"
 
 @dataclass(frozen=True, eq=True)
+class ScopeId:
+    raw: int
+    def __str__(self) -> str:
+        return str(self.raw)
+ROOT_SCOPE: ScopeId = ScopeId(0)
+
+@dataclass(frozen=True, eq=True)
 class GlobalId:
     module: int
     index: int
@@ -1587,7 +1594,7 @@ class GlobalId:
 @dataclass(frozen=True, eq=True)
 class LocalId:
     name: str
-    scope: int
+    scope: ScopeId
     shadow: int
 
     def __str__(self) -> str:
@@ -1743,12 +1750,20 @@ class ResolvedFunRefWord:
     call: ResolvedCallWord
 
 @dataclass
+class ResolvedScope:
+    id: ScopeId
+    words: List['ResolvedWord']
+
+    def __str__(self) -> str:
+        return f"(Scope {self.id} {indent_non_first(listtostr(self.words, multi_line=True))})"
+
+@dataclass
 class ResolvedIfWord:
     token: Token
     parameters: List[ResolvedType]
     returns: List[ResolvedType] | None
-    if_words: List['ResolvedWord']
-    else_words: List['ResolvedWord']
+    true_branch: ResolvedScope
+    false_branch: ResolvedScope
     diverges: bool
 
     def __str__(self) -> str:
@@ -1756,14 +1771,14 @@ class ResolvedIfWord:
         s += f"  token={self.token},\n"
         s += f"  parameters={listtostr(self.parameters)},\n"
         s += f"  returns={format_maybe(None if self.diverges else self.returns, listtostr)},\n"
-        s += f"  true-words={indent_non_first(listtostr(self.if_words, multi_line=True))},\n"
-        s += f"  false-words={indent_non_first(listtostr(self.else_words, multi_line=True))}"
+        s += f"  true-branch={self.true_branch},\n"
+        s += f"  false-branch={self.false_branch}"
         return s + ")"
 
 @dataclass
 class ResolvedLoopWord:
     token: Token
-    words: List['ResolvedWord']
+    body: ResolvedScope
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
     diverges: bool
@@ -1773,14 +1788,14 @@ class ResolvedLoopWord:
         s += f"  token={self.token},\n"
         s += f"  parameters={listtostr(self.parameters)},\n"
         s += f"  returns={format_maybe(None if self.diverges else self.returns, listtostr)},\n"
-        s += f"  words={indent_non_first(listtostr(self.words, multi_line=True))}"
+        s += f"  body={self.body}"
         return s + ")"
 
 
 @dataclass
 class ResolvedBlockWord:
     token: Token
-    words: List['ResolvedWord']
+    body: ResolvedScope
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
 
@@ -2187,7 +2202,7 @@ def determine_compilation_order2(modules: Dict[str, List[ParsedTopItem]]) -> Ind
 class Env:
     parent: 'Env | None'
     scope_counter: Ref[int]
-    scope_id: int
+    scope_id: ScopeId
     vars: Dict[str, List[Tuple[ResolvedLocal, LocalId]]]
     vars_by_id: Dict[LocalId, ResolvedLocal]
 
@@ -2197,7 +2212,7 @@ class Env:
         else:
             self.parent = None
         self.scope_counter = parent.scope_counter if isinstance(parent, Env) else Ref(0)
-        self.scope_id = self.scope_counter.value
+        self.scope_id = ScopeId(self.scope_counter.value)
         self.scope_counter.value += 1
         self.vars = {}
         self.vars_by_id = parent.vars_by_id if isinstance(parent, Env) else {}
@@ -2994,8 +3009,8 @@ class WordCtx:
                 word.token,
                 list(remaining_stack.negative),
                 None if diverges else list(remaining_stack.stack),
-                true_words,
-                resolved_remaining_words,
+                ResolvedScope(true_ctx.env.scope_id, true_words),
+                ResolvedScope(remaining_ctx.env.scope_id, resolved_remaining_words),
                 diverges), diverges)
         false_words, false_words_diverge = false_ctx.resolve_words(false_stack, word.false_words)
         if not true_words_diverge and not false_words_diverge:
@@ -3030,8 +3045,8 @@ class WordCtx:
             word.token,
             parameters,
             returns,
-            true_words,
-            false_words,
+            ResolvedScope(true_ctx.env.scope_id, true_words),
+            ResolvedScope(false_ctx.env.scope_id, false_words),
             diverges), diverges)
 
     def resolve_loop(self, stack: Stack, word: Parser.LoopWord) -> Tuple[ResolvedWord, bool]:
@@ -3069,7 +3084,8 @@ class WordCtx:
 
         self.expect(stack, word.token, parameters)
         stack.push_many(returns)
-        return (ResolvedLoopWord(word.token, words, parameters, returns, diverges), diverges)
+        body = ResolvedScope(loop_ctx.env.scope_id, words)
+        return (ResolvedLoopWord(word.token, body, parameters, returns, diverges), diverges)
 
     def resolve_break(self, stack: Stack, token: Token) -> Tuple[ResolvedWord, bool]:
         if self.block_returns is None:
@@ -3132,7 +3148,8 @@ class WordCtx:
 
         self.expect(stack, word.token, parameters)
         stack.push_many(returns)
-        return (ResolvedBlockWord(word.token, words, parameters, returns), diverges)
+        body = ResolvedScope(block_ctx.env.scope_id, words)
+        return (ResolvedBlockWord(word.token, body, parameters, returns), diverges)
 
     def resolve_indirect_call(self, stack: Stack, word: Parser.IndirectCallWord) -> Tuple[ResolvedWord, bool]:
         fun_type = stack.pop()
@@ -3926,12 +3943,17 @@ class LoadWord:
     copy_space_offset: int | None
 
 @dataclass
+class Scope:
+    id: ScopeId
+    words: List['Word']
+
+@dataclass
 class IfWord:
     token: Token
     parameters: List[Type]
     returns: List[Type] | None
-    if_words: List['Word']
-    else_words: List['Word']
+    true_branch: Scope
+    false_branch: Scope
     diverges: bool
 
 @dataclass
@@ -3948,7 +3970,7 @@ class FunRefWord:
 @dataclass
 class LoopWord:
     token: Token
-    words: List['Word']
+    body: Scope
     parameters: List[Type]
     returns: List[Type]
     diverges: bool
@@ -3956,7 +3978,7 @@ class LoopWord:
 @dataclass
 class BlockWord:
     token: Token
-    words: List['Word']
+    body: Scope
     parameters: List[Type]
     returns: List[Type]
 
@@ -4396,6 +4418,9 @@ class Monomizer:
     def monomize_global(self, globl: ResolvedGlobal) -> Global:
         return Global(globl.name, self.monomize_type(globl.taip, []), globl.was_reffed)
 
+    def monomize_scope(self, scope: ResolvedScope, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> Scope:
+        return Scope(scope.id, self.monomize_words(scope.words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space))
+
     def monomize_words(self, words: List[ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> List[Word]:
         return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count, locals, struct_space), words))
 
@@ -4519,11 +4544,11 @@ class Monomizer:
             case ResolvedCastWord(token, source, taip):
                 return CastWord(token, self.monomize_type(source, generics), self.monomize_type(taip, generics))
             case ResolvedIfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words, diverges):
-                if_words = self.monomize_words(resolved_if_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
-                else_words = self.monomize_words(resolved_else_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+                true_branch = self.monomize_scope(resolved_if_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+                false_branch = self.monomize_scope(resolved_else_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = None if resolved_returns is None else list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
-                return IfWord(token, parameters, returns, if_words, else_words, diverges)
+                return IfWord(token, parameters, returns, true_branch, false_branch, diverges)
             case ResolvedFunRefWord(call):
                 # monomize_call_word increments the copy_space, but if we're just taking the pointer
                 # of the function, then we're not actually calling it and no space should be allocated.
@@ -4536,18 +4561,18 @@ class Monomizer:
                 max_struct_ret_count.value = msrc
                 table_index = self.insert_function_into_table(call_word.function)
                 return FunRefWord(call_word, table_index)
-            case ResolvedLoopWord(token, resolved_words, resolved_parameters, resolved_returns, diverges):
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+            case ResolvedLoopWord(token, resolved_body, resolved_parameters, resolved_returns, diverges):
+                body = self.monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
-                return LoopWord(token, words, parameters, returns, diverges)
+                return LoopWord(token, body, parameters, returns, diverges)
             case ResolvedSizeofWord(token, taip):
                 return SizeofWord(token, self.monomize_type(taip, generics))
-            case ResolvedBlockWord(token, resolved_words, resolved_parameters, resolved_returns):
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+            case ResolvedBlockWord(token, resolved_body, resolved_parameters, resolved_returns):
+                body = self.monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
-                return BlockWord(token, words, parameters, returns)
+                return BlockWord(token, body, parameters, returns)
             case ResolvedGetFieldWord(token, resolved_fields, on_ptr):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 target_taip = fields[-1].target_taip
@@ -5132,7 +5157,7 @@ class WatGenerator:
             self.write("global.get $stac:k local.set $stac:k\n")
 
         if function.body.locals_copy_space != 0:
-            self.write_mem("locl-copy-spac:e", function.body.locals_copy_space, 0, 0)
+            self.write_mem("locl-copy-spac:e", function.body.locals_copy_space, ROOT_SCOPE, 0)
         self.write_structs(function.body.locals)
         if uses_stack and self.guard_stack:
             self.write_line("call $stack-overflow-guar:d")
@@ -5142,10 +5167,10 @@ class WatGenerator:
         self.dedent()
         self.write_line(")")
 
-    def write_mem(self, name: str, size: int, scope: int, shadow: int) -> None:
+    def write_mem(self, name: str, size: int, scope: ScopeId, shadow: int) -> None:
         self.write_indent()
         self.write(f"global.get $stac:k global.get $stac:k i32.const {align_to(size, 4)} i32.add global.set $stac:k local.set ${name}")
-        if scope != 0 or shadow != 0:
+        if scope != ROOT_SCOPE or shadow != 0:
             self.write(f":{scope}:{shadow}")
         self.write("\n")
 
@@ -5171,7 +5196,7 @@ class WatGenerator:
             local = body.locals[local_id]
             self.write_indent()
             self.write(f"(local ${local.name.lexeme}")
-            if local_id.scope != 0 or local_id.shadow != 0:
+            if local_id.scope != ROOT_SCOPE or local_id.shadow != 0:
                 self.write(f":{local_id.scope}:{local_id.shadow}")
             self.write(" ")
             if local.lives_in_memory():
@@ -5188,7 +5213,7 @@ class WatGenerator:
             self.write_word(module, locals, word)
 
     def write_local_ident(self, name: str, local: LocalId) -> None:
-        if local.scope != 0 or local.shadow != 0:
+        if local.scope != ROOT_SCOPE or local.shadow != 0:
             self.write(f"${name}:{local.scope}:{local.shadow}")
         else:
             self.write(f"${name}")
@@ -5492,17 +5517,17 @@ class WatGenerator:
                     self.write(".load\n")
             case BreakWord():
                 self.write_line("br $block")
-            case BlockWord(token, words, parameters, returns):
+            case BlockWord(token, body, parameters, returns):
                 self.write_indent()
                 self.write("(block $block")
                 self.write_parameters(parameters)
                 self.write_returns(returns)
                 self.write("\n")
                 self.indent()
-                self.write_words(module, locals, words)
+                self.write_words(module, locals, body.words)
                 self.dedent()
                 self.write_line(")")
-            case LoopWord(_, words, parameters, returns, diverges):
+            case LoopWord(_, body, parameters, returns, diverges):
                 self.write_indent()
                 self.write("(block $block ")
                 self.write_parameters(parameters)
@@ -5515,7 +5540,7 @@ class WatGenerator:
                 self.write_returns(returns)
                 self.write("\n")
                 self.indent()
-                self.write_words(module, locals, words)
+                self.write_words(module, locals, body.words)
                 self.write_line("br $loop")
                 self.dedent()
                 self.write_line(")")
@@ -5523,7 +5548,7 @@ class WatGenerator:
                 self.write_line(")")
                 if diverges:
                     self.write_line("unreachable")
-            case IfWord(_, parameters, returns, if_words, else_words, diverges):
+            case IfWord(_, parameters, returns, true_branch, false_branch, diverges):
                 self.write_indent()
                 self.write("(if")
                 self.write_parameters(parameters)
@@ -5532,13 +5557,13 @@ class WatGenerator:
                 self.indent()
                 self.write_line("(then")
                 self.indent()
-                self.write_words(module, locals, if_words)
+                self.write_words(module, locals, true_branch.words)
                 self.dedent()
                 self.write_line(")")
-                if len(else_words) > 0:
+                if len(false_branch.words) > 0:
                     self.write_line("(else")
                     self.indent()
-                    self.write_words(module, locals, else_words)
+                    self.write_words(module, locals, false_branch.words)
                     self.dedent()
                     self.write_line(")")
                 self.dedent()
