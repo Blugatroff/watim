@@ -36,8 +36,8 @@ check
             token=(IF if 2 13),
             parameters=[],
             returns=(Some [I32]),
-            true-words=[
-              (Number (NUMBER 9 3 9))],
-            false-words=[
-              (Number (NUMBER 4 5 9))]),
+            true-branch=(Scope 1 [
+              (Number (NUMBER 9 3 9))]),
+            false-branch=(Scope 2 [
+              (Number (NUMBER 4 5 9))])),
           (Intrinsic (IDENT + 6 7) (Add I32))]))))

@@ -6080,7 +6080,10 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
 def main(argv: List[str], stdin: str | None = None) -> str:
-    if len(argv) > 0 and argv[1] == "units":
+    if len(argv) == 1:
+        print("provide a command")
+        exit(1)
+    if argv[1] == "units":
         suite = unittest.TestSuite()
         classes = [DetermineLoadsToValueTests]
         for klass in classes:

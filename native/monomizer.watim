@@ -16,7 +16,7 @@ import "./type.watim" as Resolved (
     ModuleId, ModuleId-format,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
-import "./env.watim" as Resolved (LocalId, LocalId-format, LocalId-eq)
+import "./env.watim" as Resolved (ScopeId, ScopeId-format, root-scope, LocalId, LocalId-format, LocalId-eq)
 import "./resolver/resolver.watim" as Resolved (
     StringWord, StringWord-format,
     VarId, VarId-format,
@@ -303,7 +303,7 @@ struct Function {
     locals: Map<LocalId, Local>
     local-copy-space: i32
     max-stack-returns: i32
-    words: Array<Word>
+    body: Scope
     generic-arguments: Array<TypeId> // just for debug annotations
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
@@ -338,8 +338,8 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt $self.max-stack-returns i32-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -900,7 +900,7 @@ fn monomize-function(ctx: .Ctx, function: .Resolved:Function, generic-arguments:
     $ctx &function.locals $generic-arguments monomize-locals
     0 not
     0 not
-    $ctx &function.words $generic-arguments monomize-words
+    root-scope $ctx &function.words $generic-arguments monomize-words make Scope
     $generic-arguments ~
     make Function
 }
@@ -1292,8 +1292,8 @@ struct If {
     token: Token
     parameters: Array<TypeId>
     returns: Maybe<Array<TypeId>>
-    true-words: Array<Word>
-    false-words: Array<Word>
+    true-branch: Scope
+    false-branch: Scope
 }
 fn If-format(fmt: .Formatter, self: .If) {
     $fmt "(If\n" Fmt:write
@@ -1311,12 +1311,12 @@ fn If-format(fmt: .Formatter, self: .If) {
     $fmt \TypeIds-format &self.returns Maybe:format<Array<TypeId>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "true-words=" Fmt:write
-    $fmt \Word-format &self.true-words Array:format-multi-line<Word>
+    $fmt "true-branch=" Fmt:write
+    $fmt &self.true-branch Scope-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "false-words=" Fmt:write
-    $fmt \Word-format &self.false-words Array:format-multi-line<Word>
+    $fmt "false-branch=" Fmt:write
+    $fmt &self.false-branch Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -1325,7 +1325,7 @@ struct Loop {
     token: Token
     parameters: Array<TypeId>
     returns: Maybe<Array<TypeId>>
-    words: Array<Word>
+    body: Scope
 }
 fn Loop-format(fmt: .Formatter, self: .Loop) {
     $fmt "(Loop\n" Fmt:write
@@ -1343,8 +1343,8 @@ fn Loop-format(fmt: .Formatter, self: .Loop) {
     $fmt \TypeIds-format &self.returns Maybe:format<Array<TypeId>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -1353,7 +1353,7 @@ struct Block {
     token: Token
     parameters: Array<TypeId>
     returns: Array<TypeId>
-    words: Array<Word>
+    body: Scope
 }
 fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt "(Block\n" Fmt:write
@@ -1371,8 +1371,8 @@ fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt &self.returns TypeIds-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -1380,7 +1380,7 @@ fn Block-format(fmt: .Formatter, self: .Block) {
 struct MatchCase {
     type: Maybe<TypeId>
     tag: i32
-    words: Array<Word>
+    body: Scope
 }
 fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
     $fmt "(MatchCase " Fmt:write
@@ -1388,14 +1388,14 @@ fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
     $fmt " " Fmt:write
     $fmt $self.tag i32-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
 }
 struct Match {
     type: TypeId
     by-ref: bool
     cases: Array<MatchCase>
-    default: Maybe<Array<Word>>
+    default: Maybe<Scope>
     parameters: Array<TypeId>
     returns: Array<TypeId>
 }
@@ -1416,7 +1416,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "default=" Fmt:write
-    $fmt \Words-format &self.default Maybe:format<Array<Word>>
+    $fmt \Scope-format &self.default Maybe:format<Scope>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "parameters=" Fmt:write
@@ -1443,7 +1443,7 @@ fn StructWord-format(fmt: .Formatter, self: .StructWord) {
 
 struct StructWordNamed {
     type: TypeId
-    words: Array<Word>
+    body: Scope
     copy-space-offset: i32
 }
 fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
@@ -1452,7 +1452,7 @@ fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
     $fmt " " Fmt:write
     $fmt $self.copy-space-offset i32-format
     $fmt " " Fmt:write
-    $fmt &self.words Words-format
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
 }
 
@@ -1639,6 +1639,17 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Variant -> { VariantWord-format break }
     } Fmt:write
 } }
+struct Scope {
+    id: ScopeId
+    words: Array<Word>
+}
+fn Scope-format(fmt: .Formatter, self: .Scope) {
+    $fmt "(Scope " Fmt:write
+    $fmt &self.id ScopeId-format
+    $fmt " " Fmt:write
+    $fmt &self.words Words-format
+    $fmt ")" Fmt:write
+}
 fn Words-format(fmt: .Formatter, self: .Array<Word>) {
     $fmt \Word-format $self Array:format-multi-line<Word>
 }
@@ -1786,8 +1797,8 @@ fn monomize-iff(ctx: .Ctx, word: .Resolved:If, generic-arguments: .Array<TypeId>
         case None -> { make Maybe<Array<TypeId>>.None }
         case Some -> { $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
     }
-    $ctx &word.true-words  $generic-arguments monomize-words
-    $ctx &word.false-words $generic-arguments monomize-words
+    $ctx &word.true-branch  $generic-arguments monomize-scope
+    $ctx &word.false-branch $generic-arguments monomize-scope
     make If make Word.If
 }
 
@@ -1798,7 +1809,7 @@ fn monomize-lop(ctx: .Ctx, word: .Resolved:Loop, generic-arguments: .Array<TypeI
         case None -> { make Maybe<Array<TypeId>>.None }
         case Some -> { $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
     }
-    $ctx &word.words  $generic-arguments monomize-words
+    $ctx &word.body $generic-arguments monomize-scope
     make Loop make Word.Loop
 }
 
@@ -1806,7 +1817,7 @@ fn monomize-blok(ctx: .Ctx, word: .Resolved:Block, generic-arguments: .Array<Typ
     $word.token
     $ctx &word.parameters $generic-arguments monomize-types
     $ctx &word.returns $generic-arguments monomize-types
-    $ctx &word.words  $generic-arguments monomize-words
+    $ctx &word.body $generic-arguments monomize-scope
     make Block make Word.Block
 }
 
@@ -1858,9 +1869,7 @@ fn monomize-matsh-cays(ctx: .Ctx, cays: .Resolved:MatchCase, generic-arguments: 
         case None -> { make Maybe<TypeId>.None }
         case Some -> { $ctx flip $generic-arguments monomize-type make Maybe<TypeId>.Some }
     }
-    $cays.tag
-    $ctx &cays.words $generic-arguments monomize-words
-    make MatchCase
+    $cays.tag $ctx &cays.body $generic-arguments monomize-scope make MatchCase
 }
 
 fn monomize-matsh-cases(ctx: .Ctx, cases: .Array<Resolved:MatchCase>, generic-arguments: .Array<TypeId>) -> Array<MatchCase> {
@@ -1873,14 +1882,20 @@ fn monomize-matsh-cases(ctx: .Ctx, cases: .Array<Resolved:MatchCase>, generic-ar
     }
 }
 
+fn monomize-scope(ctx: .Ctx, scope: .Resolved:Scope, generic-arguments: .Array<TypeId>) -> Scope {
+    $scope.id $ctx &scope.words $generic-arguments monomize-words make Scope
+}
+
 fn monomize-matsh(ctx: .Ctx, word: .Resolved:Match, generic-arguments: .Array<TypeId>) -> Word {
     make Match {
         $ctx &word.cases $generic-arguments monomize-matsh-cases @cases
         $word.by-ref @by-ref
         $ctx &word.varint $generic-arguments monomize-custom-type' @type
         &word.default match {
-            case None -> { make Maybe<Array<Word>>.None }
-            case Some -> { $ctx flip $generic-arguments monomize-words make Maybe<Array<Word>>.Some }
+            case None -> { make Maybe<Scope>.None }
+            case Some -> {
+                $ctx flip $generic-arguments monomize-scope make Maybe<Scope>.Some
+            }
         } @default
         $ctx &word.parameters $generic-arguments monomize-types @parameters
         $ctx &word.returns    $generic-arguments monomize-types @returns
@@ -1902,7 +1917,7 @@ fn monomize-struc-word-named(ctx: .Ctx, word: .Resolved:StructWordNamed, generic
         case _ -> { drop Core:unreachable<.CustomTypeHandle> }
     } ~ make Maybe<CustomTypeHandle>.Some #ctx.struc-env
     $type
-    $ctx &word.words $generic-arguments monomize-words
+    $ctx &word.body $generic-arguments monomize-scope
     0 not
     make StructWordNamed make Word.StructNamed
     $outer-struc-env #ctx.struc-env
@@ -2003,7 +2018,7 @@ fn module-measure-copy-space(modules: .Array<Module>, module: .Module, sizes: .A
 fn function-measure-copy-space(modules: .Array<Module>, function: .Function, sizes: .Array<i32>, types: .Array<Maybe<Key>>) {
     $modules $sizes $types 0 not 0 make CopySpaceCtx @ctx
     0 #function.local-copy-space
-    &function.words &ctx &function.local-copy-space words-measure-copy-space
+    &function.body.words &ctx &function.local-copy-space words-measure-copy-space
     $ctx.max-stack-returns #function.max-stack-returns
 }
 
@@ -2100,7 +2115,7 @@ fn word-measure-copy-space(word: .Word, ctx: .CopySpaceCtx, offset: .i32) { bloc
             $offset ~ $ctx.sizes $word.type type-size + =>offset
             $ctx.struc-offset
             $word.copy-space-offset #ctx.struc-offset
-            &word.words $ctx $offset words-measure-copy-space
+            &word.body.words $ctx $offset words-measure-copy-space
             #ctx.struc-offset
             break
         }
@@ -2117,23 +2132,23 @@ fn word-measure-copy-space(word: .Word, ctx: .CopySpaceCtx, offset: .i32) { bloc
         }
         case If -> {
             @word
-            &word.true-words $ctx $offset words-measure-copy-space
-            &word.false-words $ctx $offset words-measure-copy-space
+            &word.true-branch.words  $ctx $offset words-measure-copy-space
+            &word.false-branch.words $ctx $offset words-measure-copy-space
             break
         }
-        case Loop -> { .words $ctx $offset words-measure-copy-space break }
-        case Block -> { .words $ctx $offset words-measure-copy-space break }
+        case Loop -> { .body.words $ctx $offset words-measure-copy-space break }
+        case Block -> { .body.words $ctx $offset words-measure-copy-space break }
         case Match -> {
             @word
             0 @i
             loop {
                 $i $word.cases.len = if { break }
-                &word.cases $i Array:get<MatchCase> .words
+                &word.cases $i Array:get<MatchCase> .body.words
                 $ctx $offset words-measure-copy-space
                 $i 1 + #i
             }
             &word.default match {
-                case Some -> { $ctx $offset words-measure-copy-space }
+                case Some -> { .words $ctx $offset words-measure-copy-space }
                 case None -> {}
             }
             break

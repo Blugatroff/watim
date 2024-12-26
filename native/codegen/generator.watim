@@ -12,7 +12,7 @@ import "../../std/util.watim" as Util (i32-format, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "../type.watim" as Type (CustomTypeHandle)
-import "../env.watim" as Env (LocalId, LocalId-eq)
+import "../env.watim" as Env (ScopeId, root-scope, LocalId, LocalId-eq)
 import "../resolver/resolver.watim" as Resolver (GlobalId, VarId)
 import "../monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
@@ -314,7 +314,7 @@ fn generate-function(
     }
 
     $function.local-copy-space 0 /= if {
-        $ctx "locl-copy-spac:e" $function.local-copy-space 0 0 generate-memory-slot
+        $ctx "locl-copy-spac:e" $function.local-copy-space 0 make ScopeId 0 generate-memory-slot
     }
 
     $ctx &function.locals generate-memory-slots-for-locals
@@ -324,7 +324,7 @@ fn generate-function(
         $ctx.fmt "call $stack-overflow-guar:d\n" Fmt:write
     }
 
-    $ctx $module &function.locals &function.words generate-words
+    $ctx $module &function.locals &function.body.words generate-words
 
     $uses-stack if {
         $ctx.fmt Fmt:write-indent
@@ -388,15 +388,15 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
     }
 }
 
-fn generate-memory-slot(ctx: .Ctx, name-ptr: .i8, name-len: i32, size: i32, scope: i32, shadow: i32) {
+fn generate-memory-slot(ctx: .Ctx, name-ptr: .i8, name-len: i32, size: i32, scope: ScopeId, shadow: i32) {
     $ctx.fmt Fmt:write-indent
     $ctx.fmt "global.get $stac:k global.get $stac:k i32.const " Fmt:write
     $ctx.fmt $size 4 align-to i32-format
     $ctx.fmt " i32.add global.set $stac:k local.set $" Fmt:write
     $ctx.fmt $name-ptr $name-len Fmt:write
-    $scope 0 /= $shadow 0 /= or if {
+    $scope.raw 0 /= $shadow 0 /= or if {
         $ctx.fmt ":" Fmt:write
-        $ctx.fmt $scope i32-format
+        $ctx.fmt $scope.raw i32-format
         $ctx.fmt ":" Fmt:write
         $ctx.fmt $shadow i32-format
     }
@@ -432,9 +432,9 @@ fn generate-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
             $ctx.fmt "(local $" Fmt:write
             $ctx.fmt &local.name Token-lexeme Fmt:write
             &locals.keys $i Array:get<LocalId> @local-id
-            $local-id.scope 0 /= $local-id.shadow 0 /= or if {
+            $local-id.scope root-scope /= $local-id.shadow 0 /= or if {
                 $ctx.fmt ":" Fmt:write
-                $ctx.fmt $local-id.scope i32-format
+                $ctx.fmt $local-id.scope.raw i32-format
                 $ctx.fmt ":" Fmt:write
                 $ctx.fmt $local-id.shadow i32-format
             }

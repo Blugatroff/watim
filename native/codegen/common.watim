@@ -5,7 +5,7 @@ import "../../std/array.watim" as Array (Array)
 import "../../std/util.watim" as Util (i32-format)
 
 import "../lexer.watim" as Lexer (Token-lexeme)
-import "../env.watim" as Env (LocalId)
+import "../env.watim" as Env (LocalId, root-scope)
 import "../resolver/resolver.watim" as Resolver (VarId)
 import "../monomizer.watim" as Monomized (
     TypeId, type-size, Local, CustomType-name
@@ -55,9 +55,9 @@ fn generate-local-ident-by-id(ctx: .Ctx, locals: .Map<LocalId, Local>, local-id:
 fn generate-local-ident(fmt: .Formatter, local: .Local, local-id: .LocalId) {
     $fmt "$" Fmt:write
     $fmt &local.name Token-lexeme Fmt:write
-    $local-id.scope 0 /= $local-id.shadow 0 /= or if {
+    $local-id.scope root-scope /= $local-id.shadow 0 /= or if {
         $fmt ":" Fmt:write
-        $fmt $local-id.scope i32-format
+        $fmt $local-id.scope.raw i32-format
         $fmt ":" Fmt:write
         $fmt $local-id.shadow i32-format
     }

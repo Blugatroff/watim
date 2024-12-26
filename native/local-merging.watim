@@ -1,0 +1,224 @@
+import "../std/maybe.watim" as Maybe (Maybe)
+import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../std/arena.watim" as Arena (Arena)
+import "../std/array.watim" as Array (Array)
+import "../std/map.watim" as Map (Map)
+
+import "./resolver/resolver.watim" as Resolver (VarId)
+import "./env.watim" as Env (ScopeId, LocalId, LocalId-eq, root-scope)
+import "./monomizer.watim" as Monomizer (
+    Monomized, Module, ExternOrInstances,
+    Function, Local, Scope, Word, If, MatchCase,
+    TypeId, type-size
+)
+
+fn merge-locals(monomized: .Monomized) {
+    0 @i
+    loop {
+        &monomized.modules Map:size<ByteSlice, Module> $i = if { break }
+        0 !.Arena Arena:temp @temp @temp-save
+
+        $temp
+        &monomized.sizes
+        &monomized.modules $i Map:get-value<ByteSlice, Module>
+        merge-locals-module
+
+        $temp $temp-save Arena:restore
+        $i 1 + #i
+    }
+}
+
+fn merge-locals-module(arena: .Arena, sizes: .Array<i32>, module: .Module) {
+    0 @i
+    loop {
+        $module.functions.len $i = if { break }
+        &module.functions $i Array:get<ExternOrInstances> match {
+            case Instances -> {
+                @instances
+                0 @j
+                loop {
+                    $instances.len $j = if { break }
+                    $arena $sizes $instances $j Array:get<.Function> ~ merge-locals-function
+                    $j 1 + #j
+                }
+            }
+            case Extern -> { drop }
+        }
+        $i 1 + #i
+    }
+}
+
+fn merge-locals-function(arena: .Arena, sizes: .Array<i32>, function: .Function) {
+    Array:new<ScopeId> Array:new<LocalId>
+    \LocalId-eq Map:new<LocalId, LocalId> make Disjoint @disjoint
+    $arena $sizes &function.body &function.locals &disjoint merge-locals-scope
+}
+
+fn merge-locals-scope(arena: .Arena, sizes: .Array<i32>, scope: .Scope, locals: .Map<LocalId, Local>, disjoint: .Disjoint) {
+    0 @i
+    loop {
+        $scope.words.len $i = if { break }
+        $arena $sizes &scope.words $i Array:get<Word> $locals $disjoint $scope.id merge-locals-word
+        $i 1 + #i
+    }
+}
+
+fn merge-locals-word(
+    arena: .Arena,
+    sizes: .Array<i32>,
+    word: .Word,
+    locals: .Map<LocalId, Local>,
+    disjoint: .Disjoint,
+    scope: ScopeId
+) {
+    $word match {
+        case InitLocal -> {
+            @word
+            $arena $sizes $locals $disjoint $word.type find-disjoint-local match {
+                case None -> {}
+                case Some -> {
+                    @reused-local
+                    $locals &word.local Map:remove<LocalId, Local> drop
+                    $arena &disjoint.substitutions $word.local $reused-local Map:insert<LocalId, LocalId> drop
+                    $reused-local #word.local
+                }
+            }
+        }
+        case GetLocal -> { .var $disjoint fixup-var }
+        case SetLocal -> { .var $disjoint fixup-var }
+        case RefLocal -> { .var $disjoint fixup-var }
+        case StoreLocal -> { .var $disjoint fixup-var }
+        case If -> {
+            @word
+            $disjoint.reused.len @outer-reused
+            $arena $sizes &word.true-branch $locals $disjoint merge-locals-scope
+            &disjoint.reused $outer-reused Array:truncate<LocalId>
+
+            $arena &disjoint.scopes $word.true-branch.id Array:push<ScopeId>
+            $disjoint.reused.len @outer-reused
+            $arena $sizes &word.false-branch $locals $disjoint merge-locals-scope
+            &disjoint.reused $outer-reused Array:truncate<LocalId>
+            &disjoint.scopes Array:pop<ScopeId> drop
+
+            $arena &disjoint.scopes $word.true-branch.id  Array:push<ScopeId>
+            $arena &disjoint.scopes $word.false-branch.id Array:push<ScopeId>
+        }
+        case Block -> {
+            @word
+
+            $disjoint.reused.len @outer-reused
+            $arena $sizes &word.body $locals $disjoint merge-locals-scope
+            &disjoint.reused $outer-reused Array:truncate<LocalId>
+            $arena &disjoint.scopes $word.body.id Array:push<ScopeId>
+        }
+        case Loop -> {
+            @word
+
+            $disjoint.reused.len @outer-reused
+            $arena $sizes &word.body $locals $disjoint merge-locals-scope
+            &disjoint.reused $outer-reused Array:truncate<LocalId>
+            $arena &disjoint.scopes $word.body.id Array:push<ScopeId>
+        }
+        case StructNamed -> {
+            @word
+
+            $disjoint.reused.len @outer-reused
+            $arena $sizes &word.body $locals $disjoint merge-locals-scope
+            &disjoint.reused $outer-reused Array:truncate<LocalId>
+            $arena &disjoint.scopes $word.body.id Array:push<ScopeId>
+        }
+        case Match -> {
+            @word
+            0 @i
+            $disjoint.scopes.len @outer-disjoint-scopes
+            loop {
+                $word.cases.len $i = if { break }
+                &word.cases $i Array:get<MatchCase> @cays
+                $disjoint.reused.len @outer-reused
+                $arena $sizes &cays.body $locals $disjoint merge-locals-scope
+                &disjoint.reused $outer-reused Array:truncate<LocalId>
+
+                $arena &disjoint.scopes $cays.body.id Array:push<ScopeId>
+
+                $i 1 + #i
+            }
+
+            &word.default match {
+                case None -> {}
+                case Some -> {
+                    @default
+                    $disjoint.reused.len @outer-reused
+                    $arena $sizes $default $locals $disjoint merge-locals-scope
+                    &disjoint.reused $outer-reused Array:truncate<LocalId>
+                }
+            }
+
+            // &disjoint.scopes $outer-disjoint-scopes Array:truncate<ScopeId>
+        }
+        case _ -> { drop }
+    }
+}
+
+fn fixup-var(var: .VarId, disjoint: .Disjoint) {
+    $var match {
+        case Global -> { drop }
+        case Local -> {
+            &disjoint.substitutions flip Map:get<LocalId, LocalId> match {
+                case None -> {}
+                case Some -> { ~ make VarId.Local =>var }
+            }
+        }
+    }
+}
+
+struct Disjoint {
+    scopes: Array<ScopeId>
+    reused: Array<LocalId>
+    substitutions: Map<LocalId, LocalId>
+}
+
+fn find-disjoint-local(
+    arena: .Arena,
+    sizes: .Array<i32>,
+    locals: .Map<LocalId, Local>,
+    disjoint: .Disjoint,
+    type: TypeId
+) -> Maybe<LocalId> { block {
+    $sizes $type type-size @type-size
+    $disjoint.scopes.len 0 = if { make Maybe<LocalId>.None break }
+    0 @i
+    loop {
+        $locals Map:size<LocalId, Local> $i = if { make Maybe<LocalId>.None break }
+        $locals $i Map:get-key<LocalId, Local> ~ @local-id
+        $locals $i Map:get-value<LocalId, Local> @local
+        $sizes $local.type type-size $type-size = if {
+            0 @j
+            loop {
+                $disjoint.scopes.len $j = if { 0 1 = break }
+                &disjoint.scopes $j Array:get<ScopeId> ~ $local-id.scope = if {
+                    // yes this local belongs to a disjoint scope
+                    1 1 = break
+                }
+                $j 1 + #j
+            } if {
+                0 @j
+                loop {
+                    $j $disjoint.reused.len = if {
+                        1 1 = break
+                    }
+                    &disjoint.reused $j Array:get<LocalId> &local-id LocalId-eq if {
+                        // This local has already been reused in this scope
+                        // so it is not disjoint.
+                        0 1 = break
+                    }
+                    $j 1 + #j
+                } if {
+                    $arena &disjoint.reused $local-id Array:push<LocalId>
+                    $local-id make Maybe<LocalId>.Some break
+                }
+            }
+        }
+        $i 1 + #i
+    }
+} }
+

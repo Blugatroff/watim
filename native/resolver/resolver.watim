@@ -29,7 +29,7 @@ import "../type.watim" as Type (
     Struct, Variant, VariantCase,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
-import "../env.watim" as Env (Env, new, child, Local, LocalId, LocalId-format, Local-format)
+import "../env.watim" as Env (Env, new, child, Local, ScopeId, ScopeId-format, LocalId, LocalId-format, Local-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
 fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
@@ -451,7 +451,7 @@ fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
 struct StructWordNamed {
     token: Token
     type: CustomTypeType
-    words: Array<Word>
+    body: Scope
 }
 fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
     $fmt "(StructWordNamed\n" Fmt:write
@@ -463,8 +463,8 @@ fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
     $fmt "type=" Fmt:write
     $fmt &self.type CustomTypeType-format
     $fmt ",\n" Fmt:write
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -486,12 +486,24 @@ fn StructWord-format(fmt: .Formatter, self: .StructWord) {
     $fmt Fmt:dedent
 }
 
+struct Scope {
+    id: ScopeId
+    words: Array<Word>
+}
+fn Scope-format(fmt: .Formatter, self: .Scope) {
+    $fmt "(Scope " Fmt:write
+    $fmt &self.id ScopeId-format
+    $fmt " " Fmt:write
+    $fmt &self.words Words-format
+    $fmt ")" Fmt:write
+}
+
 struct If {
     token: Token
     parameters: Array<Type>
     returns: Maybe<Array<Type>>
-    true-words: Array<Word>
-    false-words: Array<Word>
+    true-branch: Scope
+    false-branch: Scope
 }
 fn If-format(fmt: .Formatter, self: .If) {
     $fmt "(If\n" Fmt:write
@@ -509,12 +521,12 @@ fn If-format(fmt: .Formatter, self: .If) {
     $fmt \Types-format &self.returns Maybe:format<Array<Type>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "true-words=" Fmt:write
-    $fmt \Word-format &self.true-words Array:format-multi-line<Word>
+    $fmt "true-branch=" Fmt:write
+    $fmt &self.true-branch Scope-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "false-words=" Fmt:write
-    $fmt \Word-format &self.false-words Array:format-multi-line<Word>
+    $fmt "false-branch=" Fmt:write
+    $fmt &self.false-branch Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -528,7 +540,7 @@ struct Loop {
     token: Token
     parameters: Array<Type>
     returns: Maybe<Array<Type>>
-    words: Array<Word>
+    body: Scope
 }
 fn Loop-format(fmt: .Formatter, self: .Loop) {
     $fmt "(Loop\n" Fmt:write
@@ -546,8 +558,8 @@ fn Loop-format(fmt: .Formatter, self: .Loop) {
     $fmt \Types-format &self.returns Maybe:format<Array<Type>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -555,7 +567,7 @@ struct Block {
     token: Token
     parameters: Array<Type>
     returns: Array<Type>
-    words: Array<Word>
+    body: Scope
 }
 fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt "(Block\n" Fmt:write
@@ -573,8 +585,8 @@ fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt &self.returns Types-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -606,7 +618,7 @@ fn Load-format(fmt: .Formatter, self: .Load) {
 struct MatchCase {
     type: Maybe<Type>
     tag: i32
-    words: Array<Word>
+    body: Scope
 }
 fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
     $fmt "(MatchCase " Fmt:write
@@ -614,7 +626,7 @@ fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
     $fmt " " Fmt:write
     $fmt $self.tag i32-format
     $fmt " " Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
 }
 struct Match {
@@ -622,7 +634,7 @@ struct Match {
     varint: CustomTypeType
     by-ref: bool
     cases: Array<MatchCase>
-    default: Maybe<Array<Word>>
+    default: Maybe<Scope>
     parameters: Array<Type>
     returns: Array<Type>
 }
@@ -647,7 +659,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "default=" Fmt:write
-    $fmt \Words-format &self.default Maybe:format<Array<Word>>
+    $fmt \Scope-format &self.default Maybe:format<Scope>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "parameters=" Fmt:write
@@ -1437,7 +1449,11 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
             case Success -> {}
         } [,] @case-diverges @words
         $case-diverges $match-diverges and #match-diverges
-        &cases $case-type $tag $words make MatchCase Array:push-assert-no-alloc<MatchCase>
+        &cases
+        $case-type
+        $tag
+        $case-env.scope-id $words make Scope
+        make MatchCase Array:push-assert-no-alloc<MatchCase>
 
         &parsed-case.name Token-lexeme make ByteSlice @name
         &remaining-cases \ByteSlice:eq-by-ref &name Array:find-remove<ByteSlice, .ByteSlice> match {
@@ -1486,22 +1502,23 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
                 }
                 $ctx.ctx &word.token $msg ~ ByteArray:unpack abort<[Word, bool]> break
             }
-            make Maybe<Array<Word>>.None
+            make Maybe<Scope>.None
         }
         case Some -> {
             @default
             $ctx $stack child @def-stack
             &ctx.env Env:child @def-env
+            $def-env.scope-id
             $ctx $def-env with-env @def-ctx
             &def-ctx &def-stack $arg-item push
             &def-ctx &def-stack &default.body.words resolve-words match {
                 case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                 case Success -> {}
-            } [,] @default-diverges make Maybe<Array<Word>>.Some
+            } [,] @default-diverges make Scope make Maybe<Scope>.Some
             $match-diverges $default-diverges and #match-diverges
             &case-stacks $def-stack &default.name $default-diverges [,3] Array:push-assert-no-alloc<[Stack, .Token, bool]>
         }
-    } @default-case
+    } @default
 
     0 @i
     make Maybe<Stack>.None @first-non-diverging-case
@@ -1595,7 +1612,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         $varint-type @varint
         $by-ref @by-ref
         $cases @cases
-        $default-case @default
+        $default @default
         $parameters @parameters
         $returns @returns
     }
@@ -1622,6 +1639,7 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
     $ctx $true-env with-env @true-ctx
 
     &ctx.env Env:child @false-env
+    $false-env.scope-id @false-scope
     $ctx $stack child @false-stack
     $ctx $false-env with-env @false-ctx
 
@@ -1674,8 +1692,8 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
                     } else {
                         $ctx.persistent &remaining-stack.positive Array:clone<Type> make Maybe<Array<Type>>.Some
                     } @returns
-                    $true-words @true-words
-                    $remaining-words @false-words
+                    $true-ctx.env.scope-id      $true-words      make Scope @true-branch
+                    $remaining-ctx.env.scope-id $remaining-words make Scope @false-branch
                 } make Word.If $diverges [,2] make Result<[Word, bool], ResolveError>.Success break
             }
         }
@@ -1748,8 +1766,8 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
         $diverges @diverges
         $parameters @parameters
         $returns @returns
-        $true-words @true-words
-        $false-words @false-words
+        $true-ctx.env.scope-id  $true-words  make Scope @true-branch
+        $false-ctx.env.scope-id $false-words make Scope @false-branch
     } make Word.If $diverges [,2] make Result<[Word, bool], ResolveError>.Success
 } }
 
@@ -1835,16 +1853,17 @@ fn resolve-lop(ctx: .WordCtx, stack: .Stack, word: .P:Loop) -> Result<[Word, boo
         $ctx.ctx &word.token "unexpected values remaining on stack at the end of loop" abort<[Word, bool]> break
     }
 
-    $ctx.persistent &annotation match {
-        case Some -> { .returns }
+    &annotation match {
+        case Some -> { .returns $ctx.persistent flip Array:clone<Type> }
         case None -> {
             $loop-break-stacks.len 0 = if {
-                &loop-stack.positive // TODO: why not just Array:new<Type> ?
+                Array:new<Type>
             } else {
                 &loop-break-stacks 0 Array:get<BreakStack> .types
+                $ctx.persistent flip Array:clone<Type>
             }
         }
-    } Array:clone<Type> @returns
+    } @returns
 
     $ctx $stack &word.token &parameters expect match {
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
@@ -1855,7 +1874,7 @@ fn resolve-lop(ctx: .WordCtx, stack: .Stack, word: .P:Loop) -> Result<[Word, boo
         $word.token @token
         $parameters @parameters
         $diverges if { make Maybe<Array<Type>>.None } else { $returns make Maybe<Array<Type>>.Some } @returns
-        $words @words
+        $loop-env.scope-id $words make Scope @body
     }
     make Word.Loop $diverges [,2]
     make Result<[Word, bool], ResolveError>.Success
@@ -1987,7 +2006,7 @@ fn resolve-blok(ctx: .WordCtx, stack: .Stack, word: .P:Block) -> Result<[Word, b
         $word.token @token
         $parameters @parameters
         $returns @returns
-        $words @words
+        $block-env.scope-id $words make Scope @body
     }
     make Word.Block $diverges [,2]
     make Result<[Word, bool], ResolveError>.Success
@@ -2193,7 +2212,9 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
         $struct-type.generic-arguments @generic-arguments
         $fields @fields
     } @struc-lit-ctx
+    &ctx.env Env:child @env
     $ctx &struc-lit-ctx with-struc-lit-ctx @child-ctx
+    &child-ctx $env with-env @child-ctx
     &child-ctx $stack &word.body.words resolve-words match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
@@ -2219,7 +2240,7 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
     }
     $ctx $stack $struct-type make Type.Custom push
 
-    $word.token $struct-type $body make StructWordNamed make Word.StructWordNamed
+    $word.token $struct-type $env.scope-id $body make Scope make StructWordNamed make Word.StructWordNamed
     $diverges [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }

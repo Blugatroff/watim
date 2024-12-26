@@ -7,6 +7,8 @@ import "../../std/array.watim" as Array (Array)
 import "../../std/list.watim" as List (List)
 import "../../std/util.watim" as Util (i32-format, bool-format)
 
+import "../../std/io.watim" as IO
+
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "../type.watim" as ResolvedType (CustomTypeHandle)
 import "../env.watim" as Env (LocalId, LocalId-eq)
@@ -17,7 +19,7 @@ import "../monomizer.watim" as Monomized (
     Type, Key, Key-type, NamedTypeId, TypeId, TypeId-format,
     CustomType, CustomType-name, FunType,
     Variant, VariantCase, Struct,
-    Word, StructWord, Intrinsic, FieldAccess, MatchCase,
+    Scope, Word, StructWord, Intrinsic, FieldAccess, MatchCase,
     I32-id, I64-id, type-size, field-offset, can-live-in-reg,
 )
 
@@ -183,15 +185,15 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx.fmt Fmt:write-indent
             $ctx.fmt "(then\n" Fmt:write
             $ctx.fmt Fmt:indent
-            $ctx $module $locals &word.true-words generate-words
+            $ctx $module $locals &word.true-branch.words generate-words
             $ctx.fmt Fmt:dedent
             $ctx.fmt Fmt:write-indent
             $ctx.fmt ")\n" Fmt:write
-            $word.false-words.len 0 /= if {
+            $word.false-branch.words.len 0 /= if {
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt "(else\n" Fmt:write
                 $ctx.fmt Fmt:indent
-                $ctx $module $locals &word.false-words generate-words
+                $ctx $module $locals &word.false-branch.words generate-words
                 $ctx.fmt Fmt:dedent
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt ")\n" Fmt:write
@@ -216,7 +218,7 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx &word.returns generate-returns
             $ctx.fmt "\n" Fmt:write
             $ctx.fmt Fmt:indent
-            $ctx $module $locals &word.words generate-words
+            $ctx $module $locals &word.body.words generate-words
             $ctx.fmt Fmt:dedent
             $ctx.fmt Fmt:write-indent
             $ctx.fmt ")" Fmt:write
@@ -234,7 +236,7 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx &word.returns match { case Some -> { generate-returns } case None -> { drop } }
             $ctx.fmt "\n" Fmt:write
             $ctx.fmt Fmt:indent
-            $ctx $module $locals &word.words generate-words
+            $ctx $module $locals &word.body.words generate-words
             $ctx.fmt Fmt:write-indent
             $ctx.fmt "br $loop\n" Fmt:write
             $ctx.fmt Fmt:dedent
@@ -302,7 +304,7 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx $word.type generate-type-pretty
             $ctx.fmt "\n" Fmt:write
             $ctx.fmt Fmt:indent
-            $ctx $module $locals &word.words generate-words
+            $ctx $module $locals &word.body.words generate-words
             $ctx.fmt Fmt:dedent
             $ctx.fmt Fmt:write-indent
             $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
@@ -447,7 +449,7 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                             $ctx.fmt "unreachable" Fmt:write
                         }
                         case Some -> {
-                            $ctx flip $module flip $locals flip generate-words
+                            .words $ctx flip $module flip $locals flip generate-words
                         }
                     }
                     break
@@ -511,12 +513,12 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                         }
                     }
                 }
-                $ctx $module $locals &cays.words generate-words
+                $ctx $module $locals &cays.body.words generate-words
                 $ctx.fmt Fmt:dedent
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt ")\n" Fmt:write
                 $ctx.fmt Fmt:write-indent
-                $i 1 + $word.cases.len = &word.default is-some<Array<Word>> and if {
+                $i 1 + $word.cases.len = &word.default is-some<Scope> and if {
                     $ctx.fmt "(else\n" Fmt:write
                     $ctx.fmt Fmt:indent
                 } else {
@@ -526,7 +528,7 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             }
             loop {
                 $i 0 = if { break }
-                $i $word.cases.len = &word.default is-some<Array<Word>> and if {
+                $i $word.cases.len = &word.default is-some<Scope> and if {
                     $ctx.fmt Fmt:dedent
                     $ctx.fmt Fmt:write-indent
                 }

@@ -1,0 +1,85 @@
+[== Stdin Compiler ==]
+variant Foo { case X }
+fn foo "foo" () {
+    0 @a
+    0 1 = if {
+        1 @b
+    } else {
+        2 @c
+        loop {
+            $c drop
+            &c drop
+        }
+    }
+    make Foo.X match {
+        case X -> {
+            0 !.i32 @d
+            3 =>d
+        }
+        case _ -> {
+            drop 4 @e
+        }
+    }
+}
+[== Args Compiler ==]
+compile
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:foo (export "foo")
+		(local $a i32)
+		(local $b:1:0 i32)
+		i32.const 0
+		local.set $a
+		i32.const 0
+		i32.const 1
+		i32.eq
+		(if
+			(then
+				i32.const 1
+				local.set $b:1:0
+			)
+			(else
+				i32.const 2
+				local.set $b:1:0
+				(block $block 
+					(loop $loop 
+						local.get $b:1:0
+						drop
+						local.get $b:1:0
+						drop
+						br $loop
+					)
+				)
+				unreachable
+			)
+		)
+		i32.const 0 ;; store tag Foo.X
+		;; match on Foo
+		call $intrinsic:dupi32 i32.const 0 i32.eq (if (param i32)
+		(then
+			drop
+			i32.const 0
+			;; cast to .i32
+			local.set $b:1:0
+			i32.const 3
+			local.get $b:1:0 call $intrinsic:flip i32.store
+		)
+		(else
+			drop
+			i32.const 4
+			local.set $b:1:0
+		))
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)

@@ -1,4 +1,5 @@
 *.wat
+*.wasm
 *.js
 .direnv
 
