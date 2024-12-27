@@ -25,6 +25,6 @@ check
         locals=(Map
           (LocalId "a" 0 0)=(Local (IDENT a 1 15) (GenericType (IDENT A 1 18) 0) False True),
           (LocalId "b" 0 0)=(Local (IDENT b 1 21) (GenericType (IDENT B 1 24) 1) False True)),
-        words=[
+        body=(Scope 0 [
           (GetLocal (IDENT b 2 6) (LocalId "b" 0 0) (GenericType (IDENT B 1 24) 1) (GenericType (IDENT B 1 24) 1) []),
-          (GetLocal (IDENT a 2 9) (LocalId "a" 0 0) (GenericType (IDENT A 1 18) 0) (GenericType (IDENT A 1 18) 0) [])]))))
+          (GetLocal (IDENT a 2 9) (LocalId "a" 0 0) (GenericType (IDENT A 1 18) 0) (GenericType (IDENT A 1 18) 0) [])])))))

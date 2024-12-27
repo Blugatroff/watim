@@ -40,7 +40,7 @@ check
           returns=[(Ptr I32)]),
         locals=(Map
           (LocalId "f" 0 0)=(Local (IDENT f 7 8) (Ptr (CustomType 0 0 [])) False True)),
-        words=[
+        body=(Scope 0 [
           (RefLocal (IDENT f 8 6) (LocalId "f" 0 0) [
             (FieldAccess (IDENT a 8 8) (Ptr (CustomType 0 0 [])) (Ptr (CustomType 0 1 [])) 0),
-            (FieldAccess (IDENT x 8 10) (Ptr (CustomType 0 1 [])) I32 0)])]))))
+            (FieldAccess (IDENT x 8 10) (Ptr (CustomType 0 1 [])) I32 0)])])))))

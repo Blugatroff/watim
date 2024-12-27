@@ -21,11 +21,12 @@ import "../monomizer.watim" as Monomized (
     CustomType, CustomType-name, FunType,
     Variant, VariantCase, Struct,
     Word, Intrinsic, FieldAccess, MatchCase,
-    I32-id, I64-id, type-size, field-offset, can-live-in-reg
+    I32-id, I64-id, type-size, field-offset, can-live-in-reg,
+    local-lives-in-memory
 )
 
 import "./ctx.watim" as Ctx (
-    Ctx, lookup-function, FunctionOrExtern-name, local-lives-in-memory,
+    Ctx, lookup-function, FunctionOrExtern-name
 )
 import "./common.watim" as Common (
     generate-type, generate-type-pretty, generate-returns
@@ -340,7 +341,7 @@ fn any-local-lives-in-memory(ctx: .Ctx, locals: .Map<LocalId, Local>) -> bool {
     0 @i
     loop {
         $i $locals.values.len = if { 0 1 = break }
-        $ctx &locals.values $i Array:get<Local> local-lives-in-memory if {
+        &ctx.program.sizes &locals.values $i Array:get<Local> local-lives-in-memory if {
             1 1 = break
         }
         $i 1 + #i
@@ -353,7 +354,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
         $i $locals.values.len = if { break }
         &locals.values $i Array:get<Local> @local
 
-        $ctx $local local-lives-in-memory @lives-in-memory
+        &ctx.program.sizes $local local-lives-in-memory @lives-in-memory
         &ctx.program.sizes $local.type can-live-in-reg @can-live-in-reg
 
         $local.is-parameter $lives-in-memory and $can-live-in-reg and if {
@@ -439,7 +440,7 @@ fn generate-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
                 $ctx.fmt $local-id.shadow i32-format
             }
             $ctx.fmt " " Fmt:write
-            $ctx $local local-lives-in-memory if {
+            &ctx.program.sizes $local local-lives-in-memory if {
                 $ctx.fmt "i32" Fmt:write
             } else {
                 $ctx $local.type generate-type

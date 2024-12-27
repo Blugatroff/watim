@@ -21,11 +21,11 @@ import "../monomizer.watim" as Monomized (
     Variant, VariantCase, Struct,
     Scope, Word, StructWord, Intrinsic, FieldAccess, MatchCase,
     I32-id, I64-id, type-size, field-offset, can-live-in-reg,
+    globl-lives-in-memory, local-lives-in-memory,
 )
 
 import "./ctx.watim" as Ctx (
-    Ctx, lookup-type, lookup-globl, lookup-function,
-    globl-lives-in-memory, local-lives-in-memory, var-lives-in-memory,
+    Ctx, lookup-type, lookup-globl, lookup-function, var-lives-in-memory,
     lookup-custom-type,
     generate-pack-i32s, generate-unpack-i32s,
     generate-flip-i32-i32, generate-flip-i32-i64,
@@ -90,14 +90,14 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                     $ctx.fmt &globl.name Token-lexeme Fmt:write
                     $ctx.fmt ":" Fmt:write
                     $ctx.fmt $global-id.module.index i32-format
-                    $ctx $globl globl-lives-in-memory
+                    &ctx.program.sizes $globl globl-lives-in-memory
                 }
                 case Local -> {
                     @local-id
                     $ctx.fmt "local.get " Fmt:write
                     $locals $local-id Map:get<LocalId, Local> Maybe:assert-some<.Local> @local
                     $ctx.fmt $local $local-id generate-local-ident
-                    $ctx $local local-lives-in-memory
+                    &ctx.program.sizes $local local-lives-in-memory
                 }
             } @var-lives-in-memory
             // at this point, either the value itself or a pointer to it is on the stack
@@ -127,7 +127,8 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             @word
             List:empty<Load> @loads
 
-            $ctx $locals &word.local Map:get<LocalId, Local> Maybe:assert-some<.Local>
+            &ctx.program.sizes
+            $locals &word.local Map:get<LocalId, Local> Maybe:assert-some<.Local>
             local-lives-in-memory @var-lives-in-memory
 
             $ctx $locals $word.local make VarId.Local $word.type $var-lives-in-memory &loads generate-set
@@ -1180,12 +1181,12 @@ fn generate-set(
     &var-id match {
         case Local -> {
             $locals flip Map:get<LocalId, Local> Maybe:assert-some<.Local> @local
-            $ctx $local local-lives-in-memory
+            &ctx.program.sizes $local local-lives-in-memory
             $local.type
         }
         case Global -> {
             $ctx.program flip lookup-globl @globl
-            $ctx $globl globl-lives-in-memory
+            &ctx.program.sizes $globl globl-lives-in-memory
             $globl.type
         }
     } @var-type @var-lives-in-memory

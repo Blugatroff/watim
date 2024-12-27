@@ -27,7 +27,7 @@ check
           parameters=[],
           returns=[I32]),
         locals=(Map),
-        words=[
+        body=(Scope 0 [
           (Number (NUMBER 5 2 5)),
           (Number (NUMBER 0 2 7)),
           (Number (NUMBER 1 2 9)),
@@ -40,4 +40,4 @@ check
               (Number (NUMBER 9 3 9))]),
             false-branch=(Scope 2 [
               (Number (NUMBER 4 5 9))])),
-          (Intrinsic (IDENT + 6 7) (Add I32))]))))
+          (Intrinsic (IDENT + 6 7) (Add I32))])))))

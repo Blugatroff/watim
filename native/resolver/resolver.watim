@@ -824,8 +824,8 @@ struct Function {
     name: Token
     export: Maybe<Token>
     signature: Signature
-    words: Array<Word>
     locals: Map<LocalId, Local>
+    body: Scope
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt "(Function\n" Fmt:write
@@ -847,8 +847,8 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<LocalId, Local>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "words=" Fmt:write
-    $fmt \Word-format &self.words Array:format-multi-line<Word>
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -1100,6 +1100,7 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
                     }
                 }
                 $ctx.persistent $env.vars-by-id Map:clone<LocalId, Local>
+                flip $env.scope-id flip make Scope
                 make Function
                 make FunctionOrExtern.Function
                 &functions flip

@@ -12,7 +12,7 @@ import "../monomizer.watim" as Monomized (
     Monomized, Type, TypeId, Key, Key-type,
     CustomType, FunctionHandle, Local, Global,
     Module, Extern, Function, ExternOrInstances,
-    can-live-in-reg
+    can-live-in-reg, local-lives-in-memory, globl-lives-in-memory
 )
 
 struct Ctx {
@@ -64,18 +64,8 @@ fn lookup-globl(program: .Monomized, id: .GlobalId) -> .Global {
     &program.modules.values $id.module.index Array:get<Module> .globals $id.index Array:get<Global>
 }
 
-fn globl-lives-in-memory(ctx: .Ctx, globl: .Global) -> bool {
-    &ctx.program.sizes $globl.type can-live-in-reg not
-    $globl.reffed or
-}
-
-fn local-lives-in-memory(ctx: .Ctx, local: .Local) -> bool {
-    &ctx.program.sizes $local.type can-live-in-reg not
-    $local.reffed or
-}
-
 fn var-lives-in-memory(ctx: .Ctx, locals: .Map<LocalId, Local>, var: .VarId) -> bool {
-    $ctx $var match {
+    &ctx.program.sizes $var match {
         case Local -> {
             $locals flip Map:get<LocalId, Local> Maybe:assert-some<.Local> local-lives-in-memory
         }

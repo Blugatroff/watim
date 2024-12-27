@@ -556,6 +556,14 @@ fn I8-id () -> TypeId { 1 make TypeId }
 fn I32-id () -> TypeId { 2 make TypeId }
 fn I64-id () -> TypeId { 3 make TypeId }
 
+fn local-lives-in-memory(sizes: .Array<i32>, local: .Local) -> bool {
+    $sizes $local.type can-live-in-reg not
+    $local.reffed or
+}
+fn globl-lives-in-memory(sizes: .Array<i32>, globl: .Global) -> bool {
+    $sizes $globl.type can-live-in-reg not
+    $globl.reffed or
+}
 
 // =============================================================================
 //  Type monomorphization procedures
@@ -900,7 +908,7 @@ fn monomize-function(ctx: .Ctx, function: .Resolved:Function, generic-arguments:
     $ctx &function.locals $generic-arguments monomize-locals
     0 not
     0 not
-    root-scope $ctx &function.words $generic-arguments monomize-words make Scope
+    $ctx &function.body $generic-arguments monomize-scope
     $generic-arguments ~
     make Function
 }

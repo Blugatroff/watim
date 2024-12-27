@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from collections.abc import Iterable
-from typing import Optional, Callable, List, Tuple, NoReturn, Dict, Sequence, Literal, Iterator, TypeGuard, assert_never
+from typing import Optional, Callable, List, Tuple, NoReturn, Dict, Set, Sequence, Literal, Iterator, TypeGuard, assert_never
 from functools import reduce
 import sys
 import os
@@ -1635,24 +1635,28 @@ class ResolvedLocal:
         return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
 
 @dataclass
-class ResolvedBody:
+class ResolvedScope:
+    id: ScopeId
     words: List['ResolvedWord']
-    locals: Dict[LocalId, ResolvedLocal]
+
+    def __str__(self) -> str:
+        return f"(Scope {self.id} {indent_non_first(listtostr(self.words, multi_line=True))})"
 
 @dataclass
 class ResolvedFunction:
     name: Token
     export_name: Optional[Token]
     signature: ResolvedFunctionSignature
-    body: ResolvedBody
+    body: ResolvedScope
+    locals: Dict[LocalId, ResolvedLocal]
 
     def __str__(self) -> str:
         s = "(Function\n"
         s += f"  name={self.name},\n"
         s += f"  export={format_maybe(self.export_name)},\n"
         s += f"  signature={indent_non_first(str(self.signature))},\n"
-        s += f"  locals={indent_non_first(format_dict(self.body.locals))},\n"
-        s += f"  words={indent_non_first(listtostr(self.body.words, multi_line=True))}"
+        s += f"  locals={indent_non_first(format_dict(self.locals))},\n"
+        s += f"  body={str(self.body)}"
         return s + ")"
 
 @dataclass
@@ -1750,14 +1754,6 @@ class ResolvedFunRefWord:
     call: ResolvedCallWord
 
 @dataclass
-class ResolvedScope:
-    id: ScopeId
-    words: List['ResolvedWord']
-
-    def __str__(self) -> str:
-        return f"(Scope {self.id} {indent_non_first(listtostr(self.words, multi_line=True))})"
-
-@dataclass
 class ResolvedIfWord:
     token: Token
     parameters: List[ResolvedType]
@@ -1834,7 +1830,7 @@ class ResolvedStructFieldInitWord:
 class ResolvedStructWord:
     token: Token
     taip: ResolvedCustomTypeType
-    words: List['ResolvedWord']
+    body: ResolvedScope
 
 @dataclass
 class ResolvedUnnamedStructWord:
@@ -1851,7 +1847,7 @@ class ResolvedVariantWord:
 class ResolvedMatchCase:
     taip: ResolvedType | None
     tag: int
-    words: List['ResolvedWord']
+    body: ResolvedScope
 
 @dataclass
 class ResolvedMatchWord:
@@ -1859,7 +1855,7 @@ class ResolvedMatchWord:
     variant: ResolvedCustomTypeType
     by_ref: bool
     cases: List[ResolvedMatchCase]
-    default: List['ResolvedWord'] | None
+    default: ResolvedScope | None
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
 
@@ -2698,7 +2694,8 @@ class ResolveCtx:
                     function.signature.name,
                     function.signature.export_name,
                     signature,
-                    ResolvedBody(words, env.vars_by_id),
+                    ResolvedScope(env.scope_id, words),
+                    env.vars_by_id
                 )
                 continue
             if isinstance(top_item, Parser.Extern):
@@ -2961,7 +2958,9 @@ class WordCtx:
                 struct_type.type_definition,
                 struct_type.generic_arguments,
                 { field.name.lexeme: (i,field.taip) for i,field in enumerate(struct.fields) })
-        words,diverges = self.resolve_words(stack, word.words)
+        env = self.env.child()
+        ctx = self.with_env(env)
+        words,diverges = ctx.resolve_words(stack, word.words)
         if len(self.struct_lit_ctx.fields) != 0:
             error_message = "missing fields in struct literal:"
             for field_name,(_,field_type) in self.struct_lit_ctx.fields.items():
@@ -2969,7 +2968,7 @@ class WordCtx:
             self.abort(word.token, error_message)
         stack.push(struct_type)
         self.struct_lit_ctx = outer_struct_lit_ctx
-        return (ResolvedStructWord(word.token, struct_type, words), diverges)
+        return (ResolvedStructWord(word.token, struct_type, ResolvedScope(env.scope_id, words)), diverges)
 
     def resolve_fun_ref(self, stack: Stack, word: Parser.FunRefWord) -> Tuple[ResolvedWord, bool]:
         call = self.resolve_call_word(word.call)
@@ -3218,7 +3217,7 @@ class WordCtx:
             case_ctx = self.with_env(case_env)
             words, case_diverges = case_ctx.resolve_words(case_stack, parsed_case.words)
             match_diverges = match_diverges and case_diverges
-            cases.append(ResolvedMatchCase(case_type, tag, words))
+            cases.append(ResolvedMatchCase(case_type, tag, ResolvedScope(case_env.scope_id, words)))
 
             if parsed_case.name.lexeme not in remaining_cases:
                 other = next(token for token in visited_cases if token.lexeme == parsed_case.name.lexeme)
@@ -3247,7 +3246,7 @@ class WordCtx:
             words, default_diverges = def_ctx.resolve_words(def_stack, word.default.words)
             match_diverges = match_diverges and default_diverges
             case_stacks.append((def_stack, word.default.name, default_diverges))
-            default_case = words
+            default_case = ResolvedScope(def_env.scope_id, words)
 
         first_non_diverging_case: Stack | None = None
         for case_stack,case_token,case_diverges in case_stacks:
@@ -3872,13 +3871,6 @@ class InitLocal:
 Local = ParameterLocal | InitLocal
 
 @dataclass
-class Body:
-    words: List['Word']
-    locals_copy_space: int
-    max_struct_ret_count: int
-    locals: Dict[LocalId, Local]
-
-@dataclass
 class FunctionSignature:
     generic_arguments: List[Type]
     parameters: List[NamedType]
@@ -3901,11 +3893,19 @@ class Extern:
     signature: FunctionSignature
 
 @dataclass
+class Scope:
+    id: ScopeId
+    words: List['Word']
+
+@dataclass
 class ConcreteFunction:
     name: Token
     export_name: Token | None
     signature: FunctionSignature
-    body: Body
+    body: Scope
+    locals_copy_space: int
+    max_struct_ret_count: int
+    locals: Dict[LocalId, Local]
 
 @dataclass
 class GenericFunction:
@@ -3941,11 +3941,6 @@ class LoadWord:
     token: Token
     taip: Type
     copy_space_offset: int | None
-
-@dataclass
-class Scope:
-    id: ScopeId
-    words: List['Word']
 
 @dataclass
 class IfWord:
@@ -4219,8 +4214,8 @@ class StoreWord:
 class StructWord:
     token: Token
     taip: StructType
-    words: List['Word']
     copy_space_offset: int
+    body: Scope
 
 @dataclass
 class UnnamedStructWord:
@@ -4244,7 +4239,7 @@ class VariantWord:
 @dataclass
 class MatchCase:
     tag: int
-    words: List['Word']
+    body: Scope
 
 @dataclass
 class MatchWord:
@@ -4252,7 +4247,7 @@ class MatchWord:
     variant: StructHandle
     by_ref: bool
     cases: List[MatchCase]
-    default: List['Word'] | None
+    default: Scope | None
     parameters: List[Type]
     returns: List[Type]
 
@@ -4383,19 +4378,24 @@ class Monomizer:
             instances.append(signature)
         copy_space_offset = Ref(0)
         max_struct_ret_count = Ref(0)
-        monomized_locals = self.monomize_locals(f.body.locals, generics)
-        body = Body(
+        monomized_locals = self.monomize_locals(f.locals, generics)
+        body = Scope(
+            f.body.id,
             self.monomize_words(
                 f.body.words,
                 generics,
                 copy_space_offset,
                 max_struct_ret_count,
                 monomized_locals,
-                None),
+                None))
+        concrete_function = ConcreteFunction(
+            f.name,
+            f.export_name,
+            signature,
+            body,
             copy_space_offset.value,
             max_struct_ret_count.value,
             monomized_locals)
-        concrete_function = ConcreteFunction(f.name, f.export_name, signature, body)
         if len(f.signature.generic_parameters) == 0:
             assert(len(generics) == 0)
             assert(function not in self.functions)
@@ -4582,12 +4582,12 @@ class Monomizer:
                     copy_space_offset.value += target_taip.size()
                 loads = determine_loads(fields, just_ref=on_ptr)
                 return GetFieldWord(token, target_taip, loads, on_ptr, offset)
-            case ResolvedStructWord(token, taip, resolved_words):
+            case ResolvedStructWord(token, taip, resolved_body):
                 monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
                 copy_space_offset.value += monomized_taip.size()
-                words = self.monomize_words(resolved_words, generics, copy_space_offset, max_struct_ret_count, locals, offset)
-                return StructWord(token, monomized_taip, words, offset)
+                body = self.monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, offset)
+                return StructWord(token, monomized_taip, offset, body)
             case ResolvedUnnamedStructWord(token, taip):
                 monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
@@ -4616,9 +4616,9 @@ class Monomizer:
             case ResolvedMatchWord(token, resolved_variant_type, by_ref, cases, default_case, resolved_parameters, resolved_returns):
                 monomized_cases: List[MatchCase] = []
                 for resolved_case in cases:
-                    words = self.monomize_words(resolved_case.words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
-                    monomized_cases.append(MatchCase(resolved_case.tag, words))
-                monomized_default_case = None if default_case is None else self.monomize_words(default_case, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+                    body = self.monomize_scope(resolved_case.body, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
+                    monomized_cases.append(MatchCase(resolved_case.tag, body))
+                monomized_default_case = None if default_case is None else self.monomize_scope(default_case, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 monomized_variant = self.monomize_struct(resolved_variant_type.type_definition, this_generics)[0]
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
@@ -4788,6 +4788,114 @@ def align_to(n: int, to: int) -> int:
         return n
     return n + (to - (n % to)) * ((n % to) > 0)
 
+
+def merge_locals_module(module: Module):
+    for function in module.functions.values():
+        if isinstance(function, ConcreteFunction):
+            merge_locals_function(function)
+            return
+        for instance in function.instances.values():
+            merge_locals_function(instance)
+
+@dataclass
+class Disjoint:
+    scopes: Set[ScopeId]
+    reused: Set[LocalId]
+    substitutions: Dict[LocalId, LocalId]
+
+    def fixup_var(self, var: LocalId | GlobalId) -> LocalId | GlobalId:
+        if isinstance(var, GlobalId):
+            return var
+        if var not in self.substitutions:
+            return var
+        return self.substitutions[var]
+
+def merge_locals_function(function: ConcreteFunction):
+    disjoint = Disjoint(set(), set(), {})
+    merge_locals_scope(function.body, function.locals, disjoint)
+
+def merge_locals_scope(scope: Scope, locals: Dict[LocalId, Local], disjoint: Disjoint):
+    for word in scope.words:
+        merge_locals_word(word, locals, disjoint, scope.id)
+
+def merge_locals_word(word: Word, locals: Dict[LocalId, Local], disjoint: Disjoint, scope: ScopeId):
+    if isinstance(word, InitWord):
+        reused_local = find_disjoint_local(locals, disjoint, locals[word.local_id])
+        if reused_local is None:
+            return
+        del locals[word.local_id]
+        disjoint.substitutions[word.local_id] = reused_local
+        word.local_id = reused_local
+        return
+    if isinstance(word, GetWord):
+        word.local_id = disjoint.fixup_var(word.local_id)
+        return
+    if isinstance(word, SetWord):
+        word.local_id = disjoint.fixup_var(word.local_id)
+        return
+    if isinstance(word, RefWord):
+        word.local_id = disjoint.fixup_var(word.local_id)
+        return
+    if isinstance(word, StoreWord):
+        word.local = disjoint.fixup_var(word.local)
+        return
+    if isinstance(word, IfWord):
+        outer_reused = disjoint.reused.copy()
+        merge_locals_scope(word.true_branch, locals, disjoint)
+        disjoint.reused = outer_reused
+
+        disjoint.scopes.add(word.true_branch.id)
+        outer_reused = disjoint.reused.copy()
+        merge_locals_scope(word.false_branch, locals, disjoint)
+        disjoint.reused = outer_reused
+        disjoint.scopes.add(word.false_branch.id)
+        return
+    if isinstance(word, BlockWord):
+        outer_reused = disjoint.reused.copy()
+        merge_locals_scope(word.body, locals, disjoint)
+        disjoint.reused = outer_reused
+        disjoint.scopes.add(word.body.id)
+        return
+    if isinstance(word, LoopWord):
+        outer_reused = disjoint.reused.copy()
+        merge_locals_scope(word.body, locals, disjoint)
+        disjoint.reused = outer_reused
+        disjoint.scopes.add(word.body.id)
+        return
+    if isinstance(word, StructWord):
+        outer_reused = disjoint.reused.copy()
+        merge_locals_scope(word.body, locals, disjoint)
+        disjoint.reused = outer_reused
+        disjoint.scopes.add(word.body.id)
+        return
+    if isinstance(word, MatchWord):
+        for cays in word.cases:
+            outer_reused = disjoint.reused.copy()
+            merge_locals_scope(cays.body, locals, disjoint)
+            disjoint.reused = outer_reused
+            disjoint.scopes.add(cays.body.id)
+        if word.default is not None:
+            outer_reused = disjoint.reused.copy()
+            merge_locals_scope(word.default, locals, disjoint)
+            disjoint.reused = outer_reused
+            disjoint.scopes.add(word.default.id)
+
+def find_disjoint_local(locals: Dict[LocalId, Local], disjoint: Disjoint, to_be_replaced: Local) -> LocalId | None:
+    local_size = to_be_replaced.taip.size()
+    if len(disjoint.scopes) == 0:
+        return None
+    for local_id, local in locals.items():
+        if local.lives_in_memory() != to_be_replaced.lives_in_memory():
+            continue
+        if local.taip.size() != local_size:
+            continue
+        if local_id.scope not in disjoint.scopes:
+            continue
+        if local_id in disjoint.reused:
+            continue
+        disjoint.reused.add(local_id)
+        return local_id
+    return None
 
 class DetermineLoadsToValueTests(unittest.TestCase):
     def test_no_fields_returns_empty(self) -> None:
@@ -5133,7 +5241,7 @@ class WatGenerator:
             return
         self.write_indent()
         self.write("(")
-        self.write_signature(module, function.name, function.export_name, function.signature, instance_id, function.body.locals)
+        self.write_signature(module, function.name, function.export_name, function.signature, instance_id, function.locals)
         if len(function.signature.generic_arguments) > 0:
             self.write(" ;;")
             for taip in function.signature.generic_arguments:
@@ -5141,27 +5249,27 @@ class WatGenerator:
                 self.write_type_human(taip)
         self.write("\n")
         self.indent()
-        self.write_locals(function.body)
-        for i in range(0, function.body.max_struct_ret_count):
+        self.write_locals(function.locals)
+        for i in range(0, function.max_struct_ret_count):
             self.write_indent()
             self.write(f"(local $s{i}:a i32)\n")
-        if function.body.locals_copy_space != 0:
+        if function.locals_copy_space != 0:
             self.write_indent()
             self.write("(local $locl-copy-spac:e i32)\n")
 
-        uses_stack = function.body.locals_copy_space != 0 or any(local.lives_in_memory() for local in function.body.locals.values())
+        uses_stack = function.locals_copy_space != 0 or any(local.lives_in_memory() for local in function.locals.values())
         if uses_stack:
             self.write_indent()
             self.write("(local $stac:k i32)\n")
             self.write_indent()
             self.write("global.get $stac:k local.set $stac:k\n")
 
-        if function.body.locals_copy_space != 0:
-            self.write_mem("locl-copy-spac:e", function.body.locals_copy_space, ROOT_SCOPE, 0)
-        self.write_structs(function.body.locals)
+        if function.locals_copy_space != 0:
+            self.write_mem("locl-copy-spac:e", function.locals_copy_space, ROOT_SCOPE, 0)
+        self.write_structs(function.locals)
         if uses_stack and self.guard_stack:
             self.write_line("call $stack-overflow-guar:d")
-        self.write_body(module, function.body)
+        self.write_words(module, { id: local.name.lexeme for id, local in function.locals.items() }, function.body.words)
         if uses_stack:
             self.write_line("local.get $stac:k global.set $stac:k")
         self.dedent()
@@ -5187,13 +5295,13 @@ class WatGenerator:
                 self.write_type(local.taip)
                 self.write(f".store local.tee ${local.name.lexeme} i32.const {align_to(local.taip.size(), 4)} i32.add global.set $stac:k\n")
 
-    def write_locals(self, body: Body) -> None:
-        for local_id, local in body.locals.items():
+    def write_locals(self, locals: Dict[LocalId, Local]) -> None:
+        for local_id, local in locals.items():
             if isinstance(local, ParameterLocal):
                 if local.needs_moved_into_memory() and not local.can_be_abused_as_ref():
                     self.write_line(f"(local ${local.name.lexeme} i32)")
                 continue
-            local = body.locals[local_id]
+            local = locals[local_id]
             self.write_indent()
             self.write(f"(local ${local.name.lexeme}")
             if local_id.scope != ROOT_SCOPE or local_id.shadow != 0:
@@ -5205,18 +5313,15 @@ class WatGenerator:
                 self.write_type(local.taip)
             self.write(")\n")
 
-    def write_body(self, module: int, body: Body) -> None:
-        self.write_words(module, { id: local.name.lexeme for id, local in body.locals.items() }, body.words)
-
     def write_words(self, module: int, locals: Dict[LocalId, str], words: List[Word]) -> None:
         for word in words:
             self.write_word(module, locals, word)
 
-    def write_local_ident(self, name: str, local: LocalId) -> None:
+    def write_local_ident(self, locals: Dict[LocalId, str], local: LocalId) -> None:
         if local.scope != ROOT_SCOPE or local.shadow != 0:
-            self.write(f"${name}:{local.scope}:{local.shadow}")
+            self.write(f"${locals[local]}:{local.scope}:{local.shadow}")
         else:
-            self.write(f"${name}")
+            self.write(f"${locals[local]}")
 
     def write_word(self, module: int, locals: Dict[LocalId, str], word: Word) -> None:
         match word:
@@ -5231,7 +5336,7 @@ class WatGenerator:
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 else:
                     self.write("local.get ")
-                    self.write_local_ident(token.lexeme, local_id)
+                    self.write_local_ident(locals, local_id)
                 # at this point, either the value itself or a pointer to it is on the stack
                 for i, load in enumerate(loads):
                     self.write(" ")
@@ -5262,7 +5367,7 @@ class WatGenerator:
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 if isinstance(local_id, LocalId):
                     self.write("local.get ")
-                    self.write_local_ident(token.lexeme, local_id)
+                    self.write_local_ident(locals, local_id)
                 for i, load in enumerate(loads):
                     self.write(f" {load}")
                 self.write("\n")
@@ -5498,7 +5603,7 @@ class WatGenerator:
                     self.write(f"global.get ${token.lexeme}:{local_id.module}")
                 else:
                     self.write("local.get ")
-                    self.write_local_ident(token.lexeme, local_id)
+                    self.write_local_ident(locals, local_id)
                 for load in loads:
                     # self.write(f" i32.load offset={offset}")
                     self.write(f" {load}")
@@ -5570,7 +5675,7 @@ class WatGenerator:
                 self.write_line(")")
                 if diverges:
                     self.write_line("unreachable")
-            case StructWord(_, taip, words, copy_space_offset):
+            case StructWord(_, taip, copy_space_offset, body):
                 self.write_indent()
                 struct = self.lookup_type_definition(taip.struct)
                 assert(not isinstance(struct, Variant))
@@ -5581,7 +5686,7 @@ class WatGenerator:
                     return
                 self.write(f";; make {format_type(taip)}\n")
                 self.indent()
-                self.write_words(module, locals, words)
+                self.write_words(module, locals, body.words)
                 self.dedent()
                 self.write_indent()
                 self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add ")
@@ -5657,11 +5762,7 @@ class WatGenerator:
                         if default is None:
                             self.write("unreachable")
                             return
-                        # if variant.size() <= 4 and by_ref:
-                        #     self.write_indent()
-                        #     self.write("i32.load")
-                        #     self.write("\n")
-                        self.write_words(module, locals, default)
+                        self.write_words(module, locals, default.words)
                         return
                     case = cases[0]
                     assert(isinstance(variant, Variant))
@@ -5700,7 +5801,7 @@ class WatGenerator:
                         self.write("\n")
                     elif variant_inhabits_i64:
                         self.write_line("i32.wrap_i64")
-                    self.write_words(module, locals, case.words)
+                    self.write_words(module, locals, case.body.words)
                     self.dedent()
                     self.write_line(")")
                     self.write_indent()
@@ -5829,8 +5930,7 @@ class WatGenerator:
         def write_ident():
             match local_id:
                 case LocalId():
-                    local = locals[local_id]
-                    self.write_local_ident(local, local_id)
+                    self.write_local_ident(locals, local_id)
                     return
                 case GlobalId():
                     globl = self.globals[local_id]
@@ -6102,6 +6202,8 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
     if mode == "monomize":
         return "TODO"
+    for mono_module in mono_modules.values():
+        merge_locals_module(mono_module)
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
 def main(argv: List[str], stdin: str | None = None) -> str:
