@@ -2740,6 +2740,11 @@ class WordCtx:
         new.block_returns = block_returns
         return new
 
+    def with_struct_lit_ctx(self, ctx: StructLitContext) -> 'WordCtx':
+        new = copy.copy(self)
+        new.struct_lit_ctx = ctx
+        return new
+
     def abort(self, token: Token, message: str) -> NoReturn:
         self.ctx.abort(token, message)
 
@@ -2953,21 +2958,19 @@ class WordCtx:
         struct = self.type_lookup.lookup(struct_type.type_definition)
         if isinstance(struct, ResolvedVariant):
             self.abort(word.token, "can only make struct types, not variants")
-        outer_struct_lit_ctx = self.struct_lit_ctx
-        self.struct_lit_ctx = StructLitContext(
-                struct_type.type_definition,
-                struct_type.generic_arguments,
-                { field.name.lexeme: (i,field.taip) for i,field in enumerate(struct.fields) })
         env = self.env.child()
-        ctx = self.with_env(env)
+        struct_lit_ctx = StructLitContext(
+            struct_type.type_definition,
+            struct_type.generic_arguments,
+            { field.name.lexeme: (i,field.taip) for i,field in enumerate(struct.fields) })
+        ctx = self.with_struct_lit_ctx(struct_lit_ctx).with_env(env)
         words,diverges = ctx.resolve_words(stack, word.words)
-        if len(self.struct_lit_ctx.fields) != 0:
+        if len(struct_lit_ctx.fields) != 0:
             error_message = "missing fields in struct literal:"
-            for field_name,(_,field_type) in self.struct_lit_ctx.fields.items():
-                error_message += f"\n\t{field_name}: {self.type_lookup.type_pretty(field_type)}"
-            self.abort(word.token, error_message)
+            for field_name,(_,field_type) in struct_lit_ctx.fields.items():
+                error_message += f"\n\t{field_name}: {ctx.type_lookup.type_pretty(field_type)}"
+            ctx.abort(word.token, error_message)
         stack.push(struct_type)
-        self.struct_lit_ctx = outer_struct_lit_ctx
         return (ResolvedStructWord(word.token, struct_type, ResolvedScope(env.scope_id, words)), diverges)
 
     def resolve_fun_ref(self, stack: Stack, word: Parser.FunRefWord) -> Tuple[ResolvedWord, bool]:
