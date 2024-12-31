@@ -60,7 +60,7 @@ fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>
     }
 }
 
-fn print<T>(fd: i32, print-inner: (i32, .T -> i32), self: .Maybe<T>) -> i32 { block () -> i32 {
+fn print<T>(fd: i32, print-inner: (i32, .T -> i32), self: .Maybe<T>) -> i32 { block (-> i32) {
     $self match {
         case None -> { $fd "None" IO:write-all }
         case Some -> {

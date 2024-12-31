@@ -1,7 +1,7 @@
 [== Stdin Compiler ==]
 fn foo() {
-    loop (i32) -> {}
-    block () -> {}
+    loop (i32 ->) {}
+    block (->) {}
 }
 [== Args Compiler ==]
 parse
@@ -13,4 +13,4 @@ parse
 [
   (Function (FN fn 1 1) (IDENT foo 1 4) (Signature [] [] []) [
     (Loop (LOOP loop 2 5) (Some (BlockAnnotation [I32] [])) (Words [] (RIGHT_BRACE } 2 20))),
-    (Block (BLOCK block 3 5) (Some (BlockAnnotation [] [])) (Words [] (RIGHT_BRACE } 3 18)))])]
+    (Block (BLOCK block 3 5) (Some (BlockAnnotation [] [])) (Words [] (RIGHT_BRACE } 3 17)))])]

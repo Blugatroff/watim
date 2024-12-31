@@ -1059,40 +1059,35 @@ class Parser:
                 parameters = None
                 returns = None
             else:
-                if brace.ty == TokenType.LEFT_PAREN:
-                    parameters = []
-                    while True:
-                        next = self.peek(skip_ws=True)
-                        if next is None or next.ty == TokenType.RIGHT_PAREN:
-                           self.advance(skip_ws=True) # skip `)`
-                           break
-                        parameters.append(self.parse_type(generic_parameters))
-                        comma = self.peek(skip_ws=True)
-                        if comma is None or comma.ty == TokenType.RIGHT_PAREN:
-                            self.advance(skip_ws=True) # skip `)`
-                            break
-                        if comma.ty != TokenType.COMMA:
-                            self.abort("Expected `,`")
-                        self.advance(skip_ws=True)
-                    arrow = self.peek(skip_ws=True)
-                    if arrow is None or (arrow.ty != TokenType.ARROW and arrow.ty != TokenType.LEFT_BRACE):
-                        self.abort("Expected `->` or `{`")
-                    if arrow.ty == TokenType.ARROW:
-                        self.advance(skip_ws=True)
-                else:
-                    parameters = None
-                returns = []
+                parameters = []
                 while True:
                     next = self.peek(skip_ws=True)
-                    if next is None or next.ty == TokenType.LEFT_BRACE:
-                        self.advance(skip_ws=True)
-                        break
-                    returns.append(self.parse_type(generic_parameters))
-                    comma = self.advance(skip_ws=True)
-                    if comma is None or comma.ty == TokenType.LEFT_BRACE:
+                    if next is None or next.ty == TokenType.ARROW:
+                       self.advance(skip_ws=True) # skip `->`
+                       break
+                    parameters.append(self.parse_type(generic_parameters))
+                    comma = self.peek(skip_ws=True)
+                    if comma is None or comma.ty == TokenType.ARROW:
+                        self.advance(skip_ws=True) # skip `->`
                         break
                     if comma.ty != TokenType.COMMA:
                         self.abort("Expected `,`")
+                    self.advance(skip_ws=True)
+                returns = []
+                while True:
+                    next = self.peek(skip_ws=True)
+                    if next is None or next.ty == TokenType.RIGHT_PAREN:
+                        self.advance(skip_ws=True) # skip `)`
+                        break
+                    returns.append(self.parse_type(generic_parameters))
+                    comma = self.advance(skip_ws=True)
+                    if comma is None or comma.ty == TokenType.RIGHT_PAREN:
+                        break
+                    if comma.ty != TokenType.COMMA:
+                        self.abort("Expected `,`")
+                brace = self.advance(skip_ws=True)
+                if brace is None or brace.ty != TokenType.LEFT_BRACE:
+                    self.abort("Expected `{`")
             annotation = None if parameters is None and returns is None else Parser.BlockAnnotation(parameters or [], returns or [])
             words = self.parse_words(generic_parameters)
             brace = self.advance(skip_ws=True)

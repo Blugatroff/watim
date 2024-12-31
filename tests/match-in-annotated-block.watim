@@ -7,7 +7,7 @@ variant Type {
 }
 
 fn main "_start" () {
-    block () -> i32 {
+    block (-> i32) {
         make Type.Bool @b
         &b make Type.Ptr match {
             case Bool -> { "bool" }

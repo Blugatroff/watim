@@ -14,7 +14,7 @@ import "../monomizer.watim" as Monomized (
 import "./ctx.watim" as Ctx (Ctx, lookup-type)
 import "./common.watim" as Common (generate-store)
 
-fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block () -> {
+fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block (->) {
     $ctx.fmt $intrinsic match {
         case Add -> { $ctx.program flip ~ lookup-type match {
             case I64 -> { "i64.add" }

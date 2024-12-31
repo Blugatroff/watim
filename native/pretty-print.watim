@@ -104,7 +104,7 @@ fn Variant-pretty(self: .Variant, pp: .PrettyPrinter) -> i32 { block {
     }
     $pp " {" write Core:dup<i32> 0 /= if { break } drop
     0 @i
-    loop () -> i32 {
+    loop (-> i32) {
         $self.cases.len $i = if { 0 break }
         &self.cases $i Array:get<VariantCase> @cays
         $pp &cays.token write-token Core:dup<i32> 0 /= if { break } drop
@@ -313,7 +313,7 @@ fn write-fields(pp: .PrettyPrinter, fields: .Array<Token>) -> i32 { block {
     }
 } }
 
-fn If-pretty(self: .If, pp: .PrettyPrinter) -> i32 { block () -> i32 {
+fn If-pretty(self: .If, pp: .PrettyPrinter) -> i32 { block (-> i32) {
     $pp &self.token write-token Core:dup<i32> 0 /= if { break } drop
     $pp " {" write Core:dup<i32> 0 /= if { break } drop
     &self.true-words $pp Words-pretty Core:dup<i32> 0 /= if { break } drop
@@ -338,7 +338,7 @@ fn BlockAnnotation-pretty(self: .BlockAnnotation, pp: .PrettyPrinter) -> i32 { b
             $pp "," write Core:dup<i32> 0 /= if { break } drop
         }
     } Core:dup<i32> 0 /= if { break } drop
-    $pp ") ->" write Core:dup<i32> 0 /= if { break } drop
+    $pp $self.parameters.len 0 = if { "->" } else { " -> " } write Core:dup<i32> 0 /= if { break } drop
     0 @i
     loop {
         $self.returns.len $i = if { 0 break }
@@ -347,7 +347,8 @@ fn BlockAnnotation-pretty(self: .BlockAnnotation, pp: .PrettyPrinter) -> i32 { b
         $self.returns.len $i /= if {
             $pp "," write Core:dup<i32> 0 /= if { break } drop
         }
-    }
+    } Core:dup<i32> 0 /= if { break } drop
+    $pp ")" write
 } }
 
 fn Block-pretty(self: .Block, pp: .PrettyPrinter) -> i32 { block {
@@ -448,7 +449,7 @@ fn GenericParameters-pretty(self: .Array<Token>, pp: .PrettyPrinter) -> i32 { bl
     $pp ">" write
 } }
 
-fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block () -> i32 {
+fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block (-> i32) {
     $pp $self match {
         case Bool -> {}
         case I8 -> {}
@@ -466,10 +467,10 @@ fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block () -> i32 {
     } write-token
 } }
 
-fn TupleType-pretty(self: .TupleType, pp: .PrettyPrinter) -> i32 { block () -> i32 {
+fn TupleType-pretty(self: .TupleType, pp: .PrettyPrinter) -> i32 { block (-> i32) {
     $pp "[" write Core:dup<i32> 0 /= if { break } drop
     0 @i
-    loop () -> i32 {
+    loop (-> i32) {
         $self.items.len $i = if { 0 break }
         &self.items $i Array:get<Type> $pp Type-pretty Core:dup<i32> 0 /= if { break } drop
         $i 1 + #i

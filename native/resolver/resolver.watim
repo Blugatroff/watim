@@ -1045,7 +1045,7 @@ fn is-directly-recursive(ctx: .Ctx, type-lookup: .TypeLookup, handle: .CustomTyp
 fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Map<ByteSlice, Global>, ResolveError> {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Global> @globals
     0 @i
-    loop () -> Result<Map<ByteSlice, Global>, ResolveError> {
+    loop (-> Result<Map<ByteSlice, Global>, ResolveError>) {
         $ctx.top-items.len $i = if { $globals make Result<Map<ByteSlice, Global>, ResolveError>.Success break }
         $ctx.top-items $i Array:get<TopItem> match {
             case Global -> {
@@ -1070,7 +1070,7 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
     $ctx.persistent \ByteSlice:eq-by-ref $ctx.top-items.len
     Map:new-with-capacity<ByteSlice, FunctionOrExtern> @functions
     0 @i
-    loop () -> Result<Map<ByteSlice, FunctionOrExtern>, ResolveError> {
+    loop (-> Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>) {
         $ctx.top-items.len $i = if { $functions make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Success break }
         $ctx.top-items $i Array:get<TopItem> match {
             case Function -> {
@@ -1206,7 +1206,7 @@ fn lookup-signature(ctx: .WordCtx, function: .FunctionHandle) -> .Signature {
 fn resolve-words(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>) -> Result<[Array<Word>, bool], ResolveError> {
     0 1 = @diverges
     Array:new<Word> @resolved
-    loop () -> Result<[Array<Word>, bool], ResolveError> {
+    loop (-> Result<[Array<Word>, bool], ResolveError>) {
         $remaining-words.len 0 = if { $resolved $diverges [,2] make Result<[Array<Word>, bool], ResolveError>.Success break }
         $ctx.persistent &resolved
         $remaining-words Array:pop-front<P:Word> @parsed-word
@@ -1344,7 +1344,7 @@ fn maek-stacks-compatible(ctx: .WordCtx, a: .Stack, b: .Stack) -> bool {
 }
 fn pop-n(ctx: .WordCtx, self: .Stack, n: i32) -> Array<Type> {
     $ctx.temp $n Array:new-with-capacity<Type> @popped
-    loop () -> {
+    loop (->) {
         $n 0 = if { break }
         $ctx.temp &popped
         $ctx $self pop match {
@@ -1371,14 +1371,14 @@ fn child(ctx: .WordCtx, self: .Stack) -> Stack {
 }
 fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
     $ctx.temp $n Array:new-with-capacity<Type> @popped
-    loop () -> bool {
+    loop (-> bool) {
         $popped.len $n = if { 1 1 = break }
         &popped $ctx $self pop match {
             case None -> { 0 1 = break }
             case Some -> {}
         } Array:push-assert-no-alloc<Type>
     }
-    loop () -> {
+    loop (->) {
         $popped.len 0 = if { break }
         $ctx.temp &self.positive
         &popped Array:pop<Type>
@@ -1386,7 +1386,7 @@ fn use(ctx: .WordCtx, self: .Stack, n: i32) -> bool {
     }
 }
 
-fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, bool], ResolveError> { block () -> Result<[Word, bool], ResolveError> {
+fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, bool], ResolveError> { block (-> Result<[Word, bool], ResolveError>) {
     $ctx.persistent $word.cases.len 1 + Array:new-with-capacity<MatchCase> @cases
     1 1 = @match-diverges
     $ctx $stack &word.token "expected a value to match on" pop1 match {
@@ -1881,7 +1881,7 @@ fn resolve-lop(ctx: .WordCtx, stack: .Stack, word: .P:Loop) -> Result<[Word, boo
     make Result<[Word, bool], ResolveError>.Success
 } }
 
-fn resolve-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bool], ResolveError> { block () -> Result<[Word, bool], ResolveError> {
+fn resolve-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bool], ResolveError> { block (-> Result<[Word, bool], ResolveError>) {
     $ctx.persistent $ctx.blok-returns match {
         case None -> { $ctx $stack dump }
         case Some -> { .len ~ $ctx flip $stack flip pop-n }
@@ -2246,7 +2246,7 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
     make Result<[Word, bool], ResolveError>.Success
 } }
 
-fn resolve-sizeof(ctx: .WordCtx, stack: .Stack, word: .P:Sizeof) -> Result<[Word, bool], ResolveError> { block () -> Result<[Word, bool], ResolveError> {
+fn resolve-sizeof(ctx: .WordCtx, stack: .Stack, word: .P:Sizeof) -> Result<[Word, bool], ResolveError> { block (-> Result<[Word, bool], ResolveError>) {
     $ctx $stack make Type.I32 push
     $word.token
     $ctx.ctx $ctx.imports &word.type resolve-type match {
@@ -2633,7 +2633,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
                 $ctx $stack $value push
-                $word.name $value block (Type) -> Intrinsic {
+                $word.name $value block (Type -> Intrinsic) {
                     $name-ptr $name-len "shl" Bytes:eq if {
                         make Intrinsic.Shl break
                     }
@@ -3493,7 +3493,7 @@ fn resolve-custom-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> R
 fn resolve-signatures(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Array<Signature>, ResolveError> {
     Array:new<Signature> @signatures
     0 @i
-    loop () -> Result<Array<Signature>, ResolveError> {
+    loop (-> Result<Array<Signature>, ResolveError>) {
         $ctx.top-items.len $i = if { $signatures make Result<Array<Signature>, ResolveError>.Success break }
         $ctx.top-items $i Array:get<TopItem> match {
             case Extern -> { .signature make Maybe<.P:Signature>.Some }
@@ -3515,7 +3515,7 @@ fn resolve-signatures(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Res
     }
 }
 
-fn resolve-signature(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, signature: .P:Signature) -> Result<Signature, ResolveError> { block () -> Result<Signature, ResolveError> {
+fn resolve-signature(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, signature: .P:Signature) -> Result<Signature, ResolveError> { block (-> Result<Signature, ResolveError>) {
     $signature.generic-parameters
     $ctx $imports &signature.parameters resolve-named-types match {
         case Error -> { make Result<Signature, ResolveError>.Error break }
@@ -3529,11 +3529,11 @@ fn resolve-signature(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, signatu
     make Result<Signature, ResolveError>.Success
 } }
 
-fn resolve-struct(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, struc: .P:Struct) -> Result<Struct, ResolveError> { block () -> Result<Struct, ResolveError> {
+fn resolve-struct(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, struc: .P:Struct) -> Result<Struct, ResolveError> { block (-> Result<Struct, ResolveError>) {
     $struc.name $struc.generic-parameters
     $ctx.persistent $struc.fields.len Array:new-with-capacity<NamedType> @fields
     0 @i
-    loop () -> Result<Array<NamedType>, ResolveError> {
+    loop (-> Result<Array<NamedType>, ResolveError>) {
         $i $struc.fields.len = if { $fields make Result<Array<NamedType>, ResolveError>.Success break }
         &struc.fields $i Array:get<P:NamedType> @field
         &fields
@@ -3550,11 +3550,11 @@ fn resolve-struct(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, struc: .P:
     make Struct make Result<Struct, ResolveError>.Success
 } }
 
-fn resolve-variant(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, varant: .P:Variant) -> Result<Variant, ResolveError> { block () -> Result<Variant, ResolveError> {
+fn resolve-variant(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, varant: .P:Variant) -> Result<Variant, ResolveError> { block (-> Result<Variant, ResolveError>) {
     $varant.name $varant.generic-parameters
     $ctx.persistent $varant.cases.len Array:new-with-capacity<VariantCase> @cases
     0 @i
-    loop () -> Result<Array<VariantCase>, ResolveError> {
+    loop (-> Result<Array<VariantCase>, ResolveError>) {
         $i $varant.cases.len = if { $cases make Result<Array<VariantCase>, ResolveError>.Success break }
         &varant.cases $i Array:get<P:VariantCase> @cays
         &cases
@@ -3595,7 +3595,7 @@ fn resolve-named-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, named
     }
 } }
 
-fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Type) -> Result<Type, ResolveError> { block () -> Result<Type, ResolveError> {
+fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Type) -> Result<Type, ResolveError> { block (-> Result<Type, ResolveError>) {
     $type match {
         case Bool -> { drop make Type.Bool }
         case I8 -> { drop make Type.I8 }
