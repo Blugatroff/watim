@@ -481,7 +481,7 @@ class BreakWord:
     def __str__(self) -> str:
         return f"(Break {self.token})"
 
-type ParsedWord = 'NumberWord | Parser.StringWord | Parser.CallWord | Parser.GetWord | Parser.RefWord | Parser.SetWord | Parser.StoreWord | Parser.InitWord | Parser.CallWord | Parser.ForeignCallWord | Parser.FunRefWord | Parser.IfWord | Parser.LoadWord | Parser.LoopWord | Parser.BlockWord | BreakWord | Parser.CastWord | Parser.SizeofWord | Parser.GetFieldWord | Parser.IndirectCallWord | Parser.StructWord | Parser.UnnamedStructWord | Parser.MatchWord | Parser.VariantWord | Parser.TupleUnpackWord | Parser.TupleMakeWord'
+type ParsedWord = 'NumberWord | Parser.StringWord | Parser.CallWord | Parser.GetWord | Parser.RefWord | Parser.SetWord | Parser.StoreWord | Parser.InitWord | Parser.CallWord | Parser.ForeignCallWord | Parser.FunRefWord | Parser.IfWord | Parser.LoadWord | Parser.LoopWord | Parser.BlockWord | BreakWord | Parser.CastWord | Parser.SizeofWord | Parser.GetFieldWord | Parser.IndirectCallWord | Parser.StructWord | Parser.UnnamedStructWord | Parser.MatchWord | Parser.VariantWord | Parser.TupleUnpackWord | Parser.TupleMakeWord | Parser.StackAnnotation'
 
 type ParsedTypeDefinition = 'Parser.Struct | Parser.Variant'
 
@@ -697,6 +697,13 @@ class Parser:
         token: Token
         item_count: Token
 
+    @dataclass
+    class StackAnnotation:
+        token: Token
+        types: List['ParsedType']
+
+        def __str__(self) -> str:
+            return f"(StackAnnotation {self.token} {listtostr(self.types)})"
 
     # ========================================
     # Datatypes for parsed TopItems
@@ -1179,6 +1186,24 @@ class Parser:
             if close is None or close.ty != TokenType.RIGHT_BRACKET:
                 self.abort("Expected `]`")
             return Parser.TupleMakeWord(token, number_or_close)
+        if token.ty == TokenType.COLON:
+            next = self.advance(skip_ws=True)
+            if next is None or next.ty != TokenType.LEFT_PAREN:
+                self.abort("Expected `(`")
+            types: List[ParsedType] = []
+            while True:
+                next = self.peek(skip_ws=True)
+                if next is not None and next.ty == TokenType.RIGHT_PAREN:
+                    self.advance(skip_ws=True)
+                    return Parser.StackAnnotation(token, [])
+                types.append(self.parse_type(generic_parameters))
+                next = self.advance(skip_ws=True)
+                if next is None:
+                    self.abort("Expected `,` or `)`")
+                if next.ty == TokenType.RIGHT_PAREN:
+                    return Parser.StackAnnotation(token, types)
+                if next.ty != TokenType.COMMA:
+                    self.abort("Expected `,` or `)`")
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: List[Token], token: Token) -> 'Parser.CallWord | Parser.ForeignCallWord':
@@ -2748,13 +2773,16 @@ class WordCtx:
         resolved: List[ResolvedWord] = []
         while len(remaining_words) != 0:
             parsed_word = remaining_words.pop(0)
-            resolved_word,word_diverges = self.resolve_word(stack, remaining_words, parsed_word)
+            res = self.resolve_word(stack, remaining_words, parsed_word)
+            if res is None:
+                continue
+            resolved_word,word_diverges = res
             diverges = diverges or word_diverges
             self.reachable = not diverges
             resolved.append(resolved_word)
         return (resolved, diverges)
 
-    def resolve_word(self, stack: Stack, remaining_words: List[ParsedWord], word: ParsedWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_word(self, stack: Stack, remaining_words: List[ParsedWord], word: ParsedWord) -> Tuple[ResolvedWord, bool] | None:
         if isinstance(word, NumberWord):
             stack.push(PrimitiveType.I32)
             return (word, False)
@@ -2807,6 +2835,9 @@ class WordCtx:
             return self.resolve_make_tuple(stack, word)
         if isinstance(word, Parser.TupleUnpackWord):
             return self.resolve_unpack_tuple(stack, word)
+        if isinstance(word, Parser.StackAnnotation):
+            self.resolve_stack_annotation(stack, word)
+            return None
         assert_never(word)
 
     def resolve_get_local(self, stack: Stack, word: Parser.GetWord) -> Tuple[ResolvedWord, bool]:
@@ -3331,6 +3362,9 @@ class WordCtx:
             self.abort(word.token, "expected a tuple on the stack")
         stack.push_many(taip.items)
         return (ResolvedTupleUnpackWord(word.token, taip), False)
+
+    def resolve_stack_annotation(self, stack: Stack, word: Parser.StackAnnotation) -> None:
+        return None
 
     def resolve_block_annotation(self, annotation: Parser.BlockAnnotation) -> BlockAnnotation:
         return BlockAnnotation(

@@ -474,6 +474,18 @@ fn StringWord-format(fmt: .Formatter, self: .StringWord) {
     $fmt ")" Fmt:write
 }
 
+struct StackAnnotation {
+    token: Token
+    types: Array<Type>
+}
+fn StackAnnotation-format(fmt: .Formatter, self: .StackAnnotation) {
+    $fmt "(StackAnnotation " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.types Array:format<Type>
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Call -> Call
     case String -> StringWord
@@ -499,6 +511,7 @@ variant Word {
     case Store -> Store
     case MakeTuple -> MakeTuple
     case UnpackTuple -> Token
+    case StackAnnotation -> StackAnnotation
 }
 fn Word-format(fmt: .Formatter, self: .Word) { block {
     $self match {
@@ -526,6 +539,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case IndirectCall -> { "IndirectCall" }
         case MakeTuple -> { $fmt flip MakeTuple-format break }
         case UnpackTuple -> { "UnpackTuple" }
+        case StackAnnotation -> { $fmt flip StackAnnotation-format break }
     } @name-len @name-ptr
     $fmt "(" Fmt:write
     $fmt $name-ptr $name-len Fmt:write
@@ -1152,6 +1166,7 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_ARROW -> { $token ~ make Word.IndirectCall }
         case TOKEN_DOUBLE_ARROW -> { $parser $token stor break }
         case TOKEN_LEFT_BRACKET -> { $parser $token tuple break }
+        case TOKEN_COLON -> { $parser $token stack-annotation break }
         case _ -> {
             drop
             $parser "expected a word" abort<Word> break
@@ -1166,6 +1181,45 @@ fn string(parser: .Parser, token: .Token) -> Result<Word, ParseError> {
     make Word.String
     make Result<Word, ParseError>.Success
 }
+
+fn stack-annotation(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
+    $parser make TokenTy.TOKEN_LEFT_PAREN expect-token match {
+        case Error -> { make Result<Word, ParseError>.Error break }
+        case Success -> { drop }
+    }
+    Array:new<Type> @types
+    loop (-> Result<Word, ParseError>) {
+        $parser advance match {
+            case None -> { $parser "expected `)`" abort<Word> break }
+            case Some -> {}
+        } @next
+        $next Token-ty match {
+            case TOKEN_RIGHT_PAREN -> {
+                $token ~ $types make StackAnnotation
+                make Word.StackAnnotation
+                make Result<Word, ParseError>.Success break
+            }
+            case _ -> { drop }
+        }
+        $parser.arena &types
+        $parser $next type match {
+            case Error -> { make Result<Word, ParseError>.Error break }
+            case Success -> {}
+        } Array:push<Type>
+        $parser advance match {
+            case None -> { $parser "expected `)`" abort<Word> break }
+            case Some -> {}
+        } Token-ty match {
+            case TOKEN_RIGHT_PAREN -> {
+                $token ~ $types make StackAnnotation
+                make Word.StackAnnotation
+                make Result<Word, ParseError>.Success break
+            }
+            case TOKEN_COMMA -> {}
+            case _ -> { drop $parser "expected `,` or `)`" abort<Word> break }
+        }
+    }
+} }
 
 fn tuple(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block (-> Result<Word, ParseError>) {
     $parser make TokenTy.TOKEN_COMMA expect-token match {

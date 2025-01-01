@@ -1,7 +1,7 @@
 import "../std/core.watim" as Core
 import "../std/io.watim" as IO
 import "../std/array.watim" as Array (Array)
-import "./parser.watim" as Parser (TopItem, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType)
+import "./parser.watim" as Parser (TopItem, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation)
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-print)
 
 struct PrettyPrinter {
@@ -194,6 +194,7 @@ fn Word-pretty(self: .Word, pp: .PrettyPrinter) -> i32 { block {
         case Store -> { $pp Store-pretty }
         case UnpackTuple -> { $pp UnpackTuple-pretty }
         case MakeTuple -> { $pp MakeTuple-pretty }
+        case StackAnnotation -> { $pp StackAnnotation-pretty }
     }
 } }
 
@@ -539,5 +540,18 @@ fn GenericArguments-pretty(self: .Array<Type>, pp: .PrettyPrinter) -> i32 { bloc
         $i 1 + #i
     } Core:dup<i32> 0 /= if { break } drop
     $pp ">" write
+} }
+
+fn StackAnnotation-pretty(self: .StackAnnotation, pp: .PrettyPrinter) -> i32 { block {
+    $pp &self.token write-token Core:dup<i32> 0 /= if { break } drop
+    0 @i
+    loop {
+        $i $self.types.len = if { 0 break }
+        &self.types $i Array:get<Type> $pp Type-pretty Core:dup<i32> 0 /= if { break } drop
+        $i 1 + #i
+        $i $self.types.len = if { 0 break }
+        $pp ", " write Core:dup<i32> 0 /= if { break } drop
+    } Core:dup<i32> 0 /= if { break } drop
+    $pp ")" write
 } }
 

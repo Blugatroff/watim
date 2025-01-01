@@ -1,0 +1,15 @@
+[== Stdin Compiler ==]
+fn foo() {
+    0 1 :(i32, i32)
+}
+[== Args Compiler ==]
+parse
+-
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+[
+  (Function (FN fn 1 1) (IDENT foo 1 4) (Signature [] [] []) [
+    (Number (NUMBER 0 2 5)),
+    (Number (NUMBER 1 2 7)),
+    (StackAnnotation (COLON : 2 9) [I32, I32])])]
