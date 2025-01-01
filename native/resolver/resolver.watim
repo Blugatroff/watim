@@ -1344,6 +1344,13 @@ fn size(self: .Stack) -> i32 {
         case Some -> { size + }
     }
 }
+fn index(self: .Stack, index: i32) -> .Type {
+    $index $self.positive.len lt if {
+        &self.positive $self.positive.len $index - 1 - Array:get<Type>
+    } else {
+        $self.parent assert-some<.Stack> $index $self.positive.len - index
+    }
+}
 fn dump(ctx: .WordCtx, self: .Stack) -> Array<Type> {
     $self size @size
     $ctx.temp $size Array:new-with-capacity<Type> @dump
@@ -3331,9 +3338,26 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
     }
 } }
 
-fn resolve-stack-annotation(ctx: .WordCtx, stack: .Stack, annotation: .P:StackAnnotation) -> Result<[], ResolveError> {
-    [,0] make Result<[], ResolveError>.Success 
-}
+fn resolve-stack-annotation(ctx: .WordCtx, stack: .Stack, annotation: .P:StackAnnotation) -> Result<[], ResolveError> { block {
+    $stack size @stack-size
+    $annotation.types.len $stack-size gt if {
+        $ctx.ctx &annotation.token "stack annotation doesn't match reality" abort<[]> break
+    }
+    0 @i
+    loop {
+        $i $annotation.types.len = if { [,0] make Result<[], ResolveError>.Success break }
+        &annotation.types $annotation.types.len $i - 1 - Array:get<P:Type> @expected
+        $ctx.ctx $ctx.imports $expected resolve-type match {
+            case Error -> { make Result<[], ResolveError>.Error break }
+            case Success -> {}
+        } @expected
+        $stack $i index @actual
+        &expected $actual Type-eq not if {
+            $ctx.ctx &annotation.token "stack annotation doesn't match reality" abort<[]> break
+        }
+        $i 1 + #i
+    }
+} }
 
 fn resolve-generic(ctx: .WordCtx, generics: .Array<Type>, type: .Type) -> Type {
     $type match {

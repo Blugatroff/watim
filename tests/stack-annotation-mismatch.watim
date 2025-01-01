@@ -1,0 +1,12 @@
+[== Stdin Compiler ==]
+fn foo() {
+    0 1 :(bool, i32)
+}
+[== Args Compiler ==]
+check
+-
+-q
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:2:9 stack annotation doesn't match reality

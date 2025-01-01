@@ -3364,6 +3364,12 @@ class WordCtx:
         return (ResolvedTupleUnpackWord(word.token, taip), False)
 
     def resolve_stack_annotation(self, stack: Stack, word: Parser.StackAnnotation) -> None:
+        if len(stack) < len(word.types):
+            self.abort(word.token, "stack annotation doesn't match reality")
+        for i, taip in enumerate(reversed(word.types)):
+            expected = self.ctx.resolve_type(self.imports, taip)
+            if not resolved_type_eq(stack[-i], expected):
+                self.abort(word.token, "stack annotation doesn't match reality")
         return None
 
     def resolve_block_annotation(self, annotation: Parser.BlockAnnotation) -> BlockAnnotation:
