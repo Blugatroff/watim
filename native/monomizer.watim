@@ -1405,7 +1405,7 @@ struct Match {
     cases: Array<MatchCase>
     default: Maybe<Scope>
     parameters: Array<TypeId>
-    returns: Array<TypeId>
+    returns: Maybe<Array<TypeId>>
 }
 fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt "(Match\n" Fmt:write
@@ -1432,7 +1432,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt &self.returns TypeIds-format
+    $fmt \TypeIds-format &self.returns Maybe:format<Array<TypeId>>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -1906,7 +1906,10 @@ fn monomize-matsh(ctx: .Ctx, word: .Resolved:Match, generic-arguments: .Array<Ty
             }
         } @default
         $ctx &word.parameters $generic-arguments monomize-types @parameters
-        $ctx &word.returns    $generic-arguments monomize-types @returns
+        &word.returns match {
+            case None -> { make Maybe<Array<TypeId>>.None }
+            case Some -> { $ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
+        } @returns
     } make Word.Match
 }
 

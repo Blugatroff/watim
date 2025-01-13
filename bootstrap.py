@@ -1877,7 +1877,7 @@ class ResolvedMatchWord:
     cases: List[ResolvedMatchCase]
     default: ResolvedScope | None
     parameters: List[ResolvedType]
-    returns: List[ResolvedType]
+    returns: List[ResolvedType] | None
 
 @dataclass
 class ResolvedTupleMakeWord:
@@ -2168,28 +2168,7 @@ class ResolvedModule:
         functions = indent_non_first(str(self.functions))
         return f"(Module\n  imports={imports},\n  custom-types={custom_types},\n  globals={globals},\n  functions={functions})"
 
-def determine_compilation_order(unprocessed: List[Parser.Module]) -> List[Parser.Module]:
-    ordered: List[Parser.Module] = []
-    while len(unprocessed) > 0:
-        i = 0
-        while i < len(unprocessed):
-            module = unprocessed[i]
-            postpone = False
-            for imp in module.imports:
-                if os.path.dirname(module.path) != "":
-                    path = os.path.normpath(os.path.dirname(module.path) + "/" + imp.file_path.lexeme[1:-1])
-                else:
-                    path = os.path.normpath(imp.file_path.lexeme[1:-1])
-                if path not in map(lambda m: m.path, ordered):
-                    postpone = True
-                    break
-            if postpone:
-                i += 1
-                continue
-            ordered.append(unprocessed.pop(i))
-    return ordered
-
-def determine_compilation_order2(modules: Dict[str, List[ParsedTopItem]]) -> IndexedDict[str, List[ParsedTopItem]]:
+def determine_compilation_order(modules: Dict[str, List[ParsedTopItem]]) -> IndexedDict[str, List[ParsedTopItem]]:
     unprocessed = IndexedDict.from_items(modules.items())
     ordered: IndexedDict[str, List[ParsedTopItem]] = IndexedDict()
     while len(unprocessed) > 0:
@@ -3291,7 +3270,7 @@ class WordCtx:
                     self.abort(word.token, msg)
 
         if len(case_stacks) == 0:
-            returns = []
+            returns: List[ResolvedType] | None = []
             parameters = []
         else:
             most_params = case_stacks[0][0]
@@ -3310,8 +3289,9 @@ class WordCtx:
                     break
 
         self.expect(stack, word.token, parameters)
-        stack.push_many(returns)
-
+        stack.push_many(returns or [])
+        if match_diverges:
+            returns = None
         return (ResolvedMatchWord(word.token, variant_type, by_ref, cases, default_case, parameters, returns), match_diverges)
 
     def resolve_make_variant(self, stack: Stack, word: Parser.VariantWord) -> Tuple[ResolvedWord, bool]:
@@ -3681,7 +3661,7 @@ class WordCtx:
 
 
 def resolve_modules(modules_unordered: Dict[str, List[ParsedTopItem]]) -> IndexedDict[str, ResolvedModule]:
-    modules = determine_compilation_order2({
+    modules = determine_compilation_order({
         ("./" + path if path != "-" else path): module
         for path, module in modules_unordered.items()
     })
@@ -5795,14 +5775,15 @@ class WatGenerator:
                 self.write("\n")
             case MatchWord(_, variant_handle, by_ref, cases, default, parameters, returns):
                 variant = self.lookup_type_definition(variant_handle)
-                def go(cases: List[MatchCase]):
-                    if len(cases) == 0:
+                def go(remaining_cases: List[MatchCase]):
+                    if len(remaining_cases) == 0:
                         if default is None:
-                            self.write("unreachable")
+                            if len(cases) != 0:
+                                self.write("unreachable")
                             return
                         self.write_words(module, locals, default.words)
                         return
-                    case = cases[0]
+                    case = remaining_cases[0]
                     assert(isinstance(variant, Variant))
                     case_taip = variant.cases.get()[case.tag].taip
                     if variant.size() > 8 or by_ref:
@@ -5819,7 +5800,8 @@ class WatGenerator:
                     else:
                         self.write(" (param i32)")
 
-                    self.write_returns(returns)
+                    if returns is not None:
+                        self.write_returns(returns)
                     self.write("\n")
                     self.write_line("(then")
                     self.indent()
@@ -5843,20 +5825,25 @@ class WatGenerator:
                     self.dedent()
                     self.write_line(")")
                     self.write_indent()
-                    if len(cases) == 1 and default is not None:
+                    if len(remaining_cases) == 1 and default is not None:
                         self.write("(else\n")
                         self.indent()
-                        go(cases[1:])
+                        go(remaining_cases[1:])
                         self.dedent()
                         self.write_indent()
                         self.write("))")
                     else:
                         self.write("(else ")
-                        go(cases[1:])
+                        go(remaining_cases[1:])
                         self.write("))")
                 self.write_line(f";; match on {variant.name.lexeme}")
                 self.write_indent()
                 go(cases)
+                if returns is None:
+                    if len(cases) != 0 or default is not None:
+                        self.write("\n")
+                        self.write_indent()
+                    self.write("unreachable")
                 self.write("\n")
             case VariantWord(_, tag, variant_handle, copy_space_offset):
                 variant = self.lookup_type_definition(variant_handle)

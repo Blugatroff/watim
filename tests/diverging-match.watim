@@ -1,0 +1,39 @@
+[== Stdin Compiler ==]
+variant Foo { case A case B }
+fn foo "foo" () -> i32 { block {
+    make Foo.A match {
+        case A -> { 42 break }
+        case _ -> { drop 1 break }
+    }
+} }
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(module
+	(memory 1 65536)
+	(export "memory" (memory 0))
+	(table funcref (elem))
+	(global $stac:k (mut i32) (i32.const 0))
+	(data (i32.const 0) "")
+	(func $0:foo (export "foo") (result i32)
+		(block $block (result i32)
+			i32.const 0 ;; store tag Foo.A
+			;; match on Foo
+			call $intrinsic:dupi32 i32.const 0 i32.eq (if (param i32)
+			(then
+				drop
+				i32.const 42
+				br $block
+			)
+			(else
+				drop
+				i32.const 1
+				br $block
+			))
+			unreachable
+		)
+	)
+	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)
+	(func $intrinsic:dupi32 (param $a i32) (result i32 i32) local.get $a local.get $a)
+	(func $intrinsic:rotate-left (param $a i32) (param $b i32) (param $c i32) (result i32 i32 i32) local.get $b local.get $c local.get $a)
+)

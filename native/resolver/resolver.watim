@@ -636,7 +636,7 @@ struct Match {
     cases: Array<MatchCase>
     default: Maybe<Scope>
     parameters: Array<Type>
-    returns: Array<Type>
+    returns: Maybe<Array<Type>>
 }
 fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt "(Match\n" Fmt:write
@@ -667,7 +667,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt &self.returns Types-format
+    $fmt \Types-format &self.returns Maybe:format<Array<Type>>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -1643,7 +1643,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
         $cases @cases
         $default @default
         $parameters @parameters
-        $returns @returns
+        $match-diverges if { make Maybe<Array<Type>>.None } else { $returns make Maybe<Array<Type>>.Some } @returns
     }
     make Word.Match $match-diverges [,2]
     make Result<[Word, bool], ResolveError>.Success

@@ -447,7 +447,9 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                 $i $word.cases.len = if {
                     &word.default match {
                         case None -> {
-                            $ctx.fmt "unreachable" Fmt:write
+                            $word.cases.len 0 /= if {
+                                $ctx.fmt "unreachable" Fmt:write
+                            }
                         }
                         case Some -> {
                             .words $ctx flip $module flip $locals flip generate-words
@@ -480,7 +482,10 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                     " (param i32)"
                 } Fmt:write
 
-                $ctx &word.returns generate-returns
+                &word.returns match {
+                    case None -> {}
+                    case Some -> { $ctx flip generate-returns }
+                }
                 $ctx.fmt "\n" Fmt:write
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt "(then\n" Fmt:write
@@ -535,6 +540,16 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                 }
                 $ctx.fmt "))" Fmt:write
                 $i 1 - #i
+            }
+            &word.returns match {
+                case None -> {
+                    $word.cases.len 0 /= &word.default is-some<Scope> or if {
+                        $ctx.fmt "\n" Fmt:write
+                        $ctx.fmt Fmt:write-indent
+                    }
+                    $ctx.fmt "unreachable" Fmt:write
+                }
+                case _ -> { drop }
             }
         }
         case Flip -> {
