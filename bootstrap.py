@@ -4014,9 +4014,6 @@ class Offset:
     def __str__(self) -> str:
         return f"i32.const {self.offset} i32.add"
 
-    def is_bitshift(self) -> bool:
-        return False
-
 @dataclass
 class OffsetLoad:
     offset: int
@@ -4035,9 +4032,6 @@ class OffsetLoad:
         else:
             return f"i32.const {self.offset} i32.add i32.const {size} memory.copy"
 
-    def is_bitshift(self) -> bool:
-        return False
-
 @dataclass
 class I32InI64:
     offset: int
@@ -4047,8 +4041,14 @@ class I32InI64:
             return "i32.wrap_i64"
         return f"i64.const {self.offset * 8} i64.shr_u i32.wrap_i64"
 
-    def is_bitshift(self) -> bool:
-        return True
+@dataclass
+class I16InI32:
+    offset: int
+
+    def __str__(self) -> str:
+        if self.offset == 0:
+            return "i32.const 0xFFFF i32.and"
+        return f"i32.const {self.offset * 8} i32.shr_u i32.const 0xFFFF i32.and"
 
 @dataclass
 class I8InI32:
@@ -4059,9 +4059,6 @@ class I8InI32:
             return "i32.const 0xFF i32.and"
         return f"i32.const {self.offset * 8} i32.shr_u i32.const 0xFF i32.and"
 
-    def is_bitshift(self) -> bool:
-        return True
-
 @dataclass
 class I8InI64:
     offset: int
@@ -4071,10 +4068,10 @@ class I8InI64:
             return "i32.wrap_i64 i32.const 0xFF i32.and"
         return f"i64.const {self.offset * 8} i64.shr_u i32.wrap_i64 i32.const 0xFF i32.and"
 
-    def is_bitshift(self) -> bool:
-        return True
+type Load = Offset | OffsetLoad | I32InI64 | I8InI32 | I16InI32 | I8InI64
 
-type Load = Offset | OffsetLoad | I32InI64 | I8InI32 | I8InI64
+def is_bitshift(load) -> TypeGuard[I8InI64 | I32InI64 | I8InI32 | I16InI32]:
+    return isinstance(load, I8InI64) or isinstance(load, I32InI64) or isinstance(load, I8InI32) or isinstance(load, I16InI32)
 
 @dataclass
 class GetFieldWord:
@@ -4267,7 +4264,7 @@ class MatchWord:
     cases: List[MatchCase]
     default: Scope | None
     parameters: List[Type]
-    returns: List[Type]
+    returns: List[Type] | None
 
 @dataclass
 class TupleMakeWord:
@@ -4640,7 +4637,7 @@ class Monomizer:
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 monomized_variant = self.monomize_struct(resolved_variant_type.type_definition, this_generics)[0]
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
-                returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
+                returns = None if resolved_returns is None else list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
             case ResolvedTupleMakeWord(token, tupl):
                 offset = copy_space_offset.value
@@ -5109,12 +5106,20 @@ class DetermineLoadsToValueTests(unittest.TestCase):
 def merge_loads(loads: List[Load]) -> List[Load]:
     if len(loads) <= 1:
         return loads
-    if isinstance(loads[0], OffsetLoad) and (isinstance(loads[1], I32InI64) or isinstance(loads[1], I8InI32) or isinstance(loads[1], I8InI64)):
-        return [OffsetLoad(loads[0].offset + loads[1].offset, PrimitiveType.I32)] + loads[2:]
-    if isinstance(loads[0], Offset) and isinstance(loads[1], Offset):
-        return [Offset(loads[0].offset + loads[1].offset)] + loads[2:]
-    if isinstance(loads[0], Offset) and isinstance(loads[1], OffsetLoad):
-        return [OffsetLoad(loads[0].offset + loads[1].offset, loads[1].taip)] + loads[2:]
+    a = loads[0]
+    b = loads[1]
+    if isinstance(a, OffsetLoad) and is_bitshift(b):
+        return [OffsetLoad(a.offset + b.offset, PrimitiveType.I32)] + loads[2:]
+    if isinstance(a, Offset) and isinstance(b, Offset):
+        return [Offset(a.offset + b.offset)] + loads[2:]
+    if isinstance(a, Offset) and isinstance(b, OffsetLoad):
+        return [OffsetLoad(a.offset + b.offset, b.taip)] + loads[2:]
+    if isinstance(a, I32InI64) and isinstance(b, I8InI32):
+        return [I8InI64(a.offset + b.offset)] + loads[2:]
+    if isinstance(a, I32InI64) and isinstance(b, I8InI32):
+        return [I8InI32(a.offset + b.offset)] + loads[2:]
+    if isinstance(a, I16InI32) and isinstance(b, I8InI32):
+        return [I8InI32(a.offset + b.offset)] + loads[2:]
     return loads
 
 # Returns the loads necessary to get the value of the final field on the stack.
@@ -5147,6 +5152,8 @@ def determine_loads(fields: List[FieldAccess], just_ref: bool = False, base_in_m
         if target_type_size != source_type_size:
             if target_type_size == 1:
                 return merge_loads([I8InI32(offset)] + determine_loads(fields[1:], just_ref, base_in_mem))
+            if target_type_size == 2:
+                return merge_loads([I16InI32(offset)] + determine_loads(fields[1:], just_ref, base_in_mem))
             assert(False) # TODO
 
         assert(field.source_taip.size() == 4) # alternative is TODO
@@ -5986,9 +5993,9 @@ class WatGenerator:
             self.write("\n")
             return
         last_load = loads[-1]
-        if not target_lives_in_memory and last_load.is_bitshift():
+        if not target_lives_in_memory and is_bitshift(last_load):
             for i, load in enumerate(loads):
-                if all(load.is_bitshift() for load in loads[i:]):
+                if all(is_bitshift(load) for load in loads[i:]):
                     break
                 self.write(f" {load}")
             if isinstance(last_load, I32InI64) or isinstance(last_load, I8InI64):

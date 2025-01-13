@@ -986,6 +986,7 @@ fn fields-go-through-ptr(ctx: .Ctx, fields: .Array<FieldAccess>) -> bool {
 variant BitShift {
     case I32InI64 -> i32
     case I8InI32 -> i32
+    case I16InI32 -> i32
     case I8InI64 -> i32
 }
 
@@ -1019,13 +1020,14 @@ fn Load-format(fmt: .Formatter, self: .Load) {
             $fmt flip match {
                 case I32InI64 -> { $fmt "(I32InI64 " Fmt:write ~ i32-format $fmt ")" }
                 case I8InI32 -> { $fmt "(I8InI32 " Fmt:write ~ i32-format $fmt ")" }
+                case I16InI32 -> { $fmt "(I16InI32 " Fmt:write ~ i32-format $fmt ")" }
                 case I8InI64 -> { $fmt "(I8InI64 " Fmt:write ~ i32-format $fmt ")" }
             } Fmt:write
         }
     }
 }
 
-fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block {
+fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block (-> List<Load>) {
     $loads match {
         case Empty -> { $loads break }
         case Cons -> {
@@ -1045,6 +1047,7 @@ fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block {
                     match {
                         case I32InI64 -> {}
                         case I8InI32 -> {}
+                        case I16InI32 -> {}
                         case I8InI64 -> {}
                     } @extra-offset
                     I32-id $first-offset $extra-offset + [,2] make Load.OffsetLoad
@@ -1069,7 +1072,32 @@ fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block {
                 case _ -> { drop $loads }
             }
         }
-        case BitShift -> { drop $loads }
+        case BitShift -> {
+            @first
+            $second match {
+                case BitShift -> {}
+                case _ -> { $loads break }
+            } @second
+
+            // try to merge two consecutive bitshifts,
+            // for example [BitShift.I16InI32 2, BitShift.I8InI32 1] -> BitShift.I8InI32 3
+            $first match {
+                case I16InI32 -> {
+                    $second match {
+                        case I8InI32 -> {
+                            + make BitShift.I8InI32 make Load.BitShift
+                            $rest List:cons<Load>
+                        }
+                        case _ -> {
+                            $loads break
+                        }
+                    }
+                }
+                // TODO: merging of other configurations, for example:
+                //         [BitShift.I32InI64 4, BitShift.I8InI32 1] -> BitShift.I8InI64 5
+                case _ -> { $loads break }
+            }
+        }
     }
 } }
 
@@ -1117,10 +1145,15 @@ fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, just-r
                         }
 
                         $source-type-size $target-type-size /= if {
+                            $arena $ctx &tail $just-ref $base-in-mem determine-loads @rest
                             $target-type-size 1 = if {
-                                $arena $ctx &tail $just-ref $base-in-mem determine-loads @rest
                                 $arena $offset
                                 make BitShift.I8InI32 make Load.BitShift
+                                &rest List:cons<Load> merge-loads break
+                            }
+                            $target-type-size 2 = if {
+                                $arena $offset
+                                make BitShift.I16InI32 make Load.BitShift
                                 &rest List:cons<Load> merge-loads break
                             }
                             0 0 / drop // TODO
@@ -1272,6 +1305,12 @@ fn generate-set(
                     $ctx.fmt $buf $buf 255 $offset 8 * shl not Core:i32-to-str-hex Fmt:write
                     " i32.and "
                 }
+                case I16InI32 -> {
+                    ~ @offset
+                    $ctx.fmt " i32.const 0x" Fmt:write
+                    $ctx.fmt $buf $buf 65535 $offset 8 * shl not Core:i32-to-str-hex Fmt:write
+                    " i32.and "
+                }
                 case I8InI64 -> {
                     ~ @offset
                     $ctx.fmt " i64.const 0x" Fmt:write
@@ -1284,32 +1323,24 @@ fn generate-set(
         $ctx generate-flip-i32-i64
         $ctx.fmt " i64.extend_i32_u " Fmt:write
         $last-load match {
-            case BitShift -> { match {
-                case I32InI64 -> {
-                    ~ @offset $offset 0 /= if {
-                        $ctx.fmt "i64.const " Fmt:write
-                        $ctx.fmt $offset 8 * i32-format
-                        $ctx.fmt " i64.shl " Fmt:write
-                    }
-                    $ctx.fmt "i64.or " Fmt:write
+            case BitShift -> {
+                match {
+                    case I8InI32 -> { "i32" }
+                    case I16InI32 -> { "i32" }
+                    case I8InI64 -> { "i64" }
+                    case I32InI64 -> { "i64" }
+                } @ty-name-len @ty-name-ptr ~ @offset
+                $offset 0 /= if {
+                    $ctx.fmt $ty-name-ptr $ty-name-len Fmt:write
+                    $ctx.fmt ".const " Fmt:write
+                    $ctx.fmt $offset 8 * i32-format
+                    $ctx.fmt " " Fmt:write
+                    $ctx.fmt $ty-name-ptr $ty-name-len Fmt:write
+                    $ctx.fmt ".shl " Fmt:write
                 }
-                case I8InI32 -> {
-                    ~ @offset $offset 0 /= if {
-                        $ctx.fmt "i32.const " Fmt:write
-                        $ctx.fmt $offset 8 * i32-format
-                        $ctx.fmt " i32.shl " Fmt:write
-                    }
-                    $ctx.fmt "i32.or " Fmt:write
-                }
-                case I8InI64 -> {
-                    ~ @offset $offset 0 /= if {
-                        $ctx.fmt "i64.const " Fmt:write
-                        $ctx.fmt $offset 8 * i32-format
-                        $ctx.fmt " i64.shl " Fmt:write
-                    }
-                    $ctx.fmt "i64.or " Fmt:write
-                }
-            } }
+                $ctx.fmt $ty-name-ptr $ty-name-len Fmt:write
+                $ctx.fmt ".or " Fmt:write
+            }
             case _ -> { drop 0 0 / drop }
         }
         $target-lives-in-memory if {
@@ -1362,15 +1393,6 @@ fn generate-load(ctx: .Ctx, load: .Load) {
     $load match {
         case BitShift -> {
             $ctx.fmt flip match {
-                case I32InI64 -> {
-                    ~ @offset
-                    $offset 0 /= if {
-                        $ctx.fmt "i64.const " Fmt:write
-                        $ctx.fmt $offset 8 * i32-format
-                        $ctx.fmt " i64.shr_u " Fmt:write
-                    }
-                    "i32.wrap_i64"
-                }
                 case I8InI32 -> {
                     ~ @offset
                     $offset 0 /= if {
@@ -1379,6 +1401,24 @@ fn generate-load(ctx: .Ctx, load: .Load) {
                         $ctx.fmt " i32.shr_u " Fmt:write
                     }
                     "i32.const 0xFF i32.and"
+                }
+                case I16InI32 -> {
+                    ~ @offset
+                    $offset 0 /= if {
+                        $ctx.fmt "i32.const " Fmt:write
+                        $ctx.fmt $offset 8 * i32-format
+                        $ctx.fmt " i32.shr_u " Fmt:write
+                    }
+                    "i32.const 0xFFFF i32.and"
+                }
+                case I32InI64 -> {
+                    ~ @offset
+                    $offset 0 /= if {
+                        $ctx.fmt "i64.const " Fmt:write
+                        $ctx.fmt $offset 8 * i32-format
+                        $ctx.fmt " i64.shr_u " Fmt:write
+                    }
+                    "i32.wrap_i64"
                 }
                 case I8InI64 -> {
                     ~ @offset
