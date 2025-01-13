@@ -127,6 +127,8 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block (->) {
         case MemFill -> { "memory.fill" }
         case MemGrow -> { "memory.grow" }
         case Store -> { $ctx flip ~ generate-store break }
-        case SetStackSize -> { "drop" } // TODO: support stack guards
+        case SetStackSize -> {
+            $ctx.guard-stack if { "global.set $stack-siz:e" } else { "drop" }
+        }
     } Fmt:write
 } }
