@@ -11,9 +11,9 @@ import "../../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
 import "../../std/util.watim" as Util (i32-format, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
-import "../type.watim" as Type (CustomTypeHandle)
+import "../resolver/type.watim" as Type (CustomTypeHandle)
 import "../env.watim" as Env (ScopeId, root-scope, LocalId, LocalId-eq)
-import "../resolver/resolver.watim" as Resolver (GlobalId, VarId)
+import "../resolver/ast.watim" as Resolved (GlobalId, VarId)
 import "../monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
     Extern, Function, FunctionHandle, Signature, Local, Global,

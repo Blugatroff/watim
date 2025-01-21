@@ -1,13 +1,13 @@
-import "../std/maybe.watim" as Maybe (Maybe)
-import "../std/array.watim" as Array (Array)
-import "../std/arena.watim" as Arena (Arena)
-import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
-import "../std/util.watim" as Util (i32-format)
-import "../std/fmt.watim" as Fmt (Formatter)
-import "../std/io.watim" as IO
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/array.watim" as Array (Array)
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/util.watim" as Util (i32-format)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/io.watim" as IO
 
-import "./lexer.watim" as Lexer (Token, Token-format, Token-lexeme)
-import "./parser.watim" as P
+import "../lexer.watim" as Lexer (Token, Token-format, Token-lexeme)
+import "../parser.watim" as P
 
 struct ModuleId { index: i32 }
 fn ModuleId-format(fmt: .Formatter, self: .ModuleId) {

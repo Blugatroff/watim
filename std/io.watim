@@ -1,6 +1,50 @@
 import "./core.watim" as CORE
+import "./result.watim" as Result (Result)
 extern "wasi_snapshot_preview1" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, read: .i32) -> i32
 extern "wasi_snapshot_preview1" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
+
+variant Error {
+    case Noent
+    case Raw -> i32
+}
+fn error-from-raw(code: i32) -> Error { block {
+    $code 44 = if { make Error.Noent break }
+    $code make Error.Raw
+} }
+fn error-to-raw(error: Error) -> i32 {
+    $error match {
+        case Noent -> { 44 }
+        case Raw -> {}
+    }
+}
+
+fn check(code: i32) {
+    $code 0 /= if {
+        2 2 "Error Code: " write-all drop $code print drop
+        2 "\n" write-all drop
+        0 0 / drop
+        1 CORE:exit
+    }
+}
+
+fn unwrap<T>(res: Result<T, Error>) -> T {
+    $res match {
+        case Success -> {}
+        case Error -> {
+            error-to-raw @code
+            2 "Error Code: " write-all check
+            2 $code print check
+            2 "\n" write-all check
+            $code CORE:exit
+            CORE:unreachable<T>
+        }
+    }
+}
+
+fn abort(msg-ptr: .i8, msg-len: i32) {
+    2 $msg-ptr $msg-len write-all check
+    1 CORE:exit
+}
 
 struct Iov {
     ptr: .i8
@@ -105,30 +149,6 @@ fn print-i32-into(n: i32, buf-reversed: .i8) -> i32 {
         $i $l = if { break }
     }
     $l
-}
-
-fn check(code: i32) {
-    $code 0 /= if {
-        2 2 "Error Code: " write-all drop $code print drop
-        2 "\n" write-all drop
-        0 0 / drop
-        1 CORE:exit
-    }
-}
-
-fn exit-with-message(code: i32, ptr: .i8, len: i32) {
-    $code 0 /= if {
-        2 $ptr $len write-all check
-        2 "\n\tcode: " write-all check
-        2 $code print check
-        2 "\n" write-all check
-        $code CORE:exit
-    }
-}
-
-fn abort(msg-ptr: .i8, msg-len: i32) {
-    2 $msg-ptr $msg-len write-all check
-    1 CORE:exit
 }
 
 fn write-escaped(fd: i32, ptr: .i8, len: i32) -> i32 {

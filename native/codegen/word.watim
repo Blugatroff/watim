@@ -10,9 +10,9 @@ import "../../std/util.watim" as Util (i32-format, bool-format)
 import "../../std/io.watim" as IO
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
-import "../type.watim" as ResolvedType (CustomTypeHandle)
+import "../resolver/type.watim" as ResolvedType (CustomTypeHandle)
 import "../env.watim" as Env (LocalId, LocalId-eq)
-import "../resolver/resolver.watim" as Resolver (VarId)
+import "../resolver/ast.watim" as Resolved (VarId)
 import "../monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
     Extern, Function, FunctionHandle, Signature, Local, Global,

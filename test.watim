@@ -40,7 +40,7 @@ fn main "_start" () {
             FS:open-file IO:check @fd
 
             &arena Arena:temp @temp @save
-            $temp $fd FS:read-all IO:check @file
+            $temp $fd FS:read-all IO:unwrap<ByteArray> @file
             &file ByteArray:to-slice @file
 
             $temp $file parse-test-file @test
@@ -54,7 +54,7 @@ fn main "_start" () {
         0 Core:exit
     }
     &args 1 Array:get<ByteSlice> ~ ByteSlice:unpack "write" Bytes:eq if {
-        &arena 0 FS:read-all IO:check @json
+        &arena 0 FS:read-all IO:unwrap<ByteArray> @json
         &arena $json ByteArray:unpack Json:parse match {
             case Error -> {
                 drop

@@ -4,7 +4,7 @@ import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
 
-import "./resolver/resolver.watim" as Resolver (VarId)
+import "./resolver/ast.watim" as Resolved (VarId)
 import "./env.watim" as Env (ScopeId, LocalId, LocalId-eq, root-scope)
 import "./monomizer.watim" as Monomizer (
     Monomized, Module, ExternOrInstances,

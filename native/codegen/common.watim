@@ -6,7 +6,7 @@ import "../../std/util.watim" as Util (i32-format)
 
 import "../lexer.watim" as Lexer (Token-lexeme)
 import "../env.watim" as Env (LocalId, root-scope)
-import "../resolver/resolver.watim" as Resolver (VarId)
+import "../resolver/ast.watim" as Resolved (VarId)
 import "../monomizer.watim" as Monomized (
     TypeId, type-size, Local, CustomType-name
 )

@@ -12,16 +12,13 @@ import "../std/io.watim" as IO
 
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-format)
-import "./type.watim" as Resolved (
+import "./resolver/type.watim" as Resolved (
     ModuleId, ModuleId-format,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
 import "./env.watim" as Resolved (ScopeId, ScopeId-format, root-scope, LocalId, LocalId-format, LocalId-eq)
-import "./resolver/resolver.watim" as Resolved (
-    StringWord, StringWord-format,
-    VarId, VarId-format,
-    fields-go-through-ptr,
-)
+import "./resolver/ast.watim" as Resolved (StringWord, StringWord-format, VarId, VarId-format)
+import "./resolver/resolver.watim" as Resolved (fields-go-through-ptr)
 
 // =============================================================================
 //  Monomorphized Types
