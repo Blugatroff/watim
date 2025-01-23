@@ -44,7 +44,20 @@ fn main "_start" () {
             &file ByteArray:to-slice @file
 
             $temp $file parse-test-file @test
-            1 &test Test-write-json IO:check
+
+            block {
+                $args.len 4 ge if {
+                    &args 3 Array:get<ByteSlice> ~ ByteSlice:unpack "stdin-compiler" Bytes:eq if {
+                        $test.compiler-stdin match {
+                            case None -> {}
+                            case Some -> {
+                                1 flip ByteSlice:unpack IO:write-all IO:check
+                            }
+                        } break
+                    }
+                }
+                1 &test Test-write-json IO:check
+            }
 
             $temp $save Arena:restore
 

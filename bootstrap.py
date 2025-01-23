@@ -6236,7 +6236,7 @@ def indent_non_first(s: str) -> str:
 def indent(s: str) -> str:
     return reduce(lambda a,b: f"{a}{b}", map(lambda s: f"  {s}", s.splitlines(keepends=True)))
 
-Mode = Literal["lex"] | Literal["parse"] | Literal["check"] | Literal["monomize"] | Literal["compile"]
+Mode = Literal["lex"] | Literal["parse"] | Literal["check"] | Literal["monomize"] | Literal["compile"] | Literal["inference-tree"]
 
 def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> str:
     if path == "-":
@@ -6261,6 +6261,8 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
     if mode == "monomize":
         return "TODO"
+    if mode == "inference-tree":
+        return ""
     for mono_module in mono_modules.values():
         merge_locals_module(mono_module)
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
@@ -6294,6 +6296,9 @@ def main(argv: List[str], stdin: str | None = None) -> str:
         path = argv[2]
     elif len(argv) > 2 and argv[1] == "compile":
         mode = "compile"
+        path = argv[2]
+    elif len(argv) > 2 and argv[1] == "inference-tree":
+        mode = "inference-tree"
         path = argv[2]
     else:
         path = argv[1]
