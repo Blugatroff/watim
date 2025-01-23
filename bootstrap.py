@@ -206,6 +206,12 @@ class TokenType(str, Enum):
     UNDERSCORE = "UNDERSCORE"
 
 @dataclass(frozen=True)
+class TokenLocation:
+    file_path: str
+    line: int
+    column: int
+
+@dataclass(frozen=True)
 class Token:
     ty: TokenType
     line: int
@@ -489,20 +495,22 @@ type ParsedTopItem = 'Parser.Import | ParsedTypeDefinition | Parser.Global | Par
 
 @dataclass
 class ParserException(Exception):
-    file_path: str
-    file: str
-    token: Token | None
+    location: TokenLocation | Tuple[str, str] | None
     message: str
 
     def display(self) -> str:
-        if self.token is None:
-            lines = self.file.splitlines()
+        if self.location is None:
+            return self.message
+        if isinstance(self.location, TokenLocation):
+            file_path = self.location.file_path
+            line = self.location.line
+            column = self.location.column
+        else:
+            file_path = self.location[0]
+            lines = self.location[1].splitlines()
             line = len(lines) + 1
             column = len(lines[-1]) + 1 if len(lines) != 0 else 1
-        else:
-            line = self.token.line
-            column = self.token.column
-        return f"{self.file_path}:{line}:{column} {self.message}"
+        return f"{file_path}:{line}:{column} {self.message}"
 
 @dataclass
 class Parser:
@@ -815,7 +823,11 @@ class Parser:
         self.cursor -= 1
 
     def abort(self, message: str) -> NoReturn:
-        raise ParserException(self.file_path, self.file, self.tokens[self.cursor] if self.cursor < len(self.tokens) else None, message)
+        if self.cursor < len(self.tokens):
+            current = self.tokens[self.cursor]
+            raise ParserException(TokenLocation(self.file_path, current.line, current.column), message)
+        else:
+            raise ParserException((self.file_path, self.file), message)
 
 
     # ========================================
@@ -1409,12 +1421,21 @@ class Parser:
             return Parser.TupleType(token, items)
         self.abort("Expected type")
 
-def load_recursive(modules: Dict[str, Parser.Module], path: str, stdin: str | None = None, import_stack: List[str]=[]):
+def load_recursive(
+        modules: Dict[str, Parser.Module],
+        path: str,
+        path_location: TokenLocation | None,
+        stdin: str | None = None,
+        import_stack: List[str]=[]):
     if path == "-":
         file = stdin if stdin is not None else sys_stdin.get()
     else:
-        with open(path, 'r') as reader:
-            file = reader.read()
+        try:
+            with open(path, 'r') as reader:
+                file = reader.read()
+        except FileNotFoundError:
+            raise ParserException(path_location, f"File not found: ./{path}")
+
     tokens = Lexer(file).lex()
     module = Parser(path, file, tokens).parse()
     modules[path] = module
@@ -1427,11 +1448,17 @@ def load_recursive(modules: Dict[str, Parser.Module], path: str, stdin: str | No
             error_message = "Module import cycle detected: "
             for a in import_stack:
                 error_message += f"{a} -> "
-            raise ParserException(path, file, imp.file_path, error_message)
+            raise ParserException(TokenLocation(path, imp.file_path.line, imp.file_path.column), error_message)
         if p in modules:
             continue
         import_stack.append(p)
-        load_recursive(modules, p, stdin, import_stack)
+        load_recursive(
+            modules,
+            p,
+            TokenLocation(path, imp.file_path.line, imp.file_path.column),
+            stdin,
+            import_stack,
+        )
         import_stack.pop()
 
 # =============================================================================
@@ -6227,7 +6254,7 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
         module = Parser(path, file, tokens).parse()
         return str(module)
     modules: Dict[str, Parser.Module] = {}
-    load_recursive(modules, os.path.normpath(path), stdin)
+    load_recursive(modules, os.path.normpath(path), None, stdin)
     resolved_modules = resolve_modules({ k: m.top_items for k,m in modules.items()})
     if mode == "check":
         return format_dict({ k: v for k,v in resolved_modules.items() })

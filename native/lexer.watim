@@ -243,13 +243,18 @@ fn Tokens-copy(arena: .Arena:Arena, src: .Array:Array<Token>) -> Array:Array<Tok
     $dst
 }
 
-fn print-location(fd: i32, file-path-ptr: .i8, file-path-len: i32, line: i32, column: i32) -> i32 { block {
-    $fd $file-path-ptr $file-path-len IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $line IO:print Core:dup<i32> 0 /= if { break } drop
-    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+struct TokenLocation {
+    file-path: ByteSlice
+    line: i32
+    column: i32
+}
 
-    $fd $column IO:print
+fn print-location(fd: i32, loc: .TokenLocation) -> i32 { block {
+    $fd $loc.file-path.ptr $loc.file-path.len IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $loc.line IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $loc.column IO:print
 } }
 
 fn add-space(arena: .Arena:Arena, tokens: .Array:Array<Token>, line: i32, column: i32) {

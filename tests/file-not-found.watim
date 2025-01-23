@@ -1,0 +1,10 @@
+[== Stdin Compiler ==]
+import "./foo.watim" as Foo
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:1:8 File not found: ./foo.watim

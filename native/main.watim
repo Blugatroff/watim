@@ -15,7 +15,7 @@ import "../std/map.watim" as Map (Map)
 
 import "./active-memory.watim" as ActiveMemory
 import "./logging.watim" as Logging
-import "./lexer.watim" as Lexer (Token, Token-lexeme)
+import "./lexer.watim" as Lexer (Token, Token-lexeme, TokenLocation)
 import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 import "./resolver/ast.watim" as Resolved
@@ -113,7 +113,12 @@ fn parse-args(arena: .Arena) -> CliArgs {
     make CliArgs
 }
 
-fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice>, token: .Token) -> ByteArray {
+fn read-file-or-stdin(
+    arena: .Arena,
+    fs: .FileSystem,
+    file-path: Maybe<ByteSlice>,
+    imp-location: .TokenLocation
+) -> ByteArray {
     $file-path match {
         case None -> {
             $arena 0 FS:read-all
@@ -132,11 +137,11 @@ fn read-file-or-stdin(arena: .Arena, fs: .FileSystem, file-path: Maybe<ByteSlice
                         case Some -> { ByteSlice:unpack }
                     } @file-path-len @file-path-ptr
 
-                    $token 0 !.Token /= if {
-                        2 $file-path-ptr $file-path-len $token Lexer:Token-location Lexer:print-location IO:check
+                    $imp-location 0 !.TokenLocation /= if {
+                        2 $imp-location Lexer:print-location IO:check
                         2 " " IO:write-all IO:check
                     }
-                    2 "cannot find " IO:write-all IO:check
+                    2 "File not found: " IO:write-all IO:check
                     2 $file-path-ptr $file-path-len IO:write-all IO:check
                     2 "\n" IO:write-all IO:check
                     1 Core:exit
@@ -177,7 +182,7 @@ fn main "_start" () {
             @file-path
             "Files" Arena:new @files-arena
             &files-arena FS:init IO:check @fs
-            &files-arena &fs $file-path 0 !.Token read-file-or-stdin @watim-code
+            &files-arena &fs $file-path 0 !.TokenLocation read-file-or-stdin @watim-code
             "Tokens" Arena:new @tokens-arena
             &tokens-arena &watim-code ByteArray:to-slice lex @tokens
             &files-arena Arena:shred
@@ -199,7 +204,7 @@ fn main "_start" () {
             @file-path
             "Files" Arena:new @files-arena
             &files-arena FS:init IO:check @fs
-            &files-arena &fs $file-path 0 !.Token read-file-or-stdin @watim-code
+            &files-arena &fs $file-path 0 !.TokenLocation read-file-or-stdin @watim-code
             &arena &watim-code ByteArray:to-slice lex @tokens
             &files-arena Arena:shred
             &arena $tokens parse match {
@@ -227,7 +232,7 @@ fn main "_start" () {
             @file-path
             "Files" Arena:new @files-arena
             &files-arena FS:init IO:check @fs
-            &files-arena &fs $file-path 0 !.Token read-file-or-stdin @watim-code
+            &files-arena &fs $file-path 0 !.TokenLocation read-file-or-stdin @watim-code
             &arena &watim-code ByteArray:to-slice lex @tokens
             &files-arena Arena:shred
             &arena $tokens parse match {
@@ -257,7 +262,7 @@ fn main "_start" () {
         case Check -> {
             @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
-            &arena &fs $file-path 0 !.Token &modules load-modules-recursively
+            &arena &fs $file-path 0 !.TokenLocation &modules load-modules-recursively
             &arena &modules determine-compilation-order @modules
             &arena Arena:temp @temp @save
             $temp Arena:usage @start-usage
@@ -289,7 +294,7 @@ fn main "_start" () {
         case Monomize -> {
             @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
-            &arena &fs $file-path 0 !.Token &modules load-modules-recursively
+            &arena &fs $file-path 0 !.TokenLocation &modules load-modules-recursively
             &arena &modules determine-compilation-order @modules
             "Resolving" Arena:new @resolving-arena
             &resolving-arena &modules resolve-modules match {
@@ -314,7 +319,7 @@ fn main "_start" () {
         case Optimize -> {
             @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
-            &arena &fs $file-path 0 !.Token &modules load-modules-recursively
+            &arena &fs $file-path 0 !.TokenLocation &modules load-modules-recursively
             &arena &modules determine-compilation-order @modules
             "Resolving" Arena:new @resolving-arena
             &resolving-arena &modules resolve-modules match {
@@ -341,7 +346,7 @@ fn main "_start" () {
             @compilation-args
             $compilation-args.file-path @file-path
             \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
-            &arena &fs $file-path 0 !.Token &modules load-modules-recursively
+            &arena &fs $file-path 0 !.TokenLocation &modules load-modules-recursively
             &arena &modules determine-compilation-order @modules
             "Resolving" Arena:new @resolving-arena
             &resolving-arena &modules resolve-modules match {
@@ -388,7 +393,7 @@ fn load-modules-recursively(
     arena: .Arena,
     fs: .FileSystem,
     file-path: Maybe<ByteSlice>,
-    file-path-token: .Token,
+    file-path-location: .TokenLocation,
     modules: .Map<ByteSlice, Array<TopItem>>
 ) { block {
     $file-path match {
@@ -405,7 +410,8 @@ fn load-modules-recursively(
         2 IO:newline
     }
     $arena Arena:temp @temp-arena @save
-    $temp-arena $fs $file-path $file-path-token read-file-or-stdin @watim-code
+
+    $temp-arena $fs $file-path $file-path-location read-file-or-stdin @watim-code
     $arena &watim-code ByteArray:to-slice lex @tokens
     $arena &tokens Lexer:Tokens-copy drop
     $arena $tokens parse match {
@@ -434,16 +440,17 @@ fn load-modules-recursively(
             case Import -> {
                 @imp
                 &imp.path Token-lexeme 2 - flip 1 + flip make ByteSlice @imp-path
+                $file-path-or-dash &imp.path Lexer:Token-location make TokenLocation @imp-path-loc
                 $file-path match {
                     case None -> {
-                        $arena $fs $imp-path make Maybe<ByteSlice>.Some &imp.path $modules load-modules-recursively
+                        $arena $fs $imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
                     }
                     case Some -> {
                         ByteSlice:unpack FS:path-dir ByteArray:init @path
                         $temp-arena &path $imp-path ByteSlice:unpack ByteArray:push
                         $temp-arena $path ByteArray:unpack FS:normalize make ByteSlice @absolute-imp-path
                         $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
-                        $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some &imp.path $modules load-modules-recursively
+                        $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
                     }
                 }
             }
