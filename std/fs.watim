@@ -5,7 +5,6 @@ import "./arena.watim" as Arena (Arena)
 import "./array.watim" as Array (Array)
 import "./bytes.watim" as Bytes
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
-import "./byte-array.watim" as ByteArray (ByteArray)
 import "./util.watim" as Util
 
 extern "wasi_snapshot_preview1" "fd_prestat_get" fn fd_prestat_get(fd: i32, prestat: .Prestat) -> i32
@@ -113,12 +112,12 @@ fn path-dir(path-ptr: .i8, path-len: i32) -> .i8, i32 {
 }
 
 
-fn str-replace(arena: .Arena, ptr: .i8, len: i32, target-ptr: .i8, target-len: i32, replacement-ptr: .i8, replacement-len: i32) -> ByteArray {
-    ByteArray:new @new
+fn str-replace(arena: .Arena, ptr: .i8, len: i32, target-ptr: .i8, target-len: i32, replacement-ptr: .i8, replacement-len: i32) -> Array<i8> {
+    Array:new<i8> @new
     $ptr $len $target-ptr $target-len Bytes:find-seq if {
         @index
-        $arena &new $ptr $index ByteArray:push
-        $arena &new $replacement-ptr $replacement-len ByteArray:push
+        $arena &new $ptr $index Array:append-raw<_>
+        $arena &new $replacement-ptr $replacement-len Array:append-raw<_>
 
         $arena
         $ptr $index + $target-len + @next-ptr $next-ptr
@@ -129,26 +128,26 @@ fn str-replace(arena: .Arena, ptr: .i8, len: i32, target-ptr: .i8, target-len: i
         $replacement-len
         str-replace @new-next
 
-        $arena &new $new-next ByteArray:unpack ByteArray:push
+        $arena &new &new-next Array:append<_>
         $new
     } else {
-        drop $ptr $len ByteArray:init
+        drop $ptr $len Array:init-no-copy<_>
     }
 }
 
 fn normalize(arena: .Arena, path-ptr: .i8, path-len: i32) -> .i8, i32 {
     $arena Arena:temp @temp @temp-save
-    ByteArray:new @out
+    Array:new<i8> @out
 
     $path-ptr $path-len "./" Bytes:is-prefix not if {
-        $temp &out "./" ByteArray:push
+        $temp &out "./" Array:append-raw<_>
     }
-    $temp &out $path-ptr $path-len ByteArray:push
+    $temp &out $path-ptr $path-len Array:append-raw<_>
 
-    $temp $out ByteArray:unpack "//" "/" str-replace #out
-    $temp $out ByteArray:unpack "/./" "/" str-replace #out
+    $temp &out Array:unpack<_> "//" "/" str-replace #out
+    $temp &out Array:unpack<_> "/./" "/" str-replace #out
 
-    $temp &out ByteArray:to-slice "/" drop ~ Util:split-bytes @splits
+    $temp &out Array:to-slice "/" drop ~ Util:split-bytes @splits
     Array:new<ByteSlice> @outsplits
     0 @i
     loop {
@@ -167,10 +166,10 @@ fn normalize(arena: .Arena, path-ptr: .i8, path-len: i32) -> .i8, i32 {
         $i 1 + #i
     }
     $temp &outsplits "/" Array:join-with @out
-    $path-ptr $path-len $out ByteArray:unpack Bytes:eq if {
-        $arena $out ByteArray:unpack Arena:push-bytes $out.len
+    $path-ptr $path-len &out Array:unpack<_> Bytes:eq if {
+        $arena &out Array:unpack<_> Arena:push-bytes $out.len
     } else {
-        $arena $out ByteArray:unpack normalize
+        $arena &out Array:unpack<_> normalize
     }
     $temp $temp-save Arena:restore
 }
@@ -186,7 +185,7 @@ fn open-file(fs: .FileSystem, path: .i8, path_len: i32, rights: i64, inheriting_
     }
 }
 
-fn read-file(arena: .Arena, fs: .FileSystem, path: .i8, path-len: i32) -> Result<ByteArray, Error> { block {
+fn read-file(arena: .Arena, fs: .FileSystem, path: .i8, path-len: i32) -> Result<Array<i8>, Error> { block {
     $fs
     $path $path-len
     0 0 = 0 1 = create-rights
@@ -195,27 +194,27 @@ fn read-file(arena: .Arena, fs: .FileSystem, path: .i8, path-len: i32) -> Result
     open-file @code @fd
     $code 0 /= if {
         $fd close drop
-        $code error-from-raw make Result<ByteArray, Error>.Error break
+        $code error-from-raw make Result<Array<i8>, Error>.Error break
     }
     $arena $fd read-all
     $fd close drop
 } }
 
-fn read-all(arena: .Arena, file: i32) -> Result<ByteArray, Error> {
+fn read-all(arena: .Arena, file: i32) -> Result<Array<i8>, Error> {
     64 @buf-size
     $arena Arena:temp @temp @temp-save
     $temp $buf-size Arena:alloc-bytes @buf
-    ByteArray:new @out
+    Array:new<i8> @out
 
     loop {
         $file $buf $buf-size IO:read @code @read
         $code 0 /= if {
-            $code error-from-raw make Result<ByteArray, Error>.Error break
+            $code error-from-raw make Result<Array<i8>, Error>.Error break
         }
         $read 0 = if {
-            $out make Result<ByteArray, Error>.Success break
+            $out make Result<Array<i8>, Error>.Success break
         } else {
-            $arena &out $buf $read ByteArray:push
+            $arena &out $buf $read Array:append-raw<_>
         }
     }
     $temp $temp-save Arena:restore

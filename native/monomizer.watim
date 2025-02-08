@@ -6,7 +6,8 @@ import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
-import "../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
+import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/fmt-utils.watim" as Fmt (ByteSlice-format)
 import "../std/util.watim" as Util (i32-format, bool-format, i32-format-ref)
 import "../std/io.watim" as IO
 

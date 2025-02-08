@@ -3,7 +3,6 @@ import "../std/maybe.watim" as Maybe (assert-some)
 import "../std/result.watim" as Result (Result)
 import "../std/io.watim" as IO
 import "../std/bytes.watim" as Bytes
-import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/array.watim" as Array
 import "../std/map.watim" as Map
 import "../std/arena.watim" as Arena (Arena)
@@ -49,12 +48,12 @@ fn main "_start" () {
     }
 
     &arena "\"hello\"" Json:parse assert-success<Value> match {
-        case String -> { ByteArray:unpack "hello" Bytes:eq not if { "expected \"hello\"" crash } }
+        case String -> { @arr &arr Array:unpack<_> "hello" Bytes:eq not if { "expected \"hello\"" crash } }
         case _ -> { drop "expected a string" crash }
     }
 
     &arena "\"he\nllo\"" Json:parse assert-success<Value> match {
-        case String -> { ByteArray:unpack "he\nllo" Bytes:eq not if { "expected \"he\nllo\"" crash } }
+        case String -> { @arr &arr Array:unpack<_> "he\nllo" Bytes:eq not if { "expected \"he\nllo\"" crash } }
         case _ -> { drop "expected a string" crash }
     }
 
@@ -72,7 +71,7 @@ fn main "_start" () {
                 case _ -> { drop "expected a number" crash }
             }
             &arr 1 Array:get<Value> match {
-                case String -> { ~ ByteArray:unpack "two" Bytes:eq not if { "expected \"two\"" crash } }
+                case String -> { Array:unpack<_> "two" Bytes:eq not if { "expected \"two\"" crash } }
                 case _ -> { drop "expected a string" crash }
             }
             &arr 2 Array:get<Value> match {
@@ -98,7 +97,7 @@ fn main "_start" () {
             $object.values.len 2 /= if { "expected two entries" crash }
 
             &object "label" Map:get-ba<Value> assert-some<.Value> match {
-                case String -> { ~ ByteArray:unpack "Foo" Bytes:eq not if { "expected \"Foo\"" crash } }
+                case String -> { Array:unpack<_> "Foo" Bytes:eq not if { "expected \"Foo\"" crash } }
                 case _ -> { drop "expected a string" crash }
             }
 

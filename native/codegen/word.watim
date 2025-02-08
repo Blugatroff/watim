@@ -2,7 +2,7 @@ import "../../std/core.watim" as Core
 import "../../std/maybe.watim" as Maybe (Maybe, is-some)
 import "../../std/arena.watim" as Arena (Arena)
 import "../../std/map.watim" as Map (Map)
-import "../../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
+import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/array.watim" as Array (Array)
 import "../../std/list.watim" as List (List)
 import "../../std/util.watim" as Util (i32-format, bool-format)

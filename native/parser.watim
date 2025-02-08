@@ -5,7 +5,6 @@ import "../std/io.watim" as IO
 import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
-import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/fmt.watim" as Fmt (Formatter)
 import "../std/util.watim" as Util (i32-format)
 
@@ -749,14 +748,14 @@ fn abort<T>(parser: .Parser, message-ptr: .i8, message-len: i32) -> Result<T, Pa
         0 0 / drop // parsing an empty file always should always succeed
     }
     &parser.tokens $parser.cursor 0 = if { 0 } else { $parser.cursor 1 - } Array:get<Token> @token
-    $token Token-location $parser.arena $message-ptr $message-len ByteArray:copy make ParseError
+    $token Token-location $parser.arena $message-ptr $message-len Array:init<_> make ParseError
     make Result<T, ParseError>.Error
 }
 
 struct ParseError {
     line: i32
     column: i32
-    message: ByteArray
+    message: Array<i8>
 }
 fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i8, file-path: i32) -> i32 { block {
     $fd $file-path-ptr $file-path IO:write-all Core:dup<i32> 0 /= if { break } drop
@@ -765,7 +764,7 @@ fn ParseError-print(fd: i32, self: ParseError, file-path-ptr: .i8, file-path: i3
     $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd $self.column IO:print Core:dup<i32> 0 /= if { break } drop
     $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.message ByteArray:unpack IO:write-all
+    $fd &self.message Array:unpack<_> IO:write-all
 } }
 
 fn parse(arena: .Arena, tokens: Array<Token>) -> Result<Array<TopItem>, ParseError> {
@@ -1383,23 +1382,23 @@ fn expect-token(parser: .Parser, ty: TokenTy) -> Result<.Token, ParseError> {
     $parser advance match {
         case None -> {
             $parser.arena Arena:temp @arena @save
-            $arena "expected `" ByteArray:copy @message
-            $arena &message $ty TokenTy-name ByteArray:push
-            $arena &message "`" ByteArray:push
-            $parser $message ByteArray:unpack abort<.Token>
+            $arena "expected `" Array:init<_> @message
+            $arena &message $ty TokenTy-name Array:append-raw<_>
+            $arena &message "`" Array:append-raw<_>
+            $parser &message Array:unpack<_> abort<.Token>
             $arena $save Arena:restore
         }
         case Some -> {
             Core:dup<.Token> Token-ty $ty /= if {
                 Token-ty @actual
                 $parser.arena Arena:temp @arena @save
-                $arena "expected `" ByteArray:copy @message
-                $arena &message $ty TokenTy-name ByteArray:push
-                $arena &message "` got: " ByteArray:push
-                $arena &message "`" ByteArray:push
-                $arena &message $actual TokenTy-name ByteArray:push
-                $arena &message "`" ByteArray:push
-                $parser $message ByteArray:unpack abort<.Token>
+                $arena "expected `" Array:init<_> @message
+                $arena &message $ty TokenTy-name Array:append-raw<_>
+                $arena &message "` got: " Array:append-raw<_>
+                $arena &message "`" Array:append-raw<_>
+                $arena &message $actual TokenTy-name Array:append-raw<_>
+                $arena &message "`" Array:append-raw<_>
+                $parser &message Array:unpack<_> abort<.Token>
                 $arena $save Arena:restore
             } else {
                 make Result<.Token, ParseError>.Success

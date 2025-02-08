@@ -2,14 +2,13 @@ import "./bytes.watim" as Bytes
 import "./result.watim" as Result (Result)
 import "./arena.watim" as Arena (Arena)
 import "./array.watim" as Array (Array)
-import "./byte-array.watim" as ByteArray (ByteArray)
 import "./map.watim" as Map (Map)
 
 variant Value {
     case Number -> i32 // watim doesn't support floats :<
-    case String -> ByteArray
+    case String -> Array<i8>
     case Array -> Array<Value>
-    case Object -> Map<ByteArray, Value>
+    case Object -> Map<Array<i8>, Value>
     case Null
 }
 fn Value-eq(a: .Value, b: .Value) -> bool {
@@ -19,7 +18,7 @@ fn Value-eq(a: .Value, b: .Value) -> bool {
             case _ -> { drop drop 0 1 = }
         } }
         case String -> { $b match {
-            case String -> { ByteArray:eq }
+            case String -> { Array:byte-eq }
             case _ -> { drop drop 0 1 = }
         } }
         case Array -> { \Value-eq flip $b match {
@@ -137,40 +136,40 @@ fn parse-number(arena: .Arena, ptr: ..i8, len: .i32) -> Result<i32, ParseError> 
     }
 } }
 
-fn parse-string(arena: .Arena, ptr: ..i8, len: .i32) -> Result<ByteArray, ParseError> { block {
-    $len ~ 0 = if { make ParseError make Result<ByteArray, ParseError>.Error break }
-    $ptr ~~ "\"" drop ~ /= if { make ParseError make Result<ByteArray, ParseError>.Error break }
+fn parse-string(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Array<i8>, ParseError> { block {
+    $len ~ 0 = if { make ParseError make Result<Array<i8>, ParseError>.Error break }
+    $ptr ~~ "\"" drop ~ /= if { make ParseError make Result<Array<i8>, ParseError>.Error break }
 
-    ByteArray:new @out
+    Array:new<i8> @out
 
     $ptr $len 1 advance
     loop {
-        $len ~ 0 = if { make ParseError make Result<ByteArray, ParseError>.Error break }
+        $len ~ 0 = if { make ParseError make Result<Array<i8>, ParseError>.Error break }
         $ptr ~~ "\"" drop ~ = if {
             $ptr $len 1 advance
-            $out make Result<ByteArray, ParseError>.Success break
+            $out make Result<Array<i8>, ParseError>.Success break
         }
         $ptr ~~ "\\" drop ~ = if {
             $ptr $len 1 advance
-            $len ~ 0 = if { make ParseError make Result<ByteArray, ParseError>.Error break }
+            $len ~ 0 = if { make ParseError make Result<Array<i8>, ParseError>.Error break }
             $ptr ~~ @escape
             block {
-                $escape "\"" drop ~ = if { $arena &out "\"" ByteArray:push 1 1 = break }
-                $escape "\\" drop ~ = if { $arena &out "\\" ByteArray:push 1 1 = break }
-                $escape "b" drop ~ = if { $arena &out 8 !i8 ByteArray:push-byte 1 1 = break }
-                $escape "f" drop ~ = if { $arena &out 12 !i8 ByteArray:push-byte 1 1 = break }
-                $escape "n" drop ~ = if { $arena &out "\n" ByteArray:push 1 1 = break }
-                $escape "r" drop ~ = if { $arena &out "\r" ByteArray:push 1 1 = break }
-                $escape "t" drop ~ = if { $arena &out "\t" ByteArray:push 1 1 = break }
+                $escape "\"" drop ~ = if { $arena &out "\"" Array:append-raw<_> 1 1 = break }
+                $escape "\\" drop ~ = if { $arena &out "\\" Array:append-raw<_> 1 1 = break }
+                $escape "b" drop ~ = if { $arena &out 8 !i8 Array:push<_> 1 1 = break }
+                $escape "f" drop ~ = if { $arena &out 12 !i8 Array:push<_> 1 1 = break }
+                $escape "n" drop ~ = if { $arena &out "\n" Array:append-raw<_> 1 1 = break }
+                $escape "r" drop ~ = if { $arena &out "\r" Array:append-raw<_> 1 1 = break }
+                $escape "t" drop ~ = if { $arena &out "\t" Array:append-raw<_> 1 1 = break }
                 $escape "u" drop ~ = if { 0 0 / drop }
                 0 1 =
             }
             $ptr $len 1 advance
             not if {
-                make ParseError make Result<ByteArray, ParseError>.Error break
+                make ParseError make Result<Array<i8>, ParseError>.Error break
             }
         } else {
-            $arena &out $ptr ~~ ByteArray:push-byte
+            $arena &out $ptr ~~ Array:push<_>
             $ptr $len 1 advance
         }
     }
@@ -205,39 +204,39 @@ fn parse-array(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Array<Value>, Pars
     }
 } }
 
-fn parse-object(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Map<ByteArray, Value>, ParseError> { block {
-    $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
-    $ptr ~~ "{" drop ~ /= if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
+fn parse-object(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Map<Array<i8>, Value>, ParseError> { block {
+    $len ~ 0 = if { make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break }
+    $ptr ~~ "{" drop ~ /= if { make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break }
     $ptr $len 1 advance
     $ptr $len whitespace
-    $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
-    \ByteArray:eq Map:new<_, Value> @entries
+    $len ~ 0 = if { make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break }
+    \Array:byte-eq Map:new<_, Value> @entries
     $ptr ~~ "}" drop ~ = if {
         $ptr $len 1 advance
-        $entries make Result<Map<ByteArray, Value>, ParseError>.Success break
+        $entries make Result<Map<Array<i8>, Value>, ParseError>.Success break
     }
     loop {
         $ptr $len whitespace
         $arena $ptr $len parse-string match {
-            case Error -> { make Result<Map<ByteArray, Value>, ParseError>.Error break }
+            case Error -> { make Result<Map<Array<i8>, Value>, ParseError>.Error break }
             case Success -> {}
         } @key
         $ptr $len whitespace
-        $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
-        $ptr ~~ ":" drop ~ /= if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
+        $len ~ 0 = if { make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break }
+        $ptr ~~ ":" drop ~ /= if { make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break }
         $ptr $len 1 advance
         $arena $ptr $len parse-value match {
-            case Error -> { make Result<Map<ByteArray, Value>, ParseError>.Error break }
+            case Error -> { make Result<Map<Array<i8>, Value>, ParseError>.Error break }
             case Success -> {}
         } @value
         $arena &entries $key $value Map:insert<_, _> drop
-        $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
+        $len ~ 0 = if { make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break }
         $ptr ~~ "}" drop ~ = if {
             $ptr $len 1 advance
-            $entries make Result<Map<ByteArray, Value>, ParseError>.Success break
+            $entries make Result<Map<Array<i8>, Value>, ParseError>.Success break
         }
         $ptr ~~ "," drop ~ /= if {
-            make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break
+            make ParseError make Result<Map<Array<i8>, Value>, ParseError>.Error break
         }
         $ptr $len 1 advance
     }

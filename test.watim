@@ -2,17 +2,17 @@ import "./std/maybe.watim" as Maybe (Maybe, assert-some)
 import "./std/args.watim" as Args
 import "./std/bytes.watim" as Bytes
 import "./std/byte-slice.watim" as ByteSlice (ByteSlice)
-import "./std/byte-array.watim" as ByteArray (ByteArray)
 import "./std/array.watim" as Array (Array)
 import "./std/io.watim" as IO
 import "./std/fs.watim" as FS
-import "./std/core.watim" as Core
+import "./std/core.watim" as Core (dup)
 import "./std/arena.watim" as Arena (Arena)
 import "./std/array.watim" as Array
 import "./std/map.watim" as Map (Map)
 import "./std/util.watim" as Util
 import "./std/json.watim" as Json (Value)
 import "./std/fmt.watim" as Fmt
+import "./std/fmt-utils.watim" as Fmt
 
 fn main "_start" () {
     Arena:init-temp
@@ -31,23 +31,23 @@ fn main "_start" () {
         1 Core:exit
     }
 
-    &args 1 Array:get<ByteSlice> ~ ByteSlice:unpack "read" Bytes:eq if {
+    &args 1 Array:get<_> ~ ByteSlice:unpack "read" Bytes:eq if {
         block {
-            &fs &args 2 Array:get<ByteSlice> ~ ByteSlice:unpack
+            &fs &args 2 Array:get<_> ~ ByteSlice:unpack
             1 1 = 0 1 = FS:create-rights
             0 1 = 0 1 = FS:create-rights
             0 1 = FS:create-oflags
             FS:open-file IO:check @fd
 
             &arena Arena:temp @temp @save
-            $temp $fd FS:read-all IO:unwrap<ByteArray> @file
-            &file ByteArray:to-slice @file
+            $temp $fd FS:read-all IO:unwrap<_> @file
+            &file Array:to-slice @file
 
             $temp $file parse-test-file @test
 
             block {
                 $args.len 4 ge if {
-                    &args 3 Array:get<ByteSlice> ~ ByteSlice:unpack "stdin-compiler" Bytes:eq if {
+                    &args 3 Array:get<_> ~ ByteSlice:unpack "stdin-compiler" Bytes:eq if {
                         $test.compiler-stdin match {
                             case None -> {}
                             case Some -> {
@@ -66,9 +66,9 @@ fn main "_start" () {
         &arena Arena:clear
         0 Core:exit
     }
-    &args 1 Array:get<ByteSlice> ~ ByteSlice:unpack "write" Bytes:eq if {
-        &arena 0 FS:read-all IO:unwrap<ByteArray> @json
-        &arena $json ByteArray:unpack Json:parse match {
+    &args 1 Array:get<_> ~ ByteSlice:unpack "write" Bytes:eq if {
+        &arena 0 FS:read-all IO:unwrap<_> @json
+        &arena &json Array:unpack<_> Json:parse match {
             case Error -> {
                 drop
                 2 "Failed to parse JSON\n" IO:write-all IO:check
@@ -77,7 +77,7 @@ fn main "_start" () {
             case Success -> {}
         } match {
             case Object -> {}
-            case _ -> { drop 2 "Expected an object\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Map<ByteArray, Value>> }
+            case _ -> { drop 2 "Expected an object\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Map<Array<i8>, Value>> }
         } @test
 
         make Test {
@@ -93,14 +93,12 @@ fn main "_start" () {
         } @test
 
 
-        &fs &args 2 Array:get<ByteSlice> ~ ByteSlice:unpack
+        &fs &args 2 Array:get<_> ~ ByteSlice:unpack
         0 1 = 1 1 = FS:create-rights
         0 1 = 0 1 = FS:create-rights
         1 1 = FS:create-oflags
         FS:open-file IO:check @fd
-        // 2 &arena $fd FS:read-all IO:check ByteArray:unpack IO:write-all IO:check
-        // 2 $fd IO:print IO:check
-        $fd &arena &test serialize-test ByteArray:unpack IO:write-all IO:check
+        $fd &arena &test serialize-test @arr &arr Array:unpack<_> IO:write-all IO:check
 
         &arena Arena:clear
         0 Core:exit
@@ -114,8 +112,8 @@ fn is-string-array(arena: .Arena, array: Array<Value>) -> Array<ByteSlice> {
     Array:new<ByteSlice> @strings
     loop {
         $array.len 0 = if { $strings break }
-        &array Array:pop<Value> match {
-            case String -> { @b &b ByteArray:to-slice $arena flip &strings flip Array:push<ByteSlice> }
+        &array Array:pop<_> match {
+            case String -> { @b &b Array:to-slice $arena flip &strings flip Array:push<_> }
             case _ -> {
                 drop
                 2 "Expected a string\n" IO:write-all IO:check 1 Core:exit
@@ -125,10 +123,10 @@ fn is-string-array(arena: .Arena, array: Array<Value>) -> Array<ByteSlice> {
     &strings Array:reverse<ByteSlice>
 }
 
-fn get-optional-string(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: i32) -> Maybe<ByteSlice> {
-    $object $name-ptr $name-len Map:get-ba<Value> match {
+fn get-optional-string(object: .Map<Array<i8>, Value>, name-ptr: .i8, name-len: i32) -> Maybe<ByteSlice> {
+    $object $name-ptr $name-len Map:get-ba<_> match {
         case Some -> { match {
-            case String -> { ByteArray:to-slice make Maybe<ByteSlice>.Some }
+            case String -> { Array:to-slice make Maybe<ByteSlice>.Some }
             case Null -> { make Maybe<ByteSlice>.None }
             case _ -> { drop 2 "Expected a string\n" IO:write-all IO:check 1 Core:exit Core:unreachable<Maybe<ByteSlice>> }
         } }
@@ -142,8 +140,8 @@ fn get-optional-string(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: 
     }
 }
 
-fn get-optional-number(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: i32) -> Maybe<i32> {
-    $object $name-ptr $name-len Map:get-ba<Value> match {
+fn get-optional-number(object: .Map<Array<i8>, Value>, name-ptr: .i8, name-len: i32) -> Maybe<i32> {
+    $object $name-ptr $name-len Map:get-ba<_> match {
         case Some -> { match {
             case Number -> { ~ make Maybe<i32>.Some }
             case Null -> { make Maybe<i32>.None }
@@ -153,8 +151,8 @@ fn get-optional-number(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: 
     }
 }
 
-fn get-optional-array(object: .Map<ByteArray, Value>, name-ptr: .i8, name-len: i32) -> Array<Value> {
-    $object $name-ptr $name-len Map:get-ba<Value> match {
+fn get-optional-array(object: .Map<Array<i8>, Value>, name-ptr: .i8, name-len: i32) -> Array<Value> {
+    $object $name-ptr $name-len Map:get-ba<_> match {
         case Some -> { match {
             case Array -> { ~ }
             case Null -> { Array:new<Value> }
@@ -186,8 +184,8 @@ fn write-nullable-string-json(fd: i32, str: .Maybe<ByteSlice>) -> i32 { block {
         case None -> { $fd "null" IO:write-all break }
         case Some -> {
             @str
-            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
-            $fd $str ~ ByteSlice:unpack IO:write-escaped Core:dup<i32> 0 /= if { break } drop
+            $fd "\"" IO:write-all dup<_> 0 /= if { break } drop
+            $fd $str ~ ByteSlice:unpack IO:write-escaped dup<_> 0 /= if { break } drop
             $fd "\"" IO:write-all
         }
     }
@@ -199,40 +197,40 @@ fn write-nullable-number-json(fd: i32, n: Maybe<i32>) -> i32 {
     }
 }
 fn Test-write-json(fd: i32, self: .Test) -> i32 { block {
-    $fd "{ \"compiler-stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.compiler-stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"compiler-status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.compiler-status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"compiler-stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd &self.compiler-stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"compiler-stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } else { drop }
-    $fd &self.compiler-stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"compiler-args\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd "{ \"compiler-stdin\": " IO:write-all dup<_> 0 /= if { break } drop
+    $fd &self.compiler-stdin write-nullable-string-json dup<_> 0 /= if { break } drop
+    $fd ", \"compiler-status\": " IO:write-all dup<_> 0 /= if { break } drop
+    $fd $self.compiler-status write-nullable-number-json dup<_> 0 /= if { break } drop
+    $fd ", \"compiler-stdout\": " IO:write-all dup<_> 0 /= if { break } else { drop }
+    $fd &self.compiler-stdout write-nullable-string-json dup<_> 0 /= if { break } drop
+    $fd ", \"compiler-stderr\": " IO:write-all dup<_> 0 /= if { break } else { drop }
+    $fd &self.compiler-stderr write-nullable-string-json dup<_> 0 /= if { break } drop
+    $fd ", \"compiler-args\": " IO:write-all dup<_> 0 /= if { break } drop
     $self.compiler-args.len 0 = if {
-        $fd "null" IO:write-all Core:dup<i32> 0 /= if { break } drop
+        $fd "null" IO:write-all dup<_> 0 /= if { break } drop
     } else {
         0 @i
-        $fd "[" IO:write-all Core:dup<i32> 0 /= if { break } drop
+        $fd "[" IO:write-all dup<_> 0 /= if { break } drop
         loop {
             $i $self.compiler-args.len = if { 0 break }
-            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
-            $fd &self.compiler-args $i Array:get<ByteSlice> ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
-            $fd "\"" IO:write-all Core:dup<i32> 0 /= if { break } drop
+            $fd "\"" IO:write-all dup<_> 0 /= if { break } drop
+            $fd &self.compiler-args $i Array:get<_> ~ ByteSlice:unpack IO:write-all dup<_> 0 /= if { break } drop
+            $fd "\"" IO:write-all dup<_> 0 /= if { break } drop
             $i 1 + $self.compiler-args.len /= if {
-                $fd ", " IO:write-all Core:dup<i32> 0 /= if { break } drop
+                $fd ", " IO:write-all dup<_> 0 /= if { break } drop
             }
             $i 1 + #i
-        } Core:dup<i32> 0 /= if { break } drop
-        $fd "]" IO:write-all Core:dup<i32> 0 /= if { break } drop
+        } dup<_> 0 /= if { break } drop
+        $fd "]" IO:write-all dup<_> 0 /= if { break } drop
     }
-    $fd ", \"stdin\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.stdin write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"status\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd $self.status write-nullable-number-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"stdout\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.stdout write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
-    $fd ", \"stderr\": " IO:write-all Core:dup<i32> 0 /= if { break } drop
-    $fd &self.stderr write-nullable-string-json Core:dup<i32> 0 /= if { break } drop
+    $fd ", \"stdin\": " IO:write-all dup<_> 0 /= if { break } drop
+    $fd &self.stdin write-nullable-string-json dup<_> 0 /= if { break } drop
+    $fd ", \"status\": " IO:write-all dup<_> 0 /= if { break } drop
+    $fd $self.status write-nullable-number-json dup<_> 0 /= if { break } drop
+    $fd ", \"stdout\": " IO:write-all dup<_> 0 /= if { break } drop
+    $fd &self.stdout write-nullable-string-json dup<_> 0 /= if { break } drop
+    $fd ", \"stderr\": " IO:write-all dup<_> 0 /= if { break } drop
+    $fd &self.stderr write-nullable-string-json dup<_> 0 /= if { break } drop
     $fd " }" IO:write-all
 } }
 
@@ -260,15 +258,15 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
     "[== Stderr ==]" make ByteSlice @stderr-header
 
     Array:new<ByteSlice> @headers
-    $arena &headers $compiler-stdin-header Array:push<ByteSlice>
-    $arena &headers $compiler-args-header Array:push<ByteSlice>
-    $arena &headers $compiler-status-header Array:push<ByteSlice>
-    $arena &headers $compiler-stdout-header Array:push<ByteSlice>
-    $arena &headers $compiler-stderr-header Array:push<ByteSlice>
-    $arena &headers $stdin-header Array:push<ByteSlice>
-    $arena &headers $status-header Array:push<ByteSlice>
-    $arena &headers $stdout-header Array:push<ByteSlice>
-    $arena &headers $stderr-header Array:push<ByteSlice>
+    $arena &headers $compiler-stdin-header Array:push<_>
+    $arena &headers $compiler-args-header Array:push<_>
+    $arena &headers $compiler-status-header Array:push<_>
+    $arena &headers $compiler-stdout-header Array:push<_>
+    $arena &headers $compiler-stderr-header Array:push<_>
+    $arena &headers $stdin-header Array:push<_>
+    $arena &headers $status-header Array:push<_>
+    $arena &headers $stdout-header Array:push<_>
+    $arena &headers $stderr-header Array:push<_>
 
     loop {
         $file.len 0 = if { break }
@@ -277,7 +275,7 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
         0 @i
         loop {
             $i $headers.len = if { break }
-            &headers $i Array:get<ByteSlice> @header
+            &headers $i Array:get<_> @header
             $file.len $header.len ge if {
                 &file 0 $header.len ByteSlice:slice $header ~ ByteSlice:eq if {
                     $header #section-header
@@ -294,7 +292,7 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
         }
 
         $section-header ~ @section-header
-        &headers \ByteSlice:eq-by-ref &section-header Array:find-remove<ByteSlice, .ByteSlice> drop
+        &headers \ByteSlice:eq-by-ref &section-header Array:find-remove<_, ._> drop
 
         $file $section-header.len ByteSlice:drop #file
         $file @value
@@ -303,7 +301,7 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
         0 @i
         loop {
             $i $headers.len = if { break }
-            &headers $i Array:get<ByteSlice> @header
+            &headers $i Array:get<_> @header
             $value $header ~ ByteSlice:find-slice if {
                 @index
                 $index $closest-index lt if {
@@ -318,7 +316,7 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
         $section-header $compiler-stdin-header ByteSlice:eq if { $value make Maybe<ByteSlice>.Some #test.compiler-stdin }
         $section-header $compiler-args-header ByteSlice:eq if {
             $arena $value 10 !i8 Util:split-bytes @args
-            $arena &args \ByteSlice:is-not-empty Array:filter<ByteSlice> @args
+            $arena &args \ByteSlice:is-not-empty Array:filter<_> @args
             $args #test.compiler-args
         }
         $section-header $compiler-status-header ByteSlice:eq if { $value ByteSlice:unpack Util:parse make Maybe<i32>.Some #test.compiler-status }
@@ -333,16 +331,16 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
     $test
 }
 
-fn serialize-test(arena: .Arena, test: .Test) -> ByteArray {
-    ByteArray:new @out
+fn serialize-test(arena: .Arena, test: .Test) -> Array<i8> {
+    Array:new<i8> @out
     $arena &out "[== Stdin Compiler ==]" &test.compiler-stdin serialize-field
     $test.compiler-args.len 0 /= if {
-        $arena &out "[== Args Compiler ==]\n" ByteArray:push
+        $arena &out "[== Args Compiler ==]\n" Array:append-raw<_>
         0 @i
         loop {
             $i $test.compiler-args.len = if { break }
-            $arena &out &test.compiler-args $i Array:get<ByteSlice> ~ ByteSlice:unpack ByteArray:push
-            $arena &out "\n" ByteArray:push
+            $arena &out &test.compiler-args $i Array:get<_> ~ ByteSlice:unpack Array:append-raw<_>
+            $arena &out "\n" Array:append-raw<_>
             $i 1 + #i
         }
     }
@@ -356,25 +354,25 @@ fn serialize-test(arena: .Arena, test: .Test) -> ByteArray {
     $out
 }
 
-fn serialize-field(arena: .Arena, out: .ByteArray, name-ptr: .i8, name-len: i32, value: .Maybe<ByteSlice>) {
+fn serialize-field(arena: .Arena, out: .Array<i8>, name-ptr: .i8, name-len: i32, value: .Maybe<ByteSlice>) {
     $value match {
         case Some -> {
             @val
-            $arena $out $name-ptr $name-len ByteArray:push
-            $arena $out "\n" ByteArray:push
-            $arena $out $val ~ ByteSlice:unpack ByteArray:push
+            $arena $out $name-ptr $name-len Array:append-raw<_>
+            $arena $out "\n" Array:append-raw<_>
+            $arena $out $val ~ ByteSlice:unpack Array:append-raw<_>
             $arena $out perhaps-append-newline
         }
         case None -> {}
     }
 }
 
-fn serialize-number-field(arena: .Arena, out: .ByteArray, name-ptr: .i8, name-len: i32, value: Maybe<i32>) {
+fn serialize-number-field(arena: .Arena, out: .Array<i8>, name-ptr: .i8, name-len: i32, value: Maybe<i32>) {
     $value match {
         case Some -> {
             @val
-            $arena $out $name-ptr $name-len ByteArray:push
-            $arena $out "\n" ByteArray:push
+            $arena $out $name-ptr $name-len Array:append-raw<_>
+            $arena $out "\n" Array:append-raw<_>
             $arena $out Fmt:into-string @fmt
             &fmt $val Util:i32-format
             $arena $out perhaps-append-newline
@@ -383,8 +381,8 @@ fn serialize-number-field(arena: .Arena, out: .ByteArray, name-ptr: .i8, name-le
     }
 }
 
-fn perhaps-append-newline(arena: .Arena, out: .ByteArray) {
+fn perhaps-append-newline(arena: .Arena, out: .Array<i8>) {
     1 $out.len 0 /= !i32 / drop // out.len 0 /= assert
-    $out.ptr $out.len 1 - + ~ 10 !i8 /= if { $arena $out "\n" ByteArray:push }
+    $out.ptr $out.len 1 - + ~ 10 !i8 /= if { $arena $out "\n" Array:append-raw<_> }
 }
 

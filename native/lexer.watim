@@ -2,11 +2,11 @@ import "../std/core.watim" as Core
 import "../std/io.watim" as IO
 import "../std/util.watim" as Util
 import "../std/bytes.watim" as Bytes
-import "../std/byte-array.watim" as ByteArray
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/array.watim" as Array
 import "../std/arena.watim" as Arena
 import "../std/fmt.watim" as Fmt (Formatter)
+import "../std/fmt-utils.watim" as Fmt
 
 variant TokenTy {
     case TOKEN_NUMBER
@@ -147,7 +147,7 @@ fn Token-lexeme(self: .Token) -> .i8, i32 { block {
 } }
 fn Token-string-content(arena: .Arena:Arena, self: .Token) -> ByteSlice {
     $arena $self Token-lexeme 2 - flip 1 + flip
-    make ByteSlice ByteArray:unescape @ba &ba ByteArray:to-slice
+    make ByteSlice Array:unescape @ba &ba Array:to-slice
 }
 fn Token-hardcoded-lexeme(self: .Token) -> .i8, i32 {
     $self Token-ty match {

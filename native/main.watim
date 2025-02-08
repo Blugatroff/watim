@@ -7,10 +7,10 @@ import "../std/array.watim" as Array (Array)
 import "../std/io.watim" as IO
 import "../std/fs.watim" as FS (FileSystem)
 import "../std/bytes.watim" as Bytes
-import "../std/byte-array.watim" as ByteArray (ByteArray)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/page-alloc.watim" as PA
-import "../std/fmt.watim" as Fmt (ByteSlice-format)
+import "../std/fmt.watim" as Fmt
+import "../std/fmt-utils.watim" as Fmt (ByteSlice-format)
 import "../std/map.watim" as Map (Map)
 
 import "./active-memory.watim" as ActiveMemory
@@ -68,11 +68,15 @@ fn SingleFileCommand-path(cmd: .SingleFileCommand) -> .Maybe<ByteSlice> {
     }
 }
 
+struct InferenceTreeArgs {
+    file-path: Maybe<ByteSlice>
+    functions: Array<ByteSlice>
+}
+
 variant ProjectWideCommand {
     case Check -> Maybe<ByteSlice>
     case Monomize -> Maybe<ByteSlice>
     case Optimize -> Maybe<ByteSlice>
-    case InferenceTree -> Maybe<ByteSlice>
     case Compile -> CompilationArgs
 }
 
@@ -81,7 +85,6 @@ fn ProjectWideCommand-path(cmd: .ProjectWideCommand) -> .Maybe<ByteSlice> {
         case Check -> {}
         case Monomize -> {}
         case Optimize -> {}
-        case InferenceTree -> {}
         case Compile -> { .file-path }
     }
 }
@@ -100,6 +103,7 @@ fn parse-args(arena: .Arena) -> CliArgs {
     $args.len 1 le if {
         print-usage-and-exit
     }
+    &args "-q" find-flag &args "--quiet" find-flag or
     block {
         &args 1 Array:remove<ByteSlice> @command
         $args.len 1 gt if {
@@ -128,9 +132,6 @@ fn parse-args(arena: .Arena) -> CliArgs {
         $command ByteSlice:unpack "optimize" Bytes:eq if {
             $path make ProjectWideCommand.Optimize make CliCommand.ProjectWide break
         }
-        $command ByteSlice:unpack "inference-tree" Bytes:eq if {
-            $path make ProjectWideCommand.InferenceTree make CliCommand.ProjectWide break
-        }
         $command ByteSlice:unpack "compile" Bytes:eq if {
             $path
             &args "--guard-stack" find-flag
@@ -138,8 +139,7 @@ fn parse-args(arena: .Arena) -> CliArgs {
         }
         print-usage-and-exit loop { }
     }
-    &args "-q" find-flag &args "--quiet" find-flag or
-    make CliArgs
+    flip make CliArgs
 }
 
 fn read-file-or-stdin(
@@ -147,7 +147,7 @@ fn read-file-or-stdin(
     fs: .FileSystem,
     file-path: Maybe<ByteSlice>,
     imp-location: .TokenLocation
-) -> ByteArray {
+) -> Array<i8> {
     $file-path match {
         case None -> {
             $arena 0 FS:read-all
@@ -179,7 +179,7 @@ fn read-file-or-stdin(
                     IO:check
                 }
             }
-            Core:unreachable<ByteArray>
+            Core:unreachable<Array<i8>>
         }
     }
 }
@@ -222,7 +222,7 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
     &files-arena FS:init IO:check @fs
     &files-arena &fs $file-path 0 !.TokenLocation read-file-or-stdin @watim-code
     "Tokens" Arena:new @tokens-arena
-    &tokens-arena &watim-code ByteArray:to-slice lex @tokens
+    &tokens-arena &watim-code Array:to-slice lex @tokens
     &files-arena Arena:shred
 
     $command match {
@@ -275,6 +275,7 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
 
             1 Fmt:to-fd @fmt
             &fmt \TopItem-format &items Array:format-multi-line<TopItem>
+            &fmt "\n" Fmt:write
 
             &tokens-arena Arena:clear
             &arena Arena:clear
@@ -352,7 +353,6 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     $command match {
         case Monomize -> {
             drop
-            &resolving-arena Arena:shred
             1 Fmt:to-fd @fmt
             &arena &fmt 1024 Fmt:buffered @buf @fmt
             &fmt &monomized Monomized-format
@@ -378,20 +378,9 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
             &arena Arena:shred
             break
         }
-        case _ -> { drop }
-    }
-
-    $command match {
-        case InferenceTree -> {
-            drop
-            &monomizing-arena Arena:shred
-            &arena Arena:shred
-            break
-        }
         case Compile -> {}
         case _ -> { drop break }
     }
-
     @compilation-args
     1 Fmt:to-fd "\t" Fmt:use-indentation @fmt
     &arena &fmt 1024 Fmt:buffered @buf @fmt
@@ -440,7 +429,7 @@ fn load-modules-recursively(
     $arena Arena:temp @temp-arena @save
 
     $temp-arena $fs $file-path $file-path-location read-file-or-stdin @watim-code
-    $arena &watim-code ByteArray:to-slice lex @tokens
+    $arena &watim-code Array:to-slice lex @tokens
     $arena &tokens Lexer:Tokens-copy drop
     $arena $tokens parse match {
         case Error -> {
@@ -474,9 +463,9 @@ fn load-modules-recursively(
                         $arena $fs $imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
                     }
                     case Some -> {
-                        ByteSlice:unpack FS:path-dir ByteArray:init @path
-                        $temp-arena &path $imp-path ByteSlice:unpack ByteArray:push
-                        $temp-arena $path ByteArray:unpack FS:normalize make ByteSlice @absolute-imp-path
+                        ByteSlice:unpack FS:path-dir Array:init-no-copy<_> @path
+                        $temp-arena &path $imp-path ByteSlice:unpack Array:append-raw<_>
+                        $temp-arena &path Array:unpack<_> FS:normalize make ByteSlice @absolute-imp-path
                         $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
                         $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
                     }
@@ -520,10 +509,10 @@ fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<Top
                         $module-file-path ~ ByteSlice:unpack "-" Bytes:eq if {
                             $imp-path-ptr $imp-path-len make ByteSlice
                         } else {
-                            ByteArray:new @absolute-path
-                            $temp &absolute-path $module-file-path ~ ByteSlice:unpack FS:path-dir ByteArray:push
-                            $temp &absolute-path $imp-path-ptr $imp-path-len ByteArray:push
-                            $temp $absolute-path ByteArray:unpack FS:normalize make ByteSlice
+                            Array:new<i8> @absolute-path
+                            $temp &absolute-path $module-file-path ~ ByteSlice:unpack FS:path-dir Array:append-raw<_>
+                            $temp &absolute-path $imp-path-ptr $imp-path-len Array:append-raw<_>
+                            $temp &absolute-path Array:unpack<_> FS:normalize make ByteSlice
                         } @absolute-path
 
                         // Is this an import of an already `ordered` module?

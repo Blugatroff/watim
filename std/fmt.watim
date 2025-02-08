@@ -1,7 +1,6 @@
 import "./core.watim" as CORE
 import "./io.watim" as IO
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
-import "./byte-array.watim" as ByteArray (ByteArray)
 import "./arena.watim" as Arena (Arena)
 
 struct Formatter {
@@ -48,92 +47,5 @@ fn dedent(self: .Formatter) {
         "Formatter: tried to dedent below 0" IO:abort
     }
     $self.indent-level 1 - #self.indent-level
-}
-
-struct Buffer {
-    ptr: .i8
-    cap: i32
-    len: i32
-    parent: .Formatter
-}
-fn flush(self: .Buffer) {
-    $self.parent.user-data $self.ptr $self.len $self.parent.write ->
-    0 #self.len
-}
-fn write-buffered(user-data: i32, ptr: .i8, len: i32) {
-    $user-data !.Buffer @buffer
-    $buffer.len $len + $buffer.cap gt if {
-        $buffer flush
-    }
-    $len $buffer.cap gt if {
-        $buffer.parent.user-data $ptr $len $buffer.parent.write ->
-    }
-    $ptr $buffer.ptr $buffer.len + $len CORE:copy-bytes
-    $buffer.len $len + #buffer.len
-}
-fn buffered(arena: .Arena, fmt: .Formatter, buf-size: i32) -> Formatter, .Buffer {
-    $arena
-    $arena $buf-size Arena:alloc-bytes $buf-size 0 $fmt
-    make Buffer
-    Arena:push<Buffer> @buffer
-    $buffer !i32 @user-data
-    make Formatter {
-        \write-buffered @write
-        $user-data @user-data
-        $fmt.indent-level @indent-level
-        $fmt.indentation-ptr @indentation-ptr
-        $fmt.indentation-len @indentation-len
-    }
-    $buffer
-}
-
-fn write-to-fd(fd: i32, ptr: .i8, len: i32) {
-    $fd $ptr $len IO:write-all IO:check
-}
-
-fn to-fd(fd: i32) -> Formatter {
-    \write-to-fd $fd new
-}
-
-fn stdout() -> Formatter {
-    1 to-fd
-}
-
-fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
-    $fd to-fd @formatter
-    &formatter $item $fmt ->
-}
-
-struct FormatterIntoStringUserData {
-    string: .ByteArray
-    arena: .Arena
-}
-
-fn append-string(user-data: i32, ptr: .i8, len: i32) {
-    $user-data !.FormatterIntoStringUserData @user-data
-    $user-data.arena $user-data.string $ptr $len ByteArray:push
-}
-
-fn into-string(arena: .Arena, target: .ByteArray) -> Formatter {
-    $arena Arena:alloc<FormatterIntoStringUserData> @user-data
-    $arena #user-data.arena
-    $target #user-data.string
-    \append-string $user-data !i32 new
-}
-fn into-new-string(arena: .Arena) -> Formatter, .ByteArray {
-    $arena ByteArray:new Arena:push<ByteArray> @buf
-    $arena $buf into-string $buf
-}
-
-fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
-    $fmt "\"" write
-    0 @escaped-char
-    0 @i
-    loop {
-        $i $self.len = if { break }
-        $fmt &escaped-char !.i8 $self.ptr $i + ~ &escaped-char !.i8 CORE:escape write
-        $i 1 + #i
-    }
-    $fmt "\"" write
 }
 

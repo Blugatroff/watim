@@ -1,6 +1,5 @@
 import "./maybe.watim" as Maybe (Maybe)
 import "./io.watim" as IO
-import "./byte-array.watim" as ByteArray (ByteArray)
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
 import "./array.watim" as Array (Array)
 import "./arena.watim" as Arena (Arena)
@@ -125,9 +124,9 @@ fn format-multi-line<K, V>(fmt: .Formatter, format-key: (.Formatter, .K ->), for
     $fmt ")" Fmt:write
 } }
 
-fn get-ba<V>(self: .Map<ByteArray, V>, key-ptr: .i8, key-len: i32) -> Maybe<.V> {
-    $key-ptr $key-len ByteArray:init @key
-    $self &key get<ByteArray, V>
+fn get-ba<V>(self: .Map<Array<i8>, V>, key-ptr: .i8, key-len: i32) -> Maybe<.V> {
+    $key-ptr $key-len Array:init-no-copy<_> @key
+    $self &key get<Array<_>, V>
 }
 fn get-bs<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Maybe<.V> {
     $key-ptr $key-len make ByteSlice @key

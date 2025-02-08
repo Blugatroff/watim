@@ -4,7 +4,6 @@ import "./io.watim" as IO
 import "./arena.watim" as A
 import "./fmt.watim" as FMT (Formatter)
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
-import "./byte-array.watim" as ByteArray (ByteArray)
 
 struct Array<T> {
     ptr: .T
@@ -72,7 +71,7 @@ fn push<T>(arena: .A:Arena, self: .Array<T>, val: T) {
         $arena A:save @save
         $self.ptr $self.cap + $arena A:alloc<T> = if {
             // Optimization in case the newly allocated bytes immediately 
-            // follow the already allocated bytes of this ByteArray.
+            // follow the already allocated bytes of this Array.
             $self.cap 1 + #self.cap
             $self $val push-assert-no-alloc<T>
         } else {
@@ -103,6 +102,16 @@ fn append<T>(arena: .A:Arena, self: .Array<T>, other: .Array<T>) {
     $other.ptr
     $self.ptr $self.len sizeof(T) * +
     $other.len CORE:copy<T>
+    $new-len #self.len
+}
+fn append-raw<T>(arena: .A:Arena, self: .Array<T>, ptr: .T, len: i32) {
+    $self.len $len + @new-len
+    $self.cap $new-len lt if {
+        $arena $self $self.len $len CORE:max 2 * ensure-capacity<T>
+    }
+    $ptr
+    $self.ptr $self.len sizeof(T) * +
+    $len CORE:copy<T>
     $new-len #self.len
 }
 fn unpack<T>(self: .Array<T>) -> .T, i32 {
@@ -153,6 +162,13 @@ fn eq<T>(compare: (.T, .T -> bool), a: .Array<T>, b: .Array<T>) -> bool {
             }
             $i 1 + #i
         }
+    }
+}
+fn byte-eq(a: .Array<i8>, b: .Array<i8>) -> bool {
+    $a.len $b.len = if {
+        $a.ptr $b.ptr $a.len sizeof(i8) * CORE:bytes-eq
+    } else {
+        0 1 =
     }
 }
 fn slice<T>(self: .Array<T>, start: i32, len: i32) -> Array<T> {
@@ -332,14 +348,14 @@ fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> May
         drop make Maybe<[T, i32]>.None
     }
 }
-fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i8, del-len: i32) -> ByteArray {
-    ByteArray:new @out
+fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i8, del-len: i32) -> Array<i8> {
+    new<i8> @out
     0 @i
     loop {
         $i $self.len = if { break }
-        $arena &out $self $i get<ByteSlice> ~ ByteSlice:unpack ByteArray:push
+        $arena &out $self $i get<ByteSlice> ~ ByteSlice:unpack append-raw<_>
         $i 1 + $self.len /= if {
-            $arena &out $del-ptr $del-len ByteArray:push
+            $arena &out $del-ptr $del-len append-raw<_>
         }
         $i 1 + #i
     }
@@ -387,5 +403,47 @@ fn repeat-element<T>(arena: .A:Arena, n: i32, v: T) -> Array<T> {
         $arr.len $n = if { $arr break }
         &arr $v push-assert-no-alloc<T>
     }
+}
+fn to-slice(self: .Array<i8>) -> ByteSlice {
+    $self unpack<_> make ByteSlice
+}
+fn unescape(arena: .A:Arena, self: ByteSlice) -> Array<i8> {
+    $arena $self.len new-with-capacity<i8> @out
+    0 @i
+    loop {
+        $i $self.len = if { break }
+        $self.ptr $i + ~ @char
+        $char "\\" drop ~ = if {
+            $i 1 + $self.len = if {
+                $arena &out $char push<_>
+                break
+            } else {
+                $self.ptr $i + 1 + ~ @char
+                block {
+                    $char "\"" drop ~ = if {
+                        $arena &out "\"" drop ~ push<_> break
+                    }
+                    $char "n" drop ~ = if {
+                        $arena &out "\n" drop ~ push<_> break
+                    }
+                    $char "t" drop ~ = if {
+                        $arena &out "\t" drop ~ push<_> break
+                    }
+                    $char "r" drop ~ = if {
+                        $arena &out "\r" drop ~ push<_> break
+                    }
+                    $char "\\" drop ~ = if {
+                        $arena &out "\\" drop ~ push<_> break
+                    }
+                    0 0 / drop
+                }
+            }
+            $i 2 + #i
+        } else {
+            $arena &out $char push<_>
+            $i 1 + #i
+        }
+    }
+    $out
 }
 

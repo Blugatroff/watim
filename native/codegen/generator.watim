@@ -3,11 +3,11 @@ import "../../std/bytes.watim" as Bytes
 import "../../std/maybe.watim" as Maybe (Maybe, is-some)
 import "../../std/arena.watim" as Arena (Arena)
 import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
-import "../../std/byte-array.watim" as ByteArray (ByteArray)
 import "../../std/array.watim" as Array (Array)
 import "../../std/list.watim" as List (List)
 import "../../std/map.watim" as Map (Map)
-import "../../std/fmt.watim" as Fmt (Formatter, ByteSlice-format)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
 import "../../std/util.watim" as Util (i32-format, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
@@ -42,13 +42,13 @@ fn generate(fmt: .Formatter, program: .Monomized, guard-stack: bool) {
     $arena $program.modules.values.len Arena:alloc-many<i32> $program.modules.values.len
     Array:init-no-copy<i32> @static-data-offsets
 
-    ByteArray:new @all-static-data
+    Array:new<i8> @all-static-data
     0 @i
     loop {
         $program.modules.values.len $i = if { break }
         &program.modules.values $i Array:get<Monomized:Module> @module
         &static-data-offsets $i $all-static-data.len Array:set<i32> drop
-        $arena &all-static-data $module.static-data ByteSlice:unpack ByteArray:push
+        $arena &all-static-data $module.static-data ByteSlice:unpack Array:append-raw<_>
         $i 1 + #i
     }
 
@@ -86,7 +86,7 @@ fn generate(fmt: .Formatter, program: .Monomized, guard-stack: bool) {
         $fmt "(global $stack-siz:e (mut i32) (i32.const 65536))\n" Fmt:write
     }
 
-    $fmt &all-static-data ByteArray:to-slice generate-data
+    $fmt &all-static-data Array:to-slice generate-data
 
     &ctx generate-functions
 

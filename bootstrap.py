@@ -3056,6 +3056,8 @@ class WordCtx:
             imports = self.imports[word.module.lexeme]
             for imp in imports:
                 module = self.ctx.resolved_modules.index(imp.module)
+                if word.ident.lexeme not in module.functions:
+                    continue
                 function_id = module.functions.index_of(word.ident.lexeme)
                 signature = module.functions.index(function_id).signature
                 if len(signature.generic_parameters) != len(resolved_generic_arguments):
