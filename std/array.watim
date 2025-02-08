@@ -176,6 +176,13 @@ fn pop-front<T>(self: .Array<T>) -> T {
     $self.ptr ~
     $self.ptr sizeof(T) + #self.ptr
 }
+fn extending-set<T>(arena: .A:Arena, self: .Array<T>, default: T, index: i32, value: T) {
+    loop {
+        $self.len $index gt if { break }
+        $arena $self $default push<T>
+    }
+    $self $index $value set<T> drop
+}
 fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .Array<T>) {
     $formatter "[" FMT:write
     0 @i
@@ -253,6 +260,16 @@ fn contains<T>(self: .Array<T>, compare: (.T, .T -> bool), value: .T) -> bool {
         $i 1 + #i
     }
 }
+fn any<T>(self: .Array<T>, pred: (.T -> bool)) -> bool {
+    0 @i
+    loop {
+        $i $self.len = if { 0 1 = break }
+        $self $i get<T> $pred -> if {
+            1 1 = break
+        }
+        $i 1 + #i
+    }
+}
 fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool {
     0 @i
     loop {
@@ -268,6 +285,17 @@ fn find-ref<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> .T, bo
         $self flip get<T> 1 1 =
     } else {
         drop 0 !.T 0 1 =
+    }
+}
+fn findMap<T, O>(self: .Array<T>, pred: (.T -> Maybe<O>)) -> Maybe<O> {
+    0 @i
+    loop {
+        $i $self.len = if { make Maybe<O>.None break }
+        $self $i get<T> $pred -> match {
+            case None -> {}
+            case Some -> { make Maybe<O>.Some break }
+        }
+        $i 1 + #i
     }
 }
 fn remove<T>(self: .Array<T>, index: i32) -> T {
@@ -339,5 +367,25 @@ fn filter<T>(arena: .A:Arena, self: .Array<T>, f: (.T -> bool)) -> Array<T> {
         $i 1 + #i
     }
     $new
+}
+fn map-maybe<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> Maybe<O>)) -> Array<O> {
+    new<O> @new
+    0 @i
+    loop {
+        $i $self.len = if { $new break }
+        $self $i get<T> @v
+        $v $f -> match {
+            case None -> {}
+            case Some -> { @v $arena &new $v push<O> }
+        }
+        $i 1 + #i
+    }
+}
+fn repeat-element<T>(arena: .A:Arena, n: i32, v: T) -> Array<T> {
+    $arena $n new-with-capacity<T> @arr
+    loop {
+        $arr.len $n = if { $arr break }
+        &arr $v push-assert-no-alloc<T>
+    }
 }
 

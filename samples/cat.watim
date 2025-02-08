@@ -23,7 +23,7 @@ fn main "_start" () {
     1 @arg-index
     loop {
         $args.len $arg-index = if { break }
-        &fs &args $arg-index Array:get<ByteSlice> ~ ByteSlice:unpack
+        &fs &args $arg-index Array:get<_> ~ ByteSlice:unpack
         1 1 = 0 1 = FS:create-rights
         0 1 = 0 1 = FS:create-rights
         0 1 = FS:create-oflags

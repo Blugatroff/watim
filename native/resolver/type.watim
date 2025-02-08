@@ -22,10 +22,13 @@ fn NamedType-format(fmt: .Formatter, self: .NamedType) {
     $fmt "(NamedType " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type format
     $fmt ")" Fmt:write
 }
 fn NamedType-type(self: .NamedType) -> Type { $self.type }
+fn NamedType-contains-hole(self: .NamedType) -> bool {
+    &self.type contains-hole
+}
 
 struct Struct {
     name: Token
@@ -58,7 +61,7 @@ fn VariantCase-format(fmt: .Formatter, self: .VariantCase) {
     $fmt "(VariantCase " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt \Type-format &self.type Maybe:format<Type>
+    $fmt \format &self.type Maybe:format<Type>
     $fmt ")" Fmt:write
 }
 fn VariantCase-name(self: .VariantCase) -> ByteSlice {
@@ -134,8 +137,9 @@ variant Type {
     case Fun -> FunType
     case Tuple -> TupleType
     case Generic -> P:GenericType
+    case Hole -> Token
 }
-fn Type-format(fmt: .Formatter, self: .Type) { block {
+fn format(fmt: .Formatter, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "Bool" }
         case I8 -> { "I8" }
@@ -143,7 +147,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case I64 -> { "I64" }
         case Ptr -> {
             $fmt "(Ptr " Fmt:write
-            ~ Type-format
+            ~ format
             $fmt ")" Fmt:write
             break
         }
@@ -151,22 +155,24 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Fun -> { FunType-format break }
         case Tuple -> { TupleType-format break }
         case Generic -> { P:GenericType-format break }
+        case Hole -> { $fmt "(Hole " Fmt:write Token-format $fmt ")" Fmt:write break }
     } Fmt:write
 } }
-fn Type-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
+fn pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
     $fmt $self match {
         case Bool -> { "bool" }
         case I8 -> { "i8" }
         case I32 -> { "i32" }
         case I64 -> { "i64" }
-        case Ptr -> { $fmt "." Fmt:write ~ $lookup flip Type-pretty break }
+        case Ptr -> { $fmt "." Fmt:write ~ $lookup flip pretty break }
         case Custom -> { $lookup flip CustomTypeType-pretty break }
         case Fun -> { $lookup flip FunType-pretty break }
         case Tuple -> { $lookup flip TupleType-pretty break }
         case Generic -> { P:GenericType-pretty break }
+        case Hole -> { drop "_" }
     } Fmt:write
 } }
-fn Type-eq(a: .Type, b: .Type) -> bool {
+fn eq(a: .Type, b: .Type) -> bool {
     $a match {
         case Bool -> { $b match { case Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case I8 -> { $b match { case I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
@@ -174,7 +180,7 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
         case I64 -> { $b match { case I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case Ptr -> {
             ~ $b match {
-                case Ptr -> { ~ Type-eq }
+                case Ptr -> { ~ eq }
                 case _ -> { drop drop 0 1 = }
             }
         }
@@ -202,7 +208,36 @@ fn Type-eq(a: .Type, b: .Type) -> bool {
                 case _ -> { drop drop 0 1 = }
             }
         }
+        case Hole -> {
+            drop $b match {
+                case Hole -> { drop 1 1 = }
+                case _ -> { drop 0 1 = }
+            }
+        }
     }
+}
+fn find-hole(self: .Type) -> Maybe<.Token> {
+    $self match {
+        case Bool -> { make Maybe<.Token>.None }
+        case I8 -> { make Maybe<.Token>.None }
+        case I32 -> { make Maybe<.Token>.None }
+        case I64 -> { make Maybe<.Token>.None }
+        case Ptr -> { ~ find-hole }
+        case Generic -> { drop make Maybe<.Token>.None }
+        case Hole -> { make Maybe<.Token>.Some }
+        case Tuple -> { .items \find-hole Array:findMap<Type, .Token> }
+        case Fun -> {
+            @fun
+            &fun.parameters \find-hole Array:findMap<Type, .Token> match {
+                case None -> { &fun.returns \find-hole Array:findMap<Type, .Token> }
+                case _ -> {}
+            }
+        }
+        case Custom -> { .generic-arguments \find-hole Array:findMap<Type, .Token> }
+    }
+}
+fn contains-hole(self: .Type) -> bool {
+    $self find-hole @m &m Maybe:is-some<.Token>
 }
 
 struct FunType {
@@ -235,16 +270,16 @@ fn FunType-eq(a: .FunType, b: .FunType) -> bool {
 }
 
 fn Types-format(fmt: .Formatter, self: .Array<Type>) {
-    $fmt \Type-format $self Array:format<Type>
+    $fmt \format $self Array:format<Type>
 }
 fn Types-eq(a: .Array<Type>, b: .Array<Type>) -> bool {
-    \Type-eq $a $b Array:eq<Type>
+    \eq $a $b Array:eq<Type>
 }
 fn Types-pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Array<Type>) {
     0 @i
     loop {
         $i $self.len = if { break }
-        $fmt $lookup $self $i Array:get<Type> Type-pretty
+        $fmt $lookup $self $i Array:get<Type> pretty
         $i 1 + #i
         $i $self.len = if { break }
         $fmt ", " Fmt:write
@@ -292,6 +327,18 @@ fn CustomTypeType-pretty(fmt: .Formatter, thr: .TypeLookup, self: .CustomTypeTyp
         case Struct  -> { .name }
         case Variant -> { .name }
     } Token-lexeme Fmt:write
+    0 @i
+    loop {
+        $i $self.generic-arguments.len = if { break }
+        $i 0 = if { $fmt "<" Fmt:write }
+        $fmt $thr &self.generic-arguments $i Array:get<Type> pretty
+        $i 1 + #i
+        $i $self.generic-arguments.len /= if {
+            $fmt ", " Fmt:write
+        } else {
+            $fmt ">" Fmt:write
+        }
+    }
 }
 fn CustomTypeType-eq(a: .CustomTypeType, b: .CustomTypeType) -> bool {
     &a.type-definition &b.type-definition CustomTypeHandle-eq if {

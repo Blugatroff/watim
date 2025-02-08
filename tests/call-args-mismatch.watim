@@ -10,5 +10,5 @@ fn bar(b: Foo) {
 -:4:16 expected:
 	[i32, Foo, bool]
 got:
-	[i32, Foo, i32, bool]
+	[Foo, i32, bool]
 

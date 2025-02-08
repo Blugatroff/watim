@@ -34,8 +34,12 @@ class CompilerOutput:
 
 watim_bin_path = None
 if "--native" in sys.argv:
-    if subprocess.run("python bootstrap.py ./native/main.watim > watim.wat", shell=True).returncode != 0:
-        exit(1)
+    if os.path.isfile("./watim.wasm"):
+        if subprocess.run("wasmtime --dir=. -- ./watim.wasm compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
+            exit(1)
+    else:
+        if subprocess.run("python bootstrap.py compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
+            exit(1)
     watim_bin_path = os.path.realpath("./watim.wat")
 
 def run_native_compiler(args: List[str] | None, stdin: str):

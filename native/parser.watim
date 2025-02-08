@@ -124,6 +124,7 @@ variant Type {
     case Fun -> FunType
     case Tuple -> TupleType
     case Generic -> GenericType
+    case Hole -> Token
 }
 fn Type-format(fmt: .Formatter, self: .Type) { block {
     $self match {
@@ -136,6 +137,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case Fun -> { $fmt flip FunType-format break }
         case Tuple -> { $fmt flip TupleType-format break }
         case Generic -> { $fmt flip GenericType-format break }
+        case Hole -> { drop "Hole" }
     } @len @ptr
     $fmt $ptr $len Fmt:write
 } }
@@ -2081,6 +2083,7 @@ fn type(parser: .Parser, token: .Token) -> Result<Type, ParseError> { block (-> 
                 case Success -> { make Type.Tuple }
             }
         }
+        case TOKEN_UNDERSCORE -> { $token ~ make Type.Hole }
         case _ -> { drop $parser "expected a type" abort<Type> break }
     } make Result<Type, ParseError>.Success
 } }

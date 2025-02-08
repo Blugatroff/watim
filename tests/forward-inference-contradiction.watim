@@ -1,0 +1,18 @@
+[== Stdin Compiler ==]
+struct Array<T> {}
+
+fn bar<T>(a: T, b: T) { }
+
+fn foo() {
+    make Array<i32> make Array<bool> bar<Array<_>>
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:6:48 Failed to infer type for hole, contradicting types inferred:
+inferred now:        i32
+inferred previously: bool

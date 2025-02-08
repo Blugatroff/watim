@@ -16,17 +16,16 @@ import "../../std/list.watim" as List (List)
 import "../logging.watim" as Logging
 import "../lexer.watim" as Lexer (
     Token, Token-lexeme, Token-location, Token-line, Token-column,
-    Token-eq-to-lexeme, Token-string-content, Token-format
+    Token-eq-to-lexeme, Token-eq-by-location, Token-string-content, Token-format
 )
 import "../parser.watim" as P (TopItem)
 
 import "../env.watim" as Env (Env, new, child, Local, ScopeId, ScopeId-format, LocalId, LocalId-format, Local-format)
 import "./type.watim" as Type (
-    Type, Type-eq, Type-format, Type-pretty,
-    Types-eq, Types-format, Types-pretty, Types-pretty-bracketed,
+    Type, Types-eq, Types-format, Types-pretty, Types-pretty-bracketed,
     CustomTypeType, CustomTypeType-format, CustomType, CustomType-name, CustomType-format, CustomType-generic-parameters,
     FunType, FunType-format, TupleType,  VariantCase-name,
-    NamedType, NamedType-format, NamedType-type,
+    NamedType, NamedType-format, NamedType-type, NamedType-contains-hole,
     ModuleId, TypeLookup, lookup-type,
     Struct, Variant, VariantCase,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
@@ -622,7 +621,7 @@ fn resolve-matsh(ctx: .WordCtx, stack: .Stack, word: .P:Match) -> Result<[Word, 
             case None -> { make Maybe<Type>.None }
             case Some -> {
                 $by-ref if { make Type.Ptr } else { ~ } @case-type
-                $ctx &generic-arguments &case-type resolve-generic @case-type
+                $ctx.persistent &generic-arguments &case-type insert-generic-arguments @case-type
                 $ctx &case-stack $case-type push
                 $case-type make Maybe<Type>.Some
             }
@@ -908,7 +907,7 @@ fn resolve-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<P:Word>, wo
             or if { [,0] make Result<[], ResolveError>.Success break }
             &true-stack.negative  $i Array:get<Type>
             &false-stack.negative $i Array:get<Type>
-            Type-eq not if {
+            Type:eq not if {
                 $ctx $word &true-stack &false-stack ifel-stack-mismatch-error
                 make Result<[], ResolveError>.Error break
             }
@@ -1009,7 +1008,7 @@ fn resolve-lop(ctx: .WordCtx, stack: .Stack, word: .P:Loop) -> Result<[Word, boo
             &loop-break-stacks $i Array:get<BreakStack> @break-stack
             $i 1 + #i
             $break-stack.reachable not if { make Maybe<ResolveError>.None break }
-            \Type-eq &first.types &break-stack.types Array:eq<Type> not if {
+            \Type:eq &first.types &break-stack.types Array:eq<Type> not if {
                 $ctx.temp Fmt:into-new-string @msg @fmt
                 &fmt "break stack mismatch:" Fmt:write
                 0 @i
@@ -1221,38 +1220,21 @@ fn resolve-indirect-call(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<
             drop
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt "`->` expected a function on the stack, got: [" Fmt:write
-            &fmt &fun-type Type-format
+            &fmt &fun-type Type:format
             &fmt "]" Fmt:write
             $ctx.ctx $token $msg ~ ByteArray:unpack abort<[Word, bool]> break
         }
     } @fun-type
-    $ctx $stack $token 0 !.Array<Type> &fun-type.parameters &fun-type.returns type-check-call-unnamed match {
+    $ctx $stack $token &fun-type.parameters expect match {
+        case None -> {
+            $ctx $stack &fun-type.returns 0 !.Array<Type> push-returns
+        }
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
-        case None -> {}
     }
     $token ~ $fun-type make IndirectCall
     make Word.IndirectCall 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success
 } }
-
-fn type-check-call(ctx: .WordCtx, stack: .Stack, token: .Token, generic-arguments: .Array<Type>, parameters: .Array<NamedType>, returns: .Array<Type>) -> Maybe<ResolveError> {
-    $ctx $stack $token $generic-arguments $parameters expect-arguments match {
-        case None -> {
-            $ctx $stack $returns $generic-arguments push-returns
-            make Maybe<ResolveError>.None
-        }
-        case Some -> { make Maybe<ResolveError>.Some }
-    }
-}
-fn type-check-call-unnamed(ctx: .WordCtx, stack: .Stack, token: .Token, generic-arguments: .Array<Type>, parameters: .Array<Type>, returns: .Array<Type>) -> Maybe<ResolveError> {
-    $ctx $stack $token $parameters expect match {
-        case None -> {
-            $ctx $stack $returns $generic-arguments push-returns
-            make Maybe<ResolveError>.None
-        }
-        case Some -> { make Maybe<ResolveError>.Some }
-    }
-}
 
 fn push-returns(ctx: .WordCtx, stack: .Stack, returns: .Array<Type>, generic-arguments: .Array<Type>) {
     0 @i
@@ -1262,7 +1244,7 @@ fn push-returns(ctx: .WordCtx, stack: .Stack, returns: .Array<Type>, generic-arg
         $generic-arguments 0 !.Array<Type> = if {
             $return ~
         } else {
-            $ctx $generic-arguments $return resolve-generic
+            $ctx.persistent $generic-arguments $return insert-generic-arguments
         } @concrete-return-type
         $ctx $stack $concrete-return-type push
         $i 1 + #i
@@ -1300,7 +1282,7 @@ fn resolve-mk-varint(ctx: .WordCtx, stack: .Stack, word: .P:MakeVariant) -> Resu
         case None -> {}
         case Some -> {
             ~ @cays-type
-            $ctx &varint-type.generic-arguments &cays-type resolve-generic @expected
+            $ctx.persistent &varint-type.generic-arguments &cays-type insert-generic-arguments @expected
             $ctx $stack &word.token &expected "TODO" expect1 match {
                 case Some -> { make Result<[Word, bool], ResolveError>.Error break }
                 case None -> {}
@@ -1361,7 +1343,9 @@ fn resolve-mk-struc(ctx: .WordCtx, stack: .Stack, word: .P:MakeStruct) -> Result
         }
     } @struc
 
-    $ctx $stack &word.token &struct-type.generic-arguments &struc.fields expect-arguments match {
+    $ctx $stack $struc.fields.len pop-n @arguments
+
+    $ctx &word.token &struct-type.generic-arguments &arguments &struc.fields expect-arguments match {
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
         case None -> {}
     }
@@ -1388,7 +1372,7 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
         $struc.fields.len $i = if { break }
         &struc.fields $i Array:get<NamedType> @field
         $ctx.temp &fields &field.name Token-lexeme make ByteSlice
-        $i $ctx &struct-type.generic-arguments &field.type resolve-generic [,2]
+        $i $ctx.persistent &struct-type.generic-arguments &field.type insert-generic-arguments [,2]
         Map:insert<ByteSlice, [i32, Type]> drop
         $i 1 + #i
     }
@@ -1417,7 +1401,7 @@ fn resolve-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .P:MakeStructNamed
             &fmt
             $ctx.type-lookup
             &struc-lit-ctx.fields.values $i Array:get<[i32, Type]> !.Type sizeof(i32) +
-            Type-pretty
+            Type:pretty
 
             $i 1 + #i
         }
@@ -1467,7 +1451,7 @@ fn resolve-load(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bo
             @actual
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt "~` expected a ptr, got: [" Fmt:write
-            &fmt $ctx.type-lookup &actual Type-pretty
+            &fmt $ctx.type-lookup &actual Type:pretty
             &fmt "]" Fmt:write
             $ctx.ctx $token $msg ~ ByteArray:unpack abort<[Word, bool]> break
         }
@@ -1503,20 +1487,20 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         &fmt "`" Fmt:write
                         &fmt $name-ptr $name-len Fmt:write
                         &fmt "` expected two values on the stack, got [" Fmt:write
-                        &fmt $ctx.type-lookup &a Type-pretty
+                        &fmt $ctx.type-lookup &a Type:pretty
                         &fmt "]" Fmt:write
                         $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                     }
                     case Some -> {}
                 } @b
-                &a &b Type-eq not if {
+                &a &b Type:eq not if {
                     $ctx.temp Fmt:into-new-string @msg @fmt
                     &fmt "`" Fmt:write
                     &fmt $name-ptr $name-len Fmt:write
                     &fmt "` expected two values of the same type, got [" Fmt:write
-                    &fmt $ctx.type-lookup &a Type-pretty
+                    &fmt $ctx.type-lookup &a Type:pretty
                     &fmt ", " Fmt:write
-                    &fmt $ctx.type-lookup &b Type-pretty
+                    &fmt $ctx.type-lookup &b Type:pretty
                     &fmt "]" Fmt:write
                     $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
@@ -1530,9 +1514,9 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         &fmt "`" Fmt:write
                         &fmt $name-ptr $name-len Fmt:write
                         &fmt "` expected [i8, i8] or [i32, i32] or [i64, i64], got [" Fmt:write
-                        &fmt $ctx.type-lookup &a Type-pretty
+                        &fmt $ctx.type-lookup &a Type:pretty
                         &fmt ", " Fmt:write
-                        &fmt $ctx.type-lookup &b Type-pretty
+                        &fmt $ctx.type-lookup &b Type:pretty
                         &fmt "]" Fmt:write
                         $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                     }
@@ -1568,20 +1552,20 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         &fmt "`" Fmt:write
                         &fmt $name-ptr $name-len Fmt:write
                         &fmt "` expected two values on the stack, got [" Fmt:write
-                        &fmt $ctx.type-lookup &a Type-pretty
+                        &fmt $ctx.type-lookup &a Type:pretty
                         &fmt "]" Fmt:write
                         $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                     }
                     case Some -> {}
                 } @b
-                &a &b Type-eq not if {
+                &a &b Type:eq not if {
                     $ctx.temp Fmt:into-new-string @msg @fmt
                     &fmt "`" Fmt:write
                     &fmt $name-ptr $name-len Fmt:write
                     &fmt "` expected two values of the same type, got [" Fmt:write
-                    &fmt $ctx.type-lookup &a Type-pretty
+                    &fmt $ctx.type-lookup &a Type:pretty
                     &fmt ", " Fmt:write
-                    &fmt $ctx.type-lookup &b Type-pretty
+                    &fmt $ctx.type-lookup &b Type:pretty
                     &fmt "]" Fmt:write
                     $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
@@ -1594,9 +1578,9 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         &fmt "`" Fmt:write
                         &fmt $name-ptr $name-len Fmt:write
                         &fmt "` expected [i32, i32] or [i64, i64], got [" Fmt:write
-                        &fmt $ctx.type-lookup &a Type-pretty
+                        &fmt $ctx.type-lookup &a Type:pretty
                         &fmt ", " Fmt:write
-                        &fmt $ctx.type-lookup &b Type-pretty
+                        &fmt $ctx.type-lookup &b Type:pretty
                         &fmt "]" Fmt:write
                         $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                     }
@@ -1630,16 +1614,16 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         &fmt "`" Fmt:write
                         &fmt $name-ptr $name-len Fmt:write
                         &fmt "` expected two values on the stack, got [" Fmt:write
-                        &fmt $ctx.type-lookup &b Type-pretty
+                        &fmt $ctx.type-lookup &b Type:pretty
                         &fmt "]" Fmt:write
                         $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                     }
                     case Some -> {}
                 } @a
                 &a match {
-                    case I8 -> { &a &b Type-eq }
-                    case I32 -> { &a &b Type-eq }
-                    case I64 -> { &a &b Type-eq }
+                    case I8 -> { &a &b Type:eq }
+                    case I32 -> { &a &b Type:eq }
+                    case I64 -> { &a &b Type:eq }
                     case Ptr -> { drop &b match {
                         case I32 -> { 1 1 = }
                         case _ -> { drop 0 1 = }
@@ -1650,9 +1634,9 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     &fmt "`" Fmt:write
                     &fmt $name-ptr $name-len Fmt:write
                     &fmt "` expected [i8, i8], [i32, i32], [.{any}, i32] or [i64, i64], got [" Fmt:write
-                    &fmt $ctx.type-lookup &a Type-pretty
+                    &fmt $ctx.type-lookup &a Type:pretty
                     &fmt ", " Fmt:write
-                    &fmt $ctx.type-lookup &b Type-pretty
+                    &fmt $ctx.type-lookup &b Type:pretty
                     &fmt "]" Fmt:write
                     $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
@@ -1702,7 +1686,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                     case Success -> {}
                 } [,] @a @b
-                &a &b Type-eq not if {
+                &a &b Type:eq not if {
                     $ctx.ctx &word.name "cannot compare two different types" abort<[Word, bool]> break
                 }
                 $ctx $stack make Type.Bool push
@@ -1752,7 +1736,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                     case Success -> {}
                 } [,] @a @b
-                &a &b Type-eq not if { $ctx.ctx &word.name $msg-ptr $msg-len abort<[Word, bool]> break }
+                &a &b Type:eq not if { $ctx.ctx &word.name $msg-ptr $msg-len abort<[Word, bool]> break }
                 &a match {
                     case Bool -> {}
                     case I32 -> {}
@@ -1770,7 +1754,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     case Error -> { make Result<[Word, bool], ResolveError>.Error break }
                     case Success -> {}
                 } [,] @a @b
-                &a &b Type-eq not if { $ctx.ctx &word.name $msg-ptr $msg-len abort<[Word, bool]> break }
+                &a &b Type:eq not if { $ctx.ctx &word.name $msg-ptr $msg-len abort<[Word, bool]> break }
                 &a match {
                     case Bool -> {}
                     case I32 -> {}
@@ -1800,7 +1784,7 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         0 1 =
                     }
                 } if {
-                    &value &shift Type-eq
+                    &value &shift Type:eq
                 } else {
                     1 0 =
                 } not if {
@@ -1810,9 +1794,9 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     &fmt "` " Fmt:write
                     &fmt "expected [i8, i8] or [i32, i32] or [i64, i64]" Fmt:write
                     &fmt ", got: [" Fmt:write
-                    &fmt $ctx.type-lookup &value Type-pretty
+                    &fmt $ctx.type-lookup &value Type:pretty
                     &fmt ", " Fmt:write
-                    &fmt $ctx.type-lookup &shift Type-pretty
+                    &fmt $ctx.type-lookup &shift Type:pretty
                     &fmt "]" Fmt:write
                     $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                 }
@@ -1852,12 +1836,12 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                     case Success -> {}
                 } [,] @value match {
                     case Ptr -> {
-                        @child $child &value Type-eq not if {
+                        @child $child &value Type:eq not if {
                             $ctx.temp Fmt:into-new-string @msg @fmt
                             &fmt "store expected [.a, a], got: [." Fmt:write
-                            &fmt $ctx.type-lookup $child Type-pretty
+                            &fmt $ctx.type-lookup $child Type:pretty
                             &fmt ", " Fmt:write
-                            &fmt $ctx.type-lookup &value Type-pretty
+                            &fmt $ctx.type-lookup &value Type:pretty
                             &fmt "]" Fmt:write
                             $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                         }
@@ -1866,9 +1850,9 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
                         @actual
                         $ctx.temp Fmt:into-new-string @msg @fmt
                         &fmt "store expected [.a, a], got: [" Fmt:write
-                        &fmt $ctx.type-lookup &actual Type-pretty
+                        &fmt $ctx.type-lookup &actual Type:pretty
                         &fmt ", " Fmt:write
-                        &fmt $ctx.type-lookup &value Type-pretty
+                        &fmt $ctx.type-lookup &value Type:pretty
                         &fmt "]" Fmt:write
                         $ctx.ctx &word.name $msg ~ ByteArray:unpack abort<[Word, bool]> break
                     }
@@ -1896,14 +1880,307 @@ fn resolve-call(ctx: .WordCtx, stack: .Stack, parsed-word: .P:Call) -> Result<[W
         case Success -> {}
     } @word
     $ctx &word.function lookup-signature @signature
-    $ctx $stack &word.name &word.generic-arguments &signature.parameters &signature.returns type-check-call match {
+
+    $ctx $stack $signature.parameters.len pop-n @args
+
+    $ctx &word.name &args &signature.parameters &word.generic-arguments infer-generic-arguments-from-args match {
         case None -> {}
         case Some -> { make Result<[Word, bool], ResolveError>.Error break }
     }
+    $ctx $stack &signature.returns &word.generic-arguments push-returns
 
     $word make Word.Call 0 1 = [,2]
     make Result<[Word, bool], ResolveError>.Success break
 } }
+
+fn parameter-argument-mismatch-error(ctx: .WordCtx, token: .Token, arguments: .Array<Type>, parameters: .Array<NamedType>, generic-arguments: .Array<Type>) -> Maybe<ResolveError> {
+    $ctx.temp $generic-arguments
+    $ctx.temp $parameters \NamedType-type Array:map<NamedType, Type> @parameters
+    &parameters insert-generic-arguments-all @parameters
+    $ctx $token &parameters $arguments type-mismatch-error
+}
+
+fn infer-generic-arguments-from-args(
+    ctx: .WordCtx,
+    token: .Token,
+    arguments: .Array<Type>,
+    parameters: .Array<NamedType>,
+    generic-arguments: .Array<Type>
+) -> Maybe<ResolveError> { block {
+    1 @i
+    \Token-eq-by-location Map:new<Token, .Type> @hole-mapping
+    loop {
+        $i $parameters.len gt if { make Maybe<ResolveError>.None break }
+        $parameters $parameters.len $i - Array:get<NamedType> .type @parameter
+        $arguments.len $i lt if {
+            $ctx $token $arguments $parameters $generic-arguments parameter-argument-mismatch-error break
+        }
+        $arguments $arguments.len $i - Array:get<Type> @argument
+        $ctx.persistent $generic-arguments $parameter insert-generic-arguments @parameter
+
+        $ctx &hole-mapping $token $argument &parameter infer-holes match {
+            case Error -> { make Maybe<ResolveError>.Some break }
+            case Success -> {}
+        } not if {
+            $ctx $token $arguments $parameters $generic-arguments parameter-argument-mismatch-error break
+        }
+        $i 1 + #i
+    } match {
+        case None -> {}
+        case _ -> { break }
+    }
+
+    0 @i
+    loop {
+        $i $generic-arguments.len = if { make Maybe<ResolveError>.None break }
+        $generic-arguments $i Array:get<Type> @generic-argument
+        $ctx &hole-mapping $generic-argument fill-holes match {
+            case Error -> { make Maybe<ResolveError>.Some break }
+            case Success -> {}
+        } =>generic-argument
+        $i 1 + #i
+    } match {
+        case None -> {}
+        case _ -> { break }
+    }
+
+
+    $generic-arguments \Type:find-hole Array:findMap<Type, .Token> match {
+        case None -> { make Maybe<ResolveError>.None }
+        case Some -> {
+            $ctx.ctx flip "failed to infer type for hole" abort-m
+        }
+    }
+} }
+
+fn insert-generic-arguments(arena: .Arena, generic-arguments: .Array<Type>, type: .Type) -> Type {
+    $type match {
+        case Hole -> {
+            // A parameter cannot contain holes, "fn foo(a: _) {}" is not allowed
+            drop 0 0 / drop
+            Core:unreachable<Type>
+        }
+        case Generic -> {
+            @generic
+            $generic-arguments $generic.index Array:get<Type> ~
+        }
+        case Bool -> { $type ~ }
+        case I8 -> { $type ~ }
+        case I32 -> { $type ~ }
+        case I64 -> { $type ~ }
+        case Ptr -> { ~ $arena flip $generic-arguments flip insert-generic-arguments $arena flip Arena:push<Type> make Type.Ptr }
+        case Custom -> {
+            @type
+            $type.type-definition
+            $arena $generic-arguments &type.generic-arguments insert-generic-arguments-all
+            make CustomTypeType make Type.Custom
+        }
+        case Fun -> {
+            @fun
+            $fun.token
+            $arena $generic-arguments &fun.parameters insert-generic-arguments-all
+            $arena $generic-arguments &fun.returns    insert-generic-arguments-all
+            make FunType make Type.Fun
+        }
+        case Tuple -> {
+            @tuple
+            $tuple.token
+            $arena $generic-arguments &tuple.items insert-generic-arguments-all
+            make TupleType make Type.Tuple
+        }
+    }
+}
+fn insert-generic-arguments-all(arena: .Arena, generic-arguments: .Array<Type>, types: .Array<Type>) -> Array<Type> {
+    $arena $types.len Array:new-with-capacity<Type> @res
+    0 @i
+    loop {
+        $i $types.len = if { $res break }
+        &res
+        $arena $generic-arguments $types $i Array:get<Type> insert-generic-arguments
+        Array:push-assert-no-alloc<Type>
+        $i 1 + #i
+    }
+}
+
+fn infer-holes(ctx: .WordCtx, mapping: .Map<Token, .Type>, token: .Token, actual: .Type, holy: .Type) 
+    -> Result<bool, ResolveError> { block (-> Result<bool, ResolveError>) {
+    $actual match {
+        case Hole -> {
+            drop 0 0 / drop
+            // A type on the stack cannot contain holes, not yet anyway.
+            // Once bidirectional type checking is implemented, this will change, somehow
+        }
+        case _ -> { drop }
+    }
+    $holy match {
+        case Hole -> {
+            ~ @hole
+            $ctx.temp $mapping $hole $actual Map:insert<Token, .Type> match {
+                case None -> {}
+                case Some -> {
+                    @previously-inferred
+                    $previously-inferred $actual Type:eq not if {
+                        $ctx.temp Fmt:into-new-string @msg @fmt
+                        &fmt "Failed to infer type for hole, contradicting types inferred:\n" Fmt:write
+                        &fmt "inferred now:        " Fmt:write
+                        &fmt $ctx.type-lookup $actual Type:pretty
+                        &fmt "\ninferred previously: " Fmt:write
+                        &fmt $ctx.type-lookup $previously-inferred Type:pretty
+                        &fmt "\n" Fmt:write
+                        $ctx.ctx &hole $msg ~ ByteArray:unpack abort<bool> break
+                    }
+                }
+            }
+        }
+        case Bool -> { $actual match {
+            case Bool -> {}
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case I8 -> { $actual match {
+            case I8 -> {}
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case I32 -> { $actual match {
+            case I32 -> {}
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case I64 -> { $actual match {
+            case I64 -> {}
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case Generic -> { ~ @holy $actual match {
+            case Generic -> {
+                ~ @actual
+                $holy.index $actual.index /= if {
+                    0 1 = make Result<bool, ResolveError>.Success break
+                }
+            }
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case Ptr -> { ~ @holy $actual match {
+            case Ptr -> {
+                ~ @actual
+                $ctx $mapping $token $actual $holy infer-holes break
+            }
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case Tuple -> { ~ @holy $actual match {
+            case Tuple -> {
+                ~ @actual
+                $ctx $mapping $token &actual.items &holy.items infer-holes-all break
+            }
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case Fun -> { ~ @holy $actual match {
+            case Fun -> {
+                ~ @actual
+                $ctx $mapping $token &actual.parameters &holy.parameters infer-holes-all match {
+                    case Error -> { make Result<bool, ResolveError>.Error break }
+                    case Success -> { if { } else { 0 1 = make Result<bool, ResolveError>.Success break } }
+                }
+                $ctx $mapping $token &actual.returns &holy.returns infer-holes-all break
+            }
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+        case Custom -> { @holy $actual match {
+            case Custom -> {
+                @actual
+                $holy.type-definition $actual.type-definition = if {
+                    $ctx $mapping $token &actual.generic-arguments &holy.generic-arguments infer-holes-all break
+                } else {
+                    0 1 = make Result<bool, ResolveError>.Success break
+                }
+            }
+            case _ -> { 0 1 = make Result<bool, ResolveError>.Success break }
+        } }
+    }
+    1 1 = make Result<bool, ResolveError>.Success
+} }
+
+fn infer-holes-all(ctx: .WordCtx, mapping: .Map<Token, .Type>, token: .Token, actual: .Array<Type>, holy: .Array<Type>) -> Result<bool, ResolveError> {
+    $actual.len $holy.len /= if { 0 0 / drop }
+    1 1 = @actuals-correct
+    0 @i
+    loop {
+        $i $actual.len = if { $actuals-correct make Result<bool, ResolveError>.Success break }
+        $ctx $mapping $token
+        $actual $i Array:get<Type>
+        $holy $i Array:get<Type>
+        infer-holes match {
+            case Error -> { make Result<bool, ResolveError>.Error break }
+            case Success -> { $actuals-correct and #actuals-correct }
+        }
+        $i 1 + #i
+    }
+}
+
+fn fill-holes(ctx: .WordCtx, mapping: .Map<Token, .Type>, type: .Type) -> Result<Type, ResolveError> { block (-> Result<Type, ResolveError>) {
+    $type match {
+        case Hole -> {
+            @hole
+            $mapping $hole Map:get<Token, .Type> match {
+                case None -> {
+                    $ctx.ctx $hole "failed to infer type for hole" abort<Type> break
+                }
+                case Some -> { ~ ~ }
+            }
+        }
+        case Ptr -> {
+            ~ $ctx flip $mapping flip fill-holes match {
+                case Success -> { $ctx.persistent flip Arena:push<Type> make Type.Ptr }
+                case _ -> { break }
+            }
+        }
+        case Tuple -> {
+            @tuple
+            $tuple.token
+            $ctx $mapping &tuple.items fill-holes-all match {
+                case Success -> { make TupleType make Type.Tuple }
+                case Error -> { make Result<Type, ResolveError>.Error break }
+            }
+        }
+        case Fun -> {
+            @fun
+            $fun.token
+            $ctx $mapping &fun.parameters fill-holes-all match {
+                case Error -> { make Result<Type, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $ctx $mapping &fun.returns    fill-holes-all match {
+                case Error -> { make Result<Type, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make FunType make Type.Fun
+        }
+        case Custom -> {
+            @custom
+            $custom.type-definition
+            $ctx $mapping &custom.generic-arguments fill-holes-all match {
+                case Error -> { make Result<Type, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make CustomTypeType make Type.Custom
+        }
+        case Bool -> { $type ~ }
+        case I8 -> { $type ~ }
+        case I32 -> { $type ~ }
+        case I64 -> { $type ~ }
+        case Generic -> { drop $type ~ }
+    } make Result<Type, ResolveError>.Success
+} }
+
+fn fill-holes-all(ctx: .WordCtx, mapping: .Map<Token, .Type>, types: .Array<Type>) -> Result<Array<Type>, ResolveError> {
+    $ctx.persistent $types.len Array:new-with-capacity<Type> @filled
+    0 @i
+    loop (-> Result<Array<Type>, ResolveError>) {
+        $i $types.len = if { $filled make Result<Array<Type>, ResolveError>.Success break }
+        &filled $ctx $mapping $types $i Array:get<Type> fill-holes match {
+            case Success -> {}
+            case Error -> { make Result<Array<Type>, ResolveError>.Error break }
+        } Array:push-assert-no-alloc<Type>
+        $i 1 + #i
+    }
+}
 
 fn resolve-call-word(ctx: .WordCtx, word: .P:Call) -> Result<Call, ResolveError> { block {
     $word match {
@@ -2061,7 +2338,7 @@ fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt $expected-ptr $expected-len Fmt:write
             &fmt ", got: [" Fmt:write
-            &fmt $ctx.type-lookup &b Type-pretty
+            &fmt $ctx.type-lookup &b Type:pretty
             &fmt "]" Fmt:write
             $ctx.ctx $token $msg ~ ByteArray:unpack abort<[Type, Type]> break
         }
@@ -2084,7 +2361,7 @@ fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt $expected-ptr $expected-len Fmt:write
             &fmt ", got: [" Fmt:write
-            &fmt $ctx.type-lookup &c Type-pretty
+            &fmt $ctx.type-lookup &c Type:pretty
             &fmt "]" Fmt:write
             $ctx.ctx $token $msg ~ ByteArray:unpack abort<[Type, Type, Type]> break
         }
@@ -2095,9 +2372,9 @@ fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt $expected-ptr $expected-len Fmt:write
             &fmt ", got: [" Fmt:write
-            &fmt $ctx.type-lookup &b Type-pretty
+            &fmt $ctx.type-lookup &b Type:pretty
             &fmt ", " Fmt:write
-            &fmt $ctx.type-lookup &c Type-pretty
+            &fmt $ctx.type-lookup &c Type:pretty
             &fmt "]" Fmt:write
             $ctx.ctx $token $msg ~ ByteArray:unpack abort<[Type, Type, Type]> break
         }
@@ -2124,7 +2401,7 @@ fn expect(ctx: .WordCtx, stack: .Stack, token: .Token, expected: .Array<Type>) -
             case None -> { 1 1 = }
             case Some -> {
                 @popped-type
-                &popped-type $expected-type Type-eq not
+                &popped-type $expected-type Type:eq not
                 &popped $popped-type Array:push-assert-no-alloc<Type>
             }
         } if {
@@ -2135,31 +2412,28 @@ fn expect(ctx: .WordCtx, stack: .Stack, token: .Token, expected: .Array<Type>) -
     }
     $temp $save Arena:restore
 } }
-fn expect-arguments(ctx: .WordCtx, stack: .Stack, function-name: .Token, generic-arguments: .Array<Type>, parameters: .Array<NamedType>) -> Maybe<ResolveError> { block {
-    $parameters.len @i
+fn expect-arguments(
+    ctx: .WordCtx,
+    function-name: .Token,
+    generic-arguments: .Array<Type>,
+    arguments: .Array<Type>,
+    parameters: .Array<NamedType>
+) -> Maybe<ResolveError> { block {
     $ctx.temp Arena:temp @temp @save
-    $temp $parameters.len Array:new-with-capacity<Type> @popped
+
+    $parameters.len $arguments.len /= if {
+        $ctx $function-name $arguments $parameters $generic-arguments parameter-argument-mismatch-error break
+    }
+
+    $parameters.len @i
     loop {
         $i 0 = if { make Maybe<ResolveError>.None break }
-        $ctx $generic-arguments
-        $parameters $i 1 - Array:get<NamedType> .type
-        resolve-generic @expected-type
-        $ctx $stack pop match {
-            case None -> { 1 1 = }
-            case Some -> {
-                @popped-type &popped-type &expected-type Type-eq not
-                $temp &popped $popped-type Array:push<Type>
-            }
-        } if {
-            loop {
-                $ctx $stack pop match {
-                    case None -> { break }
-                    case Some -> { $temp flip &popped flip Array:push<Type> }
-                }
-            }
-            $ctx.temp $parameters \NamedType-type Array:map<NamedType, Type> @expected
-            &popped Array:reverse<Type>
-            $ctx $function-name &expected &popped type-mismatch-error break
+        $parameters $i 1 - Array:get<NamedType> .type @parameter
+        $ctx.persistent $generic-arguments $parameter insert-generic-arguments @expected-type
+        $arguments $i 1 - Array:get<Type> @popped-type
+
+        $popped-type &expected-type Type:eq not if {
+            $ctx $function-name $arguments $parameters $generic-arguments parameter-argument-mismatch-error break
         }
         $i 1 - #i
     }
@@ -2170,10 +2444,10 @@ fn expect1(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, expected-ptr: 
         case Error -> { make Maybe<ResolveError>.Some break }
         case Success -> {}
     } @actual-a
-    &actual-a $a Type-eq not if {
+    &actual-a $a Type:eq not if {
         $ctx.temp Fmt:into-new-string @msg @fmt
         &fmt $expected-ptr $expected-len Fmt:write
-        &fmt ", got: [" Fmt:write &fmt $ctx.type-lookup &actual-a Type-pretty &fmt "]" Fmt:write
+        &fmt ", got: [" Fmt:write &fmt $ctx.type-lookup &actual-a Type:pretty &fmt "]" Fmt:write
         $ctx.ctx $token $msg ~ ByteArray:unpack abort-m
     } else {
         make Maybe<ResolveError>.None
@@ -2185,15 +2459,15 @@ fn expect2(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, expe
         case Success -> {}
     } [,] @actual-b @actual-a
     block {
-        &actual-b $b Type-eq not if { 1 1 = break }
-        &actual-a $a Type-eq not if { 1 1 = break }
+        &actual-b $b Type:eq not if { 1 1 = break }
+        &actual-a $a Type:eq not if { 1 1 = break }
         0 1 =
     } if {
         $ctx.temp Fmt:into-new-string @msg @fmt
         &fmt $expected-ptr $expected-len Fmt:write
         &fmt ", got: [" Fmt:write
-        &fmt $ctx.type-lookup &actual-a Type-pretty &fmt ", " Fmt:write
-        &fmt $ctx.type-lookup &actual-b Type-pretty &fmt "]"  Fmt:write
+        &fmt $ctx.type-lookup &actual-a Type:pretty &fmt ", " Fmt:write
+        &fmt $ctx.type-lookup &actual-b Type:pretty &fmt "]"  Fmt:write
         $ctx.ctx $token $msg ~ ByteArray:unpack abort-m
     } else {
         make Maybe<ResolveError>.None
@@ -2205,17 +2479,17 @@ fn expect3(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, c: .
         case Success -> {}
     } [,] @actual-c @actual-b @actual-a
     block {
-        &actual-c $c Type-eq not if { 1 1 = break }
-        &actual-b $b Type-eq not if { 1 1 = break }
-        &actual-a $a Type-eq not if { 1 1 = break }
+        &actual-c $c Type:eq not if { 1 1 = break }
+        &actual-b $b Type:eq not if { 1 1 = break }
+        &actual-a $a Type:eq not if { 1 1 = break }
         0 1 =
     } if {
         $ctx.temp Fmt:into-new-string @msg @fmt
         &fmt $expected-ptr $expected-len Fmt:write
         &fmt ", got: [" Fmt:write
-        &fmt $ctx.type-lookup &actual-a Type-pretty &fmt ", " Fmt:write
-        &fmt $ctx.type-lookup &actual-b Type-pretty &fmt ", " Fmt:write
-        &fmt $ctx.type-lookup &actual-c Type-pretty &fmt "]"  Fmt:write
+        &fmt $ctx.type-lookup &actual-a Type:pretty &fmt ", " Fmt:write
+        &fmt $ctx.type-lookup &actual-b Type:pretty &fmt ", " Fmt:write
+        &fmt $ctx.type-lookup &actual-c Type:pretty &fmt "]"  Fmt:write
         $ctx.ctx $token $msg ~ ByteArray:unpack abort-m
     } else {
         make Maybe<ResolveError>.None
@@ -2235,8 +2509,8 @@ fn resolve-init-local(ctx: .WordCtx, stack: .Stack, word: .P:InitLocal) -> Resul
                 case None -> {}
                 case Some -> {
                     [,] @field-type @field-index
-                    $ctx &struc-lit-ctx.generic-arguments &field-type resolve-generic @field-type
-                    &type &field-type Type-eq not if {
+                    $ctx.persistent &struc-lit-ctx.generic-arguments &field-type insert-generic-arguments @field-type
+                    &type &field-type Type:eq not if {
                         $ctx.ctx &word.ident "expected different type for field" abort<[Word, bool]> break
                     }
                     make FieldInit {
@@ -2478,7 +2752,7 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
             &struc.fields $field-index Array:get<NamedType> @field
             &field.name Token-lexeme $field-name Token-lexeme Bytes:eq if {
                 $ctx.persistent &resolved
-                $ctx &custom-type.generic-arguments &field.type resolve-generic @target-type
+                $ctx.persistent &custom-type.generic-arguments &field.type insert-generic-arguments @target-type
                 $field-name ~ $type $target-type $field-index make FieldAccess
                 Array:push<FieldAccess>
                 $target-type #type
@@ -2508,56 +2782,11 @@ fn resolve-stack-annotation(ctx: .WordCtx, stack: .Stack, annotation: .P:StackAn
             case Success -> {}
         } @expected
         $stack $i index @actual
-        &expected $actual Type-eq not if {
+        &expected $actual Type:eq not if {
             $ctx.ctx &annotation.token "stack annotation doesn't match reality" abort<[]> break
         }
         $i 1 + #i
     }
-} }
-
-fn resolve-generic(ctx: .WordCtx, generics: .Array<Type>, type: .Type) -> Type {
-    $type match {
-        case Generic -> { .index ~ $generics flip Array:get<Type> ~ }
-        case Ptr -> {
-            ~ $ctx flip $generics flip resolve-generic $ctx.persistent flip Arena:push<Type> make Type.Ptr
-        }
-        case Custom -> {
-            @type
-            $type.type-definition
-            $ctx $generics &type.generic-arguments resolve-generic-many
-            make CustomTypeType
-            make Type.Custom
-        }
-        case Fun -> {
-            @type
-            $type.token
-            $ctx $generics &type.parameters resolve-generic-many
-            $ctx $generics &type.returns resolve-generic-many
-            make FunType
-            make Type.Fun
-        }
-        case Tuple -> {
-            @tuple
-            $tuple.token
-            $ctx $generics &tuple.items resolve-generic-many
-            make TupleType
-            make Type.Tuple
-        }
-        case Bool -> { make Type.Bool }
-        case I8 -> { make Type.I8 }
-        case I32 -> { make Type.I32 }
-        case I64 -> { make Type.I64 }
-    }
-}
-fn resolve-generic-many(ctx: .WordCtx, generics: .Array<Type>, types: .Array<Type>) -> Array<Type> { block {
-    $ctx.persistent $types.len Array:new-with-capacity<Type> @resolved
-    0 @i
-    loop {
-        $i $types.len = if { break }
-        &resolved $ctx $generics $types $i Array:get<Type> resolve-generic Array:push-assert-no-alloc<Type>
-        $i 1 + #i
-    }
-    $resolved
 } }
 
 fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveError> {
@@ -2842,6 +3071,7 @@ fn resolve-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type: .P:Typ
             make TupleType
             make Type.Tuple
         }
+        case Hole -> { ~ make Type.Hole }
     } make Result<Type, ResolveError>.Success
 } }
 

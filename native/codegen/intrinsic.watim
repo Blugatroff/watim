@@ -26,12 +26,11 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block (->) {
         } }
         case Eq -> {
             ~ @type
-            $ctx.program $type lookup-type match {
-                case I64 -> { "i64.eq" }
-                case _ -> {
-                    0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
-                    drop "i32.eq"
-                }
+            &ctx.program.sizes $type type-size 4 gt if {
+                0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
+                "i64.eq"
+            } else {
+                "i32.eq"
             }
         }
         case NotEq -> {

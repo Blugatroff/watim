@@ -754,6 +754,11 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                 case Tuple -> {}
                 case _ -> { drop Core:unreachable<.Array<TypeId>> }
             } @items
+            $items.len 0 = if {
+                $ctx.fmt "drop ;; unpack " Fmt:write
+                $ctx $word.type generate-type-pretty
+                break
+            }
             $items.len 2 = if {
                 &ctx.program.sizes $items 0 Array:get<TypeId> ~ type-size 4 =
                 &ctx.program.sizes $items 1 Array:get<TypeId> ~ type-size 4 =

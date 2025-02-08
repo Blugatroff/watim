@@ -1,0 +1,13 @@
+[== Stdin Compiler ==]
+fn dup<T>(a: T) -> T, T { $a $a }
+fn bar() {
+    0 dup<i64> drop drop
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:3:7 expected:
+	[i64]
+got:
+	[i32]
+

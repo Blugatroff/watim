@@ -11,7 +11,7 @@ import "../env.watim" as Env (
     Local-format)
 import "./type.watim" as Type (
     ModuleId, CustomTypeHandle, Type, NamedType, CustomTypeType,
-    FunType, CustomType, CustomTypeHandle-format, Type-format,
+    FunType, CustomType, CustomTypeHandle-format,
     NamedType-format, Types-format, CustomTypeType-format,
     FunType-format, CustomType-format)
 
@@ -78,7 +78,7 @@ fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt "(Global " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt " " Fmt:write
     $fmt $self.reffed bool-format
     $fmt ")" Fmt:write
@@ -161,9 +161,9 @@ fn FieldAccess-format(fmt: .Formatter, self: .FieldAccess) {
     $fmt "(FieldAccess " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.source-type Type-format
+    $fmt &self.source-type Type:format
     $fmt " " Fmt:write
-    $fmt &self.target-type Type-format
+    $fmt &self.target-type Type:format
     $fmt " " Fmt:write
     $fmt $self.field-index i32-format
     $fmt ")" Fmt:write
@@ -178,7 +178,7 @@ fn InitLocal-format(fmt: .Formatter, self: .InitLocal) {
     $fmt "(InitLocal " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt " " Fmt:write
     $fmt &self.local LocalId-format
     $fmt ")" Fmt:write
@@ -197,9 +197,9 @@ fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
     $fmt " " Fmt:write
     $fmt &self.var VarId-format
     $fmt " " Fmt:write
-    $fmt &self.var-type Type-format
+    $fmt &self.var-type Type:format
     $fmt " " Fmt:write
-    $fmt &self.result-taip Type-format
+    $fmt &self.result-taip Type:format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt ")" Fmt:write
@@ -219,7 +219,7 @@ fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt " " Fmt:write
-    $fmt &self.target-type Type-format
+    $fmt &self.target-type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -235,7 +235,7 @@ fn StoreLocal-format(fmt: .Formatter, self: .StoreLocal) {
     $fmt " " Fmt:write
     $fmt &self.var VarId-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt ")" Fmt:write
@@ -280,9 +280,9 @@ fn Cast-format(fmt: .Formatter, self: .Cast) {
     $fmt "(Cast " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.src Type-format
+    $fmt &self.src Type:format
     $fmt " " Fmt:write
-    $fmt &self.dst Type-format
+    $fmt &self.dst Type:format
     $fmt ")" Fmt:write
 }
 
@@ -294,7 +294,7 @@ fn Sizeof-format(fmt: .Formatter, self: .Sizeof) {
     $fmt "(Sizeof " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -325,28 +325,28 @@ variant Intrinsic {
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
     $self match {
-        case Gt -> { $fmt "(Gt " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Lt -> { $fmt "(Lt " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Add -> { $fmt "(Add " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Sub -> { $fmt "(Sub " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Mul -> { $fmt "(Mul " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Div -> { $fmt "(Div " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Mod -> { $fmt "(Mod " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Eq -> { $fmt "(Eq " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case NotEq -> { $fmt "(NotEq " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
+        case Gt -> { $fmt "(Gt " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Lt -> { $fmt "(Lt " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Add -> { $fmt "(Add " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Sub -> { $fmt "(Sub " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Mul -> { $fmt "(Mul " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Div -> { $fmt "(Div " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Mod -> { $fmt "(Mod " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Eq -> { $fmt "(Eq " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case NotEq -> { $fmt "(NotEq " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case MemGrow -> { $fmt "MemGrow" Fmt:write }
         case MemCopy -> { $fmt "MemCopy" Fmt:write }
         case MemFill -> { $fmt "MemFill" Fmt:write }
-        case Shl -> { $fmt "(Shl " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Shr -> { $fmt "(Shr " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Rotl -> { $fmt "(Rotl " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Rotr -> { $fmt "(Rotr " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case And -> { $fmt "(And " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Or -> { $fmt "(Or " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Ge -> { $fmt "(Ge " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Le -> { $fmt "(Le " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Not -> { $fmt "(Not " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
-        case Store -> { $fmt "(Store " Fmt:write $fmt flip Type-format $fmt ")" Fmt:write }
+        case Shl -> { $fmt "(Shl " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Shr -> { $fmt "(Shr " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Rotl -> { $fmt "(Rotl " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Rotr -> { $fmt "(Rotr " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case And -> { $fmt "(And " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Or -> { $fmt "(Or " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Ge -> { $fmt "(Ge " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Le -> { $fmt "(Le " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Not -> { $fmt "(Not " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Store -> { $fmt "(Store " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case SetStackSize -> { $fmt "SetStackSize" Fmt:write }
     }
 }
@@ -372,9 +372,9 @@ fn Flip-format(fmt: .Formatter, self: .Flip) {
     $fmt "(Flip " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.lower Type-format
+    $fmt &self.lower Type:format
     $fmt " " Fmt:write
-    $fmt &self.upper Type-format
+    $fmt &self.upper Type:format
     $fmt ")" Fmt:write
 }
 
@@ -410,7 +410,7 @@ fn Uninit-format(fmt: .Formatter, self: .Uninit) {
     $fmt "(Uninit " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -426,7 +426,7 @@ fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
     $fmt " " Fmt:write
     $fmt &self.struc CustomTypeHandle-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt " " Fmt:write
     $fmt $self.field-index i32-format
     $fmt ")" Fmt:write
@@ -444,9 +444,11 @@ fn StructWordNamed-format(fmt: .Formatter, self: .StructWordNamed) {
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
     $fmt &self.type CustomTypeType-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "body=" Fmt:write
     $fmt &self.body Scope-format
     $fmt ")" Fmt:write
@@ -595,7 +597,7 @@ fn Load-format(fmt: .Formatter, self: .Load) {
     $fmt "(Load " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -606,7 +608,7 @@ struct MatchCase {
 }
 fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
     $fmt "(MatchCase " Fmt:write
-    $fmt \Type-format &self.type Maybe:format<Type>
+    $fmt \Type:format &self.type Maybe:format<Type>
     $fmt " " Fmt:write
     $fmt $self.tag i32-format
     $fmt " " Fmt:write
@@ -691,7 +693,7 @@ fn GetField-format(fmt: .Formatter, self: .GetField) {
     $fmt " " Fmt:write
     $fmt $self.on-ptr bool-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -703,7 +705,7 @@ fn MakeTuple-format(fmt: .Formatter, self: .MakeTuple) {
     $fmt "(MakeTuple " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -715,7 +717,7 @@ fn UnpackTuple-format(fmt: .Formatter, self: .UnpackTuple) {
     $fmt "(UnpackTuple " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type-format
+    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 

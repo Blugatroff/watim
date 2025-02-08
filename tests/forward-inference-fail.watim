@@ -1,0 +1,16 @@
+[== Stdin Compiler ==]
+struct Array<T> {}
+
+fn new<T>() -> Array<T> { make Array<T> }
+
+fn foo() {
+    new<_> drop
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:6:9 failed to infer type for hole

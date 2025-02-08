@@ -471,7 +471,7 @@ class GenericType:
     def __str__(self) -> str:
         return f"(GenericType {self.token} {self.generic_index})"
 
-type ParsedType = 'PrimitiveType | Parser.PtrType | Parser.TupleType | GenericType | Parser.ForeignType | Parser.CustomTypeType | Parser.FunctionType'
+type ParsedType = 'PrimitiveType | Parser.PtrType | Parser.TupleType | GenericType | Parser.ForeignType | Parser.CustomTypeType | Parser.FunctionType | Parser.HoleType'
 
 @dataclass
 class NumberWord:
@@ -549,13 +549,19 @@ class Parser:
         returns: List[ParsedType]
 
     @dataclass
+    class HoleType:
+        token: Token
+
+        def __str__(self) -> str:
+            return "Hole"
+
+    @dataclass
     class NamedType:
         name: Token
         taip: ParsedType
 
         def __str__(self) -> str:
             return f"(NamedType {self.name} {self.taip})"
-
 
     # ========================================
     # Datatypes for parsed words
@@ -599,6 +605,9 @@ class Parser:
     class CallWord:
         ident: Token
         generic_arguments: List[ParsedType]
+
+        def __str__(self) -> str:
+            return f"(LocalCall {self.ident} {listtostr(self.generic_arguments, multi_line=True)})"
 
     @dataclass
     class FunRefWord:
@@ -1369,6 +1378,8 @@ class Parser:
             return PrimitiveType.BOOL
         if token.ty == TokenType.DOT:
             return Parser.PtrType(self.parse_type(generic_parameters))
+        if token.ty == TokenType.UNDERSCORE:
+            return Parser.HoleType(token)
         if token.ty == TokenType.IDENT:
             for generic_index, lexeme in enumerate(map(lambda t: t.lexeme, generic_parameters)):
                 if lexeme == token.lexeme:
@@ -1506,7 +1517,7 @@ class ResolvedFunctionType:
     def __str__(self) -> str:
         return f"(FunType {self.token} {listtostr(self.parameters)} {listtostr(self.returns)})"
 
-ResolvedType = PrimitiveType | ResolvedPtrType | ResolvedTupleType | GenericType | ResolvedCustomTypeType | ResolvedFunctionType
+ResolvedType = PrimitiveType | ResolvedPtrType | ResolvedTupleType | GenericType | ResolvedCustomTypeType | ResolvedFunctionType | Parser.HoleType
 
 def resolved_type_eq(a: ResolvedType, b: ResolvedType):
     if isinstance(a, PrimitiveType):
@@ -1800,6 +1811,9 @@ class ResolvedFunctionHandle:
 class ResolvedFunRefWord:
     call: ResolvedCallWord
 
+    def __str__(self) -> str:
+        return f"(FunRef {self.call})"
+
 @dataclass
 class ResolvedIfWord:
     token: Token
@@ -1864,6 +1878,9 @@ class ResolvedIndirectCallWord:
     token: Token
     taip: ResolvedFunctionType
 
+    def __str__(self) -> str:
+        return f"(IndirectCall {self.token} {self.taip})"
+
 @dataclass
 class ResolvedStructFieldInitWord:
     token: Token
@@ -1878,6 +1895,9 @@ class ResolvedStructWord:
     token: Token
     taip: ResolvedCustomTypeType
     body: ResolvedScope
+
+    def __str__(self) -> str:
+        return f"(StructWordNamed\n  token={self.token},\n  type={self.taip},\n  body={self.body})"
 
 @dataclass
 class ResolvedUnnamedStructWord:
@@ -2479,12 +2499,17 @@ class TypeLookup:
         if isinstance(taip, ResolvedPtrType):
             return f".{self.type_pretty(taip.child)}"
         if isinstance(taip, ResolvedCustomTypeType):
-            return self.lookup(taip.type_definition).name.lexeme
+            s = self.lookup(taip.type_definition).name.lexeme
+            if len(taip.generic_arguments) != 0:
+                return f"{s}<{self.types_pretty(taip.generic_arguments)}>"
+            return s
         if isinstance(taip, ResolvedFunctionType):
             return f"({self.types_pretty(taip.parameters)} -> {self.types_pretty(taip.returns)})"
         if isinstance(taip, ResolvedTupleType):
             return self.types_pretty_bracketed(taip.items)
         if isinstance(taip, GenericType):
+            return taip.token.lexeme
+        if isinstance(taip, Parser.HoleType):
             return taip.token.lexeme
         assert_never(taip)
 
@@ -2603,6 +2628,8 @@ class ResolveCtx:
                 taip.token,
                 self.resolve_types(imports, taip.items)
             )
+        if isinstance(taip, Parser.HoleType):
+            return taip
         assert_never(taip)
 
     def resolve_types(self, imports: Dict[str, List[Import]], types: List[ParsedType]) -> List[ResolvedType]:
@@ -2892,7 +2919,7 @@ class WordCtx:
         if self.struct_lit_ctx is not None:
             if word.ident.lexeme in self.struct_lit_ctx.fields:
                 field_index,field_type = self.struct_lit_ctx.fields[word.ident.lexeme]
-                field_type = self.resolve_generic(self.struct_lit_ctx.generic_arguments, field_type)
+                field_type = self.insert_generic_arguments(self.struct_lit_ctx.generic_arguments, field_type)
                 if not resolved_type_eq(field_type, taip):
                     self.abort(word.ident, "wrong type for field")
                 del self.struct_lit_ctx.fields[word.ident.lexeme]
@@ -2925,23 +2952,103 @@ class WordCtx:
             return (self.resolve_intrinsic(word.ident, stack, intrinsic, resolved_generic_arguments), False)
         resolved_word = self.resolve_call_word(word)
         signature = self.lookup_signature(resolved_word.function)
-        self.type_check_call(stack, word.ident, resolved_word.generic_arguments, signature.parameters, signature.returns)
+        args = stack.pop_n(len(signature.parameters))
+        self.infer_generic_arguments_from_args(word.ident, args, signature.parameters, resolved_word.generic_arguments)
+        self.push_returns(stack, signature.returns, resolved_word.generic_arguments)
         return (resolved_word, False)
 
-    def type_check_call(self, stack: Stack, token: Token, generic_arguments: List[ResolvedType], parameters: List[ResolvedNamedType], returns: List[ResolvedType]):
-        self.expect_arguments(stack, token, generic_arguments, parameters)
-        self.push_returns(stack, returns, generic_arguments)
+    def parameter_argument_mismatch_error(self, token: Token, arguments: List[ResolvedType], parameters: List[ResolvedNamedType], generic_arguments: List[ResolvedType]) -> NoReturn:
+        self.type_mismatch_error(
+                token,
+                [self.insert_generic_arguments(generic_arguments, parameter.taip) for parameter in parameters],
+                arguments)
 
-    def type_check_call_unnamed(self, stack: Stack, token: Token, generic_arguments: List[ResolvedType] | None, parameters: List[ResolvedType], returns: List[ResolvedType]):
-        self.expect(stack, token, parameters)
-        self.push_returns(stack, returns, generic_arguments)
+    def infer_generic_arguments_from_args(self, token: Token, arguments: List[ResolvedType], parameters: List[ResolvedNamedType], generic_arguments: List[ResolvedType]) -> None:
+        hole_mapping: Dict[Token, ResolvedType] = {}
+        for i in range(1, len(parameters) + 1):
+            if len(arguments) < i:
+                self.parameter_argument_mismatch_error(token, arguments, parameters, generic_arguments)
+            parameter = parameters[-i].taip
+            argument = arguments[-i]
+            parameter = self.insert_generic_arguments(generic_arguments, parameter)
+            if not self.infer_holes(hole_mapping, token, argument, parameter):
+                self.parameter_argument_mismatch_error(token, arguments, parameters, generic_arguments)
+
+        for (i, generic_argument) in enumerate(generic_arguments):
+            generic_arguments[i] = self.fill_holes(hole_mapping, generic_argument)
+
+        # TODO: check that the generic arguments don't contain any holes now
+
+    def infer_holes(self, mapping: Dict[Token, ResolvedType], token: Token, actual: ResolvedType, holey: ResolvedType) -> bool:
+        assert not isinstance(actual, Parser.HoleType)
+        match holey:
+            case Parser.HoleType(hole):
+                if hole in mapping and not resolved_type_eq(mapping[hole], actual):
+                    msg = "Failed to infer type for hole, contradicting types inferred:\n"
+                    msg += f"inferred now:        {self.type_lookup.type_pretty(actual)}\n"
+                    msg += f"inferred previously: {self.type_lookup.type_pretty(mapping[hole])}\n"
+                    self.abort(hole, msg)
+                mapping[hole] = actual
+                return True
+            case PrimitiveType():
+                return resolved_type_eq(actual, holey)
+            case GenericType():
+                return isinstance(actual, GenericType) and actual.generic_index == holey.generic_index
+            case ResolvedPtrType(holey):
+                if not isinstance(actual, ResolvedPtrType):
+                    return False
+                return self.infer_holes(mapping, token, actual.child, holey)
+            case ResolvedTupleType(_, holey_items):
+                if not isinstance(actual, ResolvedTupleType):
+                    return False
+                return self.infer_holes_all(mapping, token, actual.items, holey_items)
+            case ResolvedFunctionType():
+                if not isinstance(actual, ResolvedFunctionType):
+                    return False
+                return self.infer_holes_all(mapping, token, actual.parameters, holey.parameters) and self.infer_holes_all(mapping, token, actual.returns, holey.returns)
+            case ResolvedCustomTypeType():
+                if not isinstance(actual, ResolvedCustomTypeType):
+                    return False
+                if actual.type_definition != holey.type_definition:
+                    return False
+                return self.infer_holes_all(mapping, token, actual.generic_arguments, holey.generic_arguments)
+            case other:
+                assert_never(other)
+
+    def infer_holes_all(self, mapping: Dict[Token, ResolvedType], token: Token, actual: List[ResolvedType], holey: List[ResolvedType]) -> bool:
+        assert(len(actual) == len(holey))
+        actuals_correct = True
+        for (actual_t, holey_t) in zip(actual, holey):
+            actuals_correct &= self.infer_holes(mapping, token, actual_t, holey_t)
+        return actuals_correct
+
+
+    def fill_holes(self, mapping: Dict[Token, ResolvedType], taip: ResolvedType) -> ResolvedType:
+        match taip:
+            case Parser.HoleType(hole):
+                if hole not in mapping:
+                    self.abort(hole, "failed to infer type for hole")
+                return mapping[hole]
+            case ResolvedPtrType(child):
+                return ResolvedPtrType(self.fill_holes(mapping, child))
+            case ResolvedTupleType(token, items):
+                return ResolvedTupleType(token, [self.fill_holes(mapping, t) for t in items])
+            case ResolvedFunctionType(token, parameters, returns):
+                return ResolvedFunctionType(
+                    token,
+                    [self.fill_holes(mapping, t) for t in parameters],
+                    [self.fill_holes(mapping, t) for t in returns])
+            case ResolvedCustomTypeType(name, type_definition, generic_arguments):
+                return ResolvedCustomTypeType(name, type_definition, [self.fill_holes(mapping, t) for t in generic_arguments])
+            case other:
+                return other
 
     def push_returns(self, stack: Stack, returns: List[ResolvedType], generic_arguments: List[ResolvedType] | None):
         for ret in returns:
             if generic_arguments is None:
                 stack.push(ret)
             else:
-                stack.push(self.resolve_generic(generic_arguments, ret))
+                stack.push(self.insert_generic_arguments(generic_arguments, ret))
 
     def resolve_call_word(self, word: Parser.CallWord | Parser.ForeignCallWord) -> ResolvedCallWord:
         if isinstance(word, Parser.ForeignCallWord):
@@ -3191,7 +3298,8 @@ class WordCtx:
             self.abort(word.token, "`->` expected a function on the stack, got: []")
         if not isinstance(fun_type, ResolvedFunctionType):
             self.abort(word.token, "TODO")
-        self.type_check_call_unnamed(stack, word.token, None, fun_type.parameters, fun_type.returns)
+        self.expect(stack, word.token, fun_type.parameters)
+        self.push_returns(stack, fun_type.returns, None)
         return (ResolvedIndirectCallWord(word.token, fun_type), False)
 
     def resolve_store(self, stack: Stack, word: Parser.StoreWord) -> Tuple[ResolvedWord, bool]:
@@ -3245,7 +3353,7 @@ class WordCtx:
             if case_type is not None:
                 if by_ref:
                     case_type = ResolvedPtrType(case_type)
-                case_type = self.resolve_generic(generic_arguments, case_type)
+                case_type = self.insert_generic_arguments(generic_arguments, case_type)
                 case_stack.push(case_type)
 
             case_env = self.env.child()
@@ -3334,7 +3442,7 @@ class WordCtx:
             self.abort(word.token, "case is not part of variant")
         case = variant.cases[tag]
         if case.taip is not None:
-            expected = self.resolve_generic(variant_type.generic_arguments, case.taip)
+            expected = self.insert_generic_arguments(variant_type.generic_arguments, case.taip)
             self.expect(stack, word.token, [expected])
         stack.push(variant_type)
         return (ResolvedVariantWord(word.token, tag, variant_type), False)
@@ -3388,7 +3496,7 @@ class WordCtx:
         i = len(parameters)
         popped: List[ResolvedType] = []
         while i != 0:
-            expected_type = self.resolve_generic(generic_arguments, parameters[i - 1].taip)
+            expected_type = self.insert_generic_arguments(generic_arguments, parameters[i - 1].taip)
             popped_type = stack.pop()
             error = popped_type is None or not resolved_type_eq(popped_type, expected_type)
             if popped_type is not None:
@@ -3399,7 +3507,7 @@ class WordCtx:
                     if popped_type is None:
                         break
                     popped.append(popped_type)
-                expected = [parameter.taip for parameter in parameters]
+                expected = [self.insert_generic_arguments(generic_arguments, parameter.taip) for parameter in parameters]
                 popped.reverse()
                 self.type_mismatch_error(token, expected, popped)
             assert(popped_type is not None)
@@ -3419,7 +3527,7 @@ class WordCtx:
             popped.append(popped_type)
             i -= 1
 
-    def type_mismatch_error(self, token: Token, expected: List[ResolvedType], actual: List[ResolvedType]):
+    def type_mismatch_error(self, token: Token, expected: List[ResolvedType], actual: List[ResolvedType]) -> NoReturn:
         message  = "expected:\n\t" + self.type_lookup.types_pretty_bracketed(expected)
         message += "\ngot:\n\t" + self.type_lookup.types_pretty_bracketed(actual)
         self.abort(token, message)
@@ -3652,7 +3760,7 @@ class WordCtx:
             found_field = False
             for field_index,struct_field in enumerate(struct.fields):
                 if struct_field.name.lexeme == field_name.lexeme:
-                    target_type = self.resolve_generic(custom_type.generic_arguments, struct_field.taip)
+                    target_type = self.insert_generic_arguments(custom_type.generic_arguments, struct_field.taip)
                     resolved.append(ResolvedFieldAccess(field_name, taip, target_type, field_index))
                     taip = target_type
                     found_field = True
@@ -3661,30 +3769,32 @@ class WordCtx:
                 self.abort(field_name, "field not found")
         return resolved
 
-    def resolve_generic(self, generics: List[ResolvedType], taip: ResolvedType) -> ResolvedType:
+    def insert_generic_arguments(self, generics: List[ResolvedType], taip: ResolvedType) -> ResolvedType:
         if isinstance(taip, PrimitiveType):
             return taip
         if isinstance(taip, ResolvedPtrType):
-            return ResolvedPtrType(self.resolve_generic(generics, taip.child))
+            return ResolvedPtrType(self.insert_generic_arguments(generics, taip.child))
         if isinstance(taip, ResolvedCustomTypeType):
-            return ResolvedCustomTypeType(taip.name, taip.type_definition, self.resolve_generic_many(generics, taip.generic_arguments))
+            return ResolvedCustomTypeType(taip.name, taip.type_definition, self.insert_generic_arguments_all(generics, taip.generic_arguments))
         if isinstance(taip, ResolvedFunctionType):
             return ResolvedFunctionType(
                 taip.token,
-                self.resolve_generic_many(generics, taip.parameters),
-                self.resolve_generic_many(generics, taip.returns),
+                self.insert_generic_arguments_all(generics, taip.parameters),
+                self.insert_generic_arguments_all(generics, taip.returns),
             )
         if isinstance(taip, ResolvedTupleType):
             return ResolvedTupleType(
                 taip.token,
-                self.resolve_generic_many(generics, taip.items),
+                self.insert_generic_arguments_all(generics, taip.items),
             )
+        if isinstance(taip, Parser.HoleType):
+            return taip
         if isinstance(taip, GenericType):
             return generics[taip.generic_index]
         assert_never(taip)
 
-    def resolve_generic_many(self, generics: List[ResolvedType], types: List[ResolvedType]) -> List[ResolvedType]:
-        return [self.resolve_generic(generics, taip) for taip in types]
+    def insert_generic_arguments_all(self, generics: List[ResolvedType], types: List[ResolvedType]) -> List[ResolvedType]:
+        return [self.insert_generic_arguments(generics, taip) for taip in types]
 
 
 def resolve_modules(modules_unordered: Dict[str, List[ParsedTopItem]]) -> IndexedDict[str, ResolvedModule]:
@@ -4799,6 +4909,8 @@ class Monomizer:
                 return self.monomize_function_type(taip, generics)
             case ResolvedTupleType(token, items):
                 return TupleType(token, list(map(lambda item: self.monomize_type(item, generics), items)))
+            case Parser.HoleType():
+                assert(False)
             case other:
                 assert_never(other)
 
@@ -5479,7 +5591,7 @@ class WatGenerator:
                 self.write_type(taip)
                 self.write(".or\n")
             case IntrinsicEqual(_, taip):
-                if taip == PrimitiveType.I64:
+                if taip.size() > 4:
                     self.write_line("i64.eq")
                     return
                 assert(taip.can_live_in_reg())
@@ -5947,6 +6059,9 @@ class WatGenerator:
                 if len(items) == 2 and items[0].size() == 4 and items[1].size() == 4:
                     self.unpack_i32s_used = True
                     self.write_line(f"call $intrinsic:unpack-i32s ;; unpack {listtostr(items, format_type)}")
+                    return
+                if len(items) == 0:
+                    self.write_line(f"drop ;; unpack {listtostr(items, format_type)}")
                     return
                 self.write_line(f";; unpack {listtostr(items, format_type)}")
                 self.indent()

@@ -1,0 +1,19 @@
+[== Stdin Compiler ==]
+struct Array<T> {}
+
+fn bar<T>(a: i32, b: Array<T>, b: i32) { }
+
+fn foo() {
+    make Array<i32> 0 bar<_>
+}
+[== Args Compiler ==]
+check
+-
+--quiet
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:6:23 expected:
+	[i32, Array<_>, i32]
+got:
+	[Array<i32>, i32]

@@ -465,6 +465,7 @@ fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block (-> i32) {
         case Fun -> { flip FunType-pretty break }
         case Tuple -> { flip TupleType-pretty break }
         case Generic -> { .name }
+        case Hole -> {}
     } write-token
 } }
 

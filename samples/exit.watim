@@ -97,7 +97,7 @@ fn main "_start" () {
         $buf $nread 1 - + ~ "\n" drop ~ = if { $nread 1 - #nread }
     }
     $buf $nread parse
-    dup<i32> print 
+    dup<_> print
     1 "\n" write drop
     exit
 }

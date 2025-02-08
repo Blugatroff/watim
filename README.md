@@ -4,6 +4,7 @@ Watim is a simple, low level, stack-based language which compiles to [Webassembl
 Which can then be compiled to wasm and run in your favorite browser or by runtimes like [wasmtime](https://github.com/bytecodealliance/wasmtime) and [wasm3](https://github.com/wasm3/wasm3).
 
 The Watim compiler is written in Watim.
+The bootstrap compiler is written in python, in a single [file](./bootstrap.py) full of ugly code.
 
 This project was inspired by [Porth](https://gitlab.com/tsoding/porth).
 
@@ -12,17 +13,18 @@ Watim = WAT Improved
 ## Features
 - structs
 - inline string literals
+- terse syntax
 - loop expression with `break` keyword
 - if expression
 - static type checking
-- terse syntax
-- modules
+- generics using monomorphization
+- file imports
 
 ## TODO
 - [ ] `continue` instruction for loops.
 - [X] Variable declaration and initiliziation anywhere in function.
 - [X] Generics using monomorphization.
-- [ ] Type inference
+- [ ] Bidirectional Type inference sort of like [this](https://jimmyhmiller.github.io/pdfs/bidirectional.pdf)
 - [X] function pointers
 - [X] struct literals
 - [ ] closures?
@@ -167,7 +169,7 @@ fn main "_start" () {
         $buf $nread 1 - + ~ "\n" drop ~ = if { $nread 1 - #nread }
     }
     $buf $nread parse
-    dup<i32> print 
+    dup<_> print
     1 "\n" write drop
     exit
 }

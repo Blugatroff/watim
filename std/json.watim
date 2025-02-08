@@ -23,11 +23,11 @@ fn Value-eq(a: .Value, b: .Value) -> bool {
             case _ -> { drop drop 0 1 = }
         } }
         case Array -> { \Value-eq flip $b match {
-            case Array -> { Array:eq<Value> }
+            case Array -> { Array:eq<_> }
             case _ -> { drop drop drop 0 1 = }
         } }
         case Object -> { \Value-eq flip $b match {
-            case Object -> { Map:eq<ByteArray, Value> }
+            case Object -> { Map:eq<_, _> }
             case _ -> { drop drop drop 0 1 = }
         } }
         case Null -> { $b match {
@@ -192,7 +192,7 @@ fn parse-array(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Array<Value>, Pars
             case Error -> { make Result<Array<Value>, ParseError>.Error break }
             case Success -> {}
         }
-        $arena flip &items flip Array:push<Value>
+        $arena flip &items flip Array:push<_>
         $len ~ 0 = if { make ParseError make Result<Array<Value>, ParseError>.Error break }
         $ptr ~~ "]" drop ~ = if {
             $ptr $len 1 advance
@@ -211,7 +211,7 @@ fn parse-object(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Map<ByteArray, Va
     $ptr $len 1 advance
     $ptr $len whitespace
     $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
-    \ByteArray:eq Map:new<ByteArray, Value> @entries
+    \ByteArray:eq Map:new<_, Value> @entries
     $ptr ~~ "}" drop ~ = if {
         $ptr $len 1 advance
         $entries make Result<Map<ByteArray, Value>, ParseError>.Success break
@@ -230,7 +230,7 @@ fn parse-object(arena: .Arena, ptr: ..i8, len: .i32) -> Result<Map<ByteArray, Va
             case Error -> { make Result<Map<ByteArray, Value>, ParseError>.Error break }
             case Success -> {}
         } @value
-        $arena &entries $key $value Map:insert<ByteArray, Value> drop
+        $arena &entries $key $value Map:insert<_, _> drop
         $len ~ 0 = if { make ParseError make Result<Map<ByteArray, Value>, ParseError>.Error break }
         $ptr ~~ "}" drop ~ = if {
             $ptr $len 1 advance

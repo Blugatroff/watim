@@ -226,6 +226,9 @@ fn Token-copy(arena: .Arena:Arena, self: .Token) -> Token {
     }
     $copy
 }
+fn Token-eq-by-location(self: .Token, other: .Token) -> bool {
+    $self.ty-and-line-and-column $other.ty-and-line-and-column =
+}
 fn Token-eq-by-lexeme(self: .Token, other: .Token) -> bool {
     $self Token-lexeme $other Token-lexeme Bytes:eq
 }
