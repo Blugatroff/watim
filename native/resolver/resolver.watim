@@ -1364,10 +1364,9 @@ fn resolve-mk-struc(ctx: .WordCtx, stack: .Stack, word: .P:MakeStruct) -> Result
     } @struc
 
     $ctx $stack $struc.fields.len pop-n @arguments
-
-    $ctx &word.token &struct-type.generic-arguments &arguments &struc.fields expect-arguments match {
-        case Some -> { make Result<[Word, bool], ResolveError>.Error break }
+    $ctx &word.token &arguments &struc.fields &struct-type.generic-arguments infer-generic-arguments-from-args match {
         case None -> {}
+        case Some -> { make Result<[Word, bool], ResolveError>.Error break }
     }
     $ctx $stack $struct-type make Type.Custom push
     $word.token $struct-type make StructWord make Word.StructWord 0 1 = [,2]

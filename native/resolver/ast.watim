@@ -467,6 +467,7 @@ fn StructWord-format(fmt: .Formatter, self: .StructWord) {
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
     $fmt &self.type CustomTypeType-format
     $fmt ")" Fmt:write

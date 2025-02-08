@@ -1904,6 +1904,9 @@ class ResolvedUnnamedStructWord:
     token: Token
     taip: ResolvedCustomTypeType
 
+    def __str__(self) -> str:
+        return f"(StructWord\n  token={self.token},\n  type={self.taip})"
+
 @dataclass
 class ResolvedVariantWord:
     token: Token
@@ -3090,7 +3093,9 @@ class WordCtx:
         struct_type = self.ctx.resolve_custom_type(self.imports, word.taip)
         struc = self.type_lookup.lookup(struct_type.type_definition)
         assert(not isinstance(struc, ResolvedVariant))
-        self.expect_arguments(stack, word.token, struct_type.generic_arguments, struc.fields)
+        args = stack.pop_n(len(struc.fields))
+        self.infer_generic_arguments_from_args(word.token, args, struc.fields, struct_type.generic_arguments)
+        # self.expect_arguments(stack, word.token, struct_type.generic_arguments, struc.fields)
         stack.push(struct_type)
         return (ResolvedUnnamedStructWord(word.token, struct_type), False)
 
