@@ -48,12 +48,12 @@ fn main "_start" () {
     }
 
     &arena "\"hello\"" Json:parse assert-success<Value> match {
-        case String -> { @arr &arr Array:unpack<_> "hello" Bytes:eq not if { "expected \"hello\"" crash } }
+        case String -> { & Array:unpack<_> "hello" Bytes:eq not if { "expected \"hello\"" crash } }
         case _ -> { drop "expected a string" crash }
     }
 
     &arena "\"he\nllo\"" Json:parse assert-success<Value> match {
-        case String -> { @arr &arr Array:unpack<_> "he\nllo" Bytes:eq not if { "expected \"he\nllo\"" crash } }
+        case String -> { & Array:unpack<_> "he\nllo" Bytes:eq not if { "expected \"he\nllo\"" crash } }
         case _ -> { drop "expected a string" crash }
     }
 

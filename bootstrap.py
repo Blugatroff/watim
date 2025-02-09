@@ -487,7 +487,7 @@ class BreakWord:
     def __str__(self) -> str:
         return f"(Break {self.token})"
 
-type ParsedWord = 'NumberWord | Parser.StringWord | Parser.CallWord | Parser.GetWord | Parser.RefWord | Parser.SetWord | Parser.StoreWord | Parser.InitWord | Parser.CallWord | Parser.ForeignCallWord | Parser.FunRefWord | Parser.IfWord | Parser.LoadWord | Parser.LoopWord | Parser.BlockWord | BreakWord | Parser.CastWord | Parser.SizeofWord | Parser.GetFieldWord | Parser.IndirectCallWord | Parser.StructWord | Parser.UnnamedStructWord | Parser.MatchWord | Parser.VariantWord | Parser.TupleUnpackWord | Parser.TupleMakeWord | Parser.StackAnnotation'
+type ParsedWord = 'NumberWord | Parser.StringWord | Parser.CallWord | Parser.GetWord | Parser.RefWord | Parser.SetWord | Parser.StoreWord | Parser.InitWord | Parser.CallWord | Parser.ForeignCallWord | Parser.FunRefWord | Parser.IfWord | Parser.LoadWord | Parser.LoopWord | Parser.BlockWord | BreakWord | Parser.CastWord | Parser.SizeofWord | Parser.GetFieldWord | Parser.IndirectCallWord | Parser.StructWord | Parser.UnnamedStructWord | Parser.MatchWord | Parser.VariantWord | Parser.TupleUnpackWord | Parser.TupleMakeWord | Parser.StackAnnotation | Parser.InlineRefWord'
 
 type ParsedTypeDefinition = 'Parser.Struct | Parser.Variant'
 
@@ -585,6 +585,10 @@ class Parser:
     class SetWord:
         ident: Token
         fields: List[Token]
+
+    @dataclass
+    class InlineRefWord:
+        token: Token
 
     @dataclass
     class StoreWord:
@@ -1024,6 +1028,10 @@ class Parser:
                     assert(False)
                 i += 2
             return Parser.StringWord(token, string)
+        if token.ty == TokenType.AMPERSAND:
+            next = self.peek(skip_ws=False)
+            if next is not None and next.ty == TokenType.SPACE:
+                return Parser.InlineRefWord(token)
         if token.ty in [TokenType.DOLLAR, TokenType.AMPERSAND, TokenType.HASH, TokenType.DOUBLE_ARROW]:
             indicator_token = token
             name = self.advance(skip_ws=True)
@@ -1674,20 +1682,30 @@ class ResolverException(Exception):
             column = self.token.column
         return f"{self.path}:{line}:{column} {self.message}"
 
+@dataclass(frozen=True, eq=True)
+class LocalName:
+    name: Token | str
+
+    def __str__(self) -> str:
+        return str(self.name)
+
+    def get(self) -> str:
+        return self.name if isinstance(self.name, str) else self.name.lexeme
+
 @dataclass
 class ResolvedLocal:
-    name: Token
+    name: LocalName
     taip: ResolvedType
     is_parameter: bool
     was_reffed: bool = False
 
     @staticmethod
     def make(taip: ResolvedNamedType) -> 'ResolvedLocal':
-        return ResolvedLocal(taip.name, taip.taip, False)
+        return ResolvedLocal(LocalName(taip.name), taip.taip, False)
 
     @staticmethod
     def make_parameter(taip: ResolvedNamedType) -> 'ResolvedLocal':
-        return ResolvedLocal(taip.name, taip.taip, True)
+        return ResolvedLocal(LocalName(taip.name), taip.taip, True)
 
     def __str__(self) -> str:
         return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
@@ -2266,7 +2284,7 @@ class Env:
                 if isinstance(param, ResolvedLocal):
                     self.insert(param)
                 else:
-                    self.insert(ResolvedLocal(param.name, param.taip, False, True))
+                    self.insert(ResolvedLocal(LocalName(param.name), param.taip, False, True))
 
 
     def lookup(self, name: Token) -> Tuple[ResolvedLocal, LocalId] | None:
@@ -2282,13 +2300,13 @@ class Env:
         return vars[-1]
 
     def insert(self, var: ResolvedLocal) -> LocalId:
-        if var.name.lexeme in self.vars:
-            id = LocalId(var.name.lexeme, self.scope_id, len(self.vars[var.name.lexeme]))
-            self.vars[var.name.lexeme].append((var, id))
+        if var.name.get() in self.vars:
+            id = LocalId(var.name.get(), self.scope_id, len(self.vars[var.name.get()]))
+            self.vars[var.name.get()].append((var, id))
             self.vars_by_id[id] = var
             return id
-        id = LocalId(var.name.lexeme, self.scope_id, 0)
-        self.vars[var.name.lexeme] = [(var, id)]
+        id = LocalId(var.name.get(), self.scope_id, 0)
+        self.vars[var.name.get()] = [(var, id)]
         self.vars_by_id[id] = var
         return id
 
@@ -2812,21 +2830,21 @@ class WordCtx:
             res = self.resolve_word(stack, remaining_words, parsed_word)
             if res is None:
                 continue
-            resolved_word,word_diverges = res
+            resolved_words,word_diverges = res
             diverges = diverges or word_diverges
             self.reachable = not diverges
-            resolved.append(resolved_word)
+            resolved.extend(resolved_words)
         return (resolved, diverges)
 
-    def resolve_word(self, stack: Stack, remaining_words: List[ParsedWord], word: ParsedWord) -> Tuple[ResolvedWord, bool] | None:
+    def resolve_word(self, stack: Stack, remaining_words: List[ParsedWord], word: ParsedWord) -> Tuple[List[ResolvedWord], bool] | None:
         if isinstance(word, NumberWord):
             stack.push(PrimitiveType.I32)
-            return (word, False)
+            return ([word], False)
         if isinstance(word, Parser.StringWord):
             stack.push(ResolvedPtrType(PrimitiveType.I8))
             stack.push(PrimitiveType.I32)
             offset = self.ctx.allocate_static_data(word.data)
-            return (StringWord(word.token, offset, len(word.data)), False)
+            return ([StringWord(word.token, offset, len(word.data))], False)
         if isinstance(word, Parser.GetWord):
             return self.resolve_get_local(stack, word)
         if isinstance(word, Parser.RefWord):
@@ -2874,16 +2892,28 @@ class WordCtx:
         if isinstance(word, Parser.StackAnnotation):
             self.resolve_stack_annotation(stack, word)
             return None
+        if isinstance(word, Parser.InlineRefWord):
+            return self.resolve_ref(stack, word)
         assert_never(word)
 
-    def resolve_get_local(self, stack: Stack, word: Parser.GetWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_ref(self, stack: Stack, word: Parser.InlineRefWord) -> Tuple[List[ResolvedWord], bool]:
+        taip = stack.pop()
+        assert(taip is not None)
+        local = ResolvedLocal(LocalName("synth:ref"), taip, False, True)
+        local_id = self.env.insert(local)
+        stack.push(ResolvedPtrType(taip))
+        return ([
+            ResolvedInitWord(word.token, local_id, taip),
+            ResolvedRefWord(word.token, local_id, [])], False)
+
+    def resolve_get_local(self, stack: Stack, word: Parser.GetWord) -> Tuple[List[ResolvedWord], bool]:
         var_id,taip = self.resolve_var_name(word.ident)
         fields = self.resolve_field_accesses(taip, word.fields)
         resolved_type = taip if len(fields) == 0 else fields[-1].target_taip
         stack.push(resolved_type)
-        return (ResolvedGetWord(word.ident, var_id, taip, fields, resolved_type), False)
+        return ([ResolvedGetWord(word.ident, var_id, taip, fields, resolved_type)], False)
 
-    def resolve_ref_local(self, stack: Stack, word: Parser.RefWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_ref_local(self, stack: Stack, word: Parser.RefWord) -> Tuple[List[ResolvedWord], bool]:
         local_and_id = self.env.lookup(word.ident)
         if local_and_id is not None:
             local,local_id = local_and_id
@@ -2914,9 +2944,9 @@ class WordCtx:
 
         result_type = taip if len(fields) == 0 else fields[-1].target_taip
         stack.push(ResolvedPtrType(result_type))
-        return (ResolvedRefWord(word.ident, var_id, fields), False)
+        return ([ResolvedRefWord(word.ident, var_id, fields)], False)
 
-    def resolve_init_local(self, stack: Stack, word: Parser.InitWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_init_local(self, stack: Stack, word: Parser.InitWord) -> Tuple[List[ResolvedWord], bool]:
         taip = stack.pop()
         assert(taip is not None)
         if self.struct_lit_ctx is not None:
@@ -2926,16 +2956,16 @@ class WordCtx:
                 if not resolved_type_eq(field_type, taip):
                     self.abort(word.ident, "wrong type for field")
                 del self.struct_lit_ctx.fields[word.ident.lexeme]
-                return (ResolvedStructFieldInitWord(
+                return ([ResolvedStructFieldInitWord(
                     word.ident,
                     self.struct_lit_ctx.struct,
                     field_type,
                     field_index,
-                    self.struct_lit_ctx.generic_arguments), False)
+                    self.struct_lit_ctx.generic_arguments)], False)
 
-        local = ResolvedLocal(word.ident, taip, False, False)
+        local = ResolvedLocal(LocalName(word.ident), taip, False, False)
         local_id = self.env.insert(local)
-        return (ResolvedInitWord(word.ident, local_id, taip), False)
+        return ([ResolvedInitWord(word.ident, local_id, taip)], False)
 
     def resolve_var_name(self, name: Token) -> Tuple[GlobalId | LocalId, ResolvedType]:
         local_and_id = self.env.lookup(name)
@@ -2948,17 +2978,17 @@ class WordCtx:
         globl = self.globals[name.lexeme]
         return (GlobalId(self.ctx.module_id, global_id), globl.taip)
 
-    def resolve_call(self, stack: Stack, word: Parser.CallWord | Parser.ForeignCallWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_call(self, stack: Stack, word: Parser.CallWord | Parser.ForeignCallWord) -> Tuple[List[ResolvedWord], bool]:
         if word.ident.lexeme in INTRINSICS:
             resolved_generic_arguments = [self.ctx.resolve_type(self.imports, taip) for taip in word.generic_arguments]
             intrinsic = INTRINSICS[word.ident.lexeme]
-            return (self.resolve_intrinsic(word.ident, stack, intrinsic, resolved_generic_arguments), False)
+            return ([self.resolve_intrinsic(word.ident, stack, intrinsic, resolved_generic_arguments)], False)
         resolved_word = self.resolve_call_word(word)
         signature = self.lookup_signature(resolved_word.function)
         args = stack.pop_n(len(signature.parameters))
         self.infer_generic_arguments_from_args(word.ident, args, signature.parameters, resolved_word.generic_arguments)
         self.push_returns(stack, signature.returns, resolved_word.generic_arguments)
-        return (resolved_word, False)
+        return ([resolved_word], False)
 
     def parameter_argument_mismatch_error(self, token: Token, arguments: List[ResolvedType], parameters: List[ResolvedNamedType], generic_arguments: List[ResolvedType]) -> NoReturn:
         self.type_mismatch_error(
@@ -3077,19 +3107,19 @@ class WordCtx:
             self.ctx.generic_arguments_mismatch_error(word.ident, len(signature.generic_parameters), len(resolved_generic_arguments))
         return ResolvedCallWord(word.ident, function, resolved_generic_arguments)
 
-    def resolve_cast(self, stack: Stack, word: Parser.CastWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_cast(self, stack: Stack, word: Parser.CastWord) -> Tuple[List[ResolvedWord], bool]:
         src = stack.pop()
         if src is None:
             self.abort(word.token, "cast expected a value, got []")
         dst = self.ctx.resolve_type(self.imports, word.taip)
         stack.push(dst)
-        return (ResolvedCastWord(word.token, src, dst), False)
+        return ([ResolvedCastWord(word.token, src, dst)], False)
 
-    def resolve_sizeof(self, stack: Stack, word: Parser.SizeofWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_sizeof(self, stack: Stack, word: Parser.SizeofWord) -> Tuple[List[ResolvedWord], bool]:
         stack.push(PrimitiveType.I32)
-        return (ResolvedSizeofWord(word.token, self.ctx.resolve_type(self.imports, word.taip)), False)
+        return ([ResolvedSizeofWord(word.token, self.ctx.resolve_type(self.imports, word.taip))], False)
 
-    def resolve_make_struct(self, stack: Stack, word: Parser.UnnamedStructWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_make_struct(self, stack: Stack, word: Parser.UnnamedStructWord) -> Tuple[List[ResolvedWord], bool]:
         struct_type = self.ctx.resolve_custom_type(self.imports, word.taip)
         struc = self.type_lookup.lookup(struct_type.type_definition)
         assert(not isinstance(struc, ResolvedVariant))
@@ -3097,9 +3127,9 @@ class WordCtx:
         self.infer_generic_arguments_from_args(word.token, args, struc.fields, struct_type.generic_arguments)
         # self.expect_arguments(stack, word.token, struct_type.generic_arguments, struc.fields)
         stack.push(struct_type)
-        return (ResolvedUnnamedStructWord(word.token, struct_type), False)
+        return ([ResolvedUnnamedStructWord(word.token, struct_type)], False)
 
-    def resolve_make_struct_named(self, stack: Stack, word: Parser.StructWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_make_struct_named(self, stack: Stack, word: Parser.StructWord) -> Tuple[List[ResolvedWord], bool]:
         struct_type = self.ctx.resolve_custom_type(self.imports, word.taip)
         struct = self.type_lookup.lookup(struct_type.type_definition)
         if isinstance(struct, ResolvedVariant):
@@ -3117,16 +3147,16 @@ class WordCtx:
                 error_message += f"\n\t{field_name}: {ctx.type_lookup.type_pretty(field_type)}"
             ctx.abort(word.token, error_message)
         stack.push(struct_type)
-        return (ResolvedStructWord(word.token, struct_type, ResolvedScope(env.scope_id, words)), diverges)
+        return ([ResolvedStructWord(word.token, struct_type, ResolvedScope(env.scope_id, words))], diverges)
 
-    def resolve_fun_ref(self, stack: Stack, word: Parser.FunRefWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_fun_ref(self, stack: Stack, word: Parser.FunRefWord) -> Tuple[List[ResolvedWord], bool]:
         call = self.resolve_call_word(word.call)
         signature = self.lookup_signature(call.function)
         parameters = [parameter.taip for parameter in signature.parameters]
         stack.push(ResolvedFunctionType(call.name, parameters, signature.returns))
-        return (ResolvedFunRefWord(call), False)
+        return ([ResolvedFunRefWord(call)], False)
 
-    def resolve_if(self, stack: Stack, remaining_words: List[ParsedWord], word: Parser.IfWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_if(self, stack: Stack, remaining_words: List[ParsedWord], word: Parser.IfWord) -> Tuple[List[ResolvedWord], bool]:
         if stack.pop() != PrimitiveType.BOOL:
             self.abort(word.token, "expected a bool for `if`")
         true_env = self.env.child()
@@ -3153,13 +3183,13 @@ class WordCtx:
             stack.push_many(remaining_stack.stack)
 
             diverges = remaining_words_diverge
-            return (ResolvedIfWord(
+            return ([ResolvedIfWord(
                 word.token,
                 list(remaining_stack.negative),
                 None if diverges else list(remaining_stack.stack),
                 ResolvedScope(true_ctx.env.scope_id, true_words),
                 ResolvedScope(remaining_ctx.env.scope_id, resolved_remaining_words),
-                diverges), diverges)
+                diverges)], diverges)
         false_words, false_words_diverge = false_ctx.resolve_words(false_stack, word.false_words)
         if not true_words_diverge and not false_words_diverge:
             if not true_stack.compatible_with(false_stack):
@@ -3189,15 +3219,15 @@ class WordCtx:
                 stack.push_many(returns)
 
         diverges = true_words_diverge and false_words_diverge
-        return (ResolvedIfWord(
+        return ([ResolvedIfWord(
             word.token,
             parameters,
             returns,
             ResolvedScope(true_ctx.env.scope_id, true_words),
             ResolvedScope(false_ctx.env.scope_id, false_words),
-            diverges), diverges)
+            diverges)], diverges)
 
-    def resolve_loop(self, stack: Stack, word: Parser.LoopWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_loop(self, stack: Stack, word: Parser.LoopWord) -> Tuple[List[ResolvedWord], bool]:
         annotation = None if word.annotation is None else self.resolve_block_annotation(word.annotation)
         loop_break_stacks: List[BreakStack] = []
 
@@ -3233,9 +3263,9 @@ class WordCtx:
         self.expect(stack, word.token, parameters)
         stack.push_many(returns)
         body = ResolvedScope(loop_ctx.env.scope_id, words)
-        return (ResolvedLoopWord(word.token, body, parameters, returns, diverges), diverges)
+        return ([ResolvedLoopWord(word.token, body, parameters, returns, diverges)], diverges)
 
-    def resolve_break(self, stack: Stack, token: Token) -> Tuple[ResolvedWord, bool]:
+    def resolve_break(self, stack: Stack, token: Token) -> Tuple[List[ResolvedWord], bool]:
         if self.block_returns is None:
             dump = stack.dump()
         else:
@@ -3245,9 +3275,9 @@ class WordCtx:
             self.abort(token, "`break` can only be used inside of blocks and loops")
 
         self.break_stacks.append(BreakStack(token, dump, self.reachable))
-        return (BreakWord(token), True)
+        return ([BreakWord(token)], True)
 
-    def resolve_set_local(self, stack: Stack, word: Parser.SetWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_set_local(self, stack: Stack, word: Parser.SetWord) -> Tuple[List[ResolvedWord], bool]:
         var_id,taip = self.resolve_var_name(word.ident)
         fields = self.resolve_field_accesses(taip, word.fields)
         if len(fields) == 0:
@@ -3255,9 +3285,9 @@ class WordCtx:
         else:
             resolved_type = fields[-1].target_taip
         self.expect(stack, word.ident, [resolved_type])
-        return (ResolvedSetWord(word.ident, var_id, fields), False)
+        return ([ResolvedSetWord(word.ident, var_id, fields)], False)
 
-    def resolve_block(self, stack: Stack, word: Parser.BlockWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_block(self, stack: Stack, word: Parser.BlockWord) -> Tuple[List[ResolvedWord], bool]:
         annotation = None if word.annotation is None else self.resolve_block_annotation(word.annotation)
         block_break_stacks: List[BreakStack] = []
 
@@ -3297,9 +3327,9 @@ class WordCtx:
         self.expect(stack, word.token, parameters)
         stack.push_many(returns)
         body = ResolvedScope(block_ctx.env.scope_id, words)
-        return (ResolvedBlockWord(word.token, body, parameters, returns), diverges)
+        return ([ResolvedBlockWord(word.token, body, parameters, returns)], diverges)
 
-    def resolve_indirect_call(self, stack: Stack, word: Parser.IndirectCallWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_indirect_call(self, stack: Stack, word: Parser.IndirectCallWord) -> Tuple[List[ResolvedWord], bool]:
         fun_type = stack.pop()
         if fun_type is None:
             self.abort(word.token, "`->` expected a function on the stack, got: []")
@@ -3307,9 +3337,9 @@ class WordCtx:
             self.abort(word.token, "TODO")
         self.expect(stack, word.token, fun_type.parameters)
         self.push_returns(stack, fun_type.returns, None)
-        return (ResolvedIndirectCallWord(word.token, fun_type), False)
+        return ([ResolvedIndirectCallWord(word.token, fun_type)], False)
 
-    def resolve_store(self, stack: Stack, word: Parser.StoreWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_store(self, stack: Stack, word: Parser.StoreWord) -> Tuple[List[ResolvedWord], bool]:
         var_id, taip = self.resolve_var_name(word.ident)
         fields = self.resolve_field_accesses(taip, word.fields)
         expected_type = taip if len(fields) == 0 else fields[-1].target_taip
@@ -3317,9 +3347,9 @@ class WordCtx:
             self.abort(word.ident, "`=>` can only store into ptr types")
         expected_type = expected_type.child
         self.expect(stack, word.ident, [expected_type])
-        return (ResolvedStoreWord(word.ident, var_id, fields), False)
+        return ([ResolvedStoreWord(word.ident, var_id, fields)], False)
 
-    def resolve_load(self, stack: Stack, word: Parser.LoadWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_load(self, stack: Stack, word: Parser.LoadWord) -> Tuple[List[ResolvedWord], bool]:
         taip = stack.pop()
         if taip is None:
             self.abort(word.token, "`~` expected a ptr, got: []")
@@ -3327,9 +3357,9 @@ class WordCtx:
             msg = f"`~` expected a ptr, got: [{taip}]"
             self.abort(word.token, msg)
         stack.push(taip.child)
-        return (ResolvedLoadWord(word.token, taip.child), False)
+        return ([ResolvedLoadWord(word.token, taip.child)], False)
 
-    def resolve_match(self, stack: Stack, word: Parser.MatchWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_match(self, stack: Stack, word: Parser.MatchWord) -> Tuple[List[ResolvedWord], bool]:
         match_diverges = True
         arg_item = stack.pop()
         if arg_item is None:
@@ -3434,9 +3464,9 @@ class WordCtx:
         stack.push_many(returns or [])
         if match_diverges:
             returns = None
-        return (ResolvedMatchWord(word.token, variant_type, by_ref, cases, default_case, parameters, returns), match_diverges)
+        return ([ResolvedMatchWord(word.token, variant_type, by_ref, cases, default_case, parameters, returns)], match_diverges)
 
-    def resolve_make_variant(self, stack: Stack, word: Parser.VariantWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_make_variant(self, stack: Stack, word: Parser.VariantWord) -> Tuple[List[ResolvedWord], bool]:
         variant_type = self.ctx.resolve_custom_type(self.imports, word.taip)
         variant = self.type_lookup.lookup(variant_type.type_definition)
         if not isinstance(variant, ResolvedVariant):
@@ -3452,9 +3482,9 @@ class WordCtx:
             expected = self.insert_generic_arguments(variant_type.generic_arguments, case.taip)
             self.expect(stack, word.token, [expected])
         stack.push(variant_type)
-        return (ResolvedVariantWord(word.token, tag, variant_type), False)
+        return ([ResolvedVariantWord(word.token, tag, variant_type)], False)
 
-    def resolve_get_field(self, stack: Stack, word: Parser.GetFieldWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_get_field(self, stack: Stack, word: Parser.GetFieldWord) -> Tuple[List[ResolvedWord], bool]:
         taip = stack.pop()
         if taip is None:
             self.abort(word.token, "expected a value on the stack")
@@ -3463,9 +3493,9 @@ class WordCtx:
         taip = fields[-1].target_taip
         taip = ResolvedPtrType(taip) if on_ptr else taip
         stack.push(taip)
-        return (ResolvedGetFieldWord(word.token, fields, on_ptr), False)
+        return ([ResolvedGetFieldWord(word.token, fields, on_ptr)], False)
 
-    def resolve_make_tuple(self, stack: Stack, word: Parser.TupleMakeWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_make_tuple(self, stack: Stack, word: Parser.TupleMakeWord) -> Tuple[List[ResolvedWord], bool]:
         num_items = int(word.item_count.lexeme)
         items: List[ResolvedType] = []
         for _ in range(num_items):
@@ -3476,14 +3506,14 @@ class WordCtx:
         items.reverse()
         taip = ResolvedTupleType(word.token, items)
         stack.push(taip)
-        return (ResolvedTupleMakeWord(word.token, taip), False)
+        return ([ResolvedTupleMakeWord(word.token, taip)], False)
 
-    def resolve_unpack_tuple(self, stack: Stack, word: Parser.TupleUnpackWord) -> Tuple[ResolvedWord, bool]:
+    def resolve_unpack_tuple(self, stack: Stack, word: Parser.TupleUnpackWord) -> Tuple[List[ResolvedWord], bool]:
         taip = stack.pop()
         if taip is None or not isinstance(taip, ResolvedTupleType):
             self.abort(word.token, "expected a tuple on the stack")
         stack.push_many(taip.items)
-        return (ResolvedTupleUnpackWord(word.token, taip), False)
+        return ([ResolvedTupleUnpackWord(word.token, taip)], False)
 
     def resolve_stack_annotation(self, stack: Stack, word: Parser.StackAnnotation) -> None:
         if len(stack) < len(word.types):
@@ -4002,7 +4032,7 @@ def format_type(a: Type) -> str:
 
 @dataclass
 class ParameterLocal:
-    name: Token
+    name: LocalName
     taip: Type
     _lives_in_memory: bool
 
@@ -4020,7 +4050,7 @@ class ParameterLocal:
 
 @dataclass
 class InitLocal:
-    name: Token
+    name: LocalName
     taip: Type
     _lives_in_memory: bool
 
@@ -5440,7 +5470,7 @@ class WatGenerator:
         self.write_structs(function.locals)
         if uses_stack and self.guard_stack:
             self.write_line("call $stack-overflow-guar:d")
-        self.write_words(module, { id: local.name.lexeme for id, local in function.locals.items() }, function.body.words)
+        self.write_words(module, { id: local.name.get() for id, local in function.locals.items() }, function.body.words)
         if uses_stack:
             self.write_line("local.get $stac:k global.set $stac:k")
         self.dedent()
@@ -5456,25 +5486,25 @@ class WatGenerator:
     def write_structs(self, locals: Dict[LocalId, Local]) -> None:
         for local_id, local in locals.items():
             if not isinstance(local, ParameterLocal) and local.lives_in_memory():
-                self.write_mem(local.name.lexeme, local.taip.size(), local_id.scope, local_id.shadow)
+                self.write_mem(local.name.get(), local.taip.size(), local_id.scope, local_id.shadow)
             if isinstance(local, ParameterLocal) and local.needs_moved_into_memory():
                 self.write_indent()
                 self.write("global.get $stac:k global.get $stac:k local.get $")
                 if not local.can_be_abused_as_ref():
                     self.write("v:")
-                self.write(f"{local.name.lexeme} ")
+                self.write(f"{local.name.get()} ")
                 self.write_type(local.taip)
-                self.write(f".store local.tee ${local.name.lexeme} i32.const {align_to(local.taip.size(), 4)} i32.add global.set $stac:k\n")
+                self.write(f".store local.tee ${local.name.get()} i32.const {align_to(local.taip.size(), 4)} i32.add global.set $stac:k\n")
 
     def write_locals(self, locals: Dict[LocalId, Local]) -> None:
         for local_id, local in locals.items():
             if isinstance(local, ParameterLocal):
                 if local.needs_moved_into_memory() and not local.can_be_abused_as_ref():
-                    self.write_line(f"(local ${local.name.lexeme} i32)")
+                    self.write_line(f"(local ${local.name.get()} i32)")
                 continue
             local = locals[local_id]
             self.write_indent()
-            self.write(f"(local ${local.name.lexeme}")
+            self.write(f"(local ${local.name.get()}")
             if local_id.scope != ROOT_SCOPE or local_id.shadow != 0:
                 self.write(f":{local_id.scope}:{local_id.shadow}")
             self.write(" ")
@@ -6214,7 +6244,7 @@ class WatGenerator:
             self.write(" (param $")
             for local in locals.values():
                 if isinstance(local, ParameterLocal):
-                    if local.name.lexeme == parameter.name.lexeme:
+                    if local.name.get() == parameter.name.lexeme:
                         if local.lives_in_memory() and local.taip.can_live_in_reg() and local.taip.size() > 4:
                             self.write("v:")
                         break

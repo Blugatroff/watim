@@ -1,15 +1,15 @@
 import "../../std/maybe.watim" as Maybe (Maybe)
 import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/fmt-utils.watim" as Fmt
 import "../../std/map.watim" as Map (Map)
 import "../../std/array.watim" as Array (Array)
 import "../../std/util.watim" as Util (i32-format)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 
 import "../lexer.watim" as Lexer (Token-lexeme)
-import "../env.watim" as Env (LocalId, root-scope)
+import "../env.watim" as Env (LocalId, root-scope, LocalName-unpack)
 import "../resolver/ast.watim" as Resolved (VarId)
-import "../monomizer.watim" as Monomized (
-    TypeId, type-size, Local, CustomType-name
-)
+import "../monomizer.watim" as Monomized (TypeId, type-size, Local, CustomType-name)
 
 import "./ctx.watim" as Ctx (Ctx, lookup-type, lookup-globl, lookup-custom-type)
 
@@ -47,14 +47,14 @@ fn generate-var-ident(ctx: .Ctx, locals: .Map<LocalId, Local>, var-id: .VarId) {
 }
 
 fn generate-local-ident-by-id(ctx: .Ctx, locals: .Map<LocalId, Local>, local-id: .LocalId) {
-    $ctx.fmt 
+    $ctx.fmt
     $locals $local-id Map:get<LocalId, Local> Maybe:assert-some<.Local>
     $local-id generate-local-ident
 }
 
 fn generate-local-ident(fmt: .Formatter, local: .Local, local-id: .LocalId) {
     $fmt "$" Fmt:write
-    $fmt &local.name Token-lexeme Fmt:write
+    $fmt &local.name LocalName-unpack Fmt:write
     $local-id.scope root-scope /= $local-id.shadow 0 /= or if {
         $fmt ":" Fmt:write
         $fmt $local-id.scope.raw i32-format

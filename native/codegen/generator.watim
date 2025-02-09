@@ -12,7 +12,7 @@ import "../../std/util.watim" as Util (i32-format, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "../resolver/type.watim" as Type (CustomTypeHandle)
-import "../env.watim" as Env (ScopeId, root-scope, LocalId, LocalId-eq)
+import "../env.watim" as Env (ScopeId, root-scope, LocalId, LocalId-eq, LocalName-unpack)
 import "../resolver/ast.watim" as Resolved (GlobalId, VarId)
 import "../monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
@@ -364,11 +364,11 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
             $ctx $local parameter-can-be-abused-ref not if {
                 $ctx.fmt "v:" Fmt:write
             }
-            $ctx.fmt &local.name Token-lexeme Fmt:write
+            $ctx.fmt &local.name LocalName-unpack Fmt:write
             $ctx.fmt " " Fmt:write
             $ctx $local.type generate-type
             $ctx.fmt ".store local.tee $" Fmt:write
-            $ctx.fmt &local.name Token-lexeme Fmt:write
+            $ctx.fmt &local.name LocalName-unpack Fmt:write
             $ctx.fmt " i32.const " Fmt:write
             $ctx.fmt &ctx.program.sizes $local.type type-size i32-format
             $ctx.fmt " i32.add global.set $stac:k\n" Fmt:write
@@ -378,7 +378,7 @@ fn generate-memory-slots-for-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
             &locals.keys $i Array:get<LocalId> @local-id
 
             $ctx
-            &local.name Token-lexeme
+            &local.name LocalName-unpack
             &ctx.program.sizes $local.type type-size
             $local-id.scope
             $local-id.shadow
@@ -425,13 +425,13 @@ fn generate-locals(ctx: .Ctx, locals: .Map<LocalId, Local>) {
             and if {
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt "(local $" Fmt:write
-                $ctx.fmt &local.name Token-lexeme Fmt:write
+                $ctx.fmt &local.name LocalName-unpack Fmt:write
                 $ctx.fmt " i32)\n" Fmt:write
             }
         } else {
             $ctx.fmt Fmt:write-indent
             $ctx.fmt "(local $" Fmt:write
-            $ctx.fmt &local.name Token-lexeme Fmt:write
+            $ctx.fmt &local.name LocalName-unpack Fmt:write
             &locals.keys $i Array:get<LocalId> @local-id
             $local-id.scope root-scope /= $local-id.shadow 0 /= or if {
                 $ctx.fmt ":" Fmt:write
@@ -486,7 +486,7 @@ fn generate-signature(
             $j $locals.values.len = if { break }
             &locals.values $j Array:get<Local> @local
             $local.is-parameter if {
-                &local.name Token-lexeme &parameter.name Token-lexeme Bytes:eq if {
+                &local.name LocalName-unpack &parameter.name Token-lexeme Bytes:eq if {
                     &ctx.program.sizes $local.type type-size @local-size
                     $local.reffed $local-size 4 gt and $local-size 8 le and if {
                         $ctx.fmt "v:" Fmt:write

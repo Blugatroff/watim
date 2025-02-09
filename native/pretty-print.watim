@@ -182,6 +182,7 @@ fn Word-pretty(self: .Word, pp: .PrettyPrinter) -> i32 { block {
         case InitLocal -> { $pp InitLocal-pretty }
         case FunRef -> { $pp FunRef-pretty }
         case Load -> { $pp flip write-token }
+        case Ref -> { $pp flip write-token }
         case Cast -> { $pp Cast-pretty }
         case Break -> { $pp flip write-token }
         case MakeStruct -> { $pp MakeStruct-pretty }

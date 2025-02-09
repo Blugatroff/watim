@@ -494,6 +494,7 @@ variant Word {
     case RefLocal -> RefLocal
     case GetLocal -> GetLocal
     case SetLocal -> SetLocal
+    case Ref -> Token
     case Number -> Token
     case If -> If
     case Block -> Block
@@ -522,6 +523,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case RefLocal -> { $fmt flip RefLocal-format break }
         case GetLocal -> { $fmt flip GetLocal-format break }
         case SetLocal -> { $fmt flip SetLocal-format break }
+        case Ref -> { "Ref" }
         case Number -> { "Number" }
         case If -> { $fmt flip If-format break }
         case Block -> { $fmt flip Block-format break }
@@ -1149,7 +1151,7 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_IDENT -> { $parser $token call match { case Error -> { make Result<Word, ParseError>.Error } case Success -> { make Word.Call make Result<Word, ParseError>.Success } } break }
         case TOKEN_STRING -> { $parser $token string break }
         case TOKEN_AT -> { $parser $token init-locl break }
-        case TOKEN_AMPERSAND -> { $parser $token ref-locl break }
+        case TOKEN_AMPERSAND -> { $parser $token ref-or-ref-locl break }
         case TOKEN_DOLLAR -> { $parser $token get-locl break }
         case TOKEN_HASH -> { $parser $token set-locl break }
         case TOKEN_NUMBER -> { $token ~ make Word.Number }
@@ -1729,6 +1731,19 @@ fn get-field(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block
             }
         }
     }
+} }
+
+fn ref-or-ref-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
+    $parser peek-immediate match {
+        case None -> {}
+        case Some -> {
+            Token-ty match {
+                case TOKEN_IDENT -> { $parser $token ref-locl break }
+                case _ -> { drop }
+            }
+        }
+    }
+    $token ~ make Word.Ref make Result<Word, ParseError>.Success
 } }
 
 fn ref-locl(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block (-> Result<Word, ParseError>) {

@@ -98,7 +98,7 @@ fn main "_start" () {
         0 1 = 0 1 = FS:create-rights
         1 1 = FS:create-oflags
         FS:open-file IO:check @fd
-        $fd &arena &test serialize-test @arr &arr Array:unpack<_> IO:write-all IO:check
+        $fd &arena &test serialize-test & Array:unpack<_> IO:write-all IO:check
 
         &arena Arena:clear
         0 Core:exit

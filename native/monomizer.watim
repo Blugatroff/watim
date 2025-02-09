@@ -17,7 +17,7 @@ import "./resolver/type.watim" as Resolved (
     ModuleId, ModuleId-format,
     CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
 )
-import "./env.watim" as Resolved (ScopeId, ScopeId-format, root-scope, LocalId, LocalId-format, LocalId-eq)
+import "./env.watim" as Resolved (ScopeId, ScopeId-format, root-scope, LocalId, LocalId-format, LocalId-eq, LocalName, LocalName-format)
 import "./resolver/ast.watim" as Resolved (StringWord, StringWord-format, VarId, VarId-format)
 import "./resolver/resolver.watim" as Resolved (fields-go-through-ptr)
 
@@ -277,14 +277,14 @@ fn Extern-format(fmt: .Formatter, self: .Extern) {
 }
 
 struct Local {
-    name: Token
+    name: LocalName
     type: TypeId
     reffed: bool
     is-parameter: bool
 }
 fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt "(Local " Fmt:write
-    $fmt &self.name Token-format
+    $fmt &self.name LocalName-format
     $fmt " " Fmt:write
     $fmt &self.type TypeId-format
     $fmt " " Fmt:write
