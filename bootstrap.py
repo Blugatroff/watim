@@ -6419,10 +6419,28 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
         merge_locals_module(mono_module)
     return WatGenerator(mono_modules, function_table, guard_stack).write_wat_module()
 
+help = """The native Watim compiler
+
+Usage: watim <command> <watim-source-file> [options]
+Commands:
+  lex       [path]   Lex code and print the Tokens.
+  parse     [path]   Parse code and print the AST
+  check     [path]   Typecheck and print the AST
+  monomize  [path]   Monomize the entire program
+  optimize  [path]   Optimize the entire program
+  compile   [path]   Compile the entire program
+Options:
+  -q, --quiet  Don't print any logs to stderr
+"""
+
+@dataclass
+class CliArgException(Exception):
+    message: str
+
 def main(argv: List[str], stdin: str | None = None) -> str:
+    argv = [arg for arg in argv if arg != "-q"]
     if len(argv) == 1:
-        print("provide a command")
-        exit(1)
+        raise CliArgException(help)
     if argv[1] == "units":
         suite = unittest.TestSuite()
         classes = [DetermineLoadsToValueTests]
@@ -6459,6 +6477,9 @@ def main(argv: List[str], stdin: str | None = None) -> str:
 if __name__ == "__main__":
     try:
         print(main(sys.argv))
+    except CliArgException as e:
+        print(e.message, file=sys.stderr)
+        exit(1)
     except ParserException as e:
         print(e.display(), file=sys.stderr)
         exit(1)

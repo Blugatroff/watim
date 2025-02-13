@@ -8,7 +8,7 @@ import sys
 import os
 import difflib
 
-from bootstrap import main, ParserException, ResolverException
+from bootstrap import main, CliArgException, ParserException, ResolverException
 
 if not os.path.isfile("test.wat"):
     if subprocess.run("bash ./run.sh ./native/main.watim compile ./test.watim -q > test.wat", shell=True).returncode != 0:
@@ -50,6 +50,8 @@ def run_bootstrap_compiler(args: List[str] | None, stdin: str):
     try:
         stdout = main([sys.argv[0]] + (args or ["-"]), stdin)
         return CompilerOutput(0, stdout.strip(), "")
+    except CliArgException as e:
+        return CompilerOutput(1, "", e.message.strip())
     except ParserException as e:
         return CompilerOutput(1, "", e.display().strip())
     except ResolverException as e:
