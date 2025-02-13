@@ -26,7 +26,7 @@ fn use(foo: Foo) {
 	(memory 1 65536)
 	(export "memory" (memory 0))
 	(table funcref (elem))
-	(global $FOO:0 (mut i32) (i32.const 0))
+	(global $FOO:0 i32 (i32.const 0))
 	(global $stac:k (mut i32) (i32.const 12))
 	(data (i32.const 0) "")
 	(func $0:main (export "_start")

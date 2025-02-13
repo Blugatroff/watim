@@ -14,7 +14,7 @@ compile
 	(export "memory" (memory 0))
 	(table funcref (elem))
 	(global $JustAnInt:0 (mut i32) (i32.const 0))
-	(global $BiggerStruct:0 (mut i32) (i32.const 0))
+	(global $BiggerStruct:0 i32 (i32.const 0))
 	(global $stac:k (mut i32) (i32.const 16))
 	(data (i32.const 0) "")
 	(func $intrinsic:flip (param $a i32) (param $b i32) (result i32 i32) local.get $b local.get $a)

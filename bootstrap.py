@@ -6326,7 +6326,7 @@ class WatGenerator:
             lives_in_memory = globl.was_reffed or not globl.taip.can_live_in_reg()
             initial_value = ptr if lives_in_memory else 0
             taip = "i64" if not lives_in_memory and size > 4 and size <= 8 else "i32"
-            self.write(f"(global ${globl.name.lexeme}:{global_id.module} (mut {taip}) ({taip}.const {initial_value}))\n")
+            self.write(f"(global ${globl.name.lexeme}:{global_id.module} {taip if lives_in_memory else f"(mut {taip})"} ({taip}.const {initial_value}))\n")
             if not lives_in_memory:
                 continue
             ptr += globl.taip.size()
