@@ -1,0 +1,115 @@
+import "../std/core.watim" as Core
+import "../std/list.watim" as List (List)
+import "../std/io.watim" as IO
+import "../std/fmt.watim" as Fmt
+import "../std/fmt-utils.watim" as Fmt
+import "../std/util.watim" as Util
+// import "../std/arena.watim" as Arena (Arena)
+
+fn crash(ptr: .i8, len: i32) {
+    2 $ptr $len IO:write-all IO:check
+    0 0 / drop
+}
+
+fn assert(b: bool) {
+    $b not if { "assert failed" crash }
+}
+
+fn i32-eq(a: .i32, b: .i32) -> bool {
+    $a ~ $b ~ =
+}
+
+fn test-halve() {
+    List:empty<i32>
+    & 6 flip List:cons<_>
+    & 5 flip List:cons<_>
+    & 4 flip List:cons<_>
+    & 3 flip List:cons<_> @list
+    $list @expected-second-half
+    2 &list  List:cons<_>
+    & 1 flip List:cons<_>
+    & 0 flip List:cons<_> @list
+
+    List:empty<i32>
+    & 2 flip List:cons<_>
+    & 1 flip List:cons<_>
+    & 0 flip List:cons<_> @expected-first-half
+
+    &list List:halve<_> @second-half @first-half
+    \i32-eq $second-half &expected-second-half List:eq<_> assert
+    \i32-eq $first-half  &expected-first-half  List:eq<_> assert
+
+    List:empty<i32> @list
+    &list List:halve<_> @second-half @first-half
+    \i32-eq $first-half  &list List:eq<_> assert
+    \i32-eq $second-half &list List:eq<_> assert
+
+    List:empty<i32>
+    & 1 flip List:cons<_> @list
+    &list List:halve<_> @second-half @first-half
+    \i32-eq $first-half  List:empty<i32> & List:eq<_> assert
+    \i32-eq $second-half &list             List:eq<_> assert
+}
+
+fn i32-less-eq(a: .i32, b: .i32) -> bool {
+    $a ~ $b ~ le
+}
+
+fn test-merge() {
+    List:empty<i32>
+    & 4 flip List:cons<_>
+    & 4 flip List:cons<_>
+    & 0 flip List:cons<_> @a
+
+    List:empty<i32>
+    & 3 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 2 flip List:cons<_> @b
+
+    List:empty<i32>
+    & 4 flip List:cons<_>
+    & 4 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 2 flip List:cons<_>
+    & 0 flip List:cons<_> @expected
+
+    \i32-less-eq &a &b List:merge<_>
+    \i32-eq &a &expected List:eq<_> assert
+}
+
+fn test-merge-sort() {
+    List:empty<i32>
+    & 8 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 0 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 5 flip List:cons<_>
+    & 9 flip List:cons<_>
+    & 5 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 0 flip List:cons<_>
+    & 0 flip List:cons<_> @list
+
+    List:empty<i32>
+    & 9 flip List:cons<_>
+    & 8 flip List:cons<_>
+    & 5 flip List:cons<_>
+    & 5 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 3 flip List:cons<_>
+    & 0 flip List:cons<_>
+    & 0 flip List:cons<_>
+    & 0 flip List:cons<_> @expected
+
+    \i32-less-eq &list List:merge-sort<_>
+    \i32-eq &list &expected List:eq<_> assert
+}
+
+fn main "_start" () {
+    test-halve
+    test-merge
+    test-merge-sort
+}
+

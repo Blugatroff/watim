@@ -31,4 +31,5 @@ jobs:
       run: |
         PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/page-alloc.watim
         PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/json.watim
+        PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/list.watim
 

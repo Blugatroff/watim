@@ -1,3 +1,4 @@
+import "./core.watim" as Core
 import "./maybe.watim" as Maybe (Maybe)
 import "./fmt.watim" as Fmt (Formatter)
 
@@ -90,6 +91,147 @@ fn contains<T>(eq: (.T, .T -> bool), list: .List<T>, elem: .T) -> bool { block {
     }
 } }
 
+fn len<T>(list: .List<T>) -> i32 {
+    0 @len
+    loop {
+        $list match {
+            case Empty -> { $len break }
+            case Cons -> {
+                .next ~ #list
+                $len 1 + #len
+            }
+        }
+    }
+}
+
+fn eq<T>(eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) -> bool {
+    $a $b = if { 1 1 = } else {
+        $a match {
+            case Empty -> {
+                $b match {
+                    case Empty -> { 1 1 = }
+                    case Cons -> { drop 1 0 = }
+                }
+            }
+            case Cons -> {
+                @a
+                $b match {
+                    case Empty -> { 0 1 = }
+                    case Cons -> {
+                        @b
+                        &a.elem &b.elem $eq -> if {
+                            $eq $a.next $b.next eq<T>
+                        } else {
+                            0 1 =
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn merge-sort<T>(less-eq: (.T, .T -> bool), list: .List<T>) {
+    block {
+        $list match {
+            case Empty -> { break }
+            case Cons -> {}
+        }
+        .next ~ match {
+            case Empty -> { break }
+            case _ -> { drop }
+        }
+        $list halve<T> @second-half @first-half
+        $less-eq $first-half merge-sort<T>
+        $less-eq $second-half merge-sort<T>
+        $less-eq $first-half $second-half merge<T>
+    }
+}
+
+fn merge<T>(less-eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) {
+    block {
+        $a match {
+            case Empty -> {
+                $b ~ =>a
+                break
+            }
+            case Cons -> {}
+        }
+        @acons
+        $b match {
+            case Empty -> { break }
+            case Cons -> {}
+        } @bcons
+        &acons.elem &bcons.elem $less-eq -> if {
+            $less-eq
+            $b
+            $acons.next $b #acons.next
+            merge<T>
+        } else {
+            $b ~ $a ~ =>b =>a
+            $less-eq $a $b merge<T>
+        }
+    }
+}
+
+fn halve<T>(list: .List<T>) -> .List<T>, .List<T> { block {
+    $list match {
+        case Empty -> { $list $list break }
+        case Cons -> {}
+    } .next ~ @second-node
+    $second-node match {
+        case Empty -> { $second-node $list break }
+        case _ -> { drop }
+    }
+    $list // first half
+    $list @second-half
+    $list @node-before-second-half
+    loop {
+        $list match {
+            case Empty -> { $second-half $list break }
+            case Cons -> {}
+        }
+        @cons
+        $cons.next match {
+            case Empty -> { $second-half $cons.next break }
+            case Cons -> {}
+        }
+        .next ~ #list
+        $second-half #node-before-second-half
+        $second-half match {
+            case Empty -> { Core:unreachable<.List<T>> Core:dup<_> break }
+            case Cons -> {}
+        } .next ~ #second-half
+    } @empty
+    $node-before-second-half match {
+        case Cons -> { .next $empty store }
+        case _ -> { drop }
+    }
+} }
+
+fn format<T>(formatter: .Formatter, fmt-elem: (.Formatter, .T ->), self: .List<T>) { block {
+    $self match {
+        case Empty -> {
+            $formatter "[]" Fmt:write
+            break
+        }
+        case Cons -> { drop }
+    }
+    $formatter "[" Fmt:write
+    loop {
+        $self match {
+            case Empty -> { break }
+            case Cons -> {}
+        } @cons
+        $formatter &cons.elem $fmt-elem ->
+        $cons.next match {
+            case Empty -> { break }
+            case _ -> {}
+        } #self $formatter ", " Fmt:write
+    }
+    $formatter "]" Fmt:write
+} }
+
 fn format-multi-line<T>(formatter: .Formatter, fmt-elem: (.Formatter, .T ->), self: .List<T>) { block {
     $self match {
         case Empty -> {
@@ -109,11 +251,8 @@ fn format-multi-line<T>(formatter: .Formatter, fmt-elem: (.Formatter, .T ->), se
         $formatter &cons.elem $fmt-elem ->
         $cons.next match {
             case Empty -> { break }
-            case Cons -> {
-                .next ~ #self
-                $formatter ",\n" Fmt:write
-            }
-        }
+            case _ -> {}
+        } #self $formatter ",\n" Fmt:write
     }
     $formatter Fmt:dedent
     $formatter "]" Fmt:write
