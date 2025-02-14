@@ -4,7 +4,7 @@ import "../std/io.watim" as IO
 import "../std/fmt.watim" as Fmt
 import "../std/fmt-utils.watim" as Fmt
 import "../std/util.watim" as Util
-// import "../std/arena.watim" as Arena (Arena)
+import "../std/arena.watim" as Arena (Arena)
 
 fn crash(ptr: .i8, len: i32) {
     2 $ptr $len IO:write-all IO:check
@@ -105,9 +105,32 @@ fn test-merge-sort() {
 
     \i32-less-eq &list List:merge-sort<_>
     \i32-eq &list &expected List:eq<_> assert
+
+
+    "test-merge-sort" Arena:new @arena
+    20000 @n
+    List:empty<i32> @expected
+    $n @i
+    loop {
+        $i 0 = if { break }
+        $i 1 - #i
+        $i &arena $expected Arena:push<_> List:cons<_> #expected
+    }
+
+    List:empty<i32> @list
+    0 @i
+    loop {
+        $i $n = if { break }
+        $i &arena $list Arena:push<_> List:cons<_> #list
+        $i 1 + #i
+    }
+
+    \i32-less-eq &list List:merge-sort<_>
+    \i32-eq &list &expected List:eq<_> assert
 }
 
 fn main "_start" () {
+    Arena:init-temp
     test-halve
     test-merge
     test-merge-sort

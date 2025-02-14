@@ -105,28 +105,26 @@ fn len<T>(list: .List<T>) -> i32 {
 }
 
 fn eq<T>(eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) -> bool {
-    $a $b = if { 1 1 = } else {
+    loop {
+        $a $b = if { 1 1 = break }
         $a match {
             case Empty -> {
                 $b match {
                     case Empty -> { 1 1 = }
                     case Cons -> { drop 1 0 = }
-                }
+                } break
             }
-            case Cons -> {
-                @a
-                $b match {
-                    case Empty -> { 0 1 = }
-                    case Cons -> {
-                        @b
-                        &a.elem &b.elem $eq -> if {
-                            $eq $a.next $b.next eq<T>
-                        } else {
-                            0 1 =
-                        }
-                    }
-                }
-            }
+            case Cons -> {}
+        }
+        @acons
+        $b match {
+            case Empty -> { 0 1 = break }
+            case Cons -> {}
+        } @bcons
+        &acons.elem &bcons.elem $eq -> if {
+            $acons.next #a $bcons.next #b
+        } else {
+            0 1 = break
         }
     }
 }
@@ -149,7 +147,7 @@ fn merge-sort<T>(less-eq: (.T, .T -> bool), list: .List<T>) {
 }
 
 fn merge<T>(less-eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) {
-    block {
+    loop {
         $a match {
             case Empty -> {
                 $b ~ =>a
@@ -163,13 +161,10 @@ fn merge<T>(less-eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) {
             case Cons -> {}
         } @bcons
         &acons.elem &bcons.elem $less-eq -> if {
-            $less-eq
-            $b
-            $acons.next $b #acons.next
-            merge<T>
+            $b #a
+            $acons.next $b #acons.next #b
         } else {
             $b ~ $a ~ =>b =>a
-            $less-eq $a $b merge<T>
         }
     }
 }

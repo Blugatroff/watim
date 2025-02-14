@@ -29,7 +29,5 @@ jobs:
         PATH="$HOME/.wasmtime/bin:$PATH" ./test.py --native
     - name: Run standard library tests
       run: |
-        PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/page-alloc.watim
-        PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/json.watim
-        PATH="$HOME/.wasmtime/bin:$PATH" ./run.sh ./std-tests/list.watim
+        PATH="$HOME/.wasmtime/bin:$PATH" ls ./std-tests/*.watim -1 | xargs -L1 ./run.sh
 
