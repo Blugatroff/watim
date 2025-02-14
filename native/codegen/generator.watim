@@ -131,7 +131,6 @@ fn generate-globals(ctx: .Ctx, static-data-len: i32) -> i32 {
             $j 1 + #j
             &ctx.program.sizes $globl.type type-size @size
             $globl.reffed &ctx.program.sizes $globl.type can-live-in-reg not or @lives-in-memory
-            $lives-in-memory if { $offset } else { 0 } @initial-value
 
             $ctx.fmt Fmt:write-indent
             $ctx.fmt "(global $" Fmt:write
@@ -140,13 +139,21 @@ fn generate-globals(ctx: .Ctx, static-data-len: i32) -> i32 {
             $ctx.fmt $i i32-format
             // TODO: only use `mut` when the global is stored directly instead of in memory.
             $ctx.fmt " " Fmt:write
-            $lives-in-memory not if { $ctx.fmt "(mut " Fmt:write }
-            $ctx $globl.type generate-type
-            $lives-in-memory not if { $ctx.fmt ")" Fmt:write }
+            $lives-in-memory if {
+                $ctx.fmt "i32" Fmt:write
+            } else {
+                $ctx.fmt "(mut " Fmt:write
+                $ctx $globl.type generate-type
+                $ctx.fmt ")" Fmt:write
+            }
             $ctx.fmt " (" Fmt:write
-            $ctx $globl.type generate-type
-            $ctx.fmt ".const " Fmt:write
-            $ctx.fmt $initial-value i32-format
+            $lives-in-memory if {
+                $ctx.fmt "i32.const " Fmt:write
+                $ctx.fmt $offset i32-format
+            } else {
+                $ctx $globl.type generate-type
+                $ctx.fmt ".const 0" Fmt:write
+            }
             $ctx.fmt "))\n" Fmt:write
 
             $lives-in-memory if {
