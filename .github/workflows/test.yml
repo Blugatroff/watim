@@ -18,16 +18,18 @@ jobs:
       run: |
         sudo apt-get install wabt
         curl https://wasmtime.dev/install.sh -sSf | bash
+    - name: Add wasmtime to PATH
+      run: echo "PATH=$HOME/.wasmtime/bin:$PATH" >> $GITHUB_ENV
     - name: Bootstrap
       run: |
-        PATH="$HOME/.wasmtime/bin:$PATH" bash ./bootstrap-native.sh
+        bash ./bootstrap-native.sh
     - name: Run tests on bootstrap compiler
       run: |
-        PATH="$HOME/.wasmtime/bin:$PATH" ./test.py
+        ./test.py
     - name: Run tests on native compiler
       run: |
-        PATH="$HOME/.wasmtime/bin:$PATH" ./test.py --native
+        ./test.py --native
     - name: Run standard library tests
       run: |
-        PATH="$HOME/.wasmtime/bin:$PATH" ls ./std-tests/*.watim -1 | xargs -L1 ./run.sh
+        ls ./std-tests/*.watim -1 | xargs -L1 ./run.sh
 
