@@ -672,9 +672,11 @@ fn VariantWord-format(fmt: .Formatter, self: .VariantWord) {
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "tag=" Fmt:write
     $fmt $self.tag i32-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
     $fmt &self.type CustomTypeType-format
     $fmt ")" Fmt:write
@@ -808,12 +810,110 @@ fn FunctionOrExtern-signature(self: .FunctionOrExtern) -> .Signature {
     }
 }
 
+struct FromDefaultCase {
+    source: .Source
+}
+fn FromDefaultCase-format(fmt: .Formatter, self: .FromDefaultCase) {
+    $fmt "(FromDefaultCase " Fmt:write
+    $fmt $self.source Source-format
+    $fmt ")" Fmt:write
+}
+
+struct FromCase {
+    source: .Source
+    tag: i32
+}
+fn FromCase-format(fmt: .Formatter, self: .FromCase) {
+    $fmt "(FromCase " Fmt:write
+    $fmt $self.source Source-format
+    $fmt " " Fmt:write
+    $fmt $self.tag i32-format
+    $fmt ")" Fmt:write
+}
+
+variant Source {
+    case FromNumber
+    case FromString
+    case FromAnnotation
+    case FromIndirectCall
+    case FromMakeVariant
+    case FromMakeTuple
+    case FromUnpackTuple
+    case FromMakeStruct
+    case FromSizeof
+    case FromCast
+    case FromLoad
+    case FromIntrinsic
+    case FromUninit
+    case FromRef
+    case FromGetLocal -> VarId
+    case FromRefLocal -> VarId
+    case FromCall -> FunctionHandle
+    case FromCase -> FromCase
+    case FromDefaultCase -> FromDefaultCase
+    case FromFunction -> FunctionHandle
+}
+fn Source-format(fmt: .Formatter, self: .Source) { block {
+    $fmt $self match {
+        case FromNumber -> { "Source.FromNumber" }
+        case FromString -> { "Source.FromString" }
+        case FromAnnotation -> { "Source.FromAnnotation" }
+        case FromIndirectCall -> { "Source.FromIndirectCall" }
+        case FromMakeVariant -> { "Source.FromMakeVariant" }
+        case FromMakeTuple -> { "Source.FromMakeTuple" }
+        case FromUnpackTuple -> { "Source.FromUnpackTuple" }
+        case FromMakeStruct -> { "Source.FromMakeStruct" }
+        case FromSizeof -> { "Source.FromSizeof" }
+        case FromCast -> { "Source.FromCast" }
+        case FromLoad -> { "Source.FromLoad" }
+        case FromIntrinsic -> { "Source.FromIntrinsic" }
+        case FromUninit -> { "Source.FromUninit" }
+        case FromRef -> { "Source.FromRef" }
+        case FromCase -> { FromCase-format break }
+        case FromDefaultCase -> { FromDefaultCase-format break }
+        case FromGetLocal -> {
+            $fmt "(Source.FromGetLocal " Fmt:write
+            $fmt flip VarId-format
+            ")"
+        }
+        case FromRefLocal -> {
+            $fmt "(Source.FromRefLocal " Fmt:write
+            $fmt flip VarId-format
+            ")"
+        }
+        case FromFunction -> {
+            $fmt "(Source.FromFunction " Fmt:write
+            $fmt flip FunctionHandle-format
+            ")"
+        }
+        case FromCall -> {
+            $fmt "(Source.FromCall " Fmt:write
+            $fmt flip FunctionHandle-format
+            ")"
+        }
+    } Fmt:write
+} }
+
+variant InferenceRoot {
+    case Drop -> Source
+}
+fn InferenceRoot-format(fmt: .Formatter, self: .InferenceRoot) {
+    $self match {
+        case Drop -> {
+            $fmt "(Drop " Fmt:write
+            $fmt flip Source-format
+            $fmt ")" Fmt:write
+        }
+    }
+}
+
 struct Function {
     name: Token
     export: Maybe<Token>
     signature: Signature
     locals: Map<LocalId, Local>
     body: Scope
+    inference-roots: Array<InferenceRoot>
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt "(Function\n" Fmt:write
@@ -837,6 +937,10 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt Fmt:write-indent
     $fmt "body=" Fmt:write
     $fmt &self.body Scope-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "inference-roots=" Fmt:write
+    $fmt \InferenceRoot-format &self.inference-roots Array:format<InferenceRoot>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
