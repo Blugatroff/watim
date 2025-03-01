@@ -4,7 +4,6 @@ from enum import Enum
 from collections.abc import Iterable
 from typing import Optional, Callable, List, Tuple, NoReturn, Dict, Set, Sequence, Literal, Iterator, TypeGuard, Protocol, Any, assert_never, runtime_checkable
 from functools import reduce
-from abc import abstractmethod
 import sys
 import os
 import unittest
@@ -103,7 +102,7 @@ def format_str(s: str) -> List[FormatInstr]:
     return ["\"", s, "\""]
 
 def format_optional[T](item: T | None, format_item: Callable[[T], List[FormatInstr]] = format_instrs) -> List[FormatInstr]:
-    if item == None:
+    if item is None:
         return ["None"]
     return ["(Some ", format_item(item), ")"]
 
@@ -130,7 +129,7 @@ def format(instrs: List[FormatInstr], indent="  ") -> str:
             if isinstance(instr, Formattable):
                 format([instr.format_instrs()])
                 continue
-            if instr == None:
+            if instr is None:
                 s.append("None")
                 continue
             if isinstance(instr, Indent):
@@ -3356,7 +3355,7 @@ class WordCtx:
         true_words, true_words_diverge = true_ctx.resolve_words(true_stack, word.true_words.words)
         true_parameters = true_stack.negative
 
-        if true_words_diverge and (word.false_words == None or len(word.false_words.words) == 0):
+        if true_words_diverge and (word.false_words is None or len(word.false_words.words) == 0):
             remaining_stack = stack.make_child()
             remaining_stack.use(len(true_parameters))
 
@@ -3376,7 +3375,7 @@ class WordCtx:
                 ResolvedScope(true_ctx.env.scope_id, true_words),
                 ResolvedScope(remaining_ctx.env.scope_id, resolved_remaining_words),
                 diverges)], diverges)
-        false_words, false_words_diverge = false_ctx.resolve_words(false_stack, [] if word.false_words == None else word.false_words.words)
+        false_words, false_words_diverge = false_ctx.resolve_words(false_stack, [] if word.false_words is None else word.false_words.words)
         if not true_words_diverge and not false_words_diverge:
             if not true_stack.compatible_with(false_stack):
                 msg  = "stack mismatch between if and else branch:\n\tif   "
