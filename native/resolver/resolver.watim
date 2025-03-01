@@ -2820,10 +2820,28 @@ fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> R
     }
 } }
 
+fn stack-annotation-mismatch-error(ctx: .WordCtx, stack: .Stack, annotation: .P:StackAnnotation) -> ResolveError { block {
+    $ctx.ctx $ctx.imports &annotation.types resolve-types match {
+        case Error -> { break }
+        case Success -> {}
+    } @expected
+    $ctx.temp Fmt:into-new-string @msg @fmt
+    &fmt "Stack doesn't match annotation:\n  actual:   [" Fmt:write
+    $stack size $expected.len 1 + gt if {
+        &fmt "..., " Fmt:write
+    }
+    $ctx $stack $expected.len 1 + pop-n @actual
+    &fmt $ctx.type-lookup &actual Types-pretty
+    &fmt "]\n  expected: " Fmt:write
+    &fmt $ctx.type-lookup &expected Types-pretty-bracketed
+    &fmt "\n" Fmt:write
+    $ctx.ctx &annotation.token $msg Array:unpack<_> error
+} }
+
 fn resolve-stack-annotation(ctx: .WordCtx, stack: .Stack, annotation: .P:StackAnnotation) -> Result<[], ResolveError> { block {
     $stack size @stack-size
     $annotation.types.len $stack-size gt if {
-        $ctx.ctx &annotation.token "stack annotation doesn't match reality" abort<[]> break
+        $ctx $stack $annotation stack-annotation-mismatch-error make Result<[], ResolveError>.Error break
     }
     0 @i
     loop {
@@ -2835,7 +2853,7 @@ fn resolve-stack-annotation(ctx: .WordCtx, stack: .Stack, annotation: .P:StackAn
         } @expected
         $stack $i index @actual
         &expected $actual Type:eq not if {
-            $ctx.ctx &annotation.token "stack annotation doesn't match reality" abort<[]> break
+            $ctx $stack $annotation stack-annotation-mismatch-error make Result<[], ResolveError>.Error break
         }
         $i 1 + #i
     }

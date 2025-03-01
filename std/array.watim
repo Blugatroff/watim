@@ -94,6 +94,11 @@ fn push-assert-no-alloc<T>(self: .Array<T>, val: T) {
         1 CORE:exit
     }
 }
+fn push-front<T>(arena: .A:Arena, self: .Array<T>, val: T) {
+    $arena $self $val push<_>
+    $self.ptr $self.ptr sizeof(T) + $self.len 1 - CORE:copy<_>
+    $self 0 $val set<_> drop
+}
 fn append<T>(arena: .A:Arena, self: .Array<T>, other: .Array<T>) {
     $self.len $other.len + @new-len
     $self.cap $new-len lt if {

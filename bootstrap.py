@@ -2,8 +2,9 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from collections.abc import Iterable
-from typing import Optional, Callable, List, Tuple, NoReturn, Dict, Set, Sequence, Literal, Iterator, TypeGuard, assert_never
+from typing import Optional, Callable, List, Tuple, NoReturn, Dict, Set, Sequence, Literal, Iterator, TypeGuard, Protocol, Any, assert_never, runtime_checkable
 from functools import reduce
+from abc import abstractmethod
 import sys
 import os
 import unittest
@@ -22,6 +23,130 @@ def listtostr[T](seq: Sequence[T], tostr: Callable[[T], str] | None = None, mult
         s += indent(v) if multi_line else v
         s += ",\n" if multi_line else ", "
     return s[0:-2] + "]" if multi_line else s[0:-2] + "]"
+
+def intersperse[T](sep: T, seq: Iterable[T]) -> Iterator[T]:
+    first = True
+    for item in seq:
+        if not first:
+            yield sep
+        first = False
+        yield item
+
+class Indent:
+    pass
+@dataclass
+class For[T]:
+    items: Sequence[T]
+    body: Callable[[T], List['FormatInstr']]
+class WriteIndent:
+    pass
+type FormatInstr = None | bool | str | int | List[FormatInstr] | Indent | WriteIndent | For | Formattable
+
+@runtime_checkable
+class Formattable(Protocol):
+    def format_instrs(self) -> List[FormatInstr]:
+        return [type(self).__name__]
+    def __str__(self) -> str:
+        return format(self.format_instrs())
+
+def format_instrs(item: Any) -> List[FormatInstr]:
+    if isinstance(item, Formattable):
+        return item.format_instrs()
+    return [str(item)]
+
+def unnamed_record(name: str, fields: List[FormatInstr]) -> List[FormatInstr]:
+    return ["(", name, For(fields, lambda field: [" ", field]), ")"]
+
+def named_record(name: str, fields: List[Tuple[str, FormatInstr]]) -> List[FormatInstr]:
+    if len(fields) == 0:
+        return ["(", name, ")"]
+    return ["(", name, "\n",
+            Indent(),
+            list(intersperse(
+                [",\n"],
+                ([WriteIndent(), name, "=", value] for name,value in fields))),
+            ")"]
+
+def format_seq(elems: Sequence['Formattable'], multi_line=False) -> List[FormatInstr]:
+    if len(elems) == 0:
+        return ["[]"]
+    return [
+        "[",
+        Indent() if multi_line else [],
+        ["\n", WriteIndent()] if multi_line else [],
+        elems[0],
+        For(elems[1:], lambda elem: [",\n", WriteIndent(), elem.format_instrs()] if multi_line else [", ", elem]),
+        "]"
+    ]
+def format_list[T: Formattable](elems: List[T], multi_line=False) -> List[FormatInstr]:
+    return format_seq(elems, multi_line)
+
+def format_dict[K, V](
+        dictionary: 'dict | IndexedDict[K, V]',
+        format_key: Callable[[K], List[FormatInstr]] = format_instrs,
+        format_value: Callable[[V], List[FormatInstr]] = format_instrs) -> List[FormatInstr]:
+    if isinstance(dictionary, IndexedDict):
+        return dictionary.format_instrs(format_key, format_value)
+    if len(dictionary) == 0:
+        return ["(Map)"]
+
+    return [
+        "(Map\n",
+        [
+            Indent(),
+            list(intersperse([",\n"], ([WriteIndent(), format_key(k), "=", format_value(v)] for k,v in dictionary.items()))),
+        ],
+        ")"
+    ]
+
+def format_str(s: str) -> List[FormatInstr]:
+    return ["\"", s, "\""]
+
+def format_optional[T](item: T | None, format_item: Callable[[T], List[FormatInstr]] = format_instrs) -> List[FormatInstr]:
+    if item == None:
+        return ["None"]
+    return ["(Some ", format_item(item), ")"]
+
+def format(instrs: List[FormatInstr], indent="  ") -> str:
+    s = []
+    level = 0
+    def format(instrs: List[FormatInstr]) -> None:
+        nonlocal level
+        for instr in instrs:
+            if isinstance(instr, str):
+                s.append(instr)
+                continue
+            if isinstance(instr, int):
+                s.append(str(instr))
+                continue
+            if isinstance(instr, bool):
+                s.append(str(instr))
+                continue
+            if isinstance(instr, list):
+                prev_level = level
+                format(instr)
+                level = prev_level
+                continue
+            if isinstance(instr, Formattable):
+                format([instr.format_instrs()])
+                continue
+            if instr == None:
+                s.append("None")
+                continue
+            if isinstance(instr, Indent):
+                level += 1
+                continue
+            if isinstance(instr, WriteIndent):
+                for i in range(level):
+                    s.append(indent)
+                continue
+            if isinstance(instr, For):
+                for item in instr.items:
+                    format(instr.body(item))
+                continue
+            assert_never(instr)
+    format(instrs)
+    return ''.join(s)
 
 @dataclass
 class Lazy[T]:
@@ -78,7 +203,7 @@ def normalize_path(path: str) -> str:
 def uhex(n: int) -> str:
     return "0x" + hex(n)[2:].upper()
 
-class IndexedDict[K, V]:
+class IndexedDict[K, V](Formattable):
     inner: Dict[K, Ref[Tuple[V, int]]]
     pairs: List[Tuple[K, Ref[Tuple[V, int]]]]
 
@@ -154,6 +279,21 @@ class IndexedDict[K, V]:
             lambda a,b: a+",\n"+b,
             map(lambda kv: f"{fmt(kv[0])}={fmt(kv[1])}", self.items()))) + ")"
 
+    def format_instrs(
+            self,
+            format_key: Callable[[K], List[FormatInstr]] = format_instrs,
+            format_value: Callable[[V], List[FormatInstr]] = format_instrs) -> List[FormatInstr]:
+        if len(self.pairs) == 0:
+            return ["(Map)"]
+        return [
+            "(Map\n",
+            [
+                Indent(),
+                list(intersperse([",\n"], ([WriteIndent(), format_key(key), "=", format_value(item)] for key,item in self.items())))
+            ],
+            ")",
+        ]
+
 # =============================================================================
 #  Lexer
 # =============================================================================
@@ -192,7 +332,7 @@ class TokenType(str, Enum):
     IF = "IF"
     ELSE = "ELSE"
     EXTERN = "EXTERN"
-    BOOL = "BOOL"
+    Bool = "Bool"
     I8 = "I8"
     I32 = "I32"
     I64 = "I64"
@@ -212,7 +352,7 @@ class TokenLocation:
     column: int
 
 @dataclass(frozen=True)
-class Token:
+class Token(Formattable):
     ty: TokenType
     line: int
     column: int
@@ -230,12 +370,12 @@ class Token:
     def keyword_lexeme(ty: TokenType) -> str:
         return TYPE_LEXEME_DICT[ty]
 
-    def __str__(self) -> str:
-        return f"({self.ty.value} {self.lexeme} {str(self.line)} {str(self.column)})"
-
     @staticmethod
     def dummy(lexeme: str) -> 'Token':
         return Token(TokenType.STRING, 0, 0, lexeme)
+
+    def format_instrs(self) -> List[FormatInstr]:
+        return ["(", self.ty.value, " ", self.lexeme, " ", self.line, " ", self.column, ")"]
 
 LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "fn":     TokenType.FN,
@@ -249,7 +389,7 @@ LEXEME_TYPE_DICT: dict[str, TokenType] = {
     "if":     TokenType.IF,
     "else":   TokenType.ELSE,
     "extern": TokenType.EXTERN,
-    "bool":   TokenType.BOOL,
+    "bool":   TokenType.Bool,
     "i8":     TokenType.I8,
     "i32":    TokenType.I32,
     "i64":    TokenType.I64,
@@ -421,71 +561,65 @@ class Lexer:
 #  Parser
 # =============================================================================
 
-class PrimitiveType(str, Enum):
-    I8 = "TYPE_I8"
-    I32 = "TYPE_I32"
-    I64 = "TYPE_I64"
-    BOOL = "TYPE_BOOL"
-
-    def __str__(self) -> str:
-        if self == PrimitiveType.I8:
-            return "I8"
-        if self == PrimitiveType.I32:
-            return "I32"
-        if self == PrimitiveType.I64:
-            return "I64"
-        if self == PrimitiveType.BOOL:
-            return "Bool"
-        assert_never(self)
-
-    def pretty(self) -> str:
-        if self == PrimitiveType.I8:
-            return "i8"
-        if self == PrimitiveType.I32:
-            return "i32"
-        if self == PrimitiveType.I64:
-            return "i64"
-        if self == PrimitiveType.BOOL:
-            return "bool"
-        assert_never(self)
-
+@dataclass
+class I8(Formattable):
     def size(self) -> int:
-        if self == PrimitiveType.I8:
-            return 1
-        if self == PrimitiveType.I32:
-            return 4
-        if self == PrimitiveType.I64:
-            return 8
-        if self == PrimitiveType.BOOL:
-            return 4
-        assert_never(self)
-
+        return 1
     def can_live_in_reg(self) -> bool:
         return True
+    def format_instrs(self) -> List[FormatInstr]:
+        return ["I8"]
 
 @dataclass
-class GenericType:
+class I32(Formattable):
+    def size(self) -> int:
+        return 4
+    def can_live_in_reg(self) -> bool:
+        return True
+    def format_instrs(self) -> List[FormatInstr]:
+        return ["I32"]
+
+@dataclass
+class I64(Formattable):
+    def size(self) -> int:
+        return 8
+    def can_live_in_reg(self) -> bool:
+        return True
+    def format_instrs(self) -> List[FormatInstr]:
+        return ["I64"]
+
+@dataclass
+class Bool(Formattable):
+    def size(self) -> int:
+        return 4
+    def can_live_in_reg(self) -> bool:
+        return True
+    def format_instrs(self) -> List[FormatInstr]:
+        return ["Bool"]
+
+type PrimitiveType = I8 | I32 | I64 | Bool
+
+@dataclass
+class GenericType(Formattable):
     token: Token
     generic_index: int
 
-    def __str__(self) -> str:
-        return f"(GenericType {self.token} {self.generic_index})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("GenericType", [self.token, self.generic_index])
 
 type ParsedType = 'PrimitiveType | Parser.PtrType | Parser.TupleType | GenericType | Parser.ForeignType | Parser.CustomTypeType | Parser.FunctionType | Parser.HoleType'
 
 @dataclass
-class NumberWord:
+class NumberWord(Formattable):
     token: Token
-
-    def __str__(self) -> str:
-        return f"(Number {self.token})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Number", [self.token])
 
 @dataclass
-class BreakWord:
+class BreakWord(Formattable):
     token: Token
-
-    def __str__(self) -> str:
-        return f"(Break {self.token})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Break", [self.token])
 
 type ParsedWord = 'NumberWord | Parser.StringWord | Parser.CallWord | Parser.GetWord | Parser.RefWord | Parser.SetWord | Parser.StoreWord | Parser.InitWord | Parser.CallWord | Parser.ForeignCallWord | Parser.FunRefWord | Parser.IfWord | Parser.LoadWord | Parser.LoopWord | Parser.BlockWord | BreakWord | Parser.CastWord | Parser.SizeofWord | Parser.GetFieldWord | Parser.IndirectCallWord | Parser.StructWord | Parser.UnnamedStructWord | Parser.MatchWord | Parser.VariantWord | Parser.TupleUnpackWord | Parser.TupleMakeWord | Parser.StackAnnotation | Parser.InlineRefWord'
 
@@ -523,260 +657,330 @@ class Parser:
     # Datatypes for parsed types
     # ========================================
     @dataclass
-    class PtrType:
+    class PtrType(Formattable):
         child: ParsedType
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Ptr", [self.child])
 
     @dataclass
-    class ForeignType:
+    class ForeignType(Formattable):
         module: Token
         name: Token
         generic_arguments: List[ParsedType]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("ForeignCustomType", [
+                self.module,
+                self.name,
+                format_seq(self.generic_arguments)])
 
     @dataclass
-    class TupleType:
+    class TupleType(Formattable):
         token: Token
         items: List[ParsedType]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("TupleType", [
+                self.token,
+                format_seq(self.items)])
 
     @dataclass
-    class CustomTypeType:
+    class CustomTypeType(Formattable):
         name: Token
         generic_arguments: List[ParsedType]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("LocalCustomType", [
+                self.name,
+                format_seq(self.generic_arguments)])
 
     @dataclass
-    class FunctionType:
+    class FunctionType(Formattable):
         token: Token
         parameters: List[ParsedType]
         returns: List[ParsedType]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("FunType", [
+                self.token,
+                format_seq(self.parameters),
+                format_seq(self.returns)])
 
     @dataclass
-    class HoleType:
+    class HoleType(Formattable):
         token: Token
-
-        def __str__(self) -> str:
-            return "Hole"
+        def format_instrs(self) -> List[FormatInstr]:
+            return ["Hole"]
 
     @dataclass
-    class NamedType:
+    class NamedType(Formattable):
         name: Token
         taip: ParsedType
-
-        def __str__(self) -> str:
-            return f"(NamedType {self.name} {self.taip})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("NamedType", [self.name, self.taip])
 
     # ========================================
     # Datatypes for parsed words
     # ========================================
     @dataclass
-    class StringWord:
+    class StringWord(Formattable):
         token: Token
         data: bytearray
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("StringWord", [self.token])
 
     @dataclass
-    class GetWord:
+    class GetWord(Formattable):
+        token: Token
         ident: Token
         fields: List[Token]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("GetLocal", [self.token, self.ident, format_seq(self.fields)])
 
     @dataclass
-    class RefWord:
+    class RefWord(Formattable):
+        token: Token
         ident: Token
         fields: List[Token]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("RefLocal", [self.token, self.ident, format_seq(self.fields)])
 
     @dataclass
-    class SetWord:
+    class SetWord(Formattable):
+        token: Token
         ident: Token
         fields: List[Token]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("SetLocal", [self.token, self.ident, format_seq(self.fields)])
 
     @dataclass
-    class InlineRefWord:
+    class InlineRefWord(Formattable):
         token: Token
 
     @dataclass
-    class StoreWord:
+    class StoreWord(Formattable):
+        token: Token
         ident: Token
         fields: List[Token]
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Store", [self.token, self.ident, format_seq(self.fields)])
 
     @dataclass
-    class InitWord:
+    class InitWord(Formattable):
+        token: Token
         ident: Token
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("InitLocal", [self.token, self.ident])
 
     @dataclass
-    class ForeignCallWord:
+    class ForeignCallWord(Formattable):
         module: Token
         ident: Token
         generic_arguments: List[ParsedType]
 
     @dataclass
-    class CallWord:
+    class CallWord(Formattable):
         ident: Token
         generic_arguments: List[ParsedType]
-
-        def __str__(self) -> str:
-            return f"(LocalCall {self.ident} {listtostr(self.generic_arguments, multi_line=True)})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("LocalCall", [
+                self.ident,
+                format_seq(self.generic_arguments, multi_line=True)])
 
     @dataclass
-    class FunRefWord:
+    class FunRefWord(Formattable):
         call: 'Parser.CallWord | Parser.ForeignCallWord'
 
     @dataclass
-    class IfWord:
+    class IfWord(Formattable):
         token: Token
-        true_words: List['ParsedWord']
-        false_words: List['ParsedWord']
+        true_words: 'Parser.Words'
+        false_words: 'Parser.Words | None'
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("If", [
+                self.token,
+                self.true_words,
+                format_optional(self.false_words)])
 
     @dataclass
-    class LoadWord:
+    class LoadWord(Formattable):
         token: Token
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Load", [self.token])
 
     @dataclass
-    class BlockAnnotation:
+    class BlockAnnotation(Formattable):
         parameters: List[ParsedType]
         returns: List[ParsedType]
-
-        def __str__(self) -> str:
-            return f"(BlockAnnotation {listtostr(self.parameters)} {listtostr(self.returns)})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("BlockAnnotation", [
+                format_seq(self.parameters),
+                format_seq(self.returns)])
 
     @dataclass
-    class Words:
+    class Words(Formattable):
         words: List['ParsedWord']
         end: Token
-
-        def __str__(self) -> str:
-            return f"(Words {listtostr(self.words)} {self.end})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Words", [
+                format_seq(self.words, multi_line=True),
+                self.end])
 
     @dataclass
-    class LoopWord:
+    class LoopWord(Formattable):
         token: Token
         words: 'Parser.Words'
         annotation: 'Parser.BlockAnnotation | None'
-
-        def __str__(self) -> str:
-            return f"(Loop {self.token} {format_maybe(self.annotation)} {self.words})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Loop", [
+                self.token,
+                format_optional(self.annotation),
+                self.words])
 
     @dataclass
-    class BlockWord:
+    class BlockWord(Formattable):
         token: Token
         words: 'Parser.Words'
         annotation: 'Parser.BlockAnnotation | None'
-
-        def __str__(self) -> str:
-            return f"(Block {self.token} {format_maybe(self.annotation)} {self.words})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Block", [
+                self.token,
+                format_optional(self.annotation),
+                self.words])
 
     @dataclass
-    class CastWord:
+    class CastWord(Formattable):
+        token: Token
+        taip: ParsedType
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Cast", [
+                self.token, self.taip])
+
+    @dataclass
+    class SizeofWord(Formattable):
         token: Token
         taip: ParsedType
 
     @dataclass
-    class SizeofWord:
-        token: Token
-        taip: ParsedType
-
-    @dataclass
-    class GetFieldWord:
+    class GetFieldWord(Formattable):
         token: Token
         fields: List[Token]
 
     @dataclass
-    class IndirectCallWord:
+    class IndirectCallWord(Formattable):
         token: Token
 
     @dataclass
-    class StructWord:
+    class StructWord(Formattable):
         token: Token
         taip: 'Parser.CustomTypeType | Parser.ForeignType'
         words: List['ParsedWord']
 
     @dataclass
-    class UnnamedStructWord:
+    class UnnamedStructWord(Formattable):
         token: Token
         taip: 'Parser.CustomTypeType | Parser.ForeignType'
 
     @dataclass
-    class VariantWord:
+    class VariantWord(Formattable):
         token: Token
         taip: 'Parser.CustomTypeType | Parser.ForeignType'
         case: Token
 
     @dataclass
-    class MatchCase:
+    class MatchCase(Formattable):
         case: Token
         name: Token
         words: List[ParsedWord]
 
     @dataclass
-    class MatchWord:
+    class MatchWord(Formattable):
         token: Token
         cases: List['Parser.MatchCase']
         default: 'Parser.MatchCase | None'
 
     @dataclass
-    class TupleUnpackWord:
+    class TupleUnpackWord(Formattable):
         token: Token
 
     @dataclass
-    class TupleMakeWord:
+    class TupleMakeWord(Formattable):
         token: Token
         item_count: Token
 
     @dataclass
-    class StackAnnotation:
+    class StackAnnotation(Formattable):
         token: Token
         types: List['ParsedType']
-
-        def __str__(self) -> str:
-            return f"(StackAnnotation {self.token} {listtostr(self.types)})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("StackAnnotation", [
+                self.token,
+                format_seq(self.types)])
 
     # ========================================
     # Datatypes for parsed TopItems
     # ========================================
     @dataclass
-    class Import:
+    class Import(Formattable):
         token: Token
         file_path: Token
         qualifier: Token
         items: List[Token]
 
     @dataclass
-    class FunctionSignature:
+    class FunctionSignature(Formattable):
         export_name: Optional[Token]
         name: Token
         generic_parameters: List[Token]
         parameters: List['Parser.NamedType']
         returns: List[ParsedType]
-
-        def __str__(self) -> str:
-            return f"(Signature {listtostr(self.generic_parameters)} {listtostr(self.parameters)} {listtostr(self.returns)})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Signature", [
+                format_seq(self.generic_parameters),
+                format_seq(self.parameters),
+                format_seq(self.returns)])
 
     @dataclass
-    class Extern:
+    class Extern(Formattable):
+        token: Token
         module: Token
         name: Token
         signature: 'Parser.FunctionSignature'
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Extern", [
+                self.token,
+                self.module,
+                self.name,
+                self.signature.name,
+                self.signature])
 
     @dataclass
-    class Global:
+    class Global(Formattable):
         token: Token
         name: Token
         taip: ParsedType
 
     @dataclass
-    class Function:
+    class Function(Formattable):
         token: Token
         signature: 'Parser.FunctionSignature'
         body: List[ParsedWord]
-
-        def __str__(self) -> str:
-            return f"(Function {self.token} {self.signature.name} {self.signature} {listtostr(self.body, multi_line=True)})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Function", [
+                self.token,
+                self.signature.name,
+                format_optional(self.signature.export_name),
+                self.signature,
+                format_seq(self.body, multi_line=True)])
 
     @dataclass
-    class Struct:
+    class Struct(Formattable):
         token: Token
         name: Token
         fields: List['Parser.NamedType']
         generic_parameters: List[Token]
-
-        def __str__(self) -> str:
-            return f"(Struct {self.token} {self.name} {listtostr(self.generic_parameters)} {listtostr(self.fields, multi_line=True)})"
+        def format_instrs(self) -> List[FormatInstr]:
+            return unnamed_record("Struct", [
+                self.token,
+                self.name,
+                format_seq(self.generic_parameters),
+                format_seq(self.fields, multi_line=True)])
 
     @dataclass
     class VariantCase:
@@ -784,7 +988,7 @@ class Parser:
         taip: ParsedType | None
 
     @dataclass
-    class Variant:
+    class Variant(Formattable):
         name: Token
         generic_parameters: List[Token]
         cases: List['Parser.VariantCase']
@@ -794,7 +998,7 @@ class Parser:
     # A parsed module, output of the parser
     # ========================================
     @dataclass
-    class Module:
+    class Module(Formattable):
         path: str
         file: str
         top_items: List[ParsedTopItem]
@@ -803,8 +1007,8 @@ class Parser:
         globals: List['Parser.Global']
         functions: List['Parser.Function | Parser.Extern']
 
-        def __str__(self) -> str:
-            return listtostr(self.top_items, multi_line=True)
+        def format_instrs(self) -> List[FormatInstr]:
+            return format_seq(self.top_items, multi_line=True)
 
 
     # ========================================
@@ -899,7 +1103,7 @@ class Parser:
                 if fn is None or fn.ty != TokenType.FN:
                     self.abort("Expected `fn`")
                 signature = self.parse_function_signature()
-                top_items.append(Parser.Extern(module, name, signature))
+                top_items.append(Parser.Extern(token, module, name, signature))
                 continue
 
             if token.ty == TokenType.STRUCT:
@@ -984,21 +1188,17 @@ class Parser:
         token = self.advance(skip_ws=True)
         if token is None or token.ty != TokenType.LEFT_BRACE:
             self.abort("Expected `{`")
-
         body = self.parse_words(signature.generic_parameters)
+        return Parser.Function(start, signature, body.words)
 
-        token = self.advance(skip_ws=True)
-        assert(token is not None and token.ty == TokenType.RIGHT_BRACE)
-        return Parser.Function(start, signature, body)
-
-    def parse_words(self, generic_parameters: List[Token]) -> List[ParsedWord]:
-        words = []
+    def parse_words(self, generic_parameters: List[Token]) -> 'Parser.Words':
+        words: List[ParsedWord] = []
         while True:
             token = self.peek(skip_ws=True)
             if token is not None and token.ty == TokenType.RIGHT_BRACE:
-                break
+                self.advance(skip_ws=True)
+                return Parser.Words(words, token)
             words.append(self.parse_word(generic_parameters))
-        return words
 
     def parse_word(self, generic_parameters: List[Token]) -> ParsedWord:
         token = self.advance(skip_ws=True)
@@ -1041,13 +1241,13 @@ class Parser:
             def construct(name: Token, fields: List[Token]) -> ParsedWord:
                 match indicator_token.ty:
                     case TokenType.DOLLAR:
-                        return Parser.GetWord(name, fields)
+                        return Parser.GetWord(indicator_token, name, fields)
                     case TokenType.AMPERSAND:
-                        return Parser.RefWord(name, fields)
+                        return Parser.RefWord(indicator_token, name, fields)
                     case TokenType.HASH:
-                        return Parser.SetWord(name, fields)
+                        return Parser.SetWord(indicator_token, name, fields)
                     case TokenType.DOUBLE_ARROW:
-                        return Parser.StoreWord(name, fields)
+                        return Parser.StoreWord(indicator_token, name, fields)
                     case _:
                         assert(False)
             if token is None or token.ty == TokenType.SPACE:
@@ -1055,10 +1255,10 @@ class Parser:
             fields = self.parse_field_accesses()
             return construct(name, fields)
         if token.ty == TokenType.AT:
-            token = self.advance(skip_ws=False)
-            if token is None or token.ty != TokenType.IDENT:
+            ident = self.advance(skip_ws=False)
+            if ident is None or ident.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as variable name")
-            return Parser.InitWord(token)
+            return Parser.InitWord(token, ident)
         if token.ty == TokenType.IDENT:
             return self.parse_call_word(generic_parameters, token)
         if token.ty == TokenType.BACKSLASH:
@@ -1070,20 +1270,14 @@ class Parser:
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
                 self.abort("Expected `{`")
             if_words = self.parse_words(generic_parameters)
-            brace = self.advance(skip_ws=True)
-            if brace is None or brace.ty != TokenType.RIGHT_BRACE:
-                self.abort("Expected `}`")
             next = self.peek(skip_ws=True)
             if next is None or next.ty != TokenType.ELSE:
-                return Parser.IfWord(token, if_words, [])
+                return Parser.IfWord(token, if_words, None)
             self.advance(skip_ws=True) # skip `else`
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
                 self.abort("Expected `{`")
             else_words = self.parse_words(generic_parameters)
-            brace = self.advance(skip_ws=True)
-            if brace is None or brace.ty != TokenType.RIGHT_BRACE:
-                self.abort("Expected `}`")
             return Parser.IfWord(token, if_words, else_words)
         if token.ty == TokenType.TILDE:
             return Parser.LoadWord(token)
@@ -1126,13 +1320,10 @@ class Parser:
                     self.abort("Expected `{`")
             annotation = None if parameters is None and returns is None else Parser.BlockAnnotation(parameters or [], returns or [])
             words = self.parse_words(generic_parameters)
-            brace = self.advance(skip_ws=True)
-            if brace is None or brace.ty != TokenType.RIGHT_BRACE:
-                self.abort("Expected `}`")
             if token.ty == TokenType.LOOP:
-                return Parser.LoopWord(token, Parser.Words(words, brace), annotation)
+                return Parser.LoopWord(token, words, annotation)
             if token.ty == TokenType.BLOCK:
-                return Parser.BlockWord(token, Parser.Words(words, brace), annotation)
+                return Parser.BlockWord(token, words, annotation)
         if token.ty == TokenType.BREAK:
             return BreakWord(token)
         if token.ty == TokenType.BANG:
@@ -1165,10 +1356,7 @@ class Parser:
             if brace is not None and brace.ty == TokenType.LEFT_BRACE:
                 brace = self.advance(skip_ws=True)
                 words = self.parse_words(generic_parameters)
-                brace = self.advance(skip_ws=True)
-                if brace is None or brace.ty != TokenType.RIGHT_BRACE:
-                    self.abort("Expected `}`")
-                return Parser.StructWord(token, taip, words)
+                return Parser.StructWord(token, taip, words.words)
             return Parser.UnnamedStructWord(token, taip)
         if token.ty == TokenType.MATCH:
             brace = self.advance(skip_ws=True)
@@ -1193,15 +1381,12 @@ class Parser:
                 if brace is None or brace.ty != TokenType.LEFT_BRACE:
                     self.abort("Expected `{`")
                 words = self.parse_words(generic_parameters)
-                brace = self.advance(skip_ws=True)
-                if brace is None or brace.ty != TokenType.RIGHT_BRACE:
-                    self.abort("Expected `}`")
                 if case_name.ty == TokenType.UNDERSCORE:
                     brace = self.advance(skip_ws=True)
                     if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                         self.abort("Expected `}`")
-                    return Parser.MatchWord(token, cases, Parser.MatchCase(next, case_name, words))
-                cases.append(Parser.MatchCase(next, case_name, words))
+                    return Parser.MatchWord(token, cases, Parser.MatchCase(next, case_name, words.words))
+                cases.append(Parser.MatchCase(next, case_name, words.words))
         if token.ty == TokenType.LEFT_BRACKET:
             comma = self.advance(skip_ws=True)
             if comma is None or comma.ty != TokenType.COMMA:
@@ -1377,13 +1562,13 @@ class Parser:
         if token is None:
             self.abort("Expected a type")
         if token.ty == TokenType.I8:
-            return PrimitiveType.I8
+            return I8()
         if token.ty == TokenType.I32:
-            return PrimitiveType.I32
+            return I32()
         if token.ty == TokenType.I64:
-            return PrimitiveType.I64
-        if token.ty == TokenType.BOOL:
-            return PrimitiveType.BOOL
+            return I64()
+        if token.ty == TokenType.Bool:
+            return Bool()
         if token.ty == TokenType.DOT:
             return Parser.PtrType(self.parse_type(generic_parameters))
         if token.ty == TokenType.UNDERSCORE:
@@ -1485,50 +1670,54 @@ def load_recursive(
 # =============================================================================
 
 @dataclass
-class ResolvedPtrType:
+class ResolvedPtrType(Formattable):
     child: 'ResolvedType'
-
-    def __str__(self) -> str:
-        return f"(Ptr {str(self.child)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Ptr", [self.child])
 
 @dataclass(frozen=True, eq=True)
-class ResolvedCustomTypeHandle:
+class ResolvedCustomTypeHandle(Formattable):
     module: int
     index: int
-
-    def __str__(self) -> str:
-        return f"(CustomTypeHandle {str(self.module)} {str(self.index)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("CustomTypeHandle", [self.module, self.index])
 
 @dataclass
-class ResolvedCustomTypeType:
+class ResolvedCustomTypeType(Formattable):
     name: Token
     type_definition: ResolvedCustomTypeHandle
     generic_arguments: List['ResolvedType']
-
-    def __str__(self) -> str:
-        return f"(CustomType {self.type_definition.module} {self.type_definition.index} {listtostr(self.generic_arguments)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("CustomType", [
+            self.type_definition.module,
+            self.type_definition.index,
+            format_seq(self.generic_arguments)])
 
 @dataclass
-class ResolvedTupleType:
+class ResolvedTupleType(Formattable):
     token: Token
     items: List['ResolvedType']
-
-    def __str__(self) -> str:
-        return f"(TupleType {self.token} {listtostr(self.items)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("TupleType", [self.token, format_seq(self.items)])
 
 @dataclass
-class ResolvedFunctionType:
+class ResolvedFunctionType(Formattable):
     token: Token
     parameters: List['ResolvedType']
     returns: List['ResolvedType']
-
-    def __str__(self) -> str:
-        return f"(FunType {self.token} {listtostr(self.parameters)} {listtostr(self.returns)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("FunType", [self.token, format_seq(self.parameters), format_seq(self.returns)])
 
 ResolvedType = PrimitiveType | ResolvedPtrType | ResolvedTupleType | GenericType | ResolvedCustomTypeType | ResolvedFunctionType | Parser.HoleType
 
 def resolved_type_eq(a: ResolvedType, b: ResolvedType):
-    if isinstance(a, PrimitiveType):
+    if isinstance(a, Bool) and isinstance(b, Bool):
+        return a == b
+    if isinstance(a, I8) and isinstance(b, I8):
+        return a == b
+    if isinstance(a, I32) and isinstance(b, I32):
+        return a == b
+    if isinstance(a, I64) and isinstance(b, I64):
         return a == b
     if isinstance(a, ResolvedPtrType) and isinstance(b, ResolvedPtrType):
         return resolved_type_eq(a.child, b.child)
@@ -1561,12 +1750,11 @@ def resolved_types_eq(a: List[ResolvedType], b: List[ResolvedType]) -> bool:
     return True
 
 @dataclass
-class ResolvedNamedType:
+class ResolvedNamedType(Formattable):
     name: Token
     taip: ResolvedType
-
-    def __str__(self) -> str:
-        return f"(NamedType {str(self.name)} {str(self.taip)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("NamedType", [self.name, self.taip])
 
 
 # =============================================================================
@@ -1574,97 +1762,103 @@ class ResolvedNamedType:
 # =============================================================================
 
 @dataclass
-class ImportItem:
+class ImportItem(Formattable):
     name: Token
     handle: 'ResolvedFunctionHandle | ResolvedCustomTypeHandle'
-
-    def __str__(self) -> str:
-        return f"(ImportItem {self.name} {self.handle})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("ImportItem", [self.name, self.handle])
 
 @dataclass
-class Import:
+class Import(Formattable):
     token: Token
     file_path: str
     qualifier: Token
     module: int
     items: List[ImportItem]
-
-    def __str__(self) -> str:
-        return f"(Import {self.token} {self.module} \"{self.file_path}\" {self.qualifier} {listtostr(self.items, multi_line=True)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Import", [
+            self.token,
+            self.module,
+            format_str(self.file_path),
+            self.qualifier,
+            format_seq(self.items, multi_line=True)])
 
 @dataclass
-class ResolvedStruct:
+class ResolvedStruct(Formattable):
     name: Token
     generic_parameters: List[Token]
     fields: List['ResolvedNamedType']
-
-    def __str__(self) -> str:
-        return "(Struct\n" + indent(f"name={self.name},\ngeneric-parameters={listtostr(self.generic_parameters)},\nfields={listtostr(self.fields, multi_line=True)}") + ")"
-
-def format_maybe(v, format = None) -> str:
-    return "None" if v is None else (f"(Some {v})" if format is None else f"(Some {format(v)})")
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Struct", [
+            ("name", self.name),
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("fields", format_seq(self.fields, multi_line=True))])
 
 @dataclass
-class ResolvedVariantCase:
+class ResolvedVariantCase(Formattable):
     name: Token
     taip: 'ResolvedType | None'
-
-    def __str__(self) -> str:
-        return f"(VariantCase {self.name} {format_maybe(self.taip)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("VariantCase", [self.name, format_optional(self.taip)])
 
 @dataclass
-class ResolvedVariant:
+class ResolvedVariant(Formattable):
     name: Token
     generic_parameters: List[Token]
     cases: List[ResolvedVariantCase]
-
-    def __str__(self) -> str:
-        return "(Variant\n" + indent(f"name={self.name},\ngeneric-parameters={indent_non_first(listtostr(self.generic_parameters))},\ncases={listtostr(self.cases, multi_line=True)}") + ")"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Variant", [
+            ("name", self.name),
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("cases", format_seq(self.cases, multi_line=True))])
 
 ResolvedCustomType = ResolvedStruct | ResolvedVariant
 
 @dataclass
-class ResolvedFunctionSignature:
+class ResolvedFunctionSignature(Formattable):
     generic_parameters: List[Token]
     parameters: List[ResolvedNamedType]
     returns: List[ResolvedType]
-
-    def __str__(self) -> str:
-        s = "(Signature\n"
-        s += f"  generic-parameters={listtostr(self.generic_parameters)},\n"
-        s += f"  parameters={listtostr(self.parameters)},\n"
-        s += f"  returns={listtostr(self.returns)}"
-        return s + ")"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Signature", [
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("parameters", format_seq(self.parameters)),
+            ("returns", format_seq(self.returns))])
 
 @dataclass
-class ResolvedGlobal:
+class ResolvedGlobal(Formattable):
     name: Token
     taip: ResolvedType
     was_reffed: bool = False
-
-    def __str__(self) -> str:
-        return f"(Global {self.name} {self.taip} {self.was_reffed})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Global", [self.name, self.taip, self.was_reffed])
 
 @dataclass(frozen=True, eq=True)
-class ScopeId:
+
+class ScopeId(Formattable):
     raw: int
-    def __str__(self) -> str:
-        return str(self.raw)
+    def format_instrs(self) -> List[FormatInstr]:
+        return [self.raw]
 ROOT_SCOPE: ScopeId = ScopeId(0)
 
 @dataclass(frozen=True, eq=True)
-class GlobalId:
+class GlobalId(Formattable):
     module: int
     index: int
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Globalid", [self.module, self.index])
 
 @dataclass(frozen=True, eq=True)
-class LocalId:
+class LocalId(Formattable):
     name: str
     scope: ScopeId
     shadow: int
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("LocalId", [
+            format_str(self.name),
+            self.scope,
+            self.shadow])
 
-    def __str__(self) -> str:
-        return f"(LocalId \"{self.name}\" {self.scope} {self.shadow})"
 @dataclass
 class ResolverException(Exception):
     path: str
@@ -1683,17 +1877,16 @@ class ResolverException(Exception):
         return f"{self.path}:{line}:{column} {self.message}"
 
 @dataclass(frozen=True, eq=True)
-class LocalName:
+class LocalName(Formattable):
     name: Token | str
-
-    def __str__(self) -> str:
-        return str(self.name)
+    def format_instrs(self) -> List[FormatInstr]:
+        return [self.name]
 
     def get(self) -> str:
         return self.name if isinstance(self.name, str) else self.name.lexeme
 
 @dataclass
-class ResolvedLocal:
+class ResolvedLocal(Formattable):
     name: LocalName
     taip: ResolvedType
     is_parameter: bool
@@ -1707,200 +1900,195 @@ class ResolvedLocal:
     def make_parameter(taip: ResolvedNamedType) -> 'ResolvedLocal':
         return ResolvedLocal(LocalName(taip.name), taip.taip, True)
 
-    def __str__(self) -> str:
-        return f"(Local {self.name} {self.taip} {self.was_reffed} {self.is_parameter})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Local", [self.name, self.taip, self.was_reffed, self.is_parameter])
 
 @dataclass
-class ResolvedScope:
+class ResolvedScope(Formattable):
     id: ScopeId
     words: List['ResolvedWord']
-
-    def __str__(self) -> str:
-        return f"(Scope {self.id} {indent_non_first(listtostr(self.words, multi_line=True))})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Scope", [self.id, format_seq(self.words, multi_line=True)])
 
 @dataclass
-class ResolvedFunction:
+class ResolvedFunction(Formattable):
     name: Token
     export_name: Optional[Token]
     signature: ResolvedFunctionSignature
     body: ResolvedScope
     locals: Dict[LocalId, ResolvedLocal]
-
-    def __str__(self) -> str:
-        s = "(Function\n"
-        s += f"  name={self.name},\n"
-        s += f"  export={format_maybe(self.export_name)},\n"
-        s += f"  signature={indent_non_first(str(self.signature))},\n"
-        s += f"  locals={indent_non_first(format_dict(self.locals))},\n"
-        s += f"  body={str(self.body)}"
-        return s + ")"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Function", [
+            ("name", self.name),
+            ("export", format_optional(self.export_name)),
+            ("signature", self.signature),
+            ("locals", format_dict(self.locals)),
+            ("body", self.body)])
 
 @dataclass
-class ResolvedExtern:
+class ResolvedExtern(Formattable):
     name: Token
     extern_module: str
     extern_name: str
     signature: ResolvedFunctionSignature
-
-    def __str__(self) -> str:
-        return f"(Extern {self.name} {self.extern_module} {self.extern_name} {str(self.signature)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Extern", [
+            self.name,
+            self.extern_module,
+            self.extern_name,
+            self.signature])
 
 # =============================================================================
 #  Resolved Words
 # =============================================================================
 
 @dataclass
-class ResolvedFieldAccess:
+class ResolvedFieldAccess(Formattable):
     name: Token
     source_taip: ResolvedCustomTypeType | ResolvedPtrType
     target_taip: ResolvedType
     field_index: int
-
-    def __str__(self) -> str:
-        return f"(FieldAccess {self.name} {self.source_taip} {self.target_taip} {self.field_index})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("FieldAccess", [
+            self.name, self.source_taip, self.target_taip, self.field_index])
 
 @dataclass
-class StringWord:
+class StringWord(Formattable):
     token: Token
     offset: int
     len: int
 
 @dataclass
-class ResolvedLoadWord:
+class ResolvedLoadWord(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedInitWord:
+class ResolvedInitWord(Formattable):
     name: Token
     local_id: LocalId
     taip: ResolvedType
 
 @dataclass
-class ResolvedGetWord:
+class ResolvedGetWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
     var_taip: ResolvedType
     fields: List[ResolvedFieldAccess]
     taip: ResolvedType
-
-    def __str__(self) -> str:
-        return f"(GetLocal {self.token} {self.local_id} {self.var_taip} {self.taip} {listtostr(self.fields, multi_line=True)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("GetLocal", [
+            self.token,
+            self.local_id,
+            self.var_taip,
+            self.taip,
+            format_seq(self.fields, multi_line=True)])
 
 @dataclass
-class ResolvedRefWord:
+class ResolvedRefWord(Formattable):
+    token: Token
+    local_id: LocalId | GlobalId
+    fields: List[ResolvedFieldAccess]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("RefLocal", [self.token, self.local_id, format_seq(self.fields, multi_line=True)])
+
+@dataclass
+class ResolvedSetWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
     fields: List[ResolvedFieldAccess]
 
-    def __str__(self) -> str:
-        return f"(RefLocal {self.token} {self.local_id} {listtostr(self.fields, multi_line=True)})"
-
 @dataclass
-class ResolvedSetWord:
-    token: Token
-    local_id: LocalId | GlobalId
-    fields: List[ResolvedFieldAccess]
-
-@dataclass
-class ResolvedStoreWord:
+class ResolvedStoreWord(Formattable):
     token: Token
     local: LocalId | GlobalId
     fields: List[ResolvedFieldAccess]
 
 @dataclass
-class ResolvedCallWord:
+class ResolvedCallWord(Formattable):
     name: Token
     function: 'ResolvedFunctionHandle'
     generic_arguments: List[ResolvedType]
-
-    def __str__(self) -> str:
-        return f"(Call {self.name} {self.function} {listtostr(self.generic_arguments)})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Call", [self.name, self.function, format_seq(self.generic_arguments)])
 
 @dataclass(frozen=True, eq=True)
-class ResolvedFunctionHandle:
+class ResolvedFunctionHandle(Formattable):
     module: int
     index: int
-
-    def __str__(self) -> str:
-        return f"(FunctionHandle {self.module} {self.index})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("FunctionHandle", [self.module, self.index])
 
 @dataclass
-class ResolvedFunRefWord:
+class ResolvedFunRefWord(Formattable):
     call: ResolvedCallWord
-
-    def __str__(self) -> str:
-        return f"(FunRef {self.call})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("FunRef", [self.call])
 
 @dataclass
-class ResolvedIfWord:
+class ResolvedIfWord(Formattable):
     token: Token
     parameters: List[ResolvedType]
     returns: List[ResolvedType] | None
     true_branch: ResolvedScope
     false_branch: ResolvedScope
     diverges: bool
-
-    def __str__(self) -> str:
-        s = "(If\n"
-        s += f"  token={self.token},\n"
-        s += f"  parameters={listtostr(self.parameters)},\n"
-        s += f"  returns={format_maybe(None if self.diverges else self.returns, listtostr)},\n"
-        s += f"  true-branch={self.true_branch},\n"
-        s += f"  false-branch={self.false_branch}"
-        return s + ")"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("If", [
+            ("token", self.token),
+            ("parameters", format_seq(self.parameters)),
+            ("returns", format_optional(self.returns, format_list)),
+            ("true-branch", self.true_branch),
+            ("false-branch", self.false_branch)])
 
 @dataclass
-class ResolvedLoopWord:
+class ResolvedLoopWord(Formattable):
     token: Token
     body: ResolvedScope
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
     diverges: bool
-
-    def __str__(self) -> str:
-        s = "(Loop\n"
-        s += f"  token={self.token},\n"
-        s += f"  parameters={listtostr(self.parameters)},\n"
-        s += f"  returns={format_maybe(None if self.diverges else self.returns, listtostr)},\n"
-        s += f"  body={self.body}"
-        return s + ")"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Loop", [
+            ("token", self.token),
+            ("parameters", format_seq(self.parameters)),
+            ("returns", format_optional(None if self.diverges else self.returns, format_list)),
+            ("body", self.body)])
 
 
 @dataclass
-class ResolvedBlockWord:
+class ResolvedBlockWord(Formattable):
     token: Token
     body: ResolvedScope
     parameters: List[ResolvedType]
     returns: List[ResolvedType]
 
 @dataclass
-class ResolvedCastWord:
+class ResolvedCastWord(Formattable):
     token: Token
     source: ResolvedType
     taip: ResolvedType
 
 @dataclass
-class ResolvedSizeofWord:
+class ResolvedSizeofWord(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedGetFieldWord:
+class ResolvedGetFieldWord(Formattable):
     token: Token
     fields: List[ResolvedFieldAccess]
     on_ptr: bool
 
 @dataclass
-class ResolvedIndirectCallWord:
+class ResolvedIndirectCallWord(Formattable):
     token: Token
     taip: ResolvedFunctionType
-
-    def __str__(self) -> str:
-        return f"(IndirectCall {self.token} {self.taip})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("IndirectCall", [self.token, self.taip])
 
 @dataclass
-class ResolvedStructFieldInitWord:
+class ResolvedStructFieldInitWord(Formattable):
     token: Token
     struct: ResolvedCustomTypeHandle
     taip: ResolvedType
@@ -1909,36 +2097,39 @@ class ResolvedStructFieldInitWord:
     generic_arguments: List[ResolvedType]
 
 @dataclass
-class ResolvedStructWord:
+class ResolvedStructWord(Formattable):
     token: Token
     taip: ResolvedCustomTypeType
     body: ResolvedScope
-
-    def __str__(self) -> str:
-        return f"(StructWordNamed\n  token={self.token},\n  type={self.taip},\n  body={self.body})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("StructWordNamed", [
+            ("token", self.token),
+            ("type", self.taip),
+            ("body", self.body)])
 
 @dataclass
-class ResolvedUnnamedStructWord:
+class ResolvedUnnamedStructWord(Formattable):
     token: Token
     taip: ResolvedCustomTypeType
-
-    def __str__(self) -> str:
-        return f"(StructWord\n  token={self.token},\n  type={self.taip})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("StructWord", [
+            ("token", self.token),
+            ("type", self.taip)])
 
 @dataclass
-class ResolvedVariantWord:
+class ResolvedVariantWord(Formattable):
     token: Token
     tag: int
     variant: ResolvedCustomTypeType
 
 @dataclass
-class ResolvedMatchCase:
+class ResolvedMatchCase(Formattable):
     taip: ResolvedType | None
     tag: int
     body: ResolvedScope
 
 @dataclass
-class ResolvedMatchWord:
+class ResolvedMatchWord(Formattable):
     token: Token
     variant: ResolvedCustomTypeType
     by_ref: bool
@@ -1948,12 +2139,12 @@ class ResolvedMatchWord:
     returns: List[ResolvedType] | None
 
 @dataclass
-class ResolvedTupleMakeWord:
+class ResolvedTupleMakeWord(Formattable):
     token: Token
     taip: ResolvedTupleType
 
 @dataclass
-class ResolvedTupleUnpackWord:
+class ResolvedTupleUnpackWord(Formattable):
     token: Token
     items: ResolvedTupleType
 
@@ -2021,137 +2212,140 @@ INTRINSICS: dict[str, IntrinsicType] = {
 INTRINSIC_TO_LEXEME: dict[IntrinsicType, str] = {v: k for k, v in INTRINSICS.items()}
 
 @dataclass
-class ResolvedIntrinsicAdd:
+class ResolvedIntrinsicAdd(Formattable):
     token: Token
-    taip: ResolvedPtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
-
-    def __str__(self) -> str:
-        return f"(Intrinsic {self.token} (Add {self.taip}))"
+    taip: ResolvedPtrType | I8 | I32 | I64
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Intrinsic", [
+            self.token, unnamed_record("Add", [self.taip])])
 
 @dataclass
-class ResolvedIntrinsicSub:
+class ResolvedIntrinsicSub(Formattable):
     token: Token
-    taip: ResolvedPtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: ResolvedPtrType | I8 | I32 | I64
 
 @dataclass
-class IntrinsicDrop:
+class IntrinsicDrop(Formattable):
     token: Token
-
-    def __str__(self) -> str:
-        return f"(Drop {self.token})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Drop", [self.token])
 
 @dataclass
-class ResolvedIntrinsicMod:
+class ResolvedIntrinsicMod(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I32 | I64
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Intrinsic", [
+            self.token, unnamed_record("Mod", [self.taip])])
 
 @dataclass
-class ResolvedIntrinsicMul:
+class ResolvedIntrinsicMul(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I32 | I64
 
 @dataclass
-class ResolvedIntrinsicDiv:
+class ResolvedIntrinsicDiv(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I32 | I64
 
 @dataclass
-class ResolvedIntrinsicAnd:
+class ResolvedIntrinsicAnd(Formattable):
     token: Token
     taip: PrimitiveType
 
 @dataclass
-class ResolvedIntrinsicOr:
+class ResolvedIntrinsicOr(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedIntrinsicShl:
+class ResolvedIntrinsicShl(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedIntrinsicShr:
+class ResolvedIntrinsicShr(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedIntrinsicRotr:
+class ResolvedIntrinsicRotr(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedIntrinsicRotl:
+class ResolvedIntrinsicRotl(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedIntrinsicGreater:
+class ResolvedIntrinsicGreater(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
-class ResolvedIntrinsicLess:
+class ResolvedIntrinsicLess(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
-class ResolvedIntrinsicGreaterEq:
+class ResolvedIntrinsicGreaterEq(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
-class ResolvedIntrinsicLessEq:
+class ResolvedIntrinsicLessEq(Formattable):
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
-class IntrinsicMemCopy:
-    token: Token
-
-@dataclass
-class IntrinsicMemFill:
+class IntrinsicMemCopy(Formattable):
     token: Token
 
 @dataclass
-class ResolvedIntrinsicEqual:
+class IntrinsicMemFill(Formattable):
+    token: Token
+
+@dataclass
+class ResolvedIntrinsicEqual(Formattable):
+    token: Token
+    taip: ResolvedType
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Intrinsic", [
+            self.token,
+            unnamed_record("Eq", [self.taip])])
+
+@dataclass
+class ResolvedIntrinsicNotEqual(Formattable):
     token: Token
     taip: ResolvedType
 
-    def __str__(self) -> str:
-        return f"(Intrinsic {self.token} (Eq {self.taip}))"
-
 @dataclass
-class ResolvedIntrinsicNotEqual:
-    token: Token
-    taip: ResolvedType
-
-@dataclass
-class ResolvedIntrinsicFlip:
+class ResolvedIntrinsicFlip(Formattable):
     token: Token
     lower: ResolvedType
     upper: ResolvedType
 
 @dataclass
-class IntrinsicMemGrow:
+class IntrinsicMemGrow(Formattable):
     token: Token
 
 @dataclass
-class IntrinsicSetStackSize:
+class IntrinsicSetStackSize(Formattable):
     token: Token
 
 @dataclass
-class ResolvedIntrinsicStore:
+class ResolvedIntrinsicStore(Formattable):
     token: Token
     taip: ResolvedType
 
 @dataclass
-class ResolvedIntrinsicNot:
+class ResolvedIntrinsicNot(Formattable):
     token: Token
     taip: PrimitiveType
 
 @dataclass
-class ResolvedIntrinsicUninit:
+class ResolvedIntrinsicUninit(Formattable):
     token: Token
     taip: ResolvedType
 
@@ -2192,8 +2386,6 @@ ResolvedWord = (
     | ResolvedRefWord
     | ResolvedSetWord
     | ResolvedStoreWord
-    | ResolvedCallWord
-    | ResolvedCallWord
     | ResolvedFunRefWord
     | ResolvedIfWord
     | ResolvedLoadWord
@@ -2220,7 +2412,7 @@ ResolvedWord = (
 # =============================================================================
 
 @dataclass
-class ResolvedModule:
+class ResolvedModule(Formattable):
     path: str
     id: int
     imports: Dict[str, List[Import]]
@@ -2229,12 +2421,12 @@ class ResolvedModule:
     functions: IndexedDict[str, ResolvedFunction | ResolvedExtern]
     data: bytes
 
-    def __str__(self):
-        imports = indent_non_first(format_dict(self.imports))
-        custom_types = indent_non_first(str(self.custom_types))
-        globals = indent_non_first(str(self.globals))
-        functions = indent_non_first(str(self.functions))
-        return f"(Module\n  imports={imports},\n  custom-types={custom_types},\n  globals={globals},\n  functions={functions})"
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Module", [
+            ("imports", format_dict(self.imports, format_str, format_seq)),
+            ("custom-types", self.custom_types.format_instrs(format_str)),
+            ("globals", format_dict(self.globals, format_str)),
+            ("functions", format_dict(self.functions, format_str))])
 
 def determine_compilation_order(modules: Dict[str, List[ParsedTopItem]]) -> IndexedDict[str, List[ParsedTopItem]]:
     unprocessed = IndexedDict.from_items(modules.items())
@@ -2509,13 +2701,13 @@ class TypeLookup:
         return s
 
     def type_pretty(self, taip: ResolvedType) -> str:
-        if taip == PrimitiveType.I8:
+        if isinstance(taip, I8):
             return "i8"
-        if taip == PrimitiveType.I32:
+        if isinstance(taip, I32):
             return "i32"
-        if taip == PrimitiveType.I64:
+        if isinstance(taip, I64):
             return "i64"
-        if taip == PrimitiveType.BOOL:
+        if isinstance(taip, Bool):
             return "bool"
         if isinstance(taip, ResolvedPtrType):
             return f".{self.type_pretty(taip.child)}"
@@ -2630,10 +2822,6 @@ class ResolveCtx:
         return [self.resolve_named_type(imports, named_type) for named_type in named_types]
 
     def resolve_type(self, imports: Dict[str, List[Import]], taip: ParsedType) -> ResolvedType:
-        if isinstance(taip, PrimitiveType):
-            return taip
-        if isinstance(taip, GenericType):
-            return taip
         if isinstance(taip, Parser.PtrType):
             return ResolvedPtrType(self.resolve_type(imports, taip.child))
         if isinstance(taip, Parser.CustomTypeType) or isinstance(taip, Parser.ForeignType):
@@ -2649,9 +2837,7 @@ class ResolveCtx:
                 taip.token,
                 self.resolve_types(imports, taip.items)
             )
-        if isinstance(taip, Parser.HoleType):
-            return taip
-        assert_never(taip)
+        return taip
 
     def resolve_types(self, imports: Dict[str, List[Import]], types: List[ParsedType]) -> List[ResolvedType]:
         return [self.resolve_type(imports, taip) for taip in types]
@@ -2838,11 +3024,11 @@ class WordCtx:
 
     def resolve_word(self, stack: Stack, remaining_words: List[ParsedWord], word: ParsedWord) -> Tuple[List[ResolvedWord], bool] | None:
         if isinstance(word, NumberWord):
-            stack.push(PrimitiveType.I32)
+            stack.push(I32())
             return ([word], False)
         if isinstance(word, Parser.StringWord):
-            stack.push(ResolvedPtrType(PrimitiveType.I8))
-            stack.push(PrimitiveType.I32)
+            stack.push(ResolvedPtrType(I8()))
+            stack.push(I32())
             offset = self.ctx.allocate_static_data(word.data)
             return ([StringWord(word.token, offset, len(word.data))], False)
         if isinstance(word, Parser.GetWord):
@@ -3023,7 +3209,7 @@ class WordCtx:
                     self.abort(hole, msg)
                 mapping[hole] = actual
                 return True
-            case PrimitiveType():
+            case Bool() | I8() | I32() | I64():
                 return resolved_type_eq(actual, holey)
             case GenericType():
                 return isinstance(actual, GenericType) and actual.generic_index == holey.generic_index
@@ -3116,7 +3302,7 @@ class WordCtx:
         return ([ResolvedCastWord(word.token, src, dst)], False)
 
     def resolve_sizeof(self, stack: Stack, word: Parser.SizeofWord) -> Tuple[List[ResolvedWord], bool]:
-        stack.push(PrimitiveType.I32)
+        stack.push(I32())
         return ([ResolvedSizeofWord(word.token, self.ctx.resolve_type(self.imports, word.taip))], False)
 
     def resolve_make_struct(self, stack: Stack, word: Parser.UnnamedStructWord) -> Tuple[List[ResolvedWord], bool]:
@@ -3157,7 +3343,7 @@ class WordCtx:
         return ([ResolvedFunRefWord(call)], False)
 
     def resolve_if(self, stack: Stack, remaining_words: List[ParsedWord], word: Parser.IfWord) -> Tuple[List[ResolvedWord], bool]:
-        if stack.pop() != PrimitiveType.BOOL:
+        if not isinstance(stack.pop(), Bool):
             self.abort(word.token, "expected a bool for `if`")
         true_env = self.env.child()
         true_stack = stack.make_child()
@@ -3167,10 +3353,10 @@ class WordCtx:
         false_stack = stack.make_child()
         false_ctx = self.with_env(false_env)
 
-        true_words, true_words_diverge = true_ctx.resolve_words(true_stack, word.true_words)
+        true_words, true_words_diverge = true_ctx.resolve_words(true_stack, word.true_words.words)
         true_parameters = true_stack.negative
 
-        if true_words_diverge and len(word.false_words) == 0:
+        if true_words_diverge and (word.false_words == None or len(word.false_words.words) == 0):
             remaining_stack = stack.make_child()
             remaining_stack.use(len(true_parameters))
 
@@ -3190,7 +3376,7 @@ class WordCtx:
                 ResolvedScope(true_ctx.env.scope_id, true_words),
                 ResolvedScope(remaining_ctx.env.scope_id, resolved_remaining_words),
                 diverges)], diverges)
-        false_words, false_words_diverge = false_ctx.resolve_words(false_stack, word.false_words)
+        false_words, false_words_diverge = false_ctx.resolve_words(false_stack, [] if word.false_words == None else word.false_words.words)
         if not true_words_diverge and not false_words_diverge:
             if not true_stack.compatible_with(false_stack):
                 msg  = "stack mismatch between if and else branch:\n\tif   "
@@ -3515,13 +3701,27 @@ class WordCtx:
         stack.push_many(taip.items)
         return ([ResolvedTupleUnpackWord(word.token, taip)], False)
 
+    def stack_annotation_mismatch(self, stack: Stack, annotation: Parser.StackAnnotation) -> NoReturn:
+        expected = self.ctx.resolve_types(self.imports, annotation.types)
+        msg = "Stack doesn't match annotation:\n"
+        msg += "  actual:   ["
+        if len(stack) > len(expected) + 1:
+            msg += "..., "
+        actual = stack.pop_n(len(expected) + 1)
+        msg += self.type_lookup.types_pretty(actual)
+        msg += "]\n"
+        msg += "  expected: "
+        msg += self.type_lookup.types_pretty_bracketed(expected)
+        msg += "\n"
+        self.abort(annotation.token, msg)
+
     def resolve_stack_annotation(self, stack: Stack, word: Parser.StackAnnotation) -> None:
         if len(stack) < len(word.types):
-            self.abort(word.token, "stack annotation doesn't match reality")
+            self.stack_annotation_mismatch(stack, word)
         for i, taip in enumerate(reversed(word.types)):
             expected = self.ctx.resolve_type(self.imports, taip)
-            if not resolved_type_eq(stack[-i], expected):
-                self.abort(word.token, "stack annotation doesn't match reality")
+            if not resolved_type_eq(stack[-i-1], expected):
+                self.stack_annotation_mismatch(stack, word)
         return None
 
     def resolve_block_annotation(self, annotation: Parser.BlockAnnotation) -> BlockAnnotation:
@@ -3576,21 +3776,21 @@ class WordCtx:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
                 if isinstance(taip, ResolvedPtrType):
-                    narrow_type: ResolvedPtrType | Literal[PrimitiveType.I8, PrimitiveType.I32, PrimitiveType.I64] = taip
-                    if stack[-1] != PrimitiveType.I32:
+                    narrow_type: ResolvedPtrType | I8 | I32 | I64 = taip
+                    if not isinstance(stack[-1], I32):
                         self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, i32]")
                     stack.pop()
-                elif taip == PrimitiveType.I8:
-                    narrow_type = PrimitiveType.I8
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
+                elif isinstance(taip, I8):
+                    narrow_type = I8()
+                    popped = self.expect_stack(token, stack, [I8(), I8()])
                     stack.append(taip)
-                elif taip == PrimitiveType.I32:
-                    narrow_type = PrimitiveType.I32
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
+                elif isinstance(taip, I32):
+                    narrow_type = I32()
+                    popped = self.expect_stack(token, stack, [I32(), I32()])
                     stack.append(taip)
-                elif taip == PrimitiveType.I64:
-                    narrow_type = PrimitiveType.I64
-                    self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
+                elif isinstance(taip, I64):
+                    narrow_type = I64()
+                    self.expect_stack(token, stack, [I64(), I64()])
                     stack.append(taip)
                 else:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]} cannot add to {self.type_lookup.type_pretty(taip)}")
@@ -3607,12 +3807,12 @@ class WordCtx:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
-                if taip == PrimitiveType.I32:
-                    narrow_type = PrimitiveType.I32
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
-                elif taip == PrimitiveType.I64:
-                    narrow_type = PrimitiveType.I64
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
+                if isinstance(taip, I32):
+                    narrow_type = I32()
+                    popped = self.expect_stack(token, stack, [I32(), I32()])
+                elif isinstance(taip, I64):
+                    narrow_type = I64()
+                    popped = self.expect_stack(token, stack, [I64(), I64()])
                 else:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [i32, i32] or [i64, i64] on stack")
                 stack.append(taip)
@@ -3627,14 +3827,14 @@ class WordCtx:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-1]
                 match taip:
-                    case PrimitiveType.I8:
-                        popped = self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
-                    case PrimitiveType.I32:
-                        popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
-                    case PrimitiveType.I64:
-                        popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
-                    case PrimitiveType.BOOL:
-                        popped = self.expect_stack(token, stack, [PrimitiveType.BOOL, PrimitiveType.BOOL])
+                    case I8():
+                        popped = self.expect_stack(token, stack, [I8(), I8()])
+                    case I32():
+                        popped = self.expect_stack(token, stack, [I32(), I32()])
+                    case I64():
+                        popped = self.expect_stack(token, stack, [I64(), I64()])
+                    case Bool():
+                        popped = self.expect_stack(token, stack, [Bool(), Bool()])
                     case _:
                         self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` can only and i8, i32, i64 and bool")
                 stack.append(popped[0])
@@ -3646,12 +3846,12 @@ class WordCtx:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-2]
-                if taip == PrimitiveType.I8:
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
-                elif taip == PrimitiveType.I32:
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
+                if isinstance(taip, I8):
+                    popped = self.expect_stack(token, stack, [I8(), I8()])
+                elif isinstance(taip, I32):
+                    popped = self.expect_stack(token, stack, [I32(), I32()])
                 else:
-                    popped = self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
+                    popped = self.expect_stack(token, stack, [I64(), I64()])
                 stack.append(popped[0])
                 if intrinsic == IntrinsicType.SHL:
                     return ResolvedIntrinsicShl(token, taip)
@@ -3665,18 +3865,18 @@ class WordCtx:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 taip = stack[-1]
-                if taip == PrimitiveType.I8:
-                    narrow_type = PrimitiveType.I8
-                    self.expect_stack(token, stack, [PrimitiveType.I8, PrimitiveType.I8])
-                elif taip == PrimitiveType.I32:
-                    narrow_type = PrimitiveType.I32
-                    self.expect_stack(token, stack, [PrimitiveType.I32, PrimitiveType.I32])
-                elif taip == PrimitiveType.I64:
-                    narrow_type = PrimitiveType.I64
-                    self.expect_stack(token, stack, [PrimitiveType.I64, PrimitiveType.I64])
+                if isinstance(taip, I8):
+                    narrow_type = I8()
+                    self.expect_stack(token, stack, [I8(), I8()])
+                elif isinstance(taip, I32):
+                    narrow_type = I32()
+                    self.expect_stack(token, stack, [I32(), I32()])
+                elif isinstance(taip, I64):
+                    narrow_type = I64()
+                    self.expect_stack(token, stack, [I64(), I64()])
                 else:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [i8, i8] or [i32, i32] or [i64, i64] on stack")
-                stack.append(PrimitiveType.BOOL)
+                stack.append(Bool())
                 if intrinsic == IntrinsicType.GREATER:
                     return ResolvedIntrinsicGreater(token, narrow_type)
                 if intrinsic == IntrinsicType.LESS:
@@ -3686,10 +3886,10 @@ class WordCtx:
                 if intrinsic == IntrinsicType.LESS_EQ:
                     return ResolvedIntrinsicLessEq(token, narrow_type)
             case IntrinsicType.MEM_COPY:
-                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I8), ResolvedPtrType(PrimitiveType.I8), PrimitiveType.I32])
+                self.expect_stack(token, stack, [ResolvedPtrType(I8()), ResolvedPtrType(I8()), I32()])
                 return IntrinsicMemCopy(token)
             case IntrinsicType.MEM_FILL:
-                self.expect_stack(token, stack, [ResolvedPtrType(PrimitiveType.I32), PrimitiveType.I32, PrimitiveType.I32])
+                self.expect_stack(token, stack, [ResolvedPtrType(I32()), I32(), I32()])
                 return IntrinsicMemFill(token)
             case IntrinsicType.NOT_EQ | IntrinsicType.EQ:
                 if len(stack) < 2:
@@ -3699,7 +3899,7 @@ class WordCtx:
                 taip = stack[-1]
                 stack.pop()
                 stack.pop()
-                stack.append(PrimitiveType.BOOL)
+                stack.append(Bool())
                 if intrinsic == IntrinsicType.EQ:
                     return ResolvedIntrinsicEqual(token, taip)
                 if intrinsic == IntrinsicType.NOT_EQ:
@@ -3712,8 +3912,8 @@ class WordCtx:
                 stack.push_many([a, b])
                 return ResolvedIntrinsicFlip(token, b, a)
             case IntrinsicType.MEM_GROW:
-                self.expect_stack(token, stack, [PrimitiveType.I32])
-                stack.append(PrimitiveType.I32)
+                self.expect_stack(token, stack, [I32()])
+                stack.append(I32())
                 return IntrinsicMemGrow(token)
             case IntrinsicType.STORE:
                 if len(stack) < 2:
@@ -3727,7 +3927,7 @@ class WordCtx:
                 return ResolvedIntrinsicStore(token, taip)
             case IntrinsicType.NOT:
                 taip = stack[-1]
-                if len(stack) == 0 or (taip != PrimitiveType.I64 and taip != PrimitiveType.I32 and taip != PrimitiveType.BOOL) or not isinstance(taip, PrimitiveType):
+                if len(stack) == 0 or (not isinstance(taip, I64) and not isinstance(taip, I32) and not isinstance(taip, Bool)):
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected an i64, i32 or bool on the stack")
                 return ResolvedIntrinsicNot(token, taip)
             case IntrinsicType.UNINIT:
@@ -3736,7 +3936,7 @@ class WordCtx:
                 stack.append(generic_arguments[0])
                 return ResolvedIntrinsicUninit(token, generic_arguments[0])
             case IntrinsicType.SET_STACK_SIZE:
-                self.expect_stack(token, stack, [PrimitiveType.I32])
+                self.expect_stack(token, stack, [I32()])
                 return IntrinsicSetStackSize(token)
             case _:
                 assert_never(intrinsic)
@@ -3807,8 +4007,6 @@ class WordCtx:
         return resolved
 
     def insert_generic_arguments(self, generics: List[ResolvedType], taip: ResolvedType) -> ResolvedType:
-        if isinstance(taip, PrimitiveType):
-            return taip
         if isinstance(taip, ResolvedPtrType):
             return ResolvedPtrType(self.insert_generic_arguments(generics, taip.child))
         if isinstance(taip, ResolvedCustomTypeType):
@@ -3824,11 +4022,9 @@ class WordCtx:
                 taip.token,
                 self.insert_generic_arguments_all(generics, taip.items),
             )
-        if isinstance(taip, Parser.HoleType):
-            return taip
         if isinstance(taip, GenericType):
             return generics[taip.generic_index]
-        assert_never(taip)
+        return taip
 
     def insert_generic_arguments_all(self, generics: List[ResolvedType], types: List[ResolvedType]) -> List[ResolvedType]:
         return [self.insert_generic_arguments(generics, taip) for taip in types]
@@ -3987,8 +4183,14 @@ class TupleType:
 Type = PrimitiveType | PtrType | StructType | FunctionType | TupleType
 
 def type_eq(a: Type, b: Type) -> bool:
-    if isinstance(a, PrimitiveType) and isinstance(b, PrimitiveType):
-        return a == b
+    if isinstance(a, Bool) and isinstance(b, Bool):
+        return True
+    if isinstance(a, I8) and isinstance(b, I8):
+        return True
+    if isinstance(a, I32) and isinstance(b, I32):
+        return True
+    if isinstance(a, I64) and isinstance(b, I64):
+        return True
     if isinstance(a, PtrType) and isinstance(b, PtrType):
         return type_eq(a.child, b.child)
     if isinstance(a, StructType) and isinstance(b, StructType):
@@ -4009,8 +4211,6 @@ def types_eq(a: List[Type], b: List[Type]) -> bool:
 
 def format_type(a: Type) -> str:
     match a:
-        case PrimitiveType():
-            return a.pretty()
         case PtrType(child):
             return f".{format_type(child)}"
         case StructType(name):
@@ -4027,6 +4227,14 @@ def format_type(a: Type) -> str:
             return s[:-2] + ")"
         case TupleType(_, items):
             return listtostr(items, format_type)
+        case Bool():
+            return "bool"
+        case I8():
+            return "i8"
+        case I32():
+            return "i32"
+        case I64():
+            return "i64"
         case other:
             assert_never(other)
 
@@ -4288,27 +4496,27 @@ class RefWord:
 @dataclass
 class IntrinsicAdd:
     token: Token
-    taip: PtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: PtrType | I8 | I32 | I64
 
 @dataclass
 class IntrinsicSub:
     token: Token
-    taip: PtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: PtrType | I8 | I32 | I64
 
 @dataclass
 class IntrinsicMul:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicDiv:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicMod:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicEqual:
@@ -4339,22 +4547,22 @@ class IntrinsicNot:
 @dataclass
 class IntrinsicGreaterEq:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicLessEq:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicGreater:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicLess:
     token: Token
-    taip: Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]
+    taip: I8 | I32 | I64
 
 @dataclass
 class IntrinsicShl:
@@ -4934,8 +5142,6 @@ class Monomizer:
 
     def monomize_type(self, taip: ResolvedType, generics: List[Type]) -> Type:
         match taip:
-            case PrimitiveType():
-                return taip
             case ResolvedPtrType():
                 return PtrType(self.monomize_type(taip.child, generics))
             case GenericType(_, generic_index):
@@ -4949,11 +5155,11 @@ class Monomizer:
             case Parser.HoleType():
                 assert(False)
             case other:
-                assert_never(other)
+                return other
 
-    def monomize_addable_type(self, taip: ResolvedPtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64], generics: List[Type]) -> PtrType | Literal[PrimitiveType.I8] | Literal[PrimitiveType.I32] | Literal[PrimitiveType.I64]:
+    def monomize_addable_type(self, taip: ResolvedPtrType | I8 | I32 | I64, generics: List[Type]) -> PtrType | I8 | I32 | I64:
         match taip:
-            case PrimitiveType.I8 | PrimitiveType.I32 | PrimitiveType.I64:
+            case I8() | I32() | I64():
                 return taip
             case ResolvedPtrType():
                 return PtrType(self.monomize_type(taip.child, generics))
@@ -5095,27 +5301,27 @@ class DetermineLoadsToValueTests(unittest.TestCase):
 
     def test_by_value_on_struct(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 12), PrimitiveType.I32, 4)
+            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 12), I32(), 4)
         ])
         self.assertTrue(len(loads) == 1)
-        self.assertTrue(loads[0] == OffsetLoad(4, PrimitiveType.I32))
+        self.assertTrue(loads[0] == OffsetLoad(4, I32()))
 
     def test_by_value_on_struct_packed(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), PrimitiveType.I32, 0)
+            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), I32(), 0)
         ])
         self.assertTrue(len(loads) == 1)
         self.assertTrue(loads[0] == I32InI64(0))
 
     def test_packed_value_on_struct_in_mem(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), PrimitiveType.I32, 0)
+            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), I32(), 0)
         ], base_in_mem=True)
-        self.assertEqual(loads, [OffsetLoad(0, PrimitiveType.I32)])
+        self.assertEqual(loads, [OffsetLoad(0, I32())])
 
     def test_by_value_on_struct_packed_small_noop(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 4), PrimitiveType.I32, 0)
+            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 4), I32(), 0)
         ])
         self.assertEqual(loads, [])
 
@@ -5124,29 +5330,29 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         v2 = StructType.dummy("V2", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("v"), foo, v2               , 4),
-            FieldAccess(Token.dummy("x"), v2 , PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("x"), v2 , I32(), 0),
         ])
-        self.assertEqual(loads, [OffsetLoad(4, PrimitiveType.I32)])
+        self.assertEqual(loads, [OffsetLoad(4, I32())])
 
     def test_by_value_through_ptr(self) -> None:
         node = StructType.dummy("Node", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , node         , PtrType(node)    , 4),
-            FieldAccess(Token.dummy("value"), PtrType(node), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
         ])
         self.assertTrue(len(loads) == 1)
-        self.assertTrue(loads[0] == OffsetLoad(4, PrimitiveType.I32))
+        self.assertTrue(loads[0] == OffsetLoad(4, I32()))
 
     def test_by_value_through_two_ptrs(self) -> None:
         node = StructType.dummy("Node", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , node         , PtrType(node)    , 4),
             FieldAccess(Token.dummy("next") , PtrType(node), PtrType(node)    , 4),
-            FieldAccess(Token.dummy("value"), PtrType(node), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
         ])
         self.assertEqual(loads, [
             OffsetLoad(8, PtrType(node)),
-            OffsetLoad(0, PrimitiveType.I32)])
+            OffsetLoad(0, I32())])
 
     def test_get_sub_struct_by_value(self) -> None:
         bar = StructType.dummy("Bar", 12)
@@ -5168,36 +5374,36 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         node = StructType.dummy("Node", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , PtrType(node), PtrType(node)    , 4),
-            FieldAccess(Token.dummy("value"), PtrType(node), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
         ])
         self.assertEqual(loads, [
             OffsetLoad(4, PtrType(node)),
-            OffsetLoad(0, PrimitiveType.I32)])
+            OffsetLoad(0, I32())])
 
     def test_by_ref_get_on_packed_value(self) -> None:
         node = StructType.dummy("Node", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , PtrType(node), PtrType(node)    , 4),
-            FieldAccess(Token.dummy("value"), PtrType(node), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
         ])
         self.assertTrue(len(loads) == 2)
         self.assertTrue(loads[0] == OffsetLoad(4, PtrType(node)))
-        self.assertTrue(loads[1] == OffsetLoad(0, PrimitiveType.I32))
+        self.assertTrue(loads[1] == OffsetLoad(0, I32()))
 
     def test_get_through_bitshift(self) -> None:
         node = StructType.dummy("Node", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , node         , PtrType(node)    , 4),
-            FieldAccess(Token.dummy("value"), PtrType(node), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
         ])
         self.assertTrue(len(loads) == 2)
         self.assertTrue(loads[0] == I32InI64(4))
-        self.assertTrue(loads[1] == OffsetLoad(0, PrimitiveType.I32))
+        self.assertTrue(loads[1] == OffsetLoad(0, I32()))
 
     def test_ref_field_in_big_struct(self) -> None:
         ctx = StructType.dummy("Ctx", 12)
         loads = determine_loads([
-            FieldAccess(Token.dummy("counter"), ctx, PrimitiveType.I32, 8),
+            FieldAccess(Token.dummy("counter"), ctx, I32(), 8),
         ], just_ref=True)
         self.assertTrue(len(loads) == 1)
         self.assertTrue(loads[0] == Offset(8))
@@ -5207,7 +5413,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         word_ctx = StructType.dummy("WordCtx", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("word-ctx"), ctx              , word_ctx         , 4),
-            FieldAccess(Token.dummy("counter") , PtrType(word_ctx), PrimitiveType.I32, 8),
+            FieldAccess(Token.dummy("counter") , PtrType(word_ctx), I32(), 8),
         ], just_ref=True)
         self.assertTrue(len(loads) == 1)
         self.assertTrue(loads[0] == Offset(12))
@@ -5215,7 +5421,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
     def test_ref_field_in_big_struct_at_offset_0(self) -> None:
         ctx = StructType.dummy("Ctx", 12)
         loads = determine_loads([
-            FieldAccess(Token.dummy("counter"), ctx, PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("counter"), ctx, I32(), 0),
         ], just_ref=True)
         self.assertTrue(len(loads) == 0)
 
@@ -5224,7 +5430,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         page = StructType.dummy("Page", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("free-list"), allocator    , PtrType(page)    , 0),
-            FieldAccess(Token.dummy("foo")      , PtrType(page), PrimitiveType.I32, 4),
+            FieldAccess(Token.dummy("foo")      , PtrType(page), I32(), 4),
         ], just_ref=True)
         self.assertEqual(loads, [Offset(4)])
 
@@ -5233,23 +5439,23 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         v2 = StructType.dummy("V2", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("v")  , foo, v2               , 8),
-            FieldAccess(Token.dummy("foo"), v2 , PrimitiveType.I32, 4),
+            FieldAccess(Token.dummy("foo"), v2 , I32(), 4),
         ])
-        self.assertEqual(loads, [OffsetLoad(12, PrimitiveType.I32)])
+        self.assertEqual(loads, [OffsetLoad(12, I32())])
 
     def test_set_field_on_ptr(self) -> None:
         small = StructType.dummy("Small", 4)
         loads = determine_loads([
-            FieldAccess(Token.dummy("value"), PtrType(small), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("value"), PtrType(small), I32(), 0),
         ], just_ref=True)
         self.assertEqual(loads, [])
 
     def test_get_value_on_packed_but_reffed_struct(self) -> None:
         prestat = StructType.dummy("Prestat", 8)
         loads = determine_loads([
-            FieldAccess(Token.dummy("path_len"), prestat, PrimitiveType.I32, 4)
+            FieldAccess(Token.dummy("path_len"), prestat, I32(), 4)
         ], base_in_mem=True)
-        self.assertEqual(loads, [OffsetLoad(4, PrimitiveType.I32)])
+        self.assertEqual(loads, [OffsetLoad(4, I32())])
 
     def test_get_struct_through_ptr(self) -> None:
         named_type = StructType.dummy("NamedType", 16)
@@ -5264,18 +5470,18 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         immediate_string = StructType.dummy("ImmediateString", 4)
         loads = determine_loads([
             FieldAccess(Token.dummy("lexeme"), PtrType(token), PtrType(immediate_string), 4),
-            FieldAccess(Token.dummy("len"), PtrType(immediate_string), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("len"), PtrType(immediate_string), I32(), 0),
         ])
         self.assertEqual(loads, [
             OffsetLoad(4, PtrType(immediate_string)),
-            OffsetLoad(0, PrimitiveType.I32)])
+            OffsetLoad(0, I32())])
 
     def test_set_field_through_bitshift(self) -> None:
         token = StructType.dummy("Token", 8)
         immediate_string = StructType.dummy("ImmediateString", 4)
         loads = determine_loads([
             FieldAccess(Token.dummy("lexeme"), token, PtrType(immediate_string), 4),
-            FieldAccess(Token.dummy("len"), PtrType(immediate_string), PrimitiveType.I32, 0),
+            FieldAccess(Token.dummy("len"), PtrType(immediate_string), I32(), 0),
         ], just_ref=True)
         self.assertEqual(loads, [I32InI64(4)])
 
@@ -5285,7 +5491,7 @@ def merge_loads(loads: List[Load]) -> List[Load]:
     a = loads[0]
     b = loads[1]
     if isinstance(a, OffsetLoad) and is_bitshift(b):
-        return [OffsetLoad(a.offset + b.offset, PrimitiveType.I32)] + loads[2:]
+        return [OffsetLoad(a.offset + b.offset, I32())] + loads[2:]
     if isinstance(a, Offset) and isinstance(b, Offset):
         return [Offset(a.offset + b.offset)] + loads[2:]
     if isinstance(a, Offset) and isinstance(b, OffsetLoad):
@@ -5604,23 +5810,23 @@ class WatGenerator:
                 self.write_store(taip)
                 self.write("\n")
             case IntrinsicAdd(token, taip):
-                if isinstance(taip, PtrType) or taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
+                if isinstance(taip, PtrType) or isinstance(taip, I32) or isinstance(taip, I8):
                     self.write_line("i32.add")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.add")
                     return
                 assert_never(taip)
             case IntrinsicSub(token, taip):
-                if isinstance(taip, PtrType) or taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
+                if isinstance(taip, PtrType) or isinstance(taip, I32) or isinstance(taip, I8):
                     self.write_line("i32.sub")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.sub")
                     return
                 assert_never(taip)
             case IntrinsicMul(_, taip):
-                self.write_line(f"{'i64' if taip == PrimitiveType.I64 else 'i32'}.mul")
+                self.write_line(f"{'i64' if isinstance(taip, I64) else 'i32'}.mul")
             case IntrinsicDrop():
                 self.write_line("drop")
             case IntrinsicOr(_, taip):
@@ -5634,40 +5840,40 @@ class WatGenerator:
                 assert(taip.can_live_in_reg())
                 self.write_line("i32.eq")
             case IntrinsicNotEqual(_, taip):
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.ne")
                     return
                 assert(taip.can_live_in_reg())
                 self.write_line("i32.ne")
             case IntrinsicGreaterEq(_, taip):
-                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
+                if isinstance(taip, I32) or isinstance(taip, I8):
                     self.write_line("i32.ge_u")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.ge_u")
                     return
                 assert_never(taip)
             case IntrinsicGreater(_, taip):
-                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
+                if isinstance(taip, I32) or isinstance(taip, I8):
                     self.write_line("i32.gt_u")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.gt_u")
                     return
                 assert_never(taip)
             case IntrinsicLessEq(_, taip):
-                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
+                if isinstance(taip, I32) or isinstance(taip, I8):
                     self.write_line("i32.le_u")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.le_u")
                     return
                 assert_never(taip)
             case IntrinsicLess(_, taip):
-                if taip == PrimitiveType.I32 or taip == PrimitiveType.I8:
+                if isinstance(taip, I32) or isinstance(taip, I8):
                     self.write_line("i32.lt_u")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.lt_u")
                     return
                 assert_never(taip)
@@ -5688,60 +5894,60 @@ class WatGenerator:
                 self.flip_i64_i64_used = True
                 self.write_line("call $intrinsic:flip-i64-i64")
             case IntrinsicShl(token, taip):
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.rotl")
                 else:
                     self.write_line("i32.shl")
             case IntrinsicShr(token, taip):
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.shr")
                 else:
                     self.write_line("i32.shr_u")
             case IntrinsicRotl(token, taip):
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.rotl")
                 else:
                     self.write_line("i32.rotl")
             case IntrinsicRotr(token, taip):
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.rotr")
                 else:
                     self.write_line("i32.rotr")
             case IntrinsicAnd(_, taip):
-                if taip == PrimitiveType.I32 or taip == PrimitiveType.BOOL or taip == PrimitiveType.I8:
+                if isinstance(taip, I32) or isinstance(taip, Bool) or isinstance(taip, I8):
                     self.write_line("i32.and")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.and")
                     return
                 assert_never(taip)
             case IntrinsicNot(_, taip):
-                if taip == PrimitiveType.BOOL:
+                if isinstance(taip, Bool):
                     self.write_line("i32.const 1 i32.and i32.const 1 i32.xor i32.const 1 i32.and")
                     return
-                if taip == PrimitiveType.I8:
+                if isinstance(taip, I8):
                     self.write_line("i32.const 255 i32.and i32.const 255 i32.xor i32.const 255 i32.and")
                     return
-                if taip == PrimitiveType.I32:
+                if isinstance(taip, I32):
                     self.write_line("i32.const -1 i32.xor")
                     return
-                if taip == PrimitiveType.I64:
+                if isinstance(taip, I64):
                     self.write_line("i64.const -1 i64.xor")
                     return
                 assert_never(taip)
             case IntrinsicMod(_, taip):
                 match taip:
-                    case PrimitiveType.I8 | PrimitiveType.I32:
+                    case I8() | I32():
                         self.write_line("i32.rem_u")
-                    case PrimitiveType.I64:
+                    case I64():
                         self.write_line("i64.rem_u")
                     case _:
                         assert_never(taip)
             case IntrinsicDiv(_, taip):
                 match taip:
-                    case PrimitiveType.I32 | PrimitiveType.I8:
+                    case I32() | I8():
                         self.write_line("i32.div_u")
-                    case PrimitiveType.I64:
+                    case I64():
                         self.write_line("i64.div_u")
                     case _:
                         assert_never(taip)
@@ -5764,31 +5970,31 @@ class WatGenerator:
                 else:
                     self.write_line(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add")
             case CastWord(_, source, taip):
-                if (source == PrimitiveType.I32 or isinstance(source, PtrType)) and isinstance(taip, PtrType):
+                if (isinstance(source, I32) or isinstance(source, PtrType)) and isinstance(taip, PtrType):
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
-                if source == PrimitiveType.I32 and isinstance(taip, FunctionType):
+                if isinstance(source, I32) and isinstance(taip, FunctionType):
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
-                if source == PrimitiveType.I32 and isinstance(taip, StructType) and taip.size() == 4:
+                if isinstance(source, I32) and isinstance(taip, StructType) and taip.size() == 4:
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
-                if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I64: 
+                if (isinstance(source, Bool) or isinstance(source, I32)) and isinstance(taip, I64):
                     self.write_line("i64.extend_i32_u ;; cast to i64")
                     return
-                if (source == PrimitiveType.BOOL or source == PrimitiveType.I32) and taip == PrimitiveType.I8: 
+                if (isinstance(source, Bool) or isinstance(source, I32)) and isinstance(taip, I8):
                     self.write_line(f"i32.const 0xFF i32.and ;; cast to {format_type(taip)}")
                     return
-                if source == PrimitiveType.I64 and taip == PrimitiveType.I8: 
+                if isinstance(source, I64) and isinstance(taip, I8): 
                     self.write_line(f"i64.const 0xFF i64.and i32.wrap_i64 ;; cast to {format_type(taip)}")
                     return
-                if source == PrimitiveType.I64 and taip != PrimitiveType.I64:
+                if isinstance(source, I64) and not isinstance(taip, I64):
                     self.write_line(f"i32.wrap_i64 ;; cast to {format_type(taip)}")
                     return
-                if source.can_live_in_reg() and source.size() <= 4 and taip == PrimitiveType.I32:
+                if source.can_live_in_reg() and source.size() <= 4 and isinstance(taip, I32):
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
-                if source.can_live_in_reg() and source.size() <= 8 and taip == PrimitiveType.I64:
+                if source.can_live_in_reg() and source.size() <= 8 and isinstance(taip, I64):
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
                 self.write_line(f"UNSUPPORTED Cast from {format_type(source)} to {format_type(taip)}")
@@ -5816,7 +6022,7 @@ class WatGenerator:
                 if not taip.can_live_in_reg():
                     self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset}")
                     self.write(f" i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left i32.const {word.taip.size()} memory.copy\n")
-                elif taip == PrimitiveType.I8:
+                elif taip.size() == 1:
                     self.write("i32.load8_u\n")
                 else:
                     self.write_type(taip)
@@ -6129,7 +6335,7 @@ class WatGenerator:
     def write_store(self, taip: Type):
         if not taip.can_live_in_reg():
             self.write(f"i32.const {taip.size()} memory.copy")
-        elif taip == PrimitiveType.I8:
+        elif taip.size() == 1:
             self.write("i32.store8")
         elif taip.size() > 4:
             self.write("i64.store")
@@ -6377,10 +6583,6 @@ def fmt(a: object) -> str:
     if isinstance(a, list):
         return listtostr(a)
     return str(a)
-def format_dict(dictionary: dict) -> str:
-    if len(dictionary) == 0:
-        return "(Map)"
-    return "(Map\n" + indent(reduce(lambda a,b: a+",\n"+b, map(lambda kv: f"{fmt(kv[0])}={fmt(kv[1])}", dictionary.items()))) + ")"
 
 def indent_non_first(s: str) -> str:
     return reduce(lambda a,b: f"{a}  {b}", map(lambda s: f"{s}", s.splitlines(keepends=True)))
@@ -6398,18 +6600,15 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
             file = reader.read()
     tokens = Lexer(file).lex()
     if mode == "lex":
-        out = ""
-        for token in tokens:
-            out += str(token) + "\n"
-        return out
+        return "\n".join([format(token.format_instrs()) for token in tokens])
     if mode == "parse":
         module = Parser(path, file, tokens).parse()
-        return str(module)
+        return format(module.format_instrs())
     modules: Dict[str, Parser.Module] = {}
     load_recursive(modules, os.path.normpath(path), None, stdin)
     resolved_modules = resolve_modules({ k: m.top_items for k,m in modules.items()})
     if mode == "check":
-        return format_dict({ k: v for k,v in resolved_modules.items() })
+        return format(format_dict(resolved_modules, format_str))
     function_table, mono_modules = Monomizer(resolved_modules).monomize()
     if mode == "monomize":
         return "TODO"

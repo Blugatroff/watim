@@ -672,9 +672,11 @@ fn VariantWord-format(fmt: .Formatter, self: .VariantWord) {
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "tag=" Fmt:write
     $fmt $self.tag i32-format
     $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
     $fmt &self.type CustomTypeType-format
     $fmt ")" Fmt:write

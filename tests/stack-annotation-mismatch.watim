@@ -1,6 +1,8 @@
 [== Stdin Compiler ==]
 fn foo() {
-    0 1 :(bool, i32)
+    0 1 0 =
+    :(i32, bool)
+    :(bool, i32)
 }
 [== Args Compiler ==]
 check
@@ -9,4 +11,6 @@ check
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
--:2:9 stack annotation doesn't match reality
+-:4:5 Stack doesn't match annotation:
+  actual:   [i32, bool]
+  expected: [bool, i32]

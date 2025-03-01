@@ -194,10 +194,12 @@ fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
     $tmp-arena $save Arena:restore
 }
 
+global STACK_SIZE: i32
+
 fn main "_start" () {
-    20 @stack-size
-    $stack-size 1 - mem-grow drop
-    PA:page-size $stack-size * set-stack-size
+    20 #STACK_SIZE
+    $STACK_SIZE 1 - mem-grow drop
+    PA:page-size $STACK_SIZE * set-stack-size
     Logging:enable
     ActiveMemory:init
     Arena:init-temp
@@ -550,7 +552,7 @@ fn exit() {
         2 "Used " IO:write-all IO:check
         2 0 mem-grow IO:print IO:check
         2 " 64KiB pages of memory = " IO:write-all IO:check
-        2 0 mem-grow PA:page-size * 1 20 shl 1 - + 1 20 shl / IO:print IO:check
+        2 0 mem-grow $STACK_SIZE - PA:page-size * 1 20 shl 1 - + 1 20 shl / IO:print IO:check
         2 "MiB" IO:write-all IO:check
         2 ", " IO:write-all IO:check
         2 PageAlloc:active-pages IO:print IO:check

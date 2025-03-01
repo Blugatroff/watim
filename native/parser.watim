@@ -131,7 +131,7 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
         case I8 -> { drop "I8" }
         case I32 -> { drop "I32" }
         case I64 -> { drop "I64" }
-        case Ptr -> { .type $fmt "." Fmt:write ~ $fmt flip Type-format break }
+        case Ptr -> { .type $fmt "(Ptr " Fmt:write ~ $fmt flip Type-format $fmt ")" Fmt:write break }
         case Custom -> { $fmt flip CustomType-format break }
         case Fun -> { $fmt flip FunType-format break }
         case Tuple -> { $fmt flip TupleType-format break }
@@ -185,7 +185,7 @@ struct InitLocal {
     ident: Token
 }
 fn InitLocal-format(fmt: .Formatter, self: .InitLocal) {
-    $fmt "(RefLocal " Fmt:write
+    $fmt "(InitLocal " Fmt:write
     $fmt &self.start Token-format
     $fmt " " Fmt:write
     $fmt &self.ident Token-format
@@ -579,13 +579,8 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt " " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    &self.export match {
-        case None -> { }
-        case Some -> {
-            $fmt flip Token-format
-            $fmt " " Fmt:write
-        }
-    }
+    $fmt \Token-format &self.export Maybe:format<_>
+    $fmt " " Fmt:write
     $fmt &self.signature Signature-format
     $fmt " " Fmt:write
     $fmt \Word-format &self.body.words Array:format-multi-line<Word>
@@ -1580,7 +1575,7 @@ fn fun-ref(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
 } }
 
 fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
-    $parser peek match {
+    $parser peek-immediate match {
         case None -> { $token ~ Array:new<Type> make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
         case Some -> {}
     } @colon
