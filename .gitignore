@@ -2,4 +2,5 @@
 *.wasm
 *.js
 .direnv
+bootstrap/__pycache__
 

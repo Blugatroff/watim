@@ -8,8 +8,6 @@ import sys
 import os
 import difflib
 
-from bootstrap import main, CliArgException, ParserException, ResolverException
-
 if not os.path.isfile("test.wat"):
     if subprocess.run("bash ./run.sh ./native/main.watim compile ./test.watim -q > test.wat", shell=True).returncode != 0:
         exit(1)
@@ -38,26 +36,19 @@ if "--native" in sys.argv:
         if subprocess.run("wasmtime --dir=. -- ./watim.wasm compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
             exit(1)
     else:
-        if subprocess.run("python bootstrap.py compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
+        if subprocess.run("python ./bootstrap/main.py compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
             exit(1)
     watim_bin_path = os.path.realpath("./watim.wat")
 
 def run_native_compiler(args: List[str] | None, stdin: str):
+    assert(watim_bin_path is not None)
     compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["compile", "-", "--quiet"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
+bootstrap_entry_path = os.path.realpath("./bootstrap/main.py")
 def run_bootstrap_compiler(args: List[str] | None, stdin: str):
-    try:
-        stdout = main([sys.argv[0]] + (args or ["-"]), stdin)
-        return CompilerOutput(0, stdout.strip(), "")
-    except CliArgException as e:
-        return CompilerOutput(1, "", e.message.strip())
-    except ParserException as e:
-        return CompilerOutput(1, "", e.display().strip())
-    except ResolverException as e:
-        return CompilerOutput(1, "", e.display().strip())
-    except Exception as e:
-        return CompilerOutput(1, "", str(e))
+    compiler = subprocess.run(["python", bootstrap_entry_path] + (args or ["compile", "-", "--quiet"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 if len(sys.argv) > 2 and sys.argv[1] == "accept":
     paths = sys.argv[2:]
