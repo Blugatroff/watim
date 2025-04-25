@@ -36,7 +36,7 @@ if "--native" in sys.argv:
         if subprocess.run("wasmtime --dir=. -- ./watim.wasm compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
             exit(1)
     else:
-        if subprocess.run("python ./bootstrap/main.py compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
+        if subprocess.run("python bootstrap compile ./native/main.watim > watim.wat", shell=True).returncode != 0:
             exit(1)
     watim_bin_path = os.path.realpath("./watim.wat")
 
@@ -45,7 +45,7 @@ def run_native_compiler(args: List[str] | None, stdin: str):
     compiler = subprocess.run(["wasmtime", "--dir=.", "--", watim_bin_path] + (args or ["compile", "-", "--quiet"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
-bootstrap_entry_path = os.path.realpath("./bootstrap/main.py")
+bootstrap_entry_path = os.path.realpath("./bootstrap")
 def run_bootstrap_compiler(args: List[str] | None, stdin: str):
     compiler = subprocess.run(["python", bootstrap_entry_path] + (args or ["compile", "-", "--quiet"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())

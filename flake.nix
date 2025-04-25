@@ -17,6 +17,7 @@
                 pkgs.hyperfine
                 python
                 pkgs.ruff
+                pkgs.pyright
             ];
             buildInputs = [ pkgs.python3 pkgs.wasmtime ];
 

@@ -4,7 +4,7 @@ Watim is a simple, low level, stack-based language which compiles to [Webassembl
 Which can then be compiled to wasm and run in your favorite browser or by runtimes like [wasmtime](https://github.com/bytecodealliance/wasmtime) and [wasm3](https://github.com/wasm3/wasm3).
 
 The Watim compiler is written in Watim.
-The bootstrap compiler is written in python, in a single [file](./bootstrap.py) full of ugly code.
+The bootstrap compiler is written in python, see [bootstrap](./bootstrap).
 
 This project was inspired by [Porth](https://gitlab.com/tsoding/porth).
 

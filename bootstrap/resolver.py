@@ -964,8 +964,6 @@ class Stack:
                 ib = len(b.stack)
             if (a is None) ^ (b is None):
                 return False
-            if a is None and b is None:
-                return True
             a_end = ia == 0 and a.parent is None
             b_end = ib == 0 and b.parent is None
             if a_end ^ b_end:
@@ -1069,7 +1067,6 @@ class TypeLookup:
             return taip.token.lexeme
         if isinstance(taip, HoleType):
             return taip.token.lexeme
-        assert_never(taip)
 
 
 @dataclass
@@ -1086,7 +1083,7 @@ class ResolveCtx:
     def resolve_imports(self) -> Dict[str, List[Import]]:
         resolved_imports: Dict[str, List[Import]] = {}
         module_path = list(self.parsed_modules.keys())[self.module_id]
-        for i,top_item in enumerate(self.top_items):
+        for top_item in self.top_items:
             if not isinstance(top_item, parser.Import):
                 continue
             imp: parser.Import = top_item

@@ -11,7 +11,7 @@ jobs:
     - name: Install mypy and ruff
       run: pip install mypy ruff
     - name: Run mypy
-      run: mypy ./bootstrap.py
+      run: mypy .
     - name: Run ruff
       run: ruff check
     - name: Install wabt and wasmtime
