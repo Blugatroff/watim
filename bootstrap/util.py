@@ -85,3 +85,8 @@ def normalize_path(path: str) -> str:
 def uhex(n: int) -> str:
     return "0x" + hex(n)[2:].upper()
 
+def align_to(n: int, to: int) -> int:
+    if to == 0:
+        return n
+    return n + (to - (n % to)) * ((n % to) > 0)
+
