@@ -2,8 +2,8 @@ from typing import List, Optional, Dict, Tuple, NoReturn, assert_never
 from enum import Enum
 from dataclasses import dataclass
 import os
-
 import copy
+
 from util import Ref, normalize_path
 from format import Formattable, FormatInstr, unnamed_record, named_record, format_seq, format_str, format_optional, format_list, format_dict
 from indexed_dict import IndexedDict

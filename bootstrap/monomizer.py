@@ -1,16 +1,12 @@
-from typing import List, Optional, Dict, Set, Tuple, NoReturn, TypeGuard, assert_never
-from enum import Enum
+from typing import List, Dict, Set, Tuple, TypeGuard, assert_never
 from dataclasses import dataclass, field
-import os
 import unittest
 
-import copy
-from util import Ref, Lazy, normalize_path, intercalate, align_to
-from format import Formattable, FormatInstr, unnamed_record, named_record, format_seq, format_str, format_optional, format_list, format_dict
+from util import Ref, Lazy, intercalate, align_to
+from format import Formattable, FormatInstr, unnamed_record, named_record
 from indexed_dict import IndexedDict
 from lexer import Token
-import parser
-from parser import I8, I32, I64, Bool, PrimitiveType, NumberWord, BreakWord, GenericType, HoleType
+from parser import I8, I32, I64, Bool, PrimitiveType, NumberWord, BreakWord
 import resolver
 from resolver import LocalName, ScopeId, GlobalId, LocalId, IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicMemGrow, IntrinsicSetStackSize, StringWord
 
