@@ -1,0 +1,135 @@
+from typing import List, Dict
+from dataclasses import dataclass
+
+from format import Formattable, FormatInstr, unnamed_record, format_str, format_seq, named_record, format_optional, format_dict
+from lexer import Token
+from resolving.words import FunctionHandle, Scope, LocalId
+from resolving.types import CustomTypeHandle, Type, NamedType
+
+@dataclass
+class ImportItem(Formattable):
+    name: Token
+    handle: FunctionHandle | CustomTypeHandle
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("ImportItem", [self.name, self.handle])
+
+@dataclass
+class Import(Formattable):
+    token: Token
+    file_path: str
+    qualifier: Token
+    module: int
+    items: List[ImportItem]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Import", [
+            self.token,
+            self.module,
+            format_str(self.file_path),
+            self.qualifier,
+            format_seq(self.items, multi_line=True)])
+
+@dataclass
+class Struct(Formattable):
+    name: Token
+    generic_parameters: List[Token]
+    fields: List[NamedType]
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Struct", [
+            ("name", self.name),
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("fields", format_seq(self.fields, multi_line=True))])
+
+@dataclass
+class VariantCase(Formattable):
+    name: Token
+    taip: Type | None
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("VariantCase", [self.name, format_optional(self.taip)])
+
+@dataclass
+class Variant(Formattable):
+    name: Token
+    generic_parameters: List[Token]
+    cases: List[VariantCase]
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Variant", [
+            ("name", self.name),
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("cases", format_seq(self.cases, multi_line=True))])
+
+CustomType = Struct | Variant
+
+@dataclass
+class FunctionSignature(Formattable):
+    generic_parameters: List[Token]
+    parameters: List[NamedType]
+    returns: List[Type]
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Signature", [
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("parameters", format_seq(self.parameters)),
+            ("returns", format_seq(self.returns))])
+
+@dataclass
+class Global(Formattable):
+    name: Token
+    taip: Type
+    was_reffed: bool = False
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Global", [self.name, self.taip, self.was_reffed])
+
+
+@dataclass(frozen=True, eq=True)
+class LocalName(Formattable):
+    name: Token | str
+    def format_instrs(self) -> List[FormatInstr]:
+        return [self.name]
+
+    def get(self) -> str:
+        return self.name if isinstance(self.name, str) else self.name.lexeme
+
+@dataclass
+class Local(Formattable):
+    name: LocalName
+    taip: Type
+    is_parameter: bool
+    was_reffed: bool = False
+
+    @staticmethod
+    def make(taip: NamedType) -> 'Local':
+        return Local(LocalName(taip.name), taip.taip, False)
+
+    @staticmethod
+    def make_parameter(taip: NamedType) -> 'Local':
+        return Local(LocalName(taip.name), taip.taip, True)
+
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Local", [self.name, self.taip, self.was_reffed, self.is_parameter])
+
+@dataclass
+class Function(Formattable):
+    name: Token
+    export_name: Token | None
+    signature: FunctionSignature
+    body: Scope
+    locals: Dict[LocalId, Local]
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Function", [
+            ("name", self.name),
+            ("export", format_optional(self.export_name)),
+            ("signature", self.signature),
+            ("locals", format_dict(self.locals)),
+            ("body", self.body)])
+
+@dataclass
+class Extern(Formattable):
+    name: Token
+    extern_module: str
+    extern_name: str
+    signature: FunctionSignature
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Extern", [
+            self.name,
+            self.extern_module,
+            self.extern_name,
+            self.signature])

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from dataclasses import dataclass
 
 from format import Formattable, FormatInstr, unnamed_record, format_seq, format_optional
@@ -29,7 +29,7 @@ class StringWord(Formattable):
 class GetWord(Formattable):
     token: Token
     ident: Token
-    fields: List[Token]
+    fields: Tuple[Token, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("GetLocal", [self.token, self.ident, format_seq(self.fields)])
 
@@ -37,7 +37,7 @@ class GetWord(Formattable):
 class RefWord(Formattable):
     token: Token
     ident: Token
-    fields: List[Token]
+    fields: Tuple[Token, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("RefLocal", [self.token, self.ident, format_seq(self.fields)])
 
@@ -45,7 +45,7 @@ class RefWord(Formattable):
 class SetWord(Formattable):
     token: Token
     ident: Token
-    fields: List[Token]
+    fields: Tuple[Token, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("SetLocal", [self.token, self.ident, format_seq(self.fields)])
 
@@ -57,7 +57,7 @@ class InlineRefWord(Formattable):
 class StoreWord(Formattable):
     token: Token
     ident: Token
-    fields: List[Token]
+    fields: Tuple[Token, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Store", [self.token, self.ident, format_seq(self.fields)])
 
@@ -72,12 +72,12 @@ class InitWord(Formattable):
 class ForeignCallWord(Formattable):
     module: Token
     ident: Token
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
 
 @dataclass
 class CallWord(Formattable):
     ident: Token
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("LocalCall", [
             self.ident,
@@ -115,7 +115,7 @@ class BlockAnnotation(Formattable):
 
 @dataclass
 class Words(Formattable):
-    words: List[Word]
+    words: Tuple[Word, ...]
     end: Token
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Words", [
@@ -160,7 +160,7 @@ class SizeofWord(Formattable):
 @dataclass
 class GetFieldWord(Formattable):
     token: Token
-    fields: List[Token]
+    fields: Tuple[Token, ...]
 
 @dataclass
 class IndirectCallWord(Formattable):
@@ -170,7 +170,7 @@ class IndirectCallWord(Formattable):
 class StructWord(Formattable):
     token: Token
     taip: CustomTypeType | ForeignType
-    words: List[Word]
+    words: Tuple[Word, ...]
 
 @dataclass
 class UnnamedStructWord(Formattable):
@@ -187,12 +187,12 @@ class VariantWord(Formattable):
 class MatchCase(Formattable):
     case: Token
     name: Token
-    words: List[Word]
+    words: Tuple[Word, ...]
 
 @dataclass
 class MatchWord(Formattable):
     token: Token
-    cases: List[MatchCase]
+    cases: Tuple[MatchCase, ...]
     default: MatchCase | None
 
 @dataclass

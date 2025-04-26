@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Tuple
 from dataclasses import dataclass
 
 from format import Formattable, FormatInstr, unnamed_record, format_seq
 from lexer import Token
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class I8(Formattable):
     def size(self) -> int:
         return 1
@@ -13,7 +13,7 @@ class I8(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return ["I8"]
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class I32(Formattable):
     def size(self) -> int:
         return 4
@@ -22,7 +22,7 @@ class I32(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return ["I32"]
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class I64(Formattable):
     def size(self) -> int:
         return 8
@@ -31,7 +31,7 @@ class I64(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return ["I64"]
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class Bool(Formattable):
     def size(self) -> int:
         return 4
@@ -42,7 +42,7 @@ class Bool(Formattable):
 
 type PrimitiveType = I8 | I32 | I64 | Bool
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class GenericType(Formattable):
     token: Token
     generic_index: int
@@ -52,46 +52,46 @@ class GenericType(Formattable):
 
 type Type = 'PrimitiveType | PtrType | TupleType | GenericType | ForeignType | CustomTypeType | FunctionType | HoleType'
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class PtrType(Formattable):
     child: Type
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Ptr", [self.child])
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ForeignType(Formattable):
     module: Token
     name: Token
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("ForeignCustomType", [
             self.module,
             self.name,
             format_seq(self.generic_arguments)])
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class TupleType(Formattable):
     token: Token
-    items: List[Type]
+    items: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("TupleType", [
             self.token,
             format_seq(self.items)])
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class CustomTypeType(Formattable):
     name: Token
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("LocalCustomType", [
             self.name,
             format_seq(self.generic_arguments)])
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class FunctionType(Formattable):
     token: Token
-    parameters: List[Type]
-    returns: List[Type]
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("FunType", [
             self.token,
@@ -104,9 +104,14 @@ class HoleType(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return ["Hole"]
 
-@dataclass
+@dataclass(frozen=True)
 class NamedType(Formattable):
     name: Token
     taip: Type
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("NamedType", [self.name, self.taip])
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, NamedType):
+            return False
+        return self.name.lexeme == other.name.lexeme and self.taip == other.taip

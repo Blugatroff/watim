@@ -121,7 +121,7 @@ class Parser:
                             break
                         if comma.ty != TokenType.COMMA:
                             self.abort("expected `)`")
-                top_items.append(Import(token, file_path, module_qualifier, items))
+                top_items.append(Import(token, file_path, module_qualifier, tuple(items)))
                 continue
 
             if token.ty == TokenType.FN:
@@ -163,7 +163,7 @@ class Parser:
                         self.abort("Expected `:` after field name")
                     taip = self.parse_type(generic_parameters)
                     fields.append(NamedType(field_name, taip))
-                top_items.append(Struct(token, name, fields, generic_parameters))
+                top_items.append(Struct(token, name, tuple(fields), generic_parameters))
                 continue
 
             if token.ty == TokenType.VARIANT:
@@ -202,7 +202,7 @@ class Parser:
                 colon = self.advance(skip_ws=True)
                 if colon is None or colon.ty != TokenType.COLON:
                     self.abort("Expected `:`")
-                taip = self.parse_type([])
+                taip = self.parse_type(())
                 top_items.append(Global(token, name, taip))
                 continue
 
@@ -227,16 +227,16 @@ class Parser:
         body = self.parse_words(signature.generic_parameters)
         return Function(start, signature, body.words)
 
-    def parse_words(self, generic_parameters: List[Token]) -> Words:
+    def parse_words(self, generic_parameters: Tuple[Token, ...]) -> Words:
         words: List[Word] = []
         while True:
             token = self.peek(skip_ws=True)
             if token is not None and token.ty == TokenType.RIGHT_BRACE:
                 self.advance(skip_ws=True)
-                return Words(words, token)
+                return Words(tuple(words), token)
             words.append(self.parse_word(generic_parameters))
 
-    def parse_word(self, generic_parameters: List[Token]) -> Word:
+    def parse_word(self, generic_parameters: Tuple[Token, ...]) -> Word:
         token = self.advance(skip_ws=True)
         if token is None:
             self.abort("Expected a word")
@@ -274,7 +274,7 @@ class Parser:
             if name is None or name.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as variable name")
             token = self.peek(skip_ws=True)
-            def construct(name: Token, fields: List[Token]) -> Word:
+            def construct(name: Token, fields: Tuple[Token, ...]) -> Word:
                 match indicator_token.ty:
                     case TokenType.DOLLAR:
                         return GetWord(indicator_token, name, fields)
@@ -287,7 +287,7 @@ class Parser:
                     case _:
                         assert(False)
             if token is None or token.ty == TokenType.SPACE:
-                return construct(name, [])
+                return construct(name, ())
             fields = self.parse_field_accesses()
             return construct(name, fields)
         if token.ty == TokenType.AT:
@@ -403,7 +403,7 @@ class Parser:
                 next = self.peek(skip_ws=True)
                 if next is None or next.ty == TokenType.RIGHT_BRACE:
                     self.advance(skip_ws=True)
-                    return MatchWord(token, cases, None)
+                    return MatchWord(token, tuple(cases), None)
                 case = self.advance(skip_ws=True)
                 if case is None or case.ty != TokenType.CASE:
                     self.abort("expected `case`")
@@ -421,7 +421,7 @@ class Parser:
                     brace = self.advance(skip_ws=True)
                     if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                         self.abort("Expected `}`")
-                    return MatchWord(token, cases, MatchCase(next, case_name, words.words))
+                    return MatchWord(token, tuple(cases), MatchCase(next, case_name, words.words))
                 cases.append(MatchCase(next, case_name, words.words))
         if token.ty == TokenType.LEFT_BRACKET:
             comma = self.advance(skip_ws=True)
@@ -456,7 +456,7 @@ class Parser:
                     self.abort("Expected `,` or `)`")
         self.abort("Expected word")
 
-    def parse_call_word(self, generic_parameters: List[Token], token: Token) -> CallWord | ForeignCallWord:
+    def parse_call_word(self, generic_parameters: Tuple[Token, ...], token: Token) -> CallWord | ForeignCallWord:
         next = self.peek(skip_ws=False)
         if next is not None and next.ty == TokenType.COLON:
             module = token
@@ -465,13 +465,13 @@ class Parser:
             if name is None or name.ty != TokenType.IDENT:
                 self.abort("Expected an identifier")
             next = self.peek()
-            generic_arguments = self.parse_generic_arguments(generic_parameters) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
+            generic_arguments = self.parse_generic_arguments(generic_parameters) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else ()
             return ForeignCallWord(module, name, generic_arguments)
         name = token
-        generic_arguments = self.parse_generic_arguments(generic_parameters) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
+        generic_arguments = self.parse_generic_arguments(generic_parameters) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else ()
         return CallWord(name, generic_arguments)
 
-    def parse_field_accesses(self) -> List[Token]:
+    def parse_field_accesses(self) -> Tuple[Token, ...]:
         fields = []
         while True:
             token = self.peek(skip_ws=False)
@@ -482,7 +482,7 @@ class Parser:
             if token is None or token.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as field name")
             fields.append(token)
-        return fields
+        return tuple(fields)
 
     def parse_function_signature(self) -> FunctionSignature:
         function_ident = self.advance(skip_ws=True)
@@ -495,7 +495,7 @@ class Parser:
         if token.ty == TokenType.LEFT_TRIANGLE:
             generic_parameters = self.parse_generic_parameters()
         else:
-            generic_parameters = []
+            generic_parameters = ()
 
         token = self.advance(skip_ws=True)
         if token is None or token.ty not in [TokenType.LEFT_PAREN, TokenType.STRING]:
@@ -541,9 +541,9 @@ class Parser:
                     break
                 self.advance(skip_ws=True) # skip the `,`
 
-        return FunctionSignature(function_export_name, function_ident, generic_parameters, parameters, returns)
+        return FunctionSignature(function_export_name, function_ident, generic_parameters, tuple(parameters), tuple(returns))
 
-    def parse_triangle_listed[T](self, elem: Callable[['Parser'], T]) -> List[T]:
+    def parse_triangle_listed[T](self, elem: Callable[['Parser'], T]) -> Tuple[T, ...]:
         token = self.advance(skip_ws=True)
         if token is None or token.ty != TokenType.LEFT_TRIANGLE:
             self.abort("Expected `<`")
@@ -561,22 +561,22 @@ class Parser:
                 break
             if token.ty != TokenType.COMMA:
                 self.abort("Expected `,`")
-        return items
+        return tuple(items)
 
-    def parse_generic_arguments(self, generic_parameters: List[Token]) -> List[Type]:
+    def parse_generic_arguments(self, generic_parameters: Tuple[Token, ...]) -> Tuple[Type, ...]:
         next = self.peek(skip_ws=False)
-        return self.parse_triangle_listed(lambda self: self.parse_type(generic_parameters)) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
+        return self.parse_triangle_listed(lambda self: self.parse_type(generic_parameters)) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else ()
 
-    def parse_generic_parameters(self) -> List[Token]:
+    def parse_generic_parameters(self) -> Tuple[Token, ...]:
         def parse_ident(self):
             token = self.advance(skip_ws=True)
             if token is None or token.ty != TokenType.IDENT:
                 self.abort("Expected an identifier as generic paramter")
             return token
         next = self.peek(skip_ws=False)
-        return self.parse_triangle_listed(parse_ident) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else []
+        return self.parse_triangle_listed(parse_ident) if next is not None and next.ty == TokenType.LEFT_TRIANGLE else ()
 
-    def parse_struct_type(self, token: Token | None, generic_parameters: List[Token]) -> CustomTypeType | ForeignType:
+    def parse_struct_type(self, token: Token | None, generic_parameters: Tuple[Token, ...]) -> CustomTypeType | ForeignType:
         if token is None or token.ty != TokenType.IDENT:
             self.abort("Expected an identifer as struct name")
         next = self.peek(skip_ws=True)
@@ -593,7 +593,7 @@ class Parser:
                 self.abort("Expected an identifier as struct name")
             return CustomTypeType(struct_name, self.parse_generic_arguments(generic_parameters))
 
-    def parse_type(self, generic_parameters: List[Token]) -> Type:
+    def parse_type(self, generic_parameters: Tuple[Token, ...]) -> Type:
         token = self.advance(skip_ws=True)
         if token is None:
             self.abort("Expected a type")
@@ -643,7 +643,7 @@ class Parser:
                 comma = self.advance(skip_ws=True)
                 if comma is None or comma.ty != TokenType.COMMA:
                     self.abort("Expected `,` in return list of function type.")
-            return FunctionType(token, args, rets)
+            return FunctionType(token, tuple(args), tuple(rets))
         if token.ty == TokenType.LEFT_BRACKET:
             items = []
             while True:
@@ -658,5 +658,5 @@ class Parser:
                 comma = next
                 if comma is None or comma.ty != TokenType.COMMA:
                     self.abort("Expected `,` in tuple type.")
-            return TupleType(token, items)
+            return TupleType(token, tuple(items))
         self.abort("Expected type")

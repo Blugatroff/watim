@@ -1,10 +1,10 @@
-from typing import List, Optional, Dict, Tuple, NoReturn, assert_never
+from typing import List, Dict, Tuple, NoReturn, Sequence, assert_never
 from dataclasses import dataclass
 import os
 import copy
 
 from util import Ref, normalize_path
-from format import Formattable, FormatInstr, unnamed_record, named_record, format_seq, format_str, format_optional, format_list, format_dict
+from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_list, format_dict
 from indexed_dict import IndexedDict
 from lexer import Token
 from parsing.types import I8, I32, I64, Bool, GenericType, HoleType
@@ -13,78 +13,7 @@ import parsing.parser as parser
 from resolving.types import CustomTypeHandle, NamedType, Type, CustomTypeType, PtrType, FunctionType, TupleType, resolved_type_eq, resolved_types_eq, PtrType
 from resolving.intrinsics import IntrinsicType, IntrinsicShr, IntrinsicEqual, IntrinsicStore, IntrinsicNot, IntrinsicUninit, IntrinsicSetStackSize, IntrinsicShr, IntrinsicRotr, IntrinsicGreater, IntrinsicGreaterEq, IntrinsicLess, IntrinsicLessEq, IntrinsicNotEqual, IntrinsicFlip, IntrinsicMemFill, INTRINSIC_TO_LEXEME, INTRINSICS, IntrinsicAdd, IntrinsicSub, IntrinsicDiv, IntrinsicDrop, IntrinsicMemGrow, IntrinsicMod, IntrinsicMul, IntrinsicAnd, IntrinsicOr, IntrinsicShl, IntrinsicWord, IntrinsicRotl, IntrinsicMemCopy
 from resolving.words import CustomTypeHandle, ResolvedWord, FunctionHandle, StringWord, InitWord, RefWord, GetWord, StructFieldInitWord, CallWord, SizeofWord, UnnamedStructWord, StructWord, FunRefWord, StoreWord, LoadWord, MatchCase, MatchWord, VariantWord, LoopWord, CastWord, TupleMakeWord, TupleUnpackWord, GetFieldWord, IfWord, SetWord, BlockWord, IndirectCallWord, FieldAccess, Scope, ScopeId, GlobalId, LocalId
-
-@dataclass
-class ImportItem(Formattable):
-    name: Token
-    handle: FunctionHandle | CustomTypeHandle
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("ImportItem", [self.name, self.handle])
-
-@dataclass
-class Import(Formattable):
-    token: Token
-    file_path: str
-    qualifier: Token
-    module: int
-    items: List[ImportItem]
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Import", [
-            self.token,
-            self.module,
-            format_str(self.file_path),
-            self.qualifier,
-            format_seq(self.items, multi_line=True)])
-
-@dataclass
-class Struct(Formattable):
-    name: Token
-    generic_parameters: List[Token]
-    fields: List[NamedType]
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("Struct", [
-            ("name", self.name),
-            ("generic-parameters", format_seq(self.generic_parameters)),
-            ("fields", format_seq(self.fields, multi_line=True))])
-
-@dataclass
-class VariantCase(Formattable):
-    name: Token
-    taip: 'Type | None'
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("VariantCase", [self.name, format_optional(self.taip)])
-
-@dataclass
-class Variant(Formattable):
-    name: Token
-    generic_parameters: List[Token]
-    cases: List[VariantCase]
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("Variant", [
-            ("name", self.name),
-            ("generic-parameters", format_seq(self.generic_parameters)),
-            ("cases", format_seq(self.cases, multi_line=True))])
-
-CustomType = Struct | Variant
-
-@dataclass
-class FunctionSignature(Formattable):
-    generic_parameters: List[Token]
-    parameters: List[NamedType]
-    returns: List[Type]
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("Signature", [
-            ("generic-parameters", format_seq(self.generic_parameters)),
-            ("parameters", format_seq(self.parameters)),
-            ("returns", format_seq(self.returns))])
-
-@dataclass
-class Global(Formattable):
-    name: Token
-    taip: Type
-    was_reffed: bool = False
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Global", [self.name, self.taip, self.was_reffed])
+from resolving.top_items import Function, FunctionSignature, Import, CustomType, Global, Extern, Local, LocalName, ImportItem, Struct, Variant, VariantCase
 
 @dataclass
 class ResolverException(Exception):
@@ -102,65 +31,6 @@ class ResolverException(Exception):
             line = self.token.line
             column = self.token.column
         return f"{self.path}:{line}:{column} {self.message}"
-
-@dataclass(frozen=True, eq=True)
-class LocalName(Formattable):
-    name: Token | str
-    def format_instrs(self) -> List[FormatInstr]:
-        return [self.name]
-
-    def get(self) -> str:
-        return self.name if isinstance(self.name, str) else self.name.lexeme
-
-@dataclass
-class Local(Formattable):
-    name: LocalName
-    taip: Type
-    is_parameter: bool
-    was_reffed: bool = False
-
-    @staticmethod
-    def make(taip: NamedType) -> 'Local':
-        return Local(LocalName(taip.name), taip.taip, False)
-
-    @staticmethod
-    def make_parameter(taip: NamedType) -> 'Local':
-        return Local(LocalName(taip.name), taip.taip, True)
-
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Local", [self.name, self.taip, self.was_reffed, self.is_parameter])
-
-@dataclass
-class Function(Formattable):
-    name: Token
-    export_name: Optional[Token]
-    signature: FunctionSignature
-    body: Scope
-    locals: Dict[LocalId, Local]
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("Function", [
-            ("name", self.name),
-            ("export", format_optional(self.export_name)),
-            ("signature", self.signature),
-            ("locals", format_dict(self.locals)),
-            ("body", self.body)])
-
-@dataclass
-class Extern(Formattable):
-    name: Token
-    extern_module: str
-    extern_name: str
-    signature: FunctionSignature
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Extern", [
-            self.name,
-            self.extern_module,
-            self.extern_name,
-            self.signature])
-
-# =============================================================================
-#  Resolver / Typechecker
-# =============================================================================
 
 @dataclass
 class Module(Formattable):
@@ -507,7 +377,7 @@ class ResolveCtx:
 
         return resolved_imports
 
-    def resolve_import_items(self, imported_module_id: int, items: List[Token]) -> List[ImportItem]:
+    def resolve_import_items(self, imported_module_id: int, items: Sequence[Token]) -> List[ImportItem]:
         imported_module = list(self.parsed_modules.values())[imported_module_id]
         def resolve_item(item_name: Token) -> ImportItem:
             item = ResolveCtx.lookup_item_in_module(imported_module, imported_module_id, item_name)
@@ -528,14 +398,14 @@ class ResolveCtx:
     def resolve_struct(self, struct: parser.Struct, imports: Dict[str, List[Import]]) -> Struct:
         return Struct(
             struct.name,
-            struct.generic_parameters,
+            list(struct.generic_parameters),
             [self.resolve_named_type(imports, field) for field in struct.fields]
         )
 
     def resolve_variant(self, variant: parser.Variant, imports: Dict[str, List[Import]]) -> Variant:
         return Variant(
             variant.name,
-            variant.generic_parameters,
+            list(variant.generic_parameters),
             [VariantCase(
                 case.name,
                 None if case.taip is None else self.resolve_type(imports, case.taip)
@@ -569,7 +439,7 @@ class ResolveCtx:
     def resolve_named_type(self, imports: Dict[str, List[Import]], named_type: parser.NamedType) -> NamedType:
         return NamedType(named_type.name, self.resolve_type(imports, named_type.taip))
 
-    def resolve_named_types(self, imports: Dict[str, List[Import]], named_types: List[parser.NamedType]) -> List[NamedType]:
+    def resolve_named_types(self, imports: Dict[str, List[Import]], named_types: Sequence[parser.NamedType]) -> List[NamedType]:
         return [self.resolve_named_type(imports, named_type) for named_type in named_types]
 
     def resolve_type(self, imports: Dict[str, List[Import]], taip: parser.Type) -> Type:
@@ -580,22 +450,22 @@ class ResolveCtx:
         if isinstance(taip, parser.FunctionType):
             return FunctionType(
                 taip.token,
-                self.resolve_types(imports, taip.parameters),
-                self.resolve_types(imports, taip.returns),
+                self.resolve_types(imports, list(taip.parameters)),
+                self.resolve_types(imports, list(taip.returns)),
             )
         if isinstance(taip, parser.TupleType):
             return TupleType(
                 taip.token,
-                self.resolve_types(imports, taip.items)
+                self.resolve_types(imports, list(taip.items))
             )
         return taip
 
-    def resolve_types(self, imports: Dict[str, List[Import]], types: List[parser.Type]) -> List[Type]:
+    def resolve_types(self, imports: Dict[str, List[Import]], types: Sequence[parser.Type]) -> List[Type]:
         return [self.resolve_type(imports, taip) for taip in types]
 
     def resolve_custom_type(self, imports: Dict[str, List[Import]], taip: parser.CustomTypeType | parser.ForeignType) -> CustomTypeType:
         type_index = 0
-        generic_arguments = self.resolve_types(imports, taip.generic_arguments)
+        generic_arguments = self.resolve_types(imports, list(taip.generic_arguments))
         if isinstance(taip, parser.CustomTypeType):
             for top_item in self.top_items:
                 if isinstance(top_item, parser.Struct) or isinstance(top_item, parser.Variant):
@@ -644,7 +514,7 @@ class ResolveCtx:
 
     def resolve_signature(self, imports: Dict[str, List[Import]], signature: parser.FunctionSignature) -> FunctionSignature:
         return FunctionSignature(
-            signature.generic_parameters,
+            list(signature.generic_parameters),
             self.resolve_named_types(imports, signature.parameters),
             self.resolve_types(imports, signature.returns),
         )
@@ -693,7 +563,7 @@ class ResolveCtx:
                 env = Env(list(map(Local.make_parameter, signature.parameters)))
                 stack = Stack.empty()
                 ctx = WordCtx(self, imports, env, type_lookup, signatures, globals)
-                words, diverges = ctx.resolve_words(stack, function.body)
+                words, diverges = ctx.resolve_words(stack, list(function.body))
                 if not diverges and not resolved_types_eq(stack.stack, signature.returns):
                     msg  = "unexpected return values:\n\texpected: "
                     msg += type_lookup.types_pretty_bracketed(signature.returns)
@@ -1073,7 +943,7 @@ class WordCtx:
             struct_type.generic_arguments,
             { field.name.lexeme: (i,field.taip) for i,field in enumerate(struct.fields) })
         ctx = self.with_struct_lit_ctx(struct_lit_ctx).with_env(env)
-        words,diverges = ctx.resolve_words(stack, word.words)
+        words,diverges = ctx.resolve_words(stack, list(word.words))
         if len(struct_lit_ctx.fields) != 0:
             error_message = "missing fields in struct literal:"
             for field_name,(_,field_type) in struct_lit_ctx.fields.items():
@@ -1100,7 +970,7 @@ class WordCtx:
         false_stack = stack.make_child()
         false_ctx = self.with_env(false_env)
 
-        true_words, true_words_diverge = true_ctx.resolve_words(true_stack, word.true_words.words)
+        true_words, true_words_diverge = true_ctx.resolve_words(true_stack, list(word.true_words.words))
         true_parameters = true_stack.negative
 
         if true_words_diverge and (word.false_words is None or len(word.false_words.words) == 0):
@@ -1123,7 +993,7 @@ class WordCtx:
                 Scope(true_ctx.env.scope_id, true_words),
                 Scope(remaining_ctx.env.scope_id, resolved_remaining_words),
                 diverges)], diverges)
-        false_words, false_words_diverge = false_ctx.resolve_words(false_stack, [] if word.false_words is None else word.false_words.words)
+        false_words, false_words_diverge = false_ctx.resolve_words(false_stack, [] if word.false_words is None else list(word.false_words.words))
         if not true_words_diverge and not false_words_diverge:
             if not true_stack.compatible_with(false_stack):
                 msg  = "stack mismatch between if and else branch:\n\tif   "
@@ -1170,7 +1040,7 @@ class WordCtx:
                 loop_break_stacks,
                 None if annotation is None else annotation.returns)
 
-        words,_ = loop_ctx.resolve_words(loop_stack, word.words.words)
+        words,_ = loop_ctx.resolve_words(loop_stack, list(word.words.words))
         diverges = len(loop_break_stacks) == 0
         parameters = loop_stack.negative if annotation is None else annotation.parameters
 
@@ -1230,7 +1100,7 @@ class WordCtx:
                 block_break_stacks,
                 None if annotation is None else annotation.returns)
 
-        words, diverges = block_ctx.resolve_words(block_stack, word.words.words)
+        words, diverges = block_ctx.resolve_words(block_stack, list(word.words.words))
         block_end_is_reached = not diverges
 
         parameters = block_stack.negative if annotation is None else annotation.parameters
@@ -1328,7 +1198,7 @@ class WordCtx:
 
             case_env = self.env.child()
             case_ctx = self.with_env(case_env)
-            words, case_diverges = case_ctx.resolve_words(case_stack, parsed_case.words)
+            words, case_diverges = case_ctx.resolve_words(case_stack, list(parsed_case.words))
             match_diverges = match_diverges and case_diverges
             cases.append(MatchCase(case_type, tag, Scope(case_env.scope_id, words)))
 
@@ -1356,7 +1226,7 @@ class WordCtx:
             def_env = self.env.child()
             def_ctx = self.with_env(def_env)
             def_stack.push(arg_item)
-            words, default_diverges = def_ctx.resolve_words(def_stack, word.default.words)
+            words, default_diverges = def_ctx.resolve_words(def_stack, list(word.default.words))
             match_diverges = match_diverges and default_diverges
             case_stacks.append((def_stack, word.default.name, default_diverges))
             default_case = Scope(def_env.scope_id, words)
@@ -1726,7 +1596,7 @@ class WordCtx:
             return self.signatures[function.index]
         return self.ctx.resolved_modules.index(function.module).functions.index(function.index).signature
 
-    def resolve_field_accesses(self, taip: Type, fields: List[Token]) -> List[FieldAccess]:
+    def resolve_field_accesses(self, taip: Type, fields: Sequence[Token]) -> List[FieldAccess]:
         resolved = []
         if len(fields) == 0:
             return []
