@@ -1,4 +1,4 @@
-from typing import List, Dict, Set, Tuple, TypeGuard, assert_never
+from typing import List, Dict, Set, Tuple, Sequence, TypeGuard, assert_never
 from dataclasses import dataclass, field
 import unittest
 
@@ -184,8 +184,6 @@ def format_type(a: Type) -> str:
             return "i32"
         case I64():
             return "i64"
-        case other:
-            assert_never(other)
 
 @dataclass
 class ParameterLocal:
@@ -982,8 +980,6 @@ class Monomizer:
                 mono_items = list(map(lambda t: self.monomize_type(t, generics), items))
                 copy_space_offset.value += sum(item.size() for item in mono_items if not item.can_live_in_reg())
                 return TupleUnpackWord(token, mono_items, offset)
-            case other:
-                assert_never(other)
 
     def lookup_var_taip(self, local_id: LocalId | GlobalId, locals: Dict[LocalId, Local]) -> Type:
         if isinstance(local_id, LocalId):
@@ -1001,7 +997,7 @@ class Monomizer:
             self.function_table[function] = len(self.function_table)
         return self.function_table[function]
 
-    def monomize_field_accesses(self, fields: List[resolver.FieldAccess], generics: List[Type]) -> List[FieldAccess]:
+    def monomize_field_accesses(self, fields: Sequence[resolver.FieldAccess], generics: List[Type]) -> List[FieldAccess]:
         if len(fields) == 0:
             return []
 
@@ -1112,8 +1108,6 @@ class Monomizer:
                 return taip
             case resolver.PtrType():
                 return PtrType(self.monomize_type(taip.child, generics))
-            case other:
-                assert_never(other)
 
     def monomize_struct_type(self, taip: resolver.CustomTypeType, generics: List[Type]) -> StructType:
         this_generics = list(map(lambda t: self.monomize_type(t, generics), taip.generic_arguments))
@@ -1156,9 +1150,9 @@ def merge_locals_function(function: ConcreteFunction):
 
 def merge_locals_scope(scope: Scope, locals: Dict[LocalId, Local], disjoint: Disjoint):
     for word in scope.words:
-        merge_locals_word(word, locals, disjoint, scope.id)
+        merge_locals_word(word, locals, disjoint)
 
-def merge_locals_word(word: Word, locals: Dict[LocalId, Local], disjoint: Disjoint, scope: ScopeId):
+def merge_locals_word(word: Word, locals: Dict[LocalId, Local], disjoint: Disjoint):
     if isinstance(word, InitWord):
         reused_local = find_disjoint_local(locals, disjoint, locals[word.local_id])
         if reused_local is None:

@@ -30,6 +30,14 @@ def intersperse[T](sep: T, seq: Iterable[T]) -> Iterator[T]:
 def intercalate(sep: str, seq: Iterable[str]) -> str:
     return reduce(lambda a, b: a + b, intersperse(sep, seq), "")
 
+def seq_eq[T](a: Sequence[T], b: Sequence[T]) -> bool:
+    if len(a) != len(b):
+        return False
+    for x,y in zip(a, b):
+        if x != y:
+            return False
+    return True
+
 @dataclass
 class Lazy[T]:
     produce: Callable[[], T]

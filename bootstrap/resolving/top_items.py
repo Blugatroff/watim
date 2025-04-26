@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
 from format import Formattable, FormatInstr, unnamed_record, format_str, format_seq, named_record, format_optional, format_dict
@@ -19,7 +19,7 @@ class Import(Formattable):
     file_path: str
     qualifier: Token
     module: int
-    items: List[ImportItem]
+    items: Tuple[ImportItem, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Import", [
             self.token,
@@ -31,8 +31,8 @@ class Import(Formattable):
 @dataclass
 class Struct(Formattable):
     name: Token
-    generic_parameters: List[Token]
-    fields: List[NamedType]
+    generic_parameters: Tuple[Token, ...]
+    fields: Tuple[NamedType, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Struct", [
             ("name", self.name),
@@ -49,8 +49,8 @@ class VariantCase(Formattable):
 @dataclass
 class Variant(Formattable):
     name: Token
-    generic_parameters: List[Token]
-    cases: List[VariantCase]
+    generic_parameters: Tuple[Token, ...]
+    cases: Tuple[VariantCase, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Variant", [
             ("name", self.name),
@@ -61,9 +61,9 @@ CustomType = Struct | Variant
 
 @dataclass
 class FunctionSignature(Formattable):
-    generic_parameters: List[Token]
-    parameters: List[NamedType]
-    returns: List[Type]
+    generic_parameters: Tuple[Token, ...]
+    parameters: Tuple[NamedType, ...]
+    returns: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Signature", [
             ("generic-parameters", format_seq(self.generic_parameters)),

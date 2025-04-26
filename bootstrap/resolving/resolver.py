@@ -3,16 +3,16 @@ from dataclasses import dataclass
 import os
 import copy
 
-from util import Ref, normalize_path
+from util import Ref, normalize_path, seq_eq
 from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_list, format_dict
 from indexed_dict import IndexedDict
 from lexer import Token
 from parsing.types import I8, I32, I64, Bool, GenericType, HoleType
 from parsing.parser import NumberWord, BreakWord
 import parsing.parser as parser
-from resolving.types import CustomTypeHandle, NamedType, Type, CustomTypeType, PtrType, FunctionType, TupleType, resolved_type_eq, resolved_types_eq, PtrType
-from resolving.intrinsics import IntrinsicType, IntrinsicShr, IntrinsicEqual, IntrinsicStore, IntrinsicNot, IntrinsicUninit, IntrinsicSetStackSize, IntrinsicShr, IntrinsicRotr, IntrinsicGreater, IntrinsicGreaterEq, IntrinsicLess, IntrinsicLessEq, IntrinsicNotEqual, IntrinsicFlip, IntrinsicMemFill, INTRINSIC_TO_LEXEME, INTRINSICS, IntrinsicAdd, IntrinsicSub, IntrinsicDiv, IntrinsicDrop, IntrinsicMemGrow, IntrinsicMod, IntrinsicMul, IntrinsicAnd, IntrinsicOr, IntrinsicShl, IntrinsicWord, IntrinsicRotl, IntrinsicMemCopy
-from resolving.words import CustomTypeHandle, ResolvedWord, FunctionHandle, StringWord, InitWord, RefWord, GetWord, StructFieldInitWord, CallWord, SizeofWord, UnnamedStructWord, StructWord, FunRefWord, StoreWord, LoadWord, MatchCase, MatchWord, VariantWord, LoopWord, CastWord, TupleMakeWord, TupleUnpackWord, GetFieldWord, IfWord, SetWord, BlockWord, IndirectCallWord, FieldAccess, Scope, ScopeId, GlobalId, LocalId
+from resolving.types import CustomTypeHandle, NamedType, Type, CustomTypeType, PtrType, FunctionType, TupleType
+from resolving.intrinsics import IntrinsicType, IntrinsicShr, IntrinsicEqual, IntrinsicStore, IntrinsicNot, IntrinsicUninit, IntrinsicSetStackSize, IntrinsicRotr, IntrinsicGreater, IntrinsicGreaterEq, IntrinsicLess, IntrinsicLessEq, IntrinsicNotEqual, IntrinsicFlip, IntrinsicMemFill, INTRINSIC_TO_LEXEME, INTRINSICS, IntrinsicAdd, IntrinsicSub, IntrinsicDiv, IntrinsicDrop, IntrinsicMemGrow, IntrinsicMod, IntrinsicMul, IntrinsicAnd, IntrinsicOr, IntrinsicShl, IntrinsicWord, IntrinsicRotl, IntrinsicMemCopy
+from resolving.words import ResolvedWord, FunctionHandle, StringWord, InitWord, RefWord, GetWord, StructFieldInitWord, CallWord, SizeofWord, UnnamedStructWord, StructWord, FunRefWord, StoreWord, LoadWord, MatchCase, MatchWord, VariantWord, LoopWord, CastWord, TupleMakeWord, TupleUnpackWord, GetFieldWord, IfWord, SetWord, BlockWord, IndirectCallWord, FieldAccess, Scope, ScopeId, GlobalId, LocalId
 from resolving.top_items import Function, FunctionSignature, Import, CustomType, Global, Extern, Local, LocalName, ImportItem, Struct, Variant, VariantCase
 
 @dataclass
@@ -133,7 +133,7 @@ class Env:
         return Env(self)
 
 @dataclass
-class Stack:
+class Stack(Formattable):
     parent: 'Stack | None'
     stack: List[Type]
     negative: List[Type]
@@ -148,7 +148,7 @@ class Stack:
     def push(self, taip: Type):
         self.stack.append(taip)
 
-    def push_many(self, taips: List[Type]):
+    def push_many(self, taips: Sequence[Type]):
         for taip in taips:
             self.append(taip)
 
@@ -213,8 +213,8 @@ class Stack:
             return False
         self.use(len(other.stack))
         other.use(len(self.stack))
-        negative_is_fine = resolved_types_eq(self.negative, other.negative)
-        positive_is_fine = resolved_types_eq(self.stack, other.stack)
+        negative_is_fine = self.negative == other.negative
+        positive_is_fine = self.stack == other.stack
         return negative_is_fine and positive_is_fine
 
     def __len__(self) -> int:
@@ -249,7 +249,7 @@ class Stack:
                 return False
             if a_end and b_end:
                 return True
-            if not resolved_type_eq(a.stack[ia - 1], b.stack[ib - 1]):
+            if a.stack[ia - 1] != b.stack[ib - 1]:
                 return False
             ib -= 1
             ia -= 1
@@ -263,13 +263,13 @@ class Stack:
 @dataclass
 class BreakStack:
     token: Token
-    types: List[Type]
+    types: Tuple[Type, ...]
     reachable: bool
 
 @dataclass
 class StructLitContext:
     struct: CustomTypeHandle
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
     fields: Dict[str, Tuple[int, Type]]
 
 @dataclass
@@ -294,8 +294,8 @@ class ResolveWordContext:
 
 @dataclass
 class BlockAnnotation:
-    parameters: List[Type]
-    returns: List[Type]
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
 
 
 @dataclass
@@ -311,10 +311,10 @@ class TypeLookup:
             return self.other_modules[handle.module][handle.index]
 
 
-    def types_pretty_bracketed(self, types: List[Type]) -> str:
+    def types_pretty_bracketed(self, types: Sequence[Type]) -> str:
         return f"[{self.types_pretty(types)}]"
 
-    def types_pretty(self, types: List[Type]) -> str:
+    def types_pretty(self, types: Sequence[Type]) -> str:
         s = ""
         for i, taip in enumerate(types):
             s += self.type_pretty(taip)
@@ -377,14 +377,14 @@ class ResolveCtx:
 
         return resolved_imports
 
-    def resolve_import_items(self, imported_module_id: int, items: Sequence[Token]) -> List[ImportItem]:
+    def resolve_import_items(self, imported_module_id: int, items: Sequence[Token]) -> Tuple[ImportItem, ...]:
         imported_module = list(self.parsed_modules.values())[imported_module_id]
         def resolve_item(item_name: Token) -> ImportItem:
             item = ResolveCtx.lookup_item_in_module(imported_module, imported_module_id, item_name)
             if item is None:
                 self.abort(item_name, "not found")
             return item
-        return list(map(resolve_item, items))
+        return tuple(map(resolve_item, items))
 
     def resolve_custom_types(self, imports: Dict[str, List[Import]]) -> IndexedDict[str, CustomType]:
         resolved_custom_types: IndexedDict[str, CustomType] = IndexedDict()
@@ -398,18 +398,18 @@ class ResolveCtx:
     def resolve_struct(self, struct: parser.Struct, imports: Dict[str, List[Import]]) -> Struct:
         return Struct(
             struct.name,
-            list(struct.generic_parameters),
-            [self.resolve_named_type(imports, field) for field in struct.fields]
+            struct.generic_parameters,
+            tuple(self.resolve_named_type(imports, field) for field in struct.fields)
         )
 
     def resolve_variant(self, variant: parser.Variant, imports: Dict[str, List[Import]]) -> Variant:
         return Variant(
             variant.name,
-            list(variant.generic_parameters),
-            [VariantCase(
+            variant.generic_parameters,
+            tuple(VariantCase(
                 case.name,
                 None if case.taip is None else self.resolve_type(imports, case.taip)
-            ) for case in variant.cases]
+            ) for case in variant.cases)
         )
 
     @staticmethod
@@ -439,8 +439,8 @@ class ResolveCtx:
     def resolve_named_type(self, imports: Dict[str, List[Import]], named_type: parser.NamedType) -> NamedType:
         return NamedType(named_type.name, self.resolve_type(imports, named_type.taip))
 
-    def resolve_named_types(self, imports: Dict[str, List[Import]], named_types: Sequence[parser.NamedType]) -> List[NamedType]:
-        return [self.resolve_named_type(imports, named_type) for named_type in named_types]
+    def resolve_named_types(self, imports: Dict[str, List[Import]], named_types: Sequence[parser.NamedType]) -> Tuple[NamedType, ...]:
+        return tuple(self.resolve_named_type(imports, named_type) for named_type in named_types)
 
     def resolve_type(self, imports: Dict[str, List[Import]], taip: parser.Type) -> Type:
         if isinstance(taip, parser.PtrType):
@@ -460,8 +460,8 @@ class ResolveCtx:
             )
         return taip
 
-    def resolve_types(self, imports: Dict[str, List[Import]], types: Sequence[parser.Type]) -> List[Type]:
-        return [self.resolve_type(imports, taip) for taip in types]
+    def resolve_types(self, imports: Dict[str, List[Import]], types: Sequence[parser.Type]) -> Tuple[Type, ...]:
+        return tuple(self.resolve_type(imports, taip) for taip in types)
 
     def resolve_custom_type(self, imports: Dict[str, List[Import]], taip: parser.CustomTypeType | parser.ForeignType) -> CustomTypeType:
         type_index = 0
@@ -514,7 +514,7 @@ class ResolveCtx:
 
     def resolve_signature(self, imports: Dict[str, List[Import]], signature: parser.FunctionSignature) -> FunctionSignature:
         return FunctionSignature(
-            list(signature.generic_parameters),
+            signature.generic_parameters,
             self.resolve_named_types(imports, signature.parameters),
             self.resolve_types(imports, signature.returns),
         )
@@ -564,7 +564,7 @@ class ResolveCtx:
                 stack = Stack.empty()
                 ctx = WordCtx(self, imports, env, type_lookup, signatures, globals)
                 words, diverges = ctx.resolve_words(stack, list(function.body))
-                if not diverges and not resolved_types_eq(stack.stack, signature.returns):
+                if not diverges and not seq_eq(stack.stack, signature.returns):
                     msg  = "unexpected return values:\n\texpected: "
                     msg += type_lookup.types_pretty_bracketed(signature.returns)
                     msg += "\n\tactual:   "
@@ -606,7 +606,7 @@ class WordCtx:
     globals: IndexedDict[str, Global]
     struct_lit_ctx: StructLitContext | None = None
     break_stacks: List[BreakStack] | None = None
-    block_returns: List[Type] | None = None
+    block_returns: Tuple[Type, ...] | None = None
     reachable: bool = True
 
     def with_env(self, env: Env) -> 'WordCtx':
@@ -614,7 +614,7 @@ class WordCtx:
         new.env = env
         return new
 
-    def with_break_stacks(self, break_stacks: List[BreakStack], block_returns: List[Type] | None) -> 'WordCtx':
+    def with_break_stacks(self, break_stacks: List[BreakStack], block_returns: Tuple[Type, ...] | None) -> 'WordCtx':
         new = copy.copy(self)
         new.break_stacks = break_stacks
         new.block_returns = block_returns
@@ -709,7 +709,7 @@ class WordCtx:
         stack.push(PtrType(taip))
         return ([
             InitWord(word.token, local_id, taip),
-            RefWord(word.token, local_id, [])], False)
+            RefWord(word.token, local_id, ())], False)
 
     def resolve_get_local(self, stack: Stack, word: parser.GetWord) -> Tuple[List[ResolvedWord], bool]:
         var_id,taip = self.resolve_var_name(word.ident)
@@ -758,7 +758,7 @@ class WordCtx:
             if word.ident.lexeme in self.struct_lit_ctx.fields:
                 field_index,field_type = self.struct_lit_ctx.fields[word.ident.lexeme]
                 field_type = self.insert_generic_arguments(self.struct_lit_ctx.generic_arguments, field_type)
-                if not resolved_type_eq(field_type, taip):
+                if field_type != taip:
                     self.abort(word.ident, "wrong type for field")
                 del self.struct_lit_ctx.fields[word.ident.lexeme]
                 return ([StructFieldInitWord(
@@ -791,17 +791,21 @@ class WordCtx:
         resolved_word = self.resolve_call_word(word)
         signature = self.lookup_signature(resolved_word.function)
         args = stack.pop_n(len(signature.parameters))
-        self.infer_generic_arguments_from_args(word.ident, args, signature.parameters, resolved_word.generic_arguments)
+        generic_arguments = self.infer_generic_arguments_from_args(word.ident, args, signature.parameters, resolved_word.generic_arguments)
+        if generic_arguments is None:
+            self.abort(word.ident, "failed to infer generic arguments")
+        resolved_word.generic_arguments = generic_arguments
         self.push_returns(stack, signature.returns, resolved_word.generic_arguments)
         return ([resolved_word], False)
 
-    def parameter_argument_mismatch_error(self, token: Token, arguments: List[Type], parameters: List[NamedType], generic_arguments: List[Type]) -> NoReturn:
+    def parameter_argument_mismatch_error(self, token: Token, arguments: Sequence[Type], parameters: Sequence[NamedType], generic_arguments: Sequence[Type]) -> NoReturn:
         self.type_mismatch_error(
                 token,
                 [self.insert_generic_arguments(generic_arguments, parameter.taip) for parameter in parameters],
                 arguments)
 
-    def infer_generic_arguments_from_args(self, token: Token, arguments: List[Type], parameters: List[NamedType], generic_arguments: List[Type]) -> None:
+    def infer_generic_arguments_from_args(self, token: Token, arguments: Sequence[Type], parameters: Sequence[NamedType], original_arguments: Tuple[Type, ...]) -> Tuple[Type, ...] | None:
+        generic_arguments = list(original_arguments)
         hole_mapping: Dict[Token, Type] = {}
         for i in range(1, len(parameters) + 1):
             if len(arguments) < i:
@@ -816,12 +820,16 @@ class WordCtx:
             generic_arguments[i] = self.fill_holes(hole_mapping, generic_argument)
 
         # TODO: check that the generic arguments don't contain any holes now
+        # if any(taip.contains_hole() for taip in generic_arguments):
+        #     return None
+        return tuple(generic_arguments)
+
 
     def infer_holes(self, mapping: Dict[Token, Type], token: Token, actual: Type, holey: Type) -> bool:
         assert not isinstance(actual, HoleType)
         match holey:
             case HoleType(hole):
-                if hole in mapping and not resolved_type_eq(mapping[hole], actual):
+                if hole in mapping and mapping[hole] != actual:
                     msg = "Failed to infer type for hole, contradicting types inferred:\n"
                     msg += f"inferred now:        {self.type_lookup.type_pretty(actual)}\n"
                     msg += f"inferred previously: {self.type_lookup.type_pretty(mapping[hole])}\n"
@@ -829,7 +837,7 @@ class WordCtx:
                 mapping[hole] = actual
                 return True
             case Bool() | I8() | I32() | I64():
-                return resolved_type_eq(actual, holey)
+                return actual == holey
             case GenericType():
                 return isinstance(actual, GenericType) and actual.generic_index == holey.generic_index
             case PtrType(holey):
@@ -851,7 +859,7 @@ class WordCtx:
                     return False
                 return self.infer_holes_all(mapping, token, actual.generic_arguments, holey.generic_arguments)
 
-    def infer_holes_all(self, mapping: Dict[Token, Type], token: Token, actual: List[Type], holey: List[Type]) -> bool:
+    def infer_holes_all(self, mapping: Dict[Token, Type], token: Token, actual: Sequence[Type], holey: Sequence[Type]) -> bool:
         assert(len(actual) == len(holey))
         actuals_correct = True
         for (actual_t, holey_t) in zip(actual, holey):
@@ -868,18 +876,18 @@ class WordCtx:
             case PtrType(child):
                 return PtrType(self.fill_holes(mapping, child))
             case TupleType(token, items):
-                return TupleType(token, [self.fill_holes(mapping, t) for t in items])
+                return TupleType(token, tuple(self.fill_holes(mapping, t) for t in items))
             case FunctionType(token, parameters, returns):
                 return FunctionType(
                     token,
-                    [self.fill_holes(mapping, t) for t in parameters],
-                    [self.fill_holes(mapping, t) for t in returns])
+                    tuple(self.fill_holes(mapping, t) for t in parameters),
+                    tuple(self.fill_holes(mapping, t) for t in returns))
             case CustomTypeType(name, type_definition, generic_arguments):
-                return CustomTypeType(name, type_definition, [self.fill_holes(mapping, t) for t in generic_arguments])
+                return CustomTypeType(name, type_definition, tuple(self.fill_holes(mapping, t) for t in generic_arguments))
             case other:
                 return other
 
-    def push_returns(self, stack: Stack, returns: List[Type], generic_arguments: List[Type] | None):
+    def push_returns(self, stack: Stack, returns: Sequence[Type], generic_arguments: Tuple[Type, ...] | None):
         for ret in returns:
             if generic_arguments is None:
                 stack.push(ret)
@@ -900,7 +908,7 @@ class WordCtx:
                     self.ctx.generic_arguments_mismatch_error(word.ident, len(signature.generic_parameters), len(resolved_generic_arguments))
                 return CallWord(word.ident, FunctionHandle(imp.module, function_id), resolved_generic_arguments)
             self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
-        resolved_generic_arguments = [self.ctx.resolve_type(self.imports, taip) for taip in word.generic_arguments]
+        resolved_generic_arguments = tuple(self.ctx.resolve_type(self.imports, taip) for taip in word.generic_arguments)
         function = self.find_function(word.ident)
         if function is None:
             self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
@@ -927,7 +935,10 @@ class WordCtx:
         struc = self.type_lookup.lookup(struct_type.type_definition)
         assert(not isinstance(struc, Variant))
         args = stack.pop_n(len(struc.fields))
-        self.infer_generic_arguments_from_args(word.token, args, struc.fields, struct_type.generic_arguments)
+        generic_arguments = self.infer_generic_arguments_from_args(word.token, args, struc.fields, struct_type.generic_arguments)
+        if generic_arguments is None:
+            self.abort(word.token, "failed to infer generic arguments")
+        struct_type.generic_arguments = generic_arguments
         # self.expect_arguments(stack, word.token, struct_type.generic_arguments, struc.fields)
         stack.push(struct_type)
         return ([UnnamedStructWord(word.token, struct_type)], False)
@@ -955,7 +966,7 @@ class WordCtx:
     def resolve_fun_ref(self, stack: Stack, word: parser.FunRefWord) -> Tuple[List[ResolvedWord], bool]:
         call = self.resolve_call_word(word.call)
         signature = self.lookup_signature(call.function)
-        parameters = [parameter.taip for parameter in signature.parameters]
+        parameters = tuple(parameter.taip for parameter in signature.parameters)
         stack.push(FunctionType(call.name, parameters, signature.returns))
         return ([FunRefWord(call)], False)
 
@@ -1042,7 +1053,7 @@ class WordCtx:
 
         words,_ = loop_ctx.resolve_words(loop_stack, list(word.words.words))
         diverges = len(loop_break_stacks) == 0
-        parameters = loop_stack.negative if annotation is None else annotation.parameters
+        parameters = tuple(loop_stack.negative) if annotation is None else annotation.parameters
 
         if len(loop_break_stacks) != 0:
             first = loop_break_stacks[0]
@@ -1050,10 +1061,10 @@ class WordCtx:
             for break_stack in loop_break_stacks[1:]:
                 if not break_stack.reachable:
                     break
-                if not resolved_types_eq(first.types, break_stack.types):
+                if first.types != break_stack.types:
                     self.break_stack_mismatch_error(word.token, loop_break_stacks)
 
-        if not resolved_types_eq(parameters, loop_stack.stack):
+        if not seq_eq(parameters, loop_stack.stack):
             self.abort(word.token, "unexpected values remaining on stack at the end of loop")
 
         if annotation is not None:
@@ -1061,7 +1072,7 @@ class WordCtx:
         elif len(loop_break_stacks) != 0:
             returns = loop_break_stacks[0].types
         else:
-            returns = loop_stack.stack
+            returns = tuple(loop_stack.stack)
 
         self.expect(stack, word.token, parameters)
         stack.push_many(returns)
@@ -1077,7 +1088,7 @@ class WordCtx:
         if self.break_stacks is None:
             self.abort(token, "`break` can only be used inside of blocks and loops")
 
-        self.break_stacks.append(BreakStack(token, dump, self.reachable))
+        self.break_stacks.append(BreakStack(token, tuple(dump), self.reachable))
         return ([BreakWord(token)], True)
 
     def resolve_set_local(self, stack: Stack, word: parser.SetWord) -> Tuple[List[ResolvedWord], bool]:
@@ -1103,7 +1114,7 @@ class WordCtx:
         words, diverges = block_ctx.resolve_words(block_stack, list(word.words.words))
         block_end_is_reached = not diverges
 
-        parameters = block_stack.negative if annotation is None else annotation.parameters
+        parameters = tuple(block_stack.negative) if annotation is None else annotation.parameters
         if len(block_break_stacks) != 0:
             first = block_break_stacks[0]
             diverges = not first.reachable
@@ -1111,13 +1122,13 @@ class WordCtx:
                 if not break_stack.reachable:
                     diverges = True
                     break
-                if not resolved_types_eq(first.types, break_stack.types):
+                if first.types != break_stack.types:
                     if block_end_is_reached:
-                        block_break_stacks.append(BreakStack(word.words.end, block_stack.stack, diverges))
+                        block_break_stacks.append(BreakStack(word.words.end, tuple(block_stack.stack), diverges))
                     self.break_stack_mismatch_error(word.token, block_break_stacks)
             if block_end_is_reached:
-                if not resolved_types_eq(block_stack.stack, first.types):
-                    block_break_stacks.append(BreakStack(word.words.end, block_stack.stack, diverges))
+                if not seq_eq(block_stack.stack, first.types):
+                    block_break_stacks.append(BreakStack(word.words.end, tuple(block_stack.stack), diverges))
                     self.break_stack_mismatch_error(word.token, block_break_stacks)
 
         if annotation is not None:
@@ -1125,7 +1136,7 @@ class WordCtx:
         elif len(block_break_stacks) != 0:
             returns = block_break_stacks[0].types
         else:
-            returns = block_stack.stack
+            returns = tuple(block_stack.stack)
 
         self.expect(stack, word.token, parameters)
         stack.push_many(returns)
@@ -1307,7 +1318,7 @@ class WordCtx:
                 self.abort(word.token, "expected more")
             items.append(item)
         items.reverse()
-        taip = TupleType(word.token, items)
+        taip = TupleType(word.token, tuple(items))
         stack.push(taip)
         return ([TupleMakeWord(word.token, taip)], False)
 
@@ -1337,7 +1348,7 @@ class WordCtx:
             self.stack_annotation_mismatch(stack, word)
         for i, taip in enumerate(reversed(word.types)):
             expected = self.ctx.resolve_type(self.imports, taip)
-            if not resolved_type_eq(stack[-i-1], expected):
+            if stack[-i-1] != expected:
                 self.stack_annotation_mismatch(stack, word)
         return None
 
@@ -1346,13 +1357,13 @@ class WordCtx:
                 self.ctx.resolve_types(self.imports, annotation.parameters),
                 self.ctx.resolve_types(self.imports, annotation.returns))
 
-    def expect_arguments(self, stack: Stack, token: Token, generic_arguments: List[Type], parameters: List[NamedType]):
+    def expect_arguments(self, stack: Stack, token: Token, generic_arguments: Tuple[Type, ...], parameters: List[NamedType]):
         i = len(parameters)
         popped: List[Type] = []
         while i != 0:
             expected_type = self.insert_generic_arguments(generic_arguments, parameters[i - 1].taip)
             popped_type = stack.pop()
-            error = popped_type is None or not resolved_type_eq(popped_type, expected_type)
+            error = popped_type is None or popped_type != expected_type
             if popped_type is not None:
                 popped.append(popped_type)
             if error:
@@ -1367,13 +1378,13 @@ class WordCtx:
             assert(popped_type is not None)
             i -= 1
 
-    def expect(self, stack: Stack, token: Token, expected: List[Type]):
+    def expect(self, stack: Stack, token: Token, expected: Sequence[Type]):
         i = len(expected)
         popped: List[Type] = []
         while i != 0:
             expected_type = expected[i - 1]
             popped_type = stack.pop()
-            error = popped_type is None or not resolved_type_eq(popped_type, expected_type)
+            error = popped_type is None or popped_type != expected_type
             if error:
                 popped.reverse()
                 self.type_mismatch_error(token, expected, popped)
@@ -1381,7 +1392,7 @@ class WordCtx:
             popped.append(popped_type)
             i -= 1
 
-    def type_mismatch_error(self, token: Token, expected: List[Type], actual: List[Type]) -> NoReturn:
+    def type_mismatch_error(self, token: Token, expected: Sequence[Type], actual: Sequence[Type]) -> NoReturn:
         message  = "expected:\n\t" + self.type_lookup.types_pretty_bracketed(expected)
         message += "\ngot:\n\t" + self.type_lookup.types_pretty_bracketed(actual)
         self.abort(token, message)
@@ -1511,7 +1522,7 @@ class WordCtx:
             case IntrinsicType.NOT_EQ | IntrinsicType.EQ:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
-                if not resolved_type_eq(stack[-1], stack[-2]):
+                if stack[-1] != stack[-2]:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [a, a] for any a")
                 taip = stack[-1]
                 stack.pop()
@@ -1536,7 +1547,7 @@ class WordCtx:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")
                 ptr_type = stack[-2]
-                if not isinstance(ptr_type, PtrType) or not resolved_type_eq(ptr_type.child, stack[-1]):
+                if not isinstance(ptr_type, PtrType) or ptr_type.child != stack[-1]:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected [.a, a]")
                 taip = stack[-1]
                 stack.pop()
@@ -1566,7 +1577,7 @@ class WordCtx:
             if top is None:
                 abort()
             popped.append(top)
-            if not resolved_type_eq(expected_type, top):
+            if expected_type != top:
                 abort()
         return list(reversed(popped))
 
@@ -1596,10 +1607,10 @@ class WordCtx:
             return self.signatures[function.index]
         return self.ctx.resolved_modules.index(function.module).functions.index(function.index).signature
 
-    def resolve_field_accesses(self, taip: Type, fields: Sequence[Token]) -> List[FieldAccess]:
+    def resolve_field_accesses(self, taip: Type, fields: Sequence[Token]) -> Tuple[FieldAccess, ...]:
         resolved = []
         if len(fields) == 0:
-            return []
+            return ()
         for field_name in fields:
             assert((isinstance(taip, PtrType) and isinstance(taip.child, CustomTypeType)) or isinstance(taip, CustomTypeType))
             unpointered = taip.child if isinstance(taip, PtrType) else taip
@@ -1619,9 +1630,9 @@ class WordCtx:
                     break
             if not found_field:
                 self.abort(field_name, "field not found")
-        return resolved
+        return tuple(resolved)
 
-    def insert_generic_arguments(self, generics: List[Type], taip: Type) -> Type:
+    def insert_generic_arguments(self, generics: Sequence[Type], taip: Type) -> Type:
         if isinstance(taip, PtrType):
             return PtrType(self.insert_generic_arguments(generics, taip.child))
         if isinstance(taip, CustomTypeType):
@@ -1641,5 +1652,5 @@ class WordCtx:
             return generics[taip.generic_index]
         return taip
 
-    def insert_generic_arguments_all(self, generics: List[Type], types: List[Type]) -> List[Type]:
-        return [self.insert_generic_arguments(generics, taip) for taip in types]
+    def insert_generic_arguments_all(self, generics: Sequence[Type], types: Sequence[Type]) -> Tuple[Type, ...]:
+        return tuple(self.insert_generic_arguments(generics, taip) for taip in types)

@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 from format import Formattable, FormatInstr, unnamed_record
-from resolving.types import I8, I32, I64, PrimitiveType, PtrType, Type
+from parsing.types import I8, I32, I64, PrimitiveType
+from resolving.types import PtrType, Type
 from lexer import Token
 
 class IntrinsicType(str, Enum):

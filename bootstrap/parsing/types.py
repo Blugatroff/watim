@@ -42,13 +42,16 @@ class Bool(Formattable):
 
 type PrimitiveType = I8 | I32 | I64 | Bool
 
-@dataclass(frozen=True, eq=True)
+@dataclass(frozen=True)
 class GenericType(Formattable):
     token: Token
     generic_index: int
 
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("GenericType", [self.token, self.generic_index])
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, GenericType) and other.generic_index == self.generic_index
 
 type Type = 'PrimitiveType | PtrType | TupleType | GenericType | ForeignType | CustomTypeType | FunctionType | HoleType'
 

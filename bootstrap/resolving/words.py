@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from dataclasses import dataclass
 
 from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_optional, format_list, format_str
@@ -73,7 +73,7 @@ class GetWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
     var_taip: Type
-    fields: List[FieldAccess]
+    fields: Tuple[FieldAccess, ...]
     taip: Type
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("GetLocal", [
@@ -87,7 +87,7 @@ class GetWord(Formattable):
 class RefWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
+    fields: Tuple[FieldAccess, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("RefLocal", [self.token, self.local_id, format_seq(self.fields, multi_line=True)])
 
@@ -95,19 +95,19 @@ class RefWord(Formattable):
 class SetWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
+    fields: Tuple[FieldAccess, ...]
 
 @dataclass
 class StoreWord(Formattable):
     token: Token
     local: LocalId | GlobalId
-    fields: List[FieldAccess]
+    fields: Tuple[FieldAccess, ...]
 
 @dataclass
 class CallWord(Formattable):
     name: Token
     function: 'FunctionHandle'
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Call", [self.name, self.function, format_seq(self.generic_arguments)])
 
@@ -144,14 +144,14 @@ class IfWord(Formattable):
 class LoopWord(Formattable):
     token: Token
     body: Scope
-    parameters: List[Type]
-    returns: List[Type]
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
     diverges: bool
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Loop", [
             ("token", self.token),
             ("parameters", format_seq(self.parameters)),
-            ("returns", format_optional(None if self.diverges else self.returns, format_list)),
+            ("returns", format_optional(None if self.diverges else self.returns, format_seq)),
             ("body", self.body)])
 
 
@@ -159,8 +159,8 @@ class LoopWord(Formattable):
 class BlockWord(Formattable):
     token: Token
     body: Scope
-    parameters: List[Type]
-    returns: List[Type]
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
 
 @dataclass
 class CastWord(Formattable):
@@ -176,7 +176,7 @@ class SizeofWord(Formattable):
 @dataclass
 class GetFieldWord(Formattable):
     token: Token
-    fields: List[FieldAccess]
+    fields: Tuple[FieldAccess, ...]
     on_ptr: bool
 
 @dataclass
@@ -193,7 +193,7 @@ class StructFieldInitWord(Formattable):
     taip: Type
     field_index: int
 
-    generic_arguments: List[Type]
+    generic_arguments: Tuple[Type, ...]
 
 @dataclass
 class StructWord(Formattable):
