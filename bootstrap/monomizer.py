@@ -6,9 +6,12 @@ from util import Ref, Lazy, intercalate, align_to
 from format import Formattable, FormatInstr, unnamed_record, named_record
 from indexed_dict import IndexedDict
 from lexer import Token
-from parser import I8, I32, I64, Bool, PrimitiveType, NumberWord, BreakWord
-import resolver
-from resolver import LocalName, ScopeId, GlobalId, LocalId, IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicMemGrow, IntrinsicSetStackSize, StringWord
+from parsing.types import I8, I32, I64, Bool, PrimitiveType
+from parsing.parser import NumberWord, BreakWord
+import resolving.resolver as resolver
+from resolving.resolver import LocalName, ScopeId, GlobalId, LocalId
+from resolving.intrinsics import IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicMemGrow, IntrinsicSetStackSize
+from resolving.words import StringWord
 
 @dataclass
 class PtrType(Formattable):

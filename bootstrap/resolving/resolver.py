@@ -1,5 +1,4 @@
 from typing import List, Optional, Dict, Tuple, NoReturn, assert_never
-from enum import Enum
 from dataclasses import dataclass
 import os
 import copy
@@ -8,105 +7,17 @@ from util import Ref, normalize_path
 from format import Formattable, FormatInstr, unnamed_record, named_record, format_seq, format_str, format_optional, format_list, format_dict
 from indexed_dict import IndexedDict
 from lexer import Token
-import parser
-from parser import I8, I32, I64, Bool, PrimitiveType, NumberWord, BreakWord, GenericType, HoleType
-
-@dataclass
-class PtrType(Formattable):
-    child: 'Type'
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Ptr", [self.child])
-
-@dataclass(frozen=True, eq=True)
-class CustomTypeHandle(Formattable):
-    module: int
-    index: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("CustomTypeHandle", [self.module, self.index])
-
-@dataclass
-class CustomTypeType(Formattable):
-    name: Token
-    type_definition: CustomTypeHandle
-    generic_arguments: List['Type']
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("CustomType", [
-            self.type_definition.module,
-            self.type_definition.index,
-            format_seq(self.generic_arguments)])
-
-@dataclass
-class TupleType(Formattable):
-    token: Token
-    items: List['Type']
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("TupleType", [self.token, format_seq(self.items)])
-
-@dataclass
-class FunctionType(Formattable):
-    token: Token
-    parameters: List['Type']
-    returns: List['Type']
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("FunType", [self.token, format_seq(self.parameters), format_seq(self.returns)])
-
-type Type = PrimitiveType | PtrType | TupleType | GenericType | CustomTypeType | FunctionType | HoleType
-
-def resolved_type_eq(a: Type, b: Type):
-    if isinstance(a, Bool) and isinstance(b, Bool):
-        return a == b
-    if isinstance(a, I8) and isinstance(b, I8):
-        return a == b
-    if isinstance(a, I32) and isinstance(b, I32):
-        return a == b
-    if isinstance(a, I64) and isinstance(b, I64):
-        return a == b
-    if isinstance(a, PtrType) and isinstance(b, PtrType):
-        return resolved_type_eq(a.child, b.child)
-    if isinstance(a, CustomTypeType) and isinstance(b, CustomTypeType):
-        module_eq = a.type_definition.module == b.type_definition.module
-        index_eq  = a.type_definition.index == b.type_definition.index
-        return resolved_types_eq(a.generic_arguments, b.generic_arguments) if module_eq and index_eq else False
-    if isinstance(a, FunctionType) and isinstance(b, FunctionType):
-        if len(a.parameters) != len(b.parameters) or len(a.returns) != len(b.returns):
-            return False
-        for c,d in zip(a.parameters, b.parameters):
-            if not resolved_type_eq(c, d):
-                return False
-        for c,d in zip(a.parameters, b.parameters):
-            if not resolved_type_eq(c, d):
-                return False
-        return True
-    if isinstance(a, TupleType) and isinstance(b, TupleType):
-        return resolved_types_eq(a.items, b.items)
-    if isinstance(a, GenericType) and isinstance(b, GenericType):
-        return a.generic_index == b.generic_index
-    return False
-
-def resolved_types_eq(a: List[Type], b: List[Type]) -> bool:
-    if len(a) != len(b):
-        return False
-    for i in range(len(a)):
-        if not resolved_type_eq(a[i], b[i]):
-            return False
-    return True
-
-@dataclass
-class NamedType(Formattable):
-    name: Token
-    taip: Type
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("NamedType", [self.name, self.taip])
-
-
-# =============================================================================
-#  Resolved TopItems
-# =============================================================================
+from parsing.types import I8, I32, I64, Bool, GenericType, HoleType
+from parsing.parser import NumberWord, BreakWord
+import parsing.parser as parser
+from resolving.types import CustomTypeHandle, NamedType, Type, CustomTypeType, PtrType, FunctionType, TupleType, resolved_type_eq, resolved_types_eq, PtrType
+from resolving.intrinsics import IntrinsicType, IntrinsicShr, IntrinsicEqual, IntrinsicStore, IntrinsicNot, IntrinsicUninit, IntrinsicSetStackSize, IntrinsicShr, IntrinsicRotr, IntrinsicGreater, IntrinsicGreaterEq, IntrinsicLess, IntrinsicLessEq, IntrinsicNotEqual, IntrinsicFlip, IntrinsicMemFill, INTRINSIC_TO_LEXEME, INTRINSICS, IntrinsicAdd, IntrinsicSub, IntrinsicDiv, IntrinsicDrop, IntrinsicMemGrow, IntrinsicMod, IntrinsicMul, IntrinsicAnd, IntrinsicOr, IntrinsicShl, IntrinsicWord, IntrinsicRotl, IntrinsicMemCopy
+from resolving.words import CustomTypeHandle, ResolvedWord, FunctionHandle, StringWord, InitWord, RefWord, GetWord, StructFieldInitWord, CallWord, SizeofWord, UnnamedStructWord, StructWord, FunRefWord, StoreWord, LoadWord, MatchCase, MatchWord, VariantWord, LoopWord, CastWord, TupleMakeWord, TupleUnpackWord, GetFieldWord, IfWord, SetWord, BlockWord, IndirectCallWord, FieldAccess, Scope, ScopeId, GlobalId, LocalId
 
 @dataclass
 class ImportItem(Formattable):
     name: Token
-    handle: 'FunctionHandle | CustomTypeHandle'
+    handle: FunctionHandle | CustomTypeHandle
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("ImportItem", [self.name, self.handle])
 
@@ -129,7 +40,7 @@ class Import(Formattable):
 class Struct(Formattable):
     name: Token
     generic_parameters: List[Token]
-    fields: List['NamedType']
+    fields: List[NamedType]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Struct", [
             ("name", self.name),
@@ -174,32 +85,6 @@ class Global(Formattable):
     was_reffed: bool = False
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Global", [self.name, self.taip, self.was_reffed])
-
-@dataclass(frozen=True, eq=True)
-
-class ScopeId(Formattable):
-    raw: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return [self.raw]
-ROOT_SCOPE: ScopeId = ScopeId(0)
-
-@dataclass(frozen=True, eq=True)
-class GlobalId(Formattable):
-    module: int
-    index: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Globalid", [self.module, self.index])
-
-@dataclass(frozen=True, eq=True)
-class LocalId(Formattable):
-    name: str
-    scope: ScopeId
-    shadow: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("LocalId", [
-            format_str(self.name),
-            self.scope,
-            self.shadow])
 
 @dataclass
 class ResolverException(Exception):
@@ -246,13 +131,6 @@ class Local(Formattable):
         return unnamed_record("Local", [self.name, self.taip, self.was_reffed, self.is_parameter])
 
 @dataclass
-class Scope(Formattable):
-    id: ScopeId
-    words: List['ResolvedWord']
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Scope", [self.id, format_seq(self.words, multi_line=True)])
-
-@dataclass
 class Function(Formattable):
     name: Token
     export_name: Optional[Token]
@@ -279,475 +157,6 @@ class Extern(Formattable):
             self.extern_module,
             self.extern_name,
             self.signature])
-
-# =============================================================================
-#  Resolved Words
-# =============================================================================
-
-@dataclass
-class FieldAccess(Formattable):
-    name: Token
-    source_taip: CustomTypeType | PtrType
-    target_taip: Type
-    field_index: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("FieldAccess", [
-            self.name, self.source_taip, self.target_taip, self.field_index])
-
-@dataclass
-class StringWord(Formattable):
-    token: Token
-    offset: int
-    len: int
-
-@dataclass
-class LoadWord(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class InitWord(Formattable):
-    name: Token
-    local_id: LocalId
-    taip: Type
-
-@dataclass
-class GetWord(Formattable):
-    token: Token
-    local_id: LocalId | GlobalId
-    var_taip: Type
-    fields: List[FieldAccess]
-    taip: Type
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("GetLocal", [
-            self.token,
-            self.local_id,
-            self.var_taip,
-            self.taip,
-            format_seq(self.fields, multi_line=True)])
-
-@dataclass
-class RefWord(Formattable):
-    token: Token
-    local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("RefLocal", [self.token, self.local_id, format_seq(self.fields, multi_line=True)])
-
-@dataclass
-class SetWord(Formattable):
-    token: Token
-    local_id: LocalId | GlobalId
-    fields: List[FieldAccess]
-
-@dataclass
-class StoreWord(Formattable):
-    token: Token
-    local: LocalId | GlobalId
-    fields: List[FieldAccess]
-
-@dataclass
-class CallWord(Formattable):
-    name: Token
-    function: 'FunctionHandle'
-    generic_arguments: List[Type]
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Call", [self.name, self.function, format_seq(self.generic_arguments)])
-
-@dataclass(frozen=True, eq=True)
-class FunctionHandle(Formattable):
-    module: int
-    index: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("FunctionHandle", [self.module, self.index])
-
-@dataclass
-class FunRefWord(Formattable):
-    call: CallWord
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("FunRef", [self.call])
-
-@dataclass
-class IfWord(Formattable):
-    token: Token
-    parameters: List[Type]
-    returns: List[Type] | None
-    true_branch: Scope
-    false_branch: Scope
-    diverges: bool
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("If", [
-            ("token", self.token),
-            ("parameters", format_seq(self.parameters)),
-            ("returns", format_optional(self.returns, format_list)),
-            ("true-branch", self.true_branch),
-            ("false-branch", self.false_branch)])
-
-@dataclass
-class LoopWord(Formattable):
-    token: Token
-    body: Scope
-    parameters: List[Type]
-    returns: List[Type]
-    diverges: bool
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("Loop", [
-            ("token", self.token),
-            ("parameters", format_seq(self.parameters)),
-            ("returns", format_optional(None if self.diverges else self.returns, format_list)),
-            ("body", self.body)])
-
-
-@dataclass
-class BlockWord(Formattable):
-    token: Token
-    body: Scope
-    parameters: List[Type]
-    returns: List[Type]
-
-@dataclass
-class CastWord(Formattable):
-    token: Token
-    source: Type
-    taip: Type
-
-@dataclass
-class SizeofWord(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class GetFieldWord(Formattable):
-    token: Token
-    fields: List[FieldAccess]
-    on_ptr: bool
-
-@dataclass
-class IndirectCallWord(Formattable):
-    token: Token
-    taip: FunctionType
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("IndirectCall", [self.token, self.taip])
-
-@dataclass
-class StructFieldInitWord(Formattable):
-    token: Token
-    struct: CustomTypeHandle
-    taip: Type
-    field_index: int
-
-    generic_arguments: List[Type]
-
-@dataclass
-class StructWord(Formattable):
-    token: Token
-    taip: CustomTypeType
-    body: Scope
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("StructWordNamed", [
-            ("token", self.token),
-            ("type", self.taip),
-            ("body", self.body)])
-
-@dataclass
-class UnnamedStructWord(Formattable):
-    token: Token
-    taip: CustomTypeType
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("StructWord", [
-            ("token", self.token),
-            ("type", self.taip)])
-
-@dataclass
-class VariantWord(Formattable):
-    token: Token
-    tag: int
-    variant: CustomTypeType
-
-@dataclass
-class MatchCase(Formattable):
-    taip: Type | None
-    tag: int
-    body: Scope
-
-@dataclass
-class MatchWord(Formattable):
-    token: Token
-    variant: CustomTypeType
-    by_ref: bool
-    cases: List[MatchCase]
-    default: Scope | None
-    parameters: List[Type]
-    returns: List[Type] | None
-
-@dataclass
-class TupleMakeWord(Formattable):
-    token: Token
-    taip: TupleType
-
-@dataclass
-class TupleUnpackWord(Formattable):
-    token: Token
-    items: TupleType
-
-
-# =============================================================================
-#  Resolved Intrinsics
-# =============================================================================
-
-class IntrinsicType(str, Enum):
-    ADD = "ADD"
-    STORE = "STORE"
-    DROP = "DROP"
-    SUB = "SUB"
-    EQ = "EQ"
-    NOT_EQ = "NOT_EQ"
-    MOD = "MOD"
-    DIV = "DIV"
-    AND = "AND"
-    NOT = "NOT"
-    OR = "OR"
-    LESS = "LESS"
-    GREATER = "GREATER"
-    LESS_EQ = "LESS_EQ"
-    GREATER_EQ = "GREATER_EQ"
-    MUL = "MUL"
-    SHL = "SHL"
-    SHR = "SHR"
-    ROTL = "ROTL"
-    ROTR = "ROTR"
-    MEM_GROW = "MEM_GROW"
-    MEM_COPY = "MEM_COPY"
-    MEM_FILL = "MEM_FILL"
-    FLIP = "FLIP"
-    UNINIT = "UNINIT"
-    SET_STACK_SIZE = "SET_STACK_SIZE"
-
-INTRINSICS: dict[str, IntrinsicType] = {
-        "drop": IntrinsicType.DROP,
-        "flip": IntrinsicType.FLIP,
-        "+": IntrinsicType.ADD,
-        "lt": IntrinsicType.LESS,
-        "gt": IntrinsicType.GREATER,
-        "=": IntrinsicType.EQ,
-        "le": IntrinsicType.LESS_EQ,
-        "ge": IntrinsicType.GREATER_EQ,
-        "not": IntrinsicType.NOT,
-        "mem-grow": IntrinsicType.MEM_GROW,
-        "-": IntrinsicType.SUB,
-        "and": IntrinsicType.AND,
-        "%": IntrinsicType.MOD,
-        "/": IntrinsicType.DIV,
-        "/=": IntrinsicType.NOT_EQ,
-        "*": IntrinsicType.MUL,
-        "mem-copy": IntrinsicType.MEM_COPY,
-        "mem-fill": IntrinsicType.MEM_FILL,
-        "shl": IntrinsicType.SHL,
-        "shr": IntrinsicType.SHR,
-        "rotl": IntrinsicType.ROTL,
-        "rotr": IntrinsicType.ROTR,
-        "or": IntrinsicType.OR,
-        "store": IntrinsicType.STORE,
-        "uninit": IntrinsicType.UNINIT,
-        "set-stack-size": IntrinsicType.SET_STACK_SIZE,
-}
-INTRINSIC_TO_LEXEME: dict[IntrinsicType, str] = {v: k for k, v in INTRINSICS.items()}
-
-@dataclass
-class IntrinsicAdd(Formattable):
-    token: Token
-    taip: PtrType | I8 | I32 | I64
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Intrinsic", [
-            self.token, unnamed_record("Add", [self.taip])])
-
-@dataclass
-class IntrinsicSub(Formattable):
-    token: Token
-    taip: PtrType | I8 | I32 | I64
-
-@dataclass
-class IntrinsicDrop(Formattable):
-    token: Token
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Drop", [self.token])
-
-@dataclass
-class IntrinsicMod(Formattable):
-    token: Token
-    taip: I32 | I64
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Intrinsic", [
-            self.token, unnamed_record("Mod", [self.taip])])
-
-@dataclass
-class IntrinsicMul(Formattable):
-    token: Token
-    taip: I32 | I64
-
-@dataclass
-class IntrinsicDiv(Formattable):
-    token: Token
-    taip: I32 | I64
-
-@dataclass
-class IntrinsicAnd(Formattable):
-    token: Token
-    taip: PrimitiveType
-
-@dataclass
-class IntrinsicOr(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicShl(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicShr(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicRotr(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicRotl(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicGreater(Formattable):
-    token: Token
-    taip: I8 | I32 | I64
-
-@dataclass
-class IntrinsicLess(Formattable):
-    token: Token
-    taip: I8 | I32 | I64
-
-@dataclass
-class IntrinsicGreaterEq(Formattable):
-    token: Token
-    taip: I8 | I32 | I64
-
-@dataclass
-class IntrinsicLessEq(Formattable):
-    token: Token
-    taip: I8 | I32 | I64
-
-@dataclass
-class IntrinsicMemCopy(Formattable):
-    token: Token
-
-@dataclass
-class IntrinsicMemFill(Formattable):
-    token: Token
-
-@dataclass
-class IntrinsicEqual(Formattable):
-    token: Token
-    taip: Type
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Intrinsic", [
-            self.token,
-            unnamed_record("Eq", [self.taip])])
-
-@dataclass
-class IntrinsicNotEqual(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicFlip(Formattable):
-    token: Token
-    lower: Type
-    upper: Type
-
-@dataclass
-class IntrinsicMemGrow(Formattable):
-    token: Token
-
-@dataclass
-class IntrinsicSetStackSize(Formattable):
-    token: Token
-
-@dataclass
-class IntrinsicStore(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
-class IntrinsicNot(Formattable):
-    token: Token
-    taip: PrimitiveType
-
-@dataclass
-class IntrinsicUninit(Formattable):
-    token: Token
-    taip: Type
-
-IntrinsicWord = (
-      IntrinsicAdd
-    | IntrinsicSub
-    | IntrinsicDrop
-    | IntrinsicMod
-    | IntrinsicMul
-    | IntrinsicDiv
-    | IntrinsicAnd
-    | IntrinsicOr
-    | IntrinsicShl
-    | IntrinsicShr
-    | IntrinsicRotl
-    | IntrinsicRotr
-    | IntrinsicGreater
-    | IntrinsicLess
-    | IntrinsicGreaterEq
-    | IntrinsicLessEq
-    | IntrinsicMemCopy
-    | IntrinsicMemFill
-    | IntrinsicEqual
-    | IntrinsicNotEqual
-    | IntrinsicFlip
-    | IntrinsicMemGrow
-    | IntrinsicStore
-    | IntrinsicNot
-    | IntrinsicUninit
-    | IntrinsicSetStackSize
-)
-
-ResolvedWord = (
-      NumberWord
-    | StringWord
-    | CallWord
-    | GetWord
-    | RefWord
-    | SetWord
-    | StoreWord
-    | FunRefWord
-    | IfWord
-    | LoadWord
-    | LoopWord
-    | BlockWord
-    | BreakWord
-    | CastWord
-    | SizeofWord
-    | GetFieldWord
-    | IndirectCallWord
-    | IntrinsicWord
-    | InitWord
-    | StructFieldInitWord
-    | StructWord
-    | UnnamedStructWord
-    | VariantWord
-    | MatchWord
-    | TupleMakeWord
-    | TupleUnpackWord
-)
 
 # =============================================================================
 #  Resolver / Typechecker
@@ -1206,14 +615,13 @@ class ResolveCtx:
                             return CustomTypeType(taip.name, item.handle, generic_arguments)
             self.abort(taip.name, "type not found")
         if isinstance(taip, parser.ForeignType):
-            for i,imp in enumerate(imports[taip.module.lexeme]):
+            for imp in imports[taip.module.lexeme]:
                 module = self.resolved_modules.index(imp.module)
                 for j,custom_type in enumerate(module.custom_types.values()):
                     if custom_type.name.lexeme == taip.name.lexeme:
                         assert(len(custom_type.generic_parameters) == len(generic_arguments))
                         return CustomTypeType(taip.name, CustomTypeHandle(imp.module, j), generic_arguments)
             assert(False)
-        assert_never(taip)
 
     def resolve_globals(self, imports: Dict[str, List[Import]]) -> IndexedDict[str, Global]:
         globals: IndexedDict[str, Global] = IndexedDict()
@@ -1422,7 +830,6 @@ class WordCtx:
             return None
         if isinstance(word, parser.InlineRefWord):
             return self.resolve_ref(stack, word)
-        assert_never(word)
 
     def resolve_ref(self, stack: Stack, word: parser.InlineRefWord) -> Tuple[List[ResolvedWord], bool]:
         taip = stack.pop()
@@ -1573,8 +980,6 @@ class WordCtx:
                 if actual.type_definition != holey.type_definition:
                     return False
                 return self.infer_holes_all(mapping, token, actual.generic_arguments, holey.generic_arguments)
-            case other:
-                assert_never(other)
 
     def infer_holes_all(self, mapping: Dict[Token, Type], token: Token, actual: List[Type], holey: List[Type]) -> bool:
         assert(len(actual) == len(holey))
@@ -2280,8 +1685,6 @@ class WordCtx:
             case IntrinsicType.SET_STACK_SIZE:
                 self.expect_stack(token, stack, [I32()])
                 return IntrinsicSetStackSize(token)
-            case _:
-                assert_never(intrinsic)
 
     def expect_stack(self, token: Token, stack: Stack, expected: List[Type]) -> List[Type]:
         popped: List[Type] = []
@@ -2305,7 +1708,7 @@ class WordCtx:
 
     def find_function(self, name: Token) -> FunctionHandle | None:
         function_index = 0
-        for i, top_item in enumerate(self.ctx.top_items):
+        for top_item in self.ctx.top_items:
             if isinstance(top_item, parser.Function) or isinstance(top_item, parser.Extern):
                 if top_item.signature.name.lexeme == name.lexeme:
                     return FunctionHandle(self.ctx.module_id, function_index)

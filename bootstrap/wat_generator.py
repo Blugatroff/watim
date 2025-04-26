@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 
 from util import uhex, listtostr, align_to
 from lexer import Token
-from resolver import ScopeId, GlobalId, LocalId, I8, I32, I64, Bool, NumberWord, BreakWord, IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicSetStackSize, IntrinsicMemGrow, StringWord, ROOT_SCOPE
+from resolving.words import ScopeId, GlobalId, LocalId, ROOT_SCOPE
+from resolving.resolver import I8, I32, I64, Bool, NumberWord, BreakWord, IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicSetStackSize, IntrinsicMemGrow, StringWord
 import monomizer
 from monomizer import Type, Load, is_bitshift, I32InI64, I8InI32, I8InI64, Local, format_type, FunctionHandle, NamedType, GenericFunction, Extern, TupleMakeWord, UnnamedStructWord, Variant, IfWord, StructWord, MatchWord, LoadWord, BlockWord, LoopWord, SizeofWord, FunRefWord, MatchCase, PtrType, CastWord, IntrinsicUninit, IntrinsicFlip, IntrinsicShl, IntrinsicRotl, IntrinsicRotr, IntrinsicAnd, FunctionType, StoreWord, StructType, VariantWord, StructFieldInitWord, TupleUnpackWord, FunctionSignature, IntrinsicStore, IntrinsicAdd, IntrinsicMul, IntrinsicOr, IntrinsicEqual, IntrinsicNotEqual, IntrinsicGreaterEq, IntrinsicLess, IntrinsicShr, IntrinsicNot, IntrinsicGreater, IntrinsicLessEq, IntrinsicDiv, ParameterLocal, IndirectCallWord, ExternHandle, IntrinsicSub, Global, StructHandle, TypeDefinition, ConcreteFunction, Word, GetWord, GetFieldWord, SetWord, RefWord, InitWord, CallWord, IntrinsicMod, Function
 

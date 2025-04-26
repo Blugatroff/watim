@@ -5,14 +5,14 @@ import sys
 import os
 import unittest
 
-import parser
+from parsing.parser import ParserException
+import parsing.parser as parser
 from util import sys_stdin
 from indexed_dict import IndexedDict
 from format import format_str, format
-from parser import Parser, ParserException
 from lexer import TokenLocation, Lexer
-import resolver
-from resolver import determine_compilation_order, ResolveCtx, TypeLookup, ResolverException
+import resolving.resolver as resolver
+from resolving.resolver import determine_compilation_order, ResolveCtx, TypeLookup, ResolverException
 from monomizer import Monomizer, merge_locals_module, DetermineLoadsToValueTests
 from wat_generator import WatGenerator
 
@@ -32,7 +32,7 @@ def load_recursive(
             raise ParserException(path_location, f"File not found: ./{path}")
 
     tokens = Lexer(file).lex()
-    module = Parser(path, file, tokens).parse()
+    module = parser.Parser(path, file, tokens).parse()
     modules[path] = module
     for imp in module.imports:
         if os.path.dirname(path) != "":
@@ -99,7 +99,7 @@ def run(path: str, mode: Mode, guard_stack: bool, stdin: str | None = None) -> s
     if mode == "lex":
         return "\n".join([format(token.format_instrs()) for token in tokens])
     if mode == "parse":
-        module = Parser(path, file, tokens).parse()
+        module = parser.Parser(path, file, tokens).parse()
         return format(module.format_instrs())
     modules: Dict[str, parser.Module] = {}
     load_recursive(modules, os.path.normpath(path), None, stdin)
