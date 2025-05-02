@@ -11,7 +11,7 @@ fn foo "foo" () {
             &c drop
         }
     }
-    make Foo.X match {
+    make Foo.X match Foo {
         case X -> {
             0 !.i32 @d
             3 =>d

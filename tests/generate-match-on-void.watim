@@ -1,7 +1,7 @@
 [== Stdin Compiler ==]
 variant Void {}
 fn main "_start" (void: Void) {
-	$void match {}
+	$void match Void {}
 }
 [== Args Compiler ==]
 compile

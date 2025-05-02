@@ -5,7 +5,7 @@ variant Result<T> {
     case Error -> ParseError
 }
 fn main "_start" () {
-    make ParseError make Result<i32>.Error match {
+    make ParseError make Result<i32>.Error match Result<i32> {
         case Error -> { drop }
         case Success -> { drop }
     }

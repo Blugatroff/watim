@@ -146,7 +146,7 @@ variant VarId {
     case Global -> GlobalId
 }
 fn VarId-format(fmt: .Formatter, self: .VarId) {
-    $self match {
+    $self match VarId {
         case Local -> { $fmt flip LocalId-format }
         case Global -> { $fmt flip GlobalId-format }
     }
@@ -325,7 +325,7 @@ variant Intrinsic {
     case SetStackSize
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
-    $self match {
+    $self match Intrinsic {
         case Gt -> { $fmt "(Gt " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case Lt -> { $fmt "(Lt " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case Add -> { $fmt "(Add " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
@@ -757,7 +757,7 @@ variant Word {
     case UnpackTuple -> UnpackTuple
 }
 fn Word-format(fmt: .Formatter, self: .Word) {
-    $self match {
+    $self match Word {
         case Number -> { $fmt "(Number " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
         case GetLocal -> { $fmt flip GetLocal-format }
         case RefLocal -> { $fmt flip RefLocal-format }
@@ -798,13 +798,13 @@ variant FunctionOrExtern {
     case Function -> Function
 }
 fn FunctionOrExtern-format(fmt: .Formatter, self: .FunctionOrExtern) {
-    $fmt $self match {
+    $fmt $self match FunctionOrExtern {
         case Extern -> { Extern-format }
         case Function -> { Function-format }
     }
 }
 fn FunctionOrExtern-signature(self: .FunctionOrExtern) -> .Signature {
-    $self match {
+    $self match FunctionOrExtern {
         case Extern -> { .signature }
         case Function -> { .signature }
     }
@@ -861,7 +861,7 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt \Fmt:ByteSlice-format \format-import-array &self.imports Map:format-multi-line<ByteSlice, Array<Import>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "custom-types=" Fmt:write
+    $fmt "type-definitions=" Fmt:write
     $fmt \ByteSlice-format \CustomType-format &self.custom-types Map:format-multi-line<ByteSlice, CustomType>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent

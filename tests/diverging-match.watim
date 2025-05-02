@@ -1,7 +1,7 @@
 [== Stdin Compiler ==]
 variant Foo { case A case B }
 fn foo "foo" () -> i32 { block {
-    make Foo.A match {
+    make Foo.A match Foo {
         case A -> { 42 break }
         case _ -> { drop 1 break }
     }

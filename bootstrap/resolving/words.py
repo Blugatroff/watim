@@ -1,12 +1,51 @@
 from typing import List, Tuple
 from dataclasses import dataclass
 
-from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_optional, format_list, format_str
+from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_str, format_optional
 from lexer import Token
 
-from resolving.intrinsics import IntrinsicWord
-from resolving.types import CustomTypeType, PtrType, Type, FunctionType, CustomTypeHandle, TupleType
-from parsing.words import BreakWord, NumberWord
+from resolving.intrinsics import IntrinsicType
+from resolving.types import CustomTypeType, Type, CustomTypeHandle
+from parsing.words import (
+    BreakWord as BreakWord,
+    NumberWord as NumberWord,
+    StringWord as StringWord,
+    LoadWord as LoadWord,
+    IndirectCallWord as IndirectCallWord,
+    MakeTupleWord as MakeTupleWord,
+    GetFieldWord as GetFieldWord,
+    TupleUnpackWord as TupleUnpackWord,
+)
+
+type Word = (
+      NumberWord
+    | StringWord
+    | CallWord
+    | GetWord
+    | RefWord
+    | SetWord
+    | StoreWord
+    | FunRefWord
+    | IfWord
+    | LoadWord
+    | LoopWord
+    | BlockWord
+    | BreakWord
+    | CastWord
+    | SizeofWord
+    | GetFieldWord
+    | IndirectCallWord
+    | IntrinsicWord
+    | InitWord
+    | StructFieldInitWord
+    | StructWordNamed
+    | StructWord
+    | VariantWord
+    | MatchWord
+    | MakeTupleWord
+    | TupleUnpackWord
+    | StackAnnotation
+)
 
 @dataclass(frozen=True, eq=True)
 class ScopeId(Formattable):
@@ -18,7 +57,7 @@ ROOT_SCOPE: ScopeId = ScopeId(0)
 @dataclass
 class Scope(Formattable):
     id: ScopeId
-    words: List['ResolvedWord']
+    words: Tuple[Word, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("Scope", [self.id, format_seq(self.words, multi_line=True)])
 
@@ -42,52 +81,26 @@ class LocalId(Formattable):
             self.shadow])
 
 @dataclass
-class FieldAccess(Formattable):
-    name: Token
-    source_taip: CustomTypeType | PtrType
-    target_taip: Type
-    field_index: int
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("FieldAccess", [
-            self.name, self.source_taip, self.target_taip, self.field_index])
-
-@dataclass
-class StringWord(Formattable):
-    token: Token
-    offset: int
-    len: int
-
-@dataclass
-class LoadWord(Formattable):
-    token: Token
-    taip: Type
-
-@dataclass
 class InitWord(Formattable):
-    name: Token
+    token: Token
     local_id: LocalId
-    taip: Type
 
 @dataclass
 class GetWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
-    var_taip: Type
-    fields: Tuple[FieldAccess, ...]
-    taip: Type
+    fields: Tuple[Token, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("GetLocal", [
             self.token,
             self.local_id,
-            self.var_taip,
-            self.taip,
             format_seq(self.fields, multi_line=True)])
 
 @dataclass
 class RefWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
-    fields: Tuple[FieldAccess, ...]
+    fields: Tuple[Token, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("RefLocal", [self.token, self.local_id, format_seq(self.fields, multi_line=True)])
 
@@ -95,13 +108,13 @@ class RefWord(Formattable):
 class SetWord(Formattable):
     token: Token
     local_id: LocalId | GlobalId
-    fields: Tuple[FieldAccess, ...]
+    fields: Tuple[Token, ...]
 
 @dataclass
 class StoreWord(Formattable):
     token: Token
     local: LocalId | GlobalId
-    fields: Tuple[FieldAccess, ...]
+    fields: Tuple[Token, ...]
 
 @dataclass
 class CallWord(Formattable):
@@ -127,45 +140,44 @@ class FunRefWord(Formattable):
 @dataclass
 class IfWord(Formattable):
     token: Token
-    parameters: List[Type]
-    returns: List[Type] | None
     true_branch: Scope
-    false_branch: Scope
-    diverges: bool
+    false_branch: Scope | None
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("If", [
             ("token", self.token),
-            ("parameters", format_seq(self.parameters)),
-            ("returns", format_optional(self.returns, format_list)),
             ("true-branch", self.true_branch),
-            ("false-branch", self.false_branch)])
+            ("false-branch", format_optional(self.false_branch))])
+
+@dataclass
+class BlockAnnotation(Formattable):
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("BlockAnnotation", [
+            format_seq(self.parameters),
+            format_seq(self.returns)])
 
 @dataclass
 class LoopWord(Formattable):
     token: Token
     body: Scope
-    parameters: Tuple[Type, ...]
-    returns: Tuple[Type, ...]
-    diverges: bool
+    annotation: BlockAnnotation | None
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Loop", [
             ("token", self.token),
-            ("parameters", format_seq(self.parameters)),
-            ("returns", format_optional(None if self.diverges else self.returns, format_seq)),
             ("body", self.body)])
 
 
 @dataclass
 class BlockWord(Formattable):
     token: Token
+    end: Token
     body: Scope
-    parameters: Tuple[Type, ...]
-    returns: Tuple[Type, ...]
+    annotation: BlockAnnotation | None
 
 @dataclass
 class CastWord(Formattable):
     token: Token
-    source: Type
     taip: Type
 
 @dataclass
@@ -174,29 +186,13 @@ class SizeofWord(Formattable):
     taip: Type
 
 @dataclass
-class GetFieldWord(Formattable):
-    token: Token
-    fields: Tuple[FieldAccess, ...]
-    on_ptr: bool
-
-@dataclass
-class IndirectCallWord(Formattable):
-    token: Token
-    taip: FunctionType
-    def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("IndirectCall", [self.token, self.taip])
-
-@dataclass
 class StructFieldInitWord(Formattable):
     token: Token
     struct: CustomTypeHandle
-    taip: Type
     field_index: int
 
-    generic_arguments: Tuple[Type, ...]
-
 @dataclass
-class StructWord(Formattable):
+class StructWordNamed(Formattable):
     token: Token
     taip: CustomTypeType
     body: Scope
@@ -207,7 +203,7 @@ class StructWord(Formattable):
             ("body", self.body)])
 
 @dataclass
-class UnnamedStructWord(Formattable):
+class StructWord(Formattable):
     token: Token
     taip: CustomTypeType
     def format_instrs(self) -> List[FormatInstr]:
@@ -223,55 +219,30 @@ class VariantWord(Formattable):
 
 @dataclass
 class MatchCase(Formattable):
-    taip: Type | None
-    tag: int
+    tag: int | None
+    name: Token
     body: Scope
 
 @dataclass
 class MatchWord(Formattable):
     token: Token
-    variant: CustomTypeType
-    by_ref: bool
-    cases: List[MatchCase]
+    variant: CustomTypeType | None
+    cases: Tuple[MatchCase, ...]
     default: Scope | None
-    parameters: List[Type]
-    returns: List[Type] | None
+    underscore: Token | None
 
 @dataclass
-class TupleMakeWord(Formattable):
+class StackAnnotation(Formattable):
     token: Token
-    taip: TupleType
+    types: Tuple[Type, ...]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("StackAnnotation", [
+            self.token,
+            format_seq(self.types)])
 
-@dataclass
-class TupleUnpackWord(Formattable):
+@dataclass(frozen=True)
+class IntrinsicWord(Formattable):
     token: Token
-    items: TupleType
+    ty: IntrinsicType
+    generic_arguments: Tuple[Type, ...]
 
-ResolvedWord = (
-      NumberWord
-    | StringWord
-    | CallWord
-    | GetWord
-    | RefWord
-    | SetWord
-    | StoreWord
-    | FunRefWord
-    | IfWord
-    | LoadWord
-    | LoopWord
-    | BlockWord
-    | BreakWord
-    | CastWord
-    | SizeofWord
-    | GetFieldWord
-    | IndirectCallWord
-    | IntrinsicWord
-    | InitWord
-    | StructFieldInitWord
-    | StructWord
-    | UnnamedStructWord
-    | VariantWord
-    | MatchWord
-    | TupleMakeWord
-    | TupleUnpackWord
-)

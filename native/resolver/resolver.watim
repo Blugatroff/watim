@@ -49,7 +49,7 @@ struct ResolveError {
     column: i32
     message: Array<i8>
 }
-fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, Array<TopItem>>) -> i32 { block {
+fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, P:Module>) -> i32 { block {
     &modules.keys $self.module.index Array:get<ByteSlice> @file-path
     $fd $file-path ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
     $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
@@ -74,14 +74,14 @@ fn abort-m(ctx: .Ctx, token: .Token, message-ptr: .i8, message-len: i32) -> Mayb
 struct Ctx {
     temp: .Arena
     persistent: .Arena
-    parsed-modules: .Map<ByteSlice, Array<TopItem>>
+    parsed-modules: .Map<ByteSlice, P:Module>
     resolved-modules: .Array<Module>
-    top-items: .Array<TopItem>
+    parsed-module: .P:Module
     module-id: ModuleId
     static-data: Array<i8>
 }
 
-fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> Result<Map<ByteSlice, Module>, ResolveError> {
+fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, P:Module>) -> Result<Map<ByteSlice, Module>, ResolveError> {
     $arena \ByteSlice:eq-by-ref $modules.values.len Map:new-with-capacity<ByteSlice, Module> @resolved-modules
     Array:new<.Array<CustomType>> @other-module-types
     $arena Arena:temp @temp @save
@@ -89,7 +89,7 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
     loop {
         $id $modules.keys.len = if { $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success break }
         &modules.keys $id Array:get<ByteSlice> @module-path
-        &modules.values $id Array:get<Array<TopItem>> @top-items
+        &modules.values $id Array:get<P:Module> @module
 
         Logging:enabled if {
             2 "Checking module: " IO:write-all IO:check
@@ -97,7 +97,7 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> R
             2 "\n" IO:write-all IO:check
         }
         $temp Arena:save @save
-        $temp $arena $modules &resolved-modules.values $top-items $id make ModuleId Array:new<i8> make Ctx @ctx
+        $temp $arena $modules &resolved-modules.values $module $id make ModuleId Array:new<i8> make Ctx @ctx
         &ctx resolve-imports match {
             case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error break }
             case Success -> {}
@@ -204,33 +204,30 @@ fn resolve-globals(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Global> @globals
     0 @i
     loop (-> Result<Map<ByteSlice, Global>, ResolveError>) {
-        $ctx.top-items.len $i = if { $globals make Result<Map<ByteSlice, Global>, ResolveError>.Success break }
-        $ctx.top-items $i Array:get<TopItem> match {
-            case Global -> {
-                @globl
-                $ctx.persistent &globals &globl.name Token-lexeme make ByteSlice
-                $globl.name
-                $ctx $imports &globl.type resolve-type match {
-                    case Error -> { make Result<Map<ByteSlice, Global>, ResolveError>.Error break }
-                    case Success -> {}
-                }
-                0 1 = // whether this Global was reffed using `&`
-                make Global
-                Map:insert<ByteSlice, Global> drop
-            }
-            case _ -> { drop }
+        $ctx.parsed-module.globals.len $i = if { $globals make Result<Map<ByteSlice, Global>, ResolveError>.Success break }
+        &ctx.parsed-module.globals $i Array:get<P:Global> @globl
+        $ctx.persistent &globals &globl.name Token-lexeme make ByteSlice
+        $globl.name
+        $ctx $imports &globl.type resolve-type match {
+            case Error -> { make Result<Map<ByteSlice, Global>, ResolveError>.Error break }
+            case Success -> {}
         }
+        0 1 = // whether this Global was reffed using `&`
+        make Global
+        Map:insert<ByteSlice, Global> drop
         $i 1 + #i
     }
 }
 
 fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lookup: .TypeLookup, signatures: .Array<Signature>, globals: .Map<ByteSlice, Global>) -> Result<Map<ByteSlice, FunctionOrExtern>, ResolveError> {
-    $ctx.persistent \ByteSlice:eq-by-ref $ctx.top-items.len
+    $ctx.persistent \ByteSlice:eq-by-ref $ctx.parsed-module.functions.len
     Map:new-with-capacity<ByteSlice, FunctionOrExtern> @functions
     0 @i
     loop (-> Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>) {
-        $ctx.top-items.len $i = if { $functions make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Success break }
-        $ctx.top-items $i Array:get<TopItem> match {
+        $ctx.parsed-module.functions.len $i = if {
+            $functions make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Success break
+        }
+        &ctx.parsed-module.functions $i Array:get<P:FunctionOrExtern> match {
             case Function -> {
                 @fun
                 $fun.name $fun.export
@@ -279,7 +276,6 @@ fn resolve-functions(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, type-lo
                 make Extern make FunctionOrExtern.Extern
                 Map:insert-assert-no-alloc<ByteSlice, FunctionOrExtern> drop
             }
-            case _ -> { drop }
         }
         $i 1 + #i
     }
@@ -1212,7 +1208,7 @@ fn resolve-blok(ctx: .WordCtx, stack: .Stack, word: .P:Block) -> Result<[Word, b
 } }
 
 fn resolve-fun-ref(ctx: .WordCtx, stack: .Stack, word: .P:FunRef) -> Result<[Word, bool], ResolveError> { block {
-    $ctx &word.function resolve-call-word match {
+    $ctx &word.call resolve-call-word match {
         case Error -> { make Result<[Word, bool], ResolveError>.Error break }
         case Success -> {}
     } @word
@@ -2288,9 +2284,8 @@ fn function-not-found-error(ctx: .Ctx, name: .Token) -> ResolveError {
 
 fn find-function(ctx: .WordCtx, name: .Token) -> Maybe<FunctionHandle> {
     0 @i
-    0 @function-index
     loop {
-        $i $ctx.ctx.top-items.len = if {
+        $i $ctx.ctx.parsed-module.functions.len = if {
             0 @i
             loop {
                 $i $ctx.imports.values.len = if { make Maybe<FunctionHandle>.None break }
@@ -2322,24 +2317,21 @@ fn find-function(ctx: .WordCtx, name: .Token) -> Maybe<FunctionHandle> {
                 $i 1 + #i
             } break
         }
-        $ctx.ctx.top-items $i Array:get<TopItem> match {
+        &ctx.ctx.parsed-module.functions $i Array:get<P:FunctionOrExtern> match {
             case Function -> {
                 @fun
                 &fun.name Token-lexeme $name Token-lexeme Bytes:eq if {
-                    $ctx.ctx.module-id $function-index make FunctionHandle
+                    $ctx.ctx.module-id $i make FunctionHandle
                     make Maybe<FunctionHandle>.Some break
                 }
-                $function-index 1 + #function-index
             }
             case Extern -> {
                 @ext
                 &ext.name Token-lexeme $name Token-lexeme Bytes:eq if {
-                    $ctx.ctx.module-id $function-index make FunctionHandle
+                    $ctx.ctx.module-id $i make FunctionHandle
                     make Maybe<FunctionHandle>.Some break
                 }
-                $function-index 1 + #function-index
             }
-            case _ -> { drop }
         }
         $i 1 + #i
     }
@@ -2866,38 +2858,33 @@ fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveEr
     &ctx.parsed-modules.keys $ctx.module-id.index Array:get<ByteSlice> @module-path
     0 @i
     loop {
-        $ctx.top-items.len $i = if { $resolved-imports make Result<Map<ByteSlice, Array<Import>>, ResolveError>.Success break }
-        $ctx.top-items $i Array:get<TopItem> match {
-            case Import -> {
-                @imp
-                $module-path ~ ByteSlice:unpack "-" Bytes:eq if {
-                    "" Array:init-no-copy<_>
-                } else {
-                    $module-path ~ ByteSlice:unpack FS:path-dir Array:init-no-copy<_>
-                } @path
-                $temp-arena &path &imp.path Token-lexeme 2 - flip 1 + flip Array:append-raw<_>
-                $temp-arena &path Array:unpack<_> FS:normalize make ByteSlice @path
-                $ctx.parsed-modules &path Map:get-index<ByteSlice, Array<TopItem>> assert-some<i32> make ModuleId @imported-module-id
-                $ctx.persistent $path ByteSlice:copy @path
+        $ctx.parsed-module.imports.len $i = if { $resolved-imports make Result<Map<ByteSlice, Array<Import>>, ResolveError>.Success break }
+        &ctx.parsed-module.imports $i Array:get<_> @imp
+        $module-path ~ ByteSlice:unpack "-" Bytes:eq if {
+            "" Array:init-no-copy<_>
+        } else {
+            $module-path ~ ByteSlice:unpack FS:path-dir Array:init-no-copy<_>
+        } @path
+        $temp-arena &path &imp.path Token-lexeme 2 - flip 1 + flip Array:append-raw<_>
+        $temp-arena &path Array:unpack<_> FS:normalize make ByteSlice @path
+        $ctx.parsed-modules &path Map:get-index<ByteSlice, P:Module> assert-some<i32> make ModuleId @imported-module-id
+        $ctx.persistent $path ByteSlice:copy @path
 
-                $ctx $imported-module-id &imp.items resolve-import-items match {
-                    case Error -> { make Result<Map<ByteSlice, Array<Import>>, ResolveError>.Error break }
-                    case Success -> {}
-                } @items
+        $ctx $imported-module-id &imp.items resolve-import-items match {
+            case Error -> { make Result<Map<ByteSlice, Array<Import>>, ResolveError>.Error break }
+            case Success -> {}
+        } @items
 
-                &imp.qualifier Token-lexeme make ByteSlice @qualifier
-                $imp.start $imported-module-id $path $imp.qualifier $items make Import @imp
-                &resolved-imports &qualifier Map:get<ByteSlice, Array<Import>> match {
-                    case None -> {
-                        $ctx.persistent &resolved-imports
-                        $qualifier
-                        $ctx.persistent $imp Array:singleton<Import>
-                        Map:insert<ByteSlice, Array<Import>> drop
-                    }
-                    case Some -> { $ctx.persistent flip $imp Array:push<Import> }
-                }
+        &imp.qualifier Token-lexeme make ByteSlice @qualifier
+        $imp.start $imported-module-id $path $imp.qualifier $items make Import @imp
+        &resolved-imports &qualifier Map:get<ByteSlice, Array<Import>> match {
+            case None -> {
+                $ctx.persistent &resolved-imports
+                $qualifier
+                $ctx.persistent $imp Array:singleton<Import>
+                Map:insert<ByteSlice, Array<Import>> drop
             }
-            case _ -> { drop }
+            case Some -> { $ctx.persistent flip $imp Array:push<Import> }
         }
         $i 1 + #i
     }
@@ -2906,7 +2893,7 @@ fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveEr
 
 fn resolve-import-items(ctx: .Ctx, imported-module-id: ModuleId, items: .Array<Token>) -> Result<Array<ImportItem>, ResolveError> {
     $ctx.persistent $items.len Array:new-with-capacity<ImportItem> @resolved-items
-    $ctx.parsed-modules $imported-module-id.index Map:get-value<ByteSlice, Array<TopItem>> @imported-module
+    $ctx.parsed-modules $imported-module-id.index Map:get-value<ByteSlice, P:Module> @imported-module
     0 @i
     loop {
         $items.len $i = if { $resolved-items make Result<Array<ImportItem>, ResolveError>.Success break }
@@ -2922,50 +2909,42 @@ fn resolve-import-items(ctx: .Ctx, imported-module-id: ModuleId, items: .Array<T
     }
 }
 
-fn lookup-item-in-module(module: .Array<TopItem>, module-id: ModuleId, name: .Token) -> Maybe<ImportItem> {
-    0 @type-index
-    0 @function-index
-    0 @other
+fn lookup-item-in-module(module: .P:Module, module-id: ModuleId, name: .Token) -> Maybe<ImportItem> { block {
+    0 @i
     loop {
-        $type-index $function-index + $other + $module.len = if { make Maybe<ImportItem>.None break }
-        $module $type-index $function-index + $other + Array:get<TopItem> match {
-            case Struct -> {
-                .name Token-lexeme $name Token-lexeme Bytes:eq if {
-                    $name ~ $module-id $type-index make CustomTypeHandle make ImportItemItem.CustomType make ImportItem make Maybe<ImportItem>.Some break
-                }
-                $type-index 1 + #type-index
-            }
-            case Variant -> {
-                .name Token-lexeme $name Token-lexeme Bytes:eq if {
-                    $name ~ $module-id $type-index make CustomTypeHandle make ImportItemItem.CustomType make ImportItem make Maybe<ImportItem>.Some break
-                }
-                $type-index 1 + #type-index
-            }
-            case Function -> {
-                .name Token-lexeme $name Token-lexeme Bytes:eq if {
-                    $name ~ $module-id $function-index make FunctionHandle make ImportItemItem.Function make ImportItem make Maybe<ImportItem>.Some break
-                }
-                $function-index 1 + #function-index
-            }
-            case Extern -> {
-                .name Token-lexeme $name Token-lexeme Bytes:eq if {
-                    $name ~ $module-id $function-index make FunctionHandle make ImportItemItem.Function make ImportItem make Maybe<ImportItem>.Some break
-                }
-                $function-index 1 + #function-index
-            }
-            case _ -> {
-                drop $other 1 + #other
-            }
+        $i $module.functions.len = if { make Maybe<ImportItem>.None break }
+        &module.functions $i Array:get<P:FunctionOrExtern> match {
+            case Function -> { .name }
+            case Extern -> { .name }
+        } Token-lexeme $name Token-lexeme Bytes:eq if {
+            $name ~ $module-id $i make FunctionHandle make ImportItemItem.Function make ImportItem make Maybe<ImportItem>.Some break
         }
+        $i 1 + #i
+    } match {
+        case Some -> { make Maybe<ImportItem>.Some break }
+        case None -> {}
     }
-}
+    0 @i
+    loop {
+        $i $module.type-definitions.len = if { make Maybe<ImportItem>.None break }
+        &module.type-definitions $i Array:get<_> match {
+            case Struct -> { .name }
+            case Variant -> { .name }
+        } Token-lexeme $name Token-lexeme Bytes:eq if {
+            $name ~ $module-id $i make CustomTypeHandle make ImportItemItem.CustomType make ImportItem make Maybe<ImportItem>.Some break
+        }
+        $i 1 + #i
+    }
+} }
 
 fn resolve-custom-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Result<Map<ByteSlice, CustomType>, ResolveError> {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, CustomType> @resolved-custom-types
     0 @i
     loop {
-        $ctx.top-items.len $i = if { $resolved-custom-types make Result<Map<ByteSlice, CustomType>, ResolveError>.Success break }
-        $ctx.top-items $i Array:get<TopItem> match {
+        $ctx.parsed-module.type-definitions.len $i = if {
+            $resolved-custom-types make Result<Map<ByteSlice, CustomType>, ResolveError>.Success break
+        }
+        &ctx.parsed-module.type-definitions $i Array:get<P:TypeDefinition> match {
             case Struct -> {
                 @struc
                 $ctx $imports $struc resolve-struct match {
@@ -2989,7 +2968,6 @@ fn resolve-custom-types(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> R
                     }
                 }
             }
-            case _ -> { drop }
         }
         $i 1 + #i
     }
@@ -2999,11 +2977,10 @@ fn resolve-signatures(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>) -> Res
     Array:new<Signature> @signatures
     0 @i
     loop (-> Result<Array<Signature>, ResolveError>) {
-        $ctx.top-items.len $i = if { $signatures make Result<Array<Signature>, ResolveError>.Success break }
-        $ctx.top-items $i Array:get<TopItem> match {
+        $ctx.parsed-module.functions.len $i = if { $signatures make Result<Array<Signature>, ResolveError>.Success break }
+        &ctx.parsed-module.functions $i Array:get<P:FunctionOrExtern> match {
             case Extern -> { .signature make Maybe<.P:Signature>.Some }
             case Function -> { .signature make Maybe<.P:Signature>.Some }
-            case _ -> { drop make Maybe<.P:Signature>.None }
         } match {
             case None -> {}
             case Some -> {
@@ -3154,9 +3131,8 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                 case Success -> {}
             } @generic-arguments
             0 @i
-            0 @type-index
             loop {
-                $ctx.top-items.len $i = if {
+                $ctx.parsed-module.type-definitions.len $i = if {
                     0 @i
                     loop {
                         $imports.values.len $i = if { $ctx &type.name "not found" abort<CustomTypeType> break }
@@ -3209,7 +3185,7 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                         $i 1 + #i
                     } break
                 }
-                $ctx.top-items $i Array:get<TopItem>
+                &ctx.parsed-module.type-definitions $i Array:get<P:TypeDefinition>
                 match {
                     case Struct -> {
                         @struc
@@ -3219,12 +3195,11 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                                 generic-arguments-mismatch-error
                                 make Result<CustomTypeType, ResolveError>.Error break
                             }
-                            $ctx.module-id $type-index make CustomTypeHandle
+                            $ctx.module-id $i make CustomTypeHandle
                             $generic-arguments
                             make CustomTypeType
                             make Result<CustomTypeType, ResolveError>.Success break
                         }
-                        $type-index 1 + #type-index
                     }
                     case Variant -> {
                         @varint
@@ -3234,14 +3209,12 @@ fn resolve-custom-type(ctx: .Ctx, imports: .Map<ByteSlice, Array<Import>>, custo
                                 generic-arguments-mismatch-error
                                 make Result<CustomTypeType, ResolveError>.Error break
                             }
-                            $ctx.module-id $type-index make CustomTypeHandle
+                            $ctx.module-id $i make CustomTypeHandle
                             $generic-arguments
                             make CustomTypeType
                             make Result<CustomTypeType, ResolveError>.Success break
                         }
-                        $type-index 1 + #type-index
                     }
-                    case _ -> { drop }
                 }
                 $i 1 + #i
             }

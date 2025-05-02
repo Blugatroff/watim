@@ -6,7 +6,7 @@ variant Foo {
 }
 
 fn main "_start" () {
-	make Foo.B match {
+	make Foo.B match Foo {
 		case A -> { 1 }
 		case _ -> { drop 3 }
 	} proc_exit

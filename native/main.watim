@@ -16,7 +16,7 @@ import "../std/map.watim" as Map (Map)
 import "./active-memory.watim" as ActiveMemory
 import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, TokenLocation)
-import "./parser.watim" as Parser (parse, ParseError-print, TopItem, TopItem-format)
+import "./parser.watim" as Parser (parse, ParseError-print, ParseError)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
 import "./resolver/ast.watim" as Resolved
 import "./resolver/resolver.watim" as Resolver (resolve-modules, ResolveError-print)
@@ -61,7 +61,7 @@ variant SingleFileCommand {
     case Pretty -> Maybe<ByteSlice>
 }
 fn SingleFileCommand-path(cmd: .SingleFileCommand) -> .Maybe<ByteSlice> {
-    $cmd match {
+    $cmd match SingleFileCommand {
         case Lex -> {}
         case Parse -> {}
         case Pretty -> {}
@@ -81,7 +81,7 @@ variant ProjectWideCommand {
 }
 
 fn ProjectWideCommand-path(cmd: .ProjectWideCommand) -> .Maybe<ByteSlice> {
-    $cmd match {
+    $cmd match ProjectWideCommand {
         case Check -> {}
         case Monomize -> {}
         case Optimize -> {}
@@ -159,9 +159,9 @@ fn read-file-or-stdin(
     } match {
         case Success -> {}
         case Error -> {
-            match {
+            match IO:Error {
                 case Noent -> {
-                    $file-path match {
+                    $file-path match Maybe<ByteSlice> {
                         case None -> { "-" }
                         case Some -> { ByteSlice:unpack }
                     } @file-path-len @file-path-ptr
@@ -208,7 +208,7 @@ fn main "_start" () {
     &arena parse-args @args
     $args.quiet if { Logging:disable }
 
-    &fs $args.command match {
+    &fs $args.command match CliCommand {
         case SingleFile -> { run-single-file-command }
         case ProjectWide -> { run-project-wide-command }
     }
@@ -227,7 +227,7 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
     &tokens-arena &watim-code Array:to-slice lex @tokens
     &files-arena Arena:shred
 
-    $command match {
+    $command match SingleFileCommand {
         case Lex -> {
             drop
             0 @i
@@ -251,7 +251,7 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
 
     &arena $tokens parse match {
         case Error -> {
-            2 flip $file-path match {
+            2 flip $file-path match Maybe<ByteSlice> {
                 case None -> { "-" }
                 case Some -> { ByteSlice:unpack }
             } ParseError-print drop
@@ -260,23 +260,18 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
             &tokens-arena Arena:clear
             &arena Arena:clear
             exit
-            Core:unreachable<Array<TopItem>>
+            Core:unreachable<Parser:Module>
         }
         case Success -> {}
     }
-    @items
+    @module
 
     $command match {
         case Parse -> {
             drop
-            Logging:enabled if {
-                2 "Successfully parsed " IO:write-all IO:check
-                2 $items.len IO:print IO:check
-                2 " TopItems\n" IO:write-all IO:check
-            }
 
             1 Fmt:to-fd @fmt
-            &fmt \TopItem-format &items Array:format-multi-line<TopItem>
+            &fmt &module Parser:Module-format
             &fmt "\n" Fmt:write
 
             &tokens-arena Arena:clear
@@ -285,17 +280,17 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
         }
         case _ -> { drop }
     }
-    $command match {
+    $command match SingleFileCommand {
         case Pretty -> {
             drop
             \write-stdout  PrettyPrinter-new @pp
-            0 @i
-            loop {
-                $items.len $i = if { break }
-                &items $i Array:get<TopItem> @item
-                $item &pp PrettyPrint:TopItem-pretty IO:check
-                $i 1 + #i
-            }
+            // 0 @i
+            // loop {
+            //     $items.len $i = if { break }
+            //     &items $i Array:get<TopItem> @item
+            //     $item &pp PrettyPrint:TopItem-pretty IO:check
+            //     $i 1 + #i
+            // }
             1 IO:newline
             1 IO:newline
 
@@ -311,7 +306,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     "Main" Arena:new @arena
     &command ProjectWideCommand-path ~ @file-path
 
-    \ByteSlice:eq-by-ref Map:new<ByteSlice, Array<TopItem>> @modules
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Parser:Module> @modules
     &arena $fs $file-path 0 !.TokenLocation &modules load-modules-recursively
     &arena &modules determine-compilation-order @modules
     "Resolving" Arena:new @resolving-arena
@@ -325,7 +320,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
         }
         case Success -> {}
     } @modules
-    $command match {
+    $command match ProjectWideCommand {
         case Check -> {
             drop
             Logging:enabled if {
@@ -352,7 +347,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     "Monomizing" Arena:new @monomizing-arena
     &monomizing-arena &modules monomize @monomized
     &resolving-arena Arena:shred
-    $command match {
+    $command match ProjectWideCommand {
         case Monomize -> {
             drop
             1 Fmt:to-fd @fmt
@@ -368,7 +363,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     }
 
     &monomized merge-locals
-    $command match {
+    $command match ProjectWideCommand {
         case Optimize -> {
             drop
             1 Fmt:to-fd @fmt
@@ -413,13 +408,13 @@ fn load-modules-recursively(
     fs: .FileSystem,
     file-path: Maybe<ByteSlice>,
     file-path-location: .TokenLocation,
-    modules: .Map<ByteSlice, Array<TopItem>>
+    modules: .Map<ByteSlice, Parser:Module>
 ) { block {
-    $file-path match {
+    $file-path match Maybe<ByteSlice> {
         case None -> { "-" make ByteSlice }
         case Some -> {}
     } @file-path-or-dash
-    $modules &file-path-or-dash Map:get<ByteSlice, Array<TopItem>> match {
+    $modules &file-path-or-dash Map:get<ByteSlice, Parser:Module> match Maybe<Parser:Module> {
         case None -> {}
         case Some -> { drop break }
     }
@@ -438,42 +433,37 @@ fn load-modules-recursively(
             2 flip $file-path-or-dash ByteSlice:unpack ParseError-print drop
             2 IO:newline
             2 Core:exit
-            Core:unreachable<Array<TopItem>>
+            Core:unreachable<Parser:Module>
         }
         case Success -> {}
-    } @top-items
+    } @module
 
     $arena
     $modules
     $file-path match { case Some -> {} case None -> { "-" make ByteSlice } }
-    $top-items
-    Map:insert<ByteSlice, Array<TopItem>> match {
+    $module
+    Map:insert<ByteSlice, Parser:Module> match {
         case None -> {}
         case Some -> { drop 0 0 / drop }
     }
 
     0 @i
     loop {
-        $top-items.len $i = if { break }
-        &top-items $i Array:get<TopItem> match {
-            case Import -> {
-                @imp
-                &imp.path Token-lexeme 2 - flip 1 + flip make ByteSlice @imp-path
-                $file-path-or-dash &imp.path Lexer:Token-location make TokenLocation @imp-path-loc
-                $file-path match {
-                    case None -> {
-                        $arena $fs $imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
-                    }
-                    case Some -> {
-                        ByteSlice:unpack FS:path-dir Array:init-no-copy<_> @path
-                        $temp-arena &path $imp-path ByteSlice:unpack Array:append-raw<_>
-                        $temp-arena &path Array:unpack<_> FS:normalize make ByteSlice @absolute-imp-path
-                        $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
-                        $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
-                    }
-                }
+        $module.imports.len $i = if { break }
+        &module.imports $i Array:get<Parser:Import> @imp
+        &imp.path Token-lexeme 2 - flip 1 + flip make ByteSlice @imp-path
+        $file-path-or-dash &imp.path Lexer:Token-location make TokenLocation @imp-path-loc
+        $file-path match Maybe<ByteSlice> {
+            case None -> {
+                $arena $fs $imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
             }
-            case _ -> { drop }
+            case Some -> {
+                ByteSlice:unpack FS:path-dir Array:init-no-copy<_> @path
+                $temp-arena &path $imp-path ByteSlice:unpack Array:append-raw<_>
+                $temp-arena &path Array:unpack<_> FS:normalize make ByteSlice @absolute-imp-path
+                $arena $absolute-imp-path ByteSlice:copy @absolute-imp-path
+                $arena $fs $absolute-imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
+            }
         }
         $i 1 + #i
     }
@@ -481,11 +471,11 @@ fn load-modules-recursively(
     $temp-arena $save Arena:restore
 } }
 
-fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<TopItem>>) -> Map<ByteSlice, Array<TopItem>> {
+fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Parser:Module>) -> Map<ByteSlice, Parser:Module> {
     $arena Arena:temp @temp @temp-save
 
     $arena $modules.values.len Array:new-with-capacity<ByteSlice> @ordered-keys
-    $arena $modules.values.len Array:new-with-capacity<Array<TopItem>> @ordered-values
+    $arena $modules.values.len Array:new-with-capacity<Parser:Module> @ordered-values
 
     $temp $modules.values.len Array:new-with-capacity<i32> @unprocessed
     loop {
@@ -500,36 +490,32 @@ fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<Top
         loop {
             $unprocessed.len $i = if { break }
             &unprocessed $i Array:get<i32> ~ @module-id
-            $modules $module-id Map:get-value<ByteSlice, Array<TopItem>> @top-items
-            $modules $module-id Map:get-key<ByteSlice, Array<TopItem>> @module-file-path
+            $modules $module-id Map:get-value<ByteSlice, Parser:Module> @module
+            $modules $module-id Map:get-key<ByteSlice, Parser:Module> @module-file-path
             0 @j
             loop {
-                $top-items.len $j = if { 1 1 = break }
-                $top-items $j Array:get<TopItem> match {
-                    case Import -> {
-                        .path Token-lexeme 2 - @imp-path-len 1 + @imp-path-ptr
-                        $module-file-path ~ ByteSlice:unpack "-" Bytes:eq if {
-                            $imp-path-ptr $imp-path-len make ByteSlice
-                        } else {
-                            Array:new<i8> @absolute-path
-                            $temp &absolute-path $module-file-path ~ ByteSlice:unpack FS:path-dir Array:append-raw<_>
-                            $temp &absolute-path $imp-path-ptr $imp-path-len Array:append-raw<_>
-                            $temp &absolute-path Array:unpack<_> FS:normalize make ByteSlice
-                        } @absolute-path
+                $module.imports.len $j = if { 1 1 = break }
+                &module.imports $j Array:get<Parser:Import>
+                .path Token-lexeme 2 - @imp-path-len 1 + @imp-path-ptr
+                $module-file-path ~ ByteSlice:unpack "-" Bytes:eq if {
+                    $imp-path-ptr $imp-path-len make ByteSlice
+                } else {
+                    Array:new<i8> @absolute-path
+                    $temp &absolute-path $module-file-path ~ ByteSlice:unpack FS:path-dir Array:append-raw<_>
+                    $temp &absolute-path $imp-path-ptr $imp-path-len Array:append-raw<_>
+                    $temp &absolute-path Array:unpack<_> FS:normalize make ByteSlice
+                } @absolute-path
 
-                        // Is this an import of an already `ordered` module?
-                        &ordered-keys \ByteSlice:eq-by-ref &absolute-path Array:find<ByteSlice, .ByteSlice> flip drop not if {
-                            // if not then postpone processing this module.
-                            0 1 = break
-                        }
-                    }
-                    case _ -> { drop }
+                // Is this an import of an already `ordered` module?
+                &ordered-keys \ByteSlice:eq-by-ref &absolute-path Array:find<ByteSlice, .ByteSlice> flip drop not if {
+                    // if not then postpone processing this module.
+                    0 1 = break
                 }
                 $j 1 + #j
             } if {
                 &unprocessed $i Array:remove<i32> drop
-                &ordered-values &modules.values $module-id Array:get<Array<TopItem>> ~ Array:push-assert-no-alloc<Array<TopItem>>
-                &ordered-keys   &modules.keys   $module-id Array:get<ByteSlice>      ~ Array:push-assert-no-alloc<ByteSlice>
+                &ordered-values &modules.values $module-id Array:get<Parser:Module> ~ Array:push-assert-no-alloc<Parser:Module>
+                &ordered-keys   &modules.keys   $module-id Array:get<ByteSlice>     ~ Array:push-assert-no-alloc<ByteSlice>
                 0 1 = #stuck
             } else {
                 $i 1 + #i
@@ -540,7 +526,7 @@ fn determine-compilation-order(arena: .Arena, modules: .Map<ByteSlice, Array<Top
     }
 
     $temp $temp-save Arena:restore
-    $ordered-keys $ordered-values \ByteSlice:eq-by-ref make Map<ByteSlice, Array<TopItem>>
+    $ordered-keys $ordered-values \ByteSlice:eq-by-ref make Map<ByteSlice, Parser:Module>
 }
 
 fn write-stdout(ptr: .i8, len: i32) -> i32 {

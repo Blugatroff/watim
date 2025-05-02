@@ -5,7 +5,7 @@ variant Foo {
 }
 
 fn foo() {
-	make Foo.A match {
+	make Foo.A match Foo {
 		case A -> { }
 	}
 }

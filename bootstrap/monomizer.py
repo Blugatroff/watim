@@ -1,6 +1,7 @@
 from typing import List, Dict, Set, Tuple, Sequence, TypeGuard, assert_never
 from dataclasses import dataclass, field
 import unittest
+import copy
 
 from util import Ref, Lazy, intercalate, align_to
 from format import Formattable, FormatInstr, unnamed_record, named_record
@@ -9,9 +10,9 @@ from lexer import Token
 from parsing.types import I8, I32, I64, Bool, PrimitiveType
 from parsing.parser import NumberWord, BreakWord
 import resolving.resolver as resolver
-from resolving.resolver import LocalName, ScopeId, GlobalId, LocalId
-from resolving.intrinsics import IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicMemGrow, IntrinsicSetStackSize
-from resolving.words import StringWord
+from resolving import LocalName, ScopeId, GlobalId, LocalId
+from checking.intrinsics import IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicMemGrow, IntrinsicSetStackSize
+import checking as checked
 
 @dataclass
 class PtrType(Formattable):
@@ -93,15 +94,15 @@ class Variant:
 TypeDefinition = Struct | Variant
 
 @dataclass
-class StructHandle(Formattable):
+class CustomTypeHandle(Formattable):
     module: int
     index: int
     instance: int
 
 @dataclass
-class StructType(Formattable):
+class CustomTypeType(Formattable):
     name: Token
-    struct: StructHandle
+    struct: CustomTypeHandle
     _size: Lazy[int]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("StructType", [
@@ -115,8 +116,8 @@ class StructType(Formattable):
         return self._size.get()
 
     @staticmethod
-    def dummy(name: str, size: int) -> 'StructType':
-        return StructType(Token.dummy(name), StructHandle(0, 0, 0), Lazy(lambda: size))
+    def dummy(name: str, size: int) -> 'CustomTypeType':
+        return CustomTypeType(Token.dummy(name), CustomTypeHandle(0, 0, 0), Lazy(lambda: size))
 
 @dataclass
 class TupleType(Formattable):
@@ -129,7 +130,7 @@ class TupleType(Formattable):
     def size(self):
         return sum(t.size() for t in self.items)
 
-Type = PrimitiveType | PtrType | StructType | FunctionType | TupleType
+Type = PrimitiveType | PtrType | CustomTypeType | FunctionType | TupleType
 
 def type_eq(a: Type, b: Type) -> bool:
     if isinstance(a, Bool) and isinstance(b, Bool):
@@ -142,7 +143,7 @@ def type_eq(a: Type, b: Type) -> bool:
         return True
     if isinstance(a, PtrType) and isinstance(b, PtrType):
         return type_eq(a.child, b.child)
-    if isinstance(a, StructType) and isinstance(b, StructType):
+    if isinstance(a, CustomTypeType) and isinstance(b, CustomTypeType):
         return a.struct.module == b.struct.module and a.struct.index == b.struct.index and a.struct.instance == b.struct.instance
     if isinstance(a, FunctionType) and isinstance(b, FunctionType):
         return types_eq(a.parameters, b.parameters) and types_eq(a.returns, b.returns)
@@ -162,7 +163,7 @@ def format_type(a: Type) -> str:
     match a:
         case PtrType(child):
             return f".{format_type(child)}"
-        case StructType(name):
+        case CustomTypeType(name):
             return name.lexeme 
         case FunctionType(_, parameters, returns):
             s = "("
@@ -224,7 +225,7 @@ class FunctionSignature:
     returns: List[Type]
 
     def returns_any_struct(self) -> bool:
-        return any(isinstance(ret, StructType) for ret in self.returns)
+        return any(isinstance(ret, CustomTypeType) for ret in self.returns)
 
 @dataclass
 class Global:
@@ -332,7 +333,7 @@ class SizeofWord:
 @dataclass
 class FieldAccess:
     name: Token
-    source_taip: StructType | PtrType
+    source_taip: CustomTypeType | PtrType
     target_taip: Type
     offset: int
 
@@ -557,14 +558,14 @@ class StoreWord:
 @dataclass
 class StructWord:
     token: Token
-    taip: StructType
+    taip: CustomTypeType
     copy_space_offset: int
     body: Scope
 
 @dataclass
 class UnnamedStructWord:
     token: Token
-    taip: StructType
+    taip: CustomTypeType
     copy_space_offset: int
 
 @dataclass
@@ -577,7 +578,7 @@ class StructFieldInitWord:
 class VariantWord:
     token: Token
     tag: int
-    variant: StructHandle
+    variant: CustomTypeHandle
     copy_space_offset: int
 
 @dataclass
@@ -588,7 +589,7 @@ class MatchCase:
 @dataclass
 class MatchWord:
     token: Token
-    variant: StructHandle
+    variant: CustomTypeHandle
     by_ref: bool
     cases: List[MatchCase]
     default: Scope | None
@@ -636,7 +637,7 @@ type IntrinsicWord = (
     | IntrinsicSetStackSize
 )
 
-type Word = NumberWord | StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord | TupleMakeWord | TupleUnpackWord
+type Word = NumberWord | checked.words.StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord | TupleMakeWord | TupleUnpackWord
 
 @dataclass
 class Module:
@@ -649,17 +650,26 @@ class Module:
 
 @dataclass
 class Monomizer:
-    modules: IndexedDict[str, resolver.Module]
-    type_definitions: Dict[resolver.CustomTypeHandle, List[Tuple[List[Type], TypeDefinition]]] = field(default_factory=dict)
-    externs: Dict[resolver.FunctionHandle, Extern] = field(default_factory=dict)
+    modules: IndexedDict[str, checked.Module]
+    type_definitions: Dict[checked.CustomTypeHandle, List[Tuple[List[Type], TypeDefinition]]] = field(default_factory=dict)
+    externs: Dict[checked.FunctionHandle, Extern] = field(default_factory=dict)
     globals: Dict[GlobalId, Global] = field(default_factory=dict)
-    functions: Dict[resolver.FunctionHandle, Function] = field(default_factory=dict)
-    signatures: Dict[resolver.FunctionHandle, FunctionSignature | List[FunctionSignature]] = field(default_factory=dict)
+    functions: Dict[checked.FunctionHandle, Function] = field(default_factory=dict)
+    signatures: Dict[checked.FunctionHandle, FunctionSignature | List[FunctionSignature]] = field(default_factory=dict)
     function_table: Dict[FunctionHandle | ExternHandle, int] = field(default_factory=dict)
+    struct_literal_ctx: Struct | None = None
+
+    def with_struct_literal_ctx(self, struct: Struct | None) -> 'Monomizer':
+        self = copy.copy(self)
+        self.struct_literal_ctx = struct
+        return self
+
+    def lookup_type_definition(self, struct: CustomTypeHandle) -> TypeDefinition:
+        return self.type_definitions[checked.CustomTypeHandle(struct.module, struct.index)][struct.instance][1]
 
     def monomize(self) -> Tuple[Dict[FunctionHandle | ExternHandle, int], Dict[int, Module]]:
         self.externs = {
-            resolver.FunctionHandle(m, i): self.monomize_extern(f)
+            checked.FunctionHandle(m, i): self.monomize_extern(f)
             for m,module in self.modules.indexed_values()
             for i,f in enumerate(module.functions.values())
             if isinstance(f, resolver.Extern)
@@ -676,7 +686,7 @@ class Monomizer:
                     continue
                 if function.export_name is not None:
                     assert(len(function.signature.generic_parameters) == 0)
-                    handle = resolver.FunctionHandle(id, index)
+                    handle = checked.FunctionHandle(id, index)
                     self.monomize_function(handle, [])
 
         mono_modules = {}
@@ -688,7 +698,7 @@ class Monomizer:
             mono_modules[module_id] = Module(module_id, type_definitions, externs, globals, functions, self.modules.index(module_id).data)
         return self.function_table, mono_modules
 
-    def monomize_locals(self, locals: Dict[LocalId, resolver.Local], generics: List[Type]) -> Dict[LocalId, Local]:
+    def monomize_locals(self, locals: Dict[LocalId, checked.Local], generics: List[Type]) -> Dict[LocalId, Local]:
         res: Dict[LocalId, Local] = {}
         for id, local in locals.items():
             taip = self.monomize_type(local.taip, generics)
@@ -704,9 +714,9 @@ class Monomizer:
         assert(len(signature.generic_parameters) == 0)
         return self.monomize_signature(signature, [])
 
-    def monomize_function(self, function: resolver.FunctionHandle, generics: List[Type]) -> ConcreteFunction:
+    def monomize_function(self, function: checked.FunctionHandle, generics: List[Type]) -> ConcreteFunction:
         f = self.modules.index(function.module).functions.index(function.index)
-        assert(isinstance(f, resolver.Function))
+        assert(isinstance(f, checked.Function))
         if len(generics) == 0:
             assert(len(f.signature.generic_parameters) == 0)
         signature = self.monomize_signature(f.signature, generics)
@@ -754,29 +764,29 @@ class Monomizer:
         generic_function.instances[generic_index] = concrete_function
         return concrete_function
 
-    def monomize_signature(self, signature: resolver.FunctionSignature, generics: List[Type]) -> FunctionSignature:
+    def monomize_signature(self, signature: checked.FunctionSignature, generics: List[Type]) -> FunctionSignature:
         parameters = list(map(lambda t: self.monomize_named_type(t, generics), signature.parameters))
         returns = list(map(lambda t: self.monomize_type(t, generics), signature.returns))
         return FunctionSignature(generics, parameters, returns)
 
-    def monomize_global(self, globl: resolver.Global) -> Global:
+    def monomize_global(self, globl: checked.Global) -> Global:
         return Global(globl.name, self.monomize_type(globl.taip, []), globl.was_reffed)
 
-    def monomize_scope(self, scope: resolver.Scope, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> Scope:
+    def monomize_scope(self, scope: checked.Scope, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> Scope:
         return Scope(scope.id, self.monomize_words(scope.words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space))
 
-    def monomize_words(self, words: List[resolver.ResolvedWord], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> List[Word]:
+    def monomize_words(self, words: List[checked.Word], generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> List[Word]:
         return list(map(lambda w: self.monomize_word(w, generics, copy_space_offset, max_struct_ret_count, locals, struct_space), words))
 
-    def monomize_word(self, word: resolver.ResolvedWord, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> Word:
+    def monomize_word(self, word: checked.Word, generics: List[Type], copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], locals: Dict[LocalId, Local], struct_space: int | None) -> Word:
         match word:
-            case NumberWord():
+            case checked.words.NumberWord():
                 return word
-            case StringWord():
+            case checked.words.StringWord():
                 return word
-            case resolver.CallWord():
+            case checked.words.CallWord():
                 return self.monomize_call_word(word, copy_space_offset, max_struct_ret_count, generics)
-            case resolver.IndirectCallWord(token, taip):
+            case checked.words.IndirectCallWord(token, taip):
                 monomized_function_taip = self.monomize_function_type(taip, generics)
                 local_copy_space_offset = copy_space_offset.value
                 copy_space = sum(taip.size() for taip in monomized_function_taip.returns if not taip.can_live_in_reg())
@@ -784,7 +794,7 @@ class Monomizer:
                 if copy_space != 0:
                     max_struct_ret_count.value = max(max_struct_ret_count.value, len(monomized_function_taip.returns))
                 return IndirectCallWord(token, monomized_function_taip, local_copy_space_offset)
-            case resolver.GetWord(token, local_id, var_taip, resolved_fields, taip):
+            case checked.words.GetWord(token, local_id, var_taip, resolved_fields, taip):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 monomized_taip = self.monomize_type(taip, generics)
                 if not monomized_taip.can_live_in_reg():
@@ -797,21 +807,21 @@ class Monomizer:
                 loads = determine_loads(fields, just_ref=False, base_in_mem=lives_in_memory)
                 target_taip = fields[-1].target_taip if len(fields) != 0 else monomized_var_taip
                 return GetWord(token, local_id, target_taip, loads, offset, lives_in_memory)
-            case resolver.InitWord(token, local_id, taip):
+            case checked.words.InitWord(token, local_id, taip):
                 return InitWord(token, local_id, self.monomize_type(taip, generics), self.does_var_live_in_memory(local_id, locals))
-            case resolver.SetWord(token, local_id, resolved_fields):
+            case checked.words.SetWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 lives_in_memory = self.does_var_live_in_memory(local_id, locals)
-                target_lives_in_memory = lives_in_memory or any(isinstance(field.source_taip, resolver.PtrType) for field in resolved_fields)
+                target_lives_in_memory = lives_in_memory or any(isinstance(field.source_taip, checked.words.PtrType) for field in resolved_fields)
                 monomized_var_taip = self.lookup_var_taip(local_id, locals)
                 loads = determine_loads(fields, just_ref=target_lives_in_memory, base_in_mem=lives_in_memory)
                 monomized_taip = fields[-1].target_taip if len(fields) != 0 else monomized_var_taip
                 return SetWord(token, local_id, monomized_taip, loads, target_lives_in_memory)
-            case resolver.RefWord(token, local_id, resolved_fields):
+            case checked.words.RefWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 loads = determine_loads(fields, just_ref=True)
                 return RefWord(token, local_id, loads)
-            case resolver.StoreWord(token, local_id, resolved_fields):
+            case checked.words.StoreWord(token, local_id, resolved_fields):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 loads = determine_loads(fields)
                 monomized_taip = fields[-1].target_taip if len(fields) != 0 else self.lookup_var_taip(local_id, locals)
@@ -819,49 +829,49 @@ class Monomizer:
                     assert(isinstance(monomized_taip, PtrType))
                     monomized_taip = monomized_taip.child
                 return StoreWord(token, local_id, monomized_taip, loads)
-            case resolver.IntrinsicAdd(token, taip):
+            case checked.words.intrinsics.IntrinsicAdd(token, taip):
                 return IntrinsicAdd(token, self.monomize_addable_type(taip, generics))
-            case resolver.IntrinsicSub(token, taip):
+            case checked.words.intrinsics.IntrinsicSub(token, taip):
                 return IntrinsicSub(token, self.monomize_addable_type(taip, generics))
-            case resolver.IntrinsicMul(token, taip):
+            case checked.words.intrinsics.IntrinsicMul(token, taip):
                 return IntrinsicMul(token, taip)
-            case resolver.IntrinsicMod(token, taip):
+            case checked.words.intrinsics.IntrinsicMod(token, taip):
                 return IntrinsicMod(token, taip)
-            case resolver.IntrinsicDiv(token, taip):
+            case checked.words.intrinsics.IntrinsicDiv(token, taip):
                 return IntrinsicDiv(token, taip)
-            case resolver.IntrinsicEqual(token, taip):
+            case checked.words.intrinsics.IntrinsicEqual(token, taip):
                 return IntrinsicEqual(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicNotEqual(token, taip):
+            case checked.words.intrinsics.IntrinsicNotEqual(token, taip):
                 return IntrinsicNotEqual(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicGreaterEq(token, taip):
+            case checked.words.intrinsics.IntrinsicGreaterEq(token, taip):
                 return IntrinsicGreaterEq(token, taip)
-            case resolver.IntrinsicGreater(token, taip):
+            case checked.words.intrinsics.IntrinsicGreater(token, taip):
                 return IntrinsicGreater(token, taip)
-            case resolver.IntrinsicLess(token, taip):
+            case checked.words.intrinsics.IntrinsicLess(token, taip):
                 return IntrinsicLess(token, taip)
-            case resolver.IntrinsicLessEq(token, taip):
+            case checked.words.intrinsics.IntrinsicLessEq(token, taip):
                 return IntrinsicLessEq(token, taip)
-            case resolver.IntrinsicAnd(token, taip):
+            case checked.words.intrinsics.IntrinsicAnd(token, taip):
                 return IntrinsicAnd(token, taip)
-            case resolver.IntrinsicNot(token, taip):
+            case checked.words.intrinsics.IntrinsicNot(token, taip):
                 return IntrinsicNot(token, taip)
             case IntrinsicDrop():
                 return word
             case BreakWord():
                 return word
-            case resolver.IntrinsicFlip(token, lower, upper):
+            case checked.words.intrinsics.IntrinsicFlip(token, lower, upper):
                 return IntrinsicFlip(token, self.monomize_type(lower, generics), self.monomize_type(upper, generics))
-            case resolver.IntrinsicShl(token, taip):
+            case checked.words.intrinsics.IntrinsicShl(token, taip):
                 return IntrinsicShl(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicShr(token, taip):
+            case checked.words.intrinsics.IntrinsicShr(token, taip):
                 return IntrinsicShr(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicRotl(token, taip):
+            case checked.words.intrinsics.IntrinsicRotl(token, taip):
                 return IntrinsicRotl(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicRotr(token, taip):
+            case checked.words.intrinsics.IntrinsicRotr(token, taip):
                 return IntrinsicRotr(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicOr(token, taip):
+            case checked.words.intrinsics.IntrinsicOr(token, taip):
                 return IntrinsicOr(token, self.monomize_type(taip, generics))
-            case resolver.IntrinsicStore(token, taip):
+            case checked.words.intrinsics.IntrinsicStore(token, taip):
                 return IntrinsicStore(token, self.monomize_type(taip, generics))
             case IntrinsicMemCopy():
                 return word
@@ -871,13 +881,13 @@ class Monomizer:
                 return word
             case IntrinsicSetStackSize():
                 return word
-            case resolver.IntrinsicUninit(token, taip):
+            case checked.words.intrinsics.IntrinsicUninit(token, taip):
                 monomized_taip = self.monomize_type(taip, generics)
                 offset = copy_space_offset.value
                 if not monomized_taip.can_live_in_reg():
                     copy_space_offset.value += monomized_taip.size()
                 return IntrinsicUninit(token, monomized_taip, offset)
-            case resolver.LoadWord(token, taip):
+            case checked.words.LoadWord(token, taip):
                 monomized_taip = self.monomize_type(taip, generics)
                 if not monomized_taip.can_live_in_reg():
                     offset = copy_space_offset.value
@@ -885,15 +895,15 @@ class Monomizer:
                 else:
                     offset = None
                 return LoadWord(token, monomized_taip, offset)
-            case resolver.CastWord(token, source, taip):
+            case checked.words.CastWord(token, source, taip):
                 return CastWord(token, self.monomize_type(source, generics), self.monomize_type(taip, generics))
-            case resolver.IfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words, diverges):
+            case checked.words.IfWord(token, resolved_parameters, resolved_returns, resolved_if_words, resolved_else_words, diverges):
                 true_branch = self.monomize_scope(resolved_if_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 false_branch = self.monomize_scope(resolved_else_words, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = None if resolved_returns is None else list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return IfWord(token, parameters, returns, true_branch, false_branch, diverges)
-            case resolver.FunRefWord(call):
+            case checked.words.FunRefWord(call):
                 # monomize_call_word increments the copy_space, but if we're just taking the pointer
                 # of the function, then we're not actually calling it and no space should be allocated.
                 cso = copy_space_offset.value
@@ -905,19 +915,19 @@ class Monomizer:
                 max_struct_ret_count.value = msrc
                 table_index = self.insert_function_into_table(call_word.function)
                 return FunRefWord(call_word, table_index)
-            case resolver.LoopWord(token, resolved_body, resolved_parameters, resolved_returns, diverges):
+            case checked.words.LoopWord(token, resolved_body, resolved_parameters, resolved_returns, diverges):
                 body = self.monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return LoopWord(token, body, parameters, returns, diverges)
-            case resolver.SizeofWord(token, taip):
+            case checked.words.SizeofWord(token, taip):
                 return SizeofWord(token, self.monomize_type(taip, generics))
-            case resolver.BlockWord(token, resolved_body, resolved_parameters, resolved_returns):
+            case checked.words.BlockWord(token, resolved_body, resolved_parameters, resolved_returns):
                 body = self.monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return BlockWord(token, body, parameters, returns)
-            case resolver.GetFieldWord(token, resolved_fields, on_ptr):
+            case checked.words.GetFieldWord(token, resolved_fields, on_ptr):
                 fields = self.monomize_field_accesses(resolved_fields, generics)
                 target_taip = fields[-1].target_taip
                 offset = None
@@ -926,38 +936,41 @@ class Monomizer:
                     copy_space_offset.value += target_taip.size()
                 loads = determine_loads(fields, just_ref=on_ptr)
                 return GetFieldWord(token, target_taip, loads, on_ptr, offset)
-            case resolver.StructWord(token, taip, resolved_body):
+            case checked.words.StructWord(token, taip, resolved_body):
                 monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
                 copy_space_offset.value += monomized_taip.size()
-                body = self.monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, offset)
+                struct = self.lookup_type_definition(monomized_taip.struct)
+                assert(not isinstance(struct, Variant))
+                body = self.with_struct_literal_ctx(struct).monomize_scope(resolved_body, generics, copy_space_offset, max_struct_ret_count, locals, offset)
                 return StructWord(token, monomized_taip, offset, body)
-            case resolver.UnnamedStructWord(token, taip):
+            case checked.words.UnnamedStructWord(token, taip):
                 monomized_taip = self.monomize_struct_type(taip, generics)
                 offset = copy_space_offset.value
                 if not monomized_taip.can_live_in_reg():
                     copy_space_offset.value += monomized_taip.size()
                 return UnnamedStructWord(token, monomized_taip, offset)
-            case resolver.StructFieldInitWord(token, struct, taip, _, generic_arguments):
-                generics_here = list(map(lambda t: self.monomize_type(t, generics), generic_arguments))
-                (_,monomized_struct) = self.monomize_struct(struct, generics_here)
-                if isinstance(monomized_struct, Variant):
-                    assert(False)
+            case checked.words.StructFieldInitWord(token, field_index):
+                assert(self.struct_literal_ctx is not None)
+                field_taip = self.struct_literal_ctx.fields.get()[field_index].taip
                 assert(struct_space is not None)
                 field_copy_space_offset: int = struct_space
-                for i,field in enumerate(monomized_struct.fields.get()):
-                    if field.name.lexeme == token.lexeme:
-                        field_copy_space_offset += monomized_struct.field_offset(i)
+                for i,_ in enumerate(self.struct_literal_ctx.fields.get()):
+                    if i == field_index:
+                        # TODO: why is this `+=` instead of `=`?
+                        #       This seems very wrong, but it still seems to work, why is that?
+                        #       Why even loop at all in here?
+                        field_copy_space_offset += self.struct_literal_ctx.field_offset(i)
                         break
-                return StructFieldInitWord(token, self.monomize_type(taip, generics), field_copy_space_offset)
-            case resolver.VariantWord(token, case, resolved_variant_type):
+                return StructFieldInitWord(token, field_taip, field_copy_space_offset)
+            case checked.words.VariantWord(token, case, resolved_variant_type):
                 this_generics = list(map(lambda t: self.monomize_type(t, generics), resolved_variant_type.generic_arguments))
                 (variant_handle, variant) = self.monomize_struct(resolved_variant_type.type_definition, this_generics)
                 offset = copy_space_offset.value
                 if variant.size() > 8:
                     copy_space_offset.value += variant.size()
                 return VariantWord(token, case, variant_handle, offset)
-            case resolver.MatchWord(token, resolved_variant_type, by_ref, cases, default_case, resolved_parameters, resolved_returns):
+            case checked.words.MatchWord(token, resolved_variant_type, by_ref, cases, default_case, resolved_parameters, resolved_returns):
                 monomized_cases: List[MatchCase] = []
                 for resolved_case in cases:
                     body = self.monomize_scope(resolved_case.body, generics, copy_space_offset, max_struct_ret_count, locals, struct_space)
@@ -968,14 +981,14 @@ class Monomizer:
                 parameters = list(map(lambda t: self.monomize_type(t, generics), resolved_parameters))
                 returns = None if resolved_returns is None else list(map(lambda t: self.monomize_type(t, generics), resolved_returns))
                 return MatchWord(token, monomized_variant, by_ref, monomized_cases, monomized_default_case, parameters, returns)
-            case resolver.TupleMakeWord(token, tupl):
+            case checked.words.TupleMakeWord(token, tupl):
                 offset = copy_space_offset.value
                 mono_tupl = TupleType(tupl.token, list(map(lambda t: self.monomize_type(t, generics), tupl.items)))
                 offset = copy_space_offset.value
                 if mono_tupl.size() > 4:
                     copy_space_offset.value += mono_tupl.size()
                 return TupleMakeWord(token, mono_tupl, offset)
-            case resolver.TupleUnpackWord(token, resolver.TupleType(_, items)):
+            case checked.words.TupleUnpackWord(token, checked.words.TupleType(_, items)):
                 offset = copy_space_offset.value
                 mono_items = list(map(lambda t: self.monomize_type(t, generics), items))
                 copy_space_offset.value += sum(item.size() for item in mono_items if not item.can_live_in_reg())
@@ -997,18 +1010,18 @@ class Monomizer:
             self.function_table[function] = len(self.function_table)
         return self.function_table[function]
 
-    def monomize_field_accesses(self, fields: Sequence[resolver.FieldAccess], generics: List[Type]) -> List[FieldAccess]:
+    def monomize_field_accesses(self, fields: Sequence[checked.words.FieldAccess], generics: List[Type]) -> List[FieldAccess]:
         if len(fields) == 0:
             return []
 
         field = fields[0]
 
-        if isinstance(field.source_taip, resolver.CustomTypeType):
-            source_taip: PtrType | StructType = self.monomize_struct_type(field.source_taip, generics)
+        if isinstance(field.source_taip, checked.CustomTypeType):
+            source_taip: PtrType | CustomTypeType = self.monomize_struct_type(field.source_taip, generics)
             resolved_struct = field.source_taip.type_definition
             generic_arguments = field.source_taip.generic_arguments
         else:
-            assert(isinstance(field.source_taip.child, resolver.CustomTypeType))
+            assert(isinstance(field.source_taip.child, checked.CustomTypeType))
             source_taip = PtrType(self.monomize_type(field.source_taip.child, generics))
             resolved_struct = field.source_taip.child.type_definition
             generic_arguments = field.source_taip.child.generic_arguments
@@ -1018,11 +1031,11 @@ class Monomizer:
         offset = struct.field_offset(field.field_index)
         return [FieldAccess(field.name, source_taip, target_taip, offset)] + self.monomize_field_accesses(fields[1:], struct.generic_parameters)
 
-    def monomize_call_word(self, word: resolver.CallWord, copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], generics: List[Type]) -> CallWord:
+    def monomize_call_word(self, word: checked.words.CallWord, copy_space_offset: Ref[int], max_struct_ret_count: Ref[int], generics: List[Type]) -> CallWord:
         if word.function in self.externs:
             signature = self.externs[word.function].signature
             offset = copy_space_offset.value
-            copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, StructType))
+            copy_space = sum(taip.size() for taip in signature.returns if isinstance(taip, CustomTypeType))
             max_struct_ret_count.value = max(max_struct_ret_count.value, len(signature.returns) if copy_space > 0 else 0)
             copy_space_offset.value += copy_space
             return CallWord(word.name, ExternHandle(word.function.module, word.function.index), offset)
@@ -1047,27 +1060,27 @@ class Monomizer:
         self.monomize_function(word.function, generics_here)
         return self.monomize_call_word(word, copy_space_offset, max_struct_ret_count, generics) # the function instance should now exist, try monomorphizing this CallWord again
 
-    def lookup_struct(self, struct: resolver.CustomTypeHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition] | None:
+    def lookup_struct(self, struct: checked.CustomTypeHandle, generics: List[Type]) -> Tuple[CustomTypeHandle, TypeDefinition] | None:
         if struct not in self.type_definitions:
             return None
         for instance_index, (genics, instance) in enumerate(self.type_definitions[struct]):
             if types_eq(genics, generics):
-                return StructHandle(struct.module, struct.index, instance_index), instance
+                return CustomTypeHandle(struct.module, struct.index, instance_index), instance
         return None
 
-    def add_struct(self, handle: resolver.CustomTypeHandle, taip: TypeDefinition, generics: List[Type]) -> StructHandle:
+    def add_struct(self, handle: checked.CustomTypeHandle, taip: TypeDefinition, generics: List[Type]) -> CustomTypeHandle:
         if handle not in self.type_definitions:
             self.type_definitions[handle] = []
         instance_index = len(self.type_definitions[handle])
         self.type_definitions[handle].append((generics, taip))
-        return StructHandle(handle.module, handle.index, instance_index)
+        return CustomTypeHandle(handle.module, handle.index, instance_index)
 
-    def monomize_struct(self, struct: resolver.CustomTypeHandle, generics: List[Type]) -> Tuple[StructHandle, TypeDefinition]:
+    def monomize_struct(self, struct: checked.CustomTypeHandle, generics: List[Type]) -> Tuple[CustomTypeHandle, TypeDefinition]:
         handle_and_instance = self.lookup_struct(struct, generics)
         if handle_and_instance is not None:
             return handle_and_instance
-        s = self.modules.index(struct.module).custom_types.index(struct.index)
-        if isinstance(s, resolver.Variant):
+        s = self.modules.index(struct.module).type_definitions.index(struct.index)
+        if isinstance(s, checked.Variant):
             def cases() -> List[VariantCase]:
                 return [VariantCase(c.name, self.monomize_type(c.taip, generics) if c.taip is not None else None) for c in s.cases]
 
@@ -1082,44 +1095,44 @@ class Monomizer:
         handle = self.add_struct(struct, struct_instance, generics)
         return handle, struct_instance
 
-    def monomize_named_type(self, taip: resolver.NamedType, generics: List[Type]) -> NamedType:
+    def monomize_named_type(self, taip: checked.NamedType, generics: List[Type]) -> NamedType:
         return NamedType(taip.name, self.monomize_type(taip.taip, generics))
 
-    def monomize_type(self, taip: resolver.Type, generics: List[Type]) -> Type:
+    def monomize_type(self, taip: checked.Type, generics: List[Type]) -> Type:
         match taip:
-            case resolver.PtrType():
+            case checked.PtrType():
                 return PtrType(self.monomize_type(taip.child, generics))
-            case resolver.GenericType(_, generic_index):
+            case checked.GenericType(_, generic_index):
                 return generics[generic_index]
-            case resolver.CustomTypeType():
+            case checked.CustomTypeType():
                 return self.monomize_struct_type(taip, generics)
-            case resolver.FunctionType():
+            case checked.FunctionType():
                 return self.monomize_function_type(taip, generics)
-            case resolver.TupleType(token, items):
+            case checked.TupleType(token, items):
                 return TupleType(token, list(map(lambda item: self.monomize_type(item, generics), items)))
-            case resolver.HoleType():
+            case checked.HoleType():
                 assert(False)
             case other:
                 return other
 
-    def monomize_addable_type(self, taip: resolver.PtrType | I8 | I32 | I64, generics: List[Type]) -> PtrType | I8 | I32 | I64:
+    def monomize_addable_type(self, taip: checked.PtrType | I8 | I32 | I64, generics: List[Type]) -> PtrType | I8 | I32 | I64:
         match taip:
             case I8() | I32() | I64():
                 return taip
-            case resolver.PtrType():
+            case checked.PtrType():
                 return PtrType(self.monomize_type(taip.child, generics))
 
-    def monomize_struct_type(self, taip: resolver.CustomTypeType, generics: List[Type]) -> StructType:
+    def monomize_struct_type(self, taip: checked.CustomTypeType, generics: List[Type]) -> CustomTypeType:
         this_generics = list(map(lambda t: self.monomize_type(t, generics), taip.generic_arguments))
         handle,struct = self.monomize_struct(taip.type_definition, this_generics)
-        return StructType(taip.name, handle, Lazy(lambda: struct.size()))
+        return CustomTypeType(taip.name, handle, Lazy(lambda: struct.size()))
 
-    def monomize_function_type(self, taip: resolver.FunctionType, generics: List[Type]) -> FunctionType:
+    def monomize_function_type(self, taip: checked.FunctionType, generics: List[Type]) -> FunctionType:
         parameters = list(map(lambda t: self.monomize_type(t, generics), taip.parameters))
         returns = list(map(lambda t: self.monomize_type(t, generics), taip.returns))
         return FunctionType(taip.token, parameters, returns)
 
-    def monomize_extern(self, extern: resolver.Extern) -> Extern:
+    def monomize_extern(self, extern: checked.Extern) -> Extern:
         signature = self.monomize_concrete_signature(extern.signature)
         return Extern(extern.name, extern.extern_module, extern.extern_name, signature)
 
@@ -1238,33 +1251,33 @@ class DetermineLoadsToValueTests(unittest.TestCase):
 
     def test_by_value_on_struct(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 12), I32(), 4)
+            FieldAccess(Token.dummy("x"), CustomTypeType.dummy("Foo", 12), I32(), 4)
         ])
         self.assertTrue(len(loads) == 1)
         self.assertTrue(loads[0] == OffsetLoad(4, I32()))
 
     def test_by_value_on_struct_packed(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), I32(), 0)
+            FieldAccess(Token.dummy("x"), CustomTypeType.dummy("Foo", 8), I32(), 0)
         ])
         self.assertTrue(len(loads) == 1)
         self.assertTrue(loads[0] == I32InI64(0))
 
     def test_packed_value_on_struct_in_mem(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 8), I32(), 0)
+            FieldAccess(Token.dummy("x"), CustomTypeType.dummy("Foo", 8), I32(), 0)
         ], base_in_mem=True)
         self.assertEqual(loads, [OffsetLoad(0, I32())])
 
     def test_by_value_on_struct_packed_small_noop(self) -> None:
         loads = determine_loads([
-            FieldAccess(Token.dummy("x"), StructType.dummy("Foo", 4), I32(), 0)
+            FieldAccess(Token.dummy("x"), CustomTypeType.dummy("Foo", 4), I32(), 0)
         ])
         self.assertEqual(loads, [])
 
     def test_by_value_on_nested_struct(self) -> None:
-        foo = StructType.dummy("Foo", 12)
-        v2 = StructType.dummy("V2", 8)
+        foo = CustomTypeType.dummy("Foo", 12)
+        v2 = CustomTypeType.dummy("V2", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("v"), foo, v2               , 4),
             FieldAccess(Token.dummy("x"), v2 , I32(), 0),
@@ -1272,7 +1285,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertEqual(loads, [OffsetLoad(4, I32())])
 
     def test_by_value_through_ptr(self) -> None:
-        node = StructType.dummy("Node", 12)
+        node = CustomTypeType.dummy("Node", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , node         , PtrType(node)    , 4),
             FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
@@ -1281,7 +1294,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertTrue(loads[0] == OffsetLoad(4, I32()))
 
     def test_by_value_through_two_ptrs(self) -> None:
-        node = StructType.dummy("Node", 12)
+        node = CustomTypeType.dummy("Node", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , node         , PtrType(node)    , 4),
             FieldAccess(Token.dummy("next") , PtrType(node), PtrType(node)    , 4),
@@ -1292,23 +1305,23 @@ class DetermineLoadsToValueTests(unittest.TestCase):
             OffsetLoad(0, I32())])
 
     def test_get_sub_struct_by_value(self) -> None:
-        bar = StructType.dummy("Bar", 12)
+        bar = CustomTypeType.dummy("Bar", 12)
         loads = determine_loads([
-            FieldAccess(Token.dummy("v"), StructType.dummy("Foo", 16), bar, 4)
+            FieldAccess(Token.dummy("v"), CustomTypeType.dummy("Foo", 16), bar, 4)
         ])
         self.assertEqual(loads, [OffsetLoad(4, bar)])
 
     def test_get_subsub_struct_by_value(self) -> None:
-        bar = StructType.dummy("Bar", 12)
-        inner = StructType.dummy("BarInner", 12)
+        bar = CustomTypeType.dummy("Bar", 12)
+        inner = CustomTypeType.dummy("BarInner", 12)
         loads = determine_loads([
-            FieldAccess(Token.dummy("v")    , StructType.dummy("Foo", 16), bar  , 4),
+            FieldAccess(Token.dummy("v")    , CustomTypeType.dummy("Foo", 16), bar  , 4),
             FieldAccess(Token.dummy("inner"), bar                        , inner, 0),
         ])
         self.assertEqual(loads, [OffsetLoad(4, inner)])
 
     def test_by_ref_get_on_large_value(self) -> None:
-        node = StructType.dummy("Node", 12)
+        node = CustomTypeType.dummy("Node", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , PtrType(node), PtrType(node)    , 4),
             FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
@@ -1318,7 +1331,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
             OffsetLoad(0, I32())])
 
     def test_by_ref_get_on_packed_value(self) -> None:
-        node = StructType.dummy("Node", 8)
+        node = CustomTypeType.dummy("Node", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , PtrType(node), PtrType(node)    , 4),
             FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
@@ -1328,7 +1341,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertTrue(loads[1] == OffsetLoad(0, I32()))
 
     def test_get_through_bitshift(self) -> None:
-        node = StructType.dummy("Node", 8)
+        node = CustomTypeType.dummy("Node", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("next") , node         , PtrType(node)    , 4),
             FieldAccess(Token.dummy("value"), PtrType(node), I32(), 0),
@@ -1338,7 +1351,7 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertTrue(loads[1] == OffsetLoad(0, I32()))
 
     def test_ref_field_in_big_struct(self) -> None:
-        ctx = StructType.dummy("Ctx", 12)
+        ctx = CustomTypeType.dummy("Ctx", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("counter"), ctx, I32(), 8),
         ], just_ref=True)
@@ -1346,8 +1359,8 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertTrue(loads[0] == Offset(8))
 
     def test_ref_subfield_in_big_struct(self) -> None:
-        ctx = StructType.dummy("Ctx", 20)
-        word_ctx = StructType.dummy("WordCtx", 12)
+        ctx = CustomTypeType.dummy("Ctx", 20)
+        word_ctx = CustomTypeType.dummy("WordCtx", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("word-ctx"), ctx              , word_ctx         , 4),
             FieldAccess(Token.dummy("counter") , PtrType(word_ctx), I32(), 8),
@@ -1356,15 +1369,15 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertTrue(loads[0] == Offset(12))
 
     def test_ref_field_in_big_struct_at_offset_0(self) -> None:
-        ctx = StructType.dummy("Ctx", 12)
+        ctx = CustomTypeType.dummy("Ctx", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("counter"), ctx, I32(), 0),
         ], just_ref=True)
         self.assertTrue(len(loads) == 0)
 
     def test_ignored_wrapper_struct(self) -> None:
-        allocator = StructType.dummy("PageAllocator", 4)
-        page = StructType.dummy("Page", 12)
+        allocator = CustomTypeType.dummy("PageAllocator", 4)
+        page = CustomTypeType.dummy("Page", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("free-list"), allocator    , PtrType(page)    , 0),
             FieldAccess(Token.dummy("foo")      , PtrType(page), I32(), 4),
@@ -1372,8 +1385,8 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertEqual(loads, [Offset(4)])
 
     def test_no_unnecessary_bitshift_on_ptr(self) -> None:
-        foo = StructType.dummy("Foo", 12)
-        v2 = StructType.dummy("V2", 8)
+        foo = CustomTypeType.dummy("Foo", 12)
+        v2 = CustomTypeType.dummy("V2", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("v")  , foo, v2               , 8),
             FieldAccess(Token.dummy("foo"), v2 , I32(), 4),
@@ -1381,30 +1394,30 @@ class DetermineLoadsToValueTests(unittest.TestCase):
         self.assertEqual(loads, [OffsetLoad(12, I32())])
 
     def test_set_field_on_ptr(self) -> None:
-        small = StructType.dummy("Small", 4)
+        small = CustomTypeType.dummy("Small", 4)
         loads = determine_loads([
             FieldAccess(Token.dummy("value"), PtrType(small), I32(), 0),
         ], just_ref=True)
         self.assertEqual(loads, [])
 
     def test_get_value_on_packed_but_reffed_struct(self) -> None:
-        prestat = StructType.dummy("Prestat", 8)
+        prestat = CustomTypeType.dummy("Prestat", 8)
         loads = determine_loads([
             FieldAccess(Token.dummy("path_len"), prestat, I32(), 4)
         ], base_in_mem=True)
         self.assertEqual(loads, [OffsetLoad(4, I32())])
 
     def test_get_struct_through_ptr(self) -> None:
-        named_type = StructType.dummy("NamedType", 16)
-        taip = StructType.dummy("Type", 12)
+        named_type = CustomTypeType.dummy("NamedType", 16)
+        taip = CustomTypeType.dummy("Type", 12)
         loads = determine_loads([
             FieldAccess(Token.dummy("type"), PtrType(named_type), taip, 4),
         ])
         self.assertEqual(loads, [OffsetLoad(4, taip)])
 
     def test_packed_value_field_through_ptr(self) -> None:
-        token = StructType.dummy("Token", 8)
-        immediate_string = StructType.dummy("ImmediateString", 4)
+        token = CustomTypeType.dummy("Token", 8)
+        immediate_string = CustomTypeType.dummy("ImmediateString", 4)
         loads = determine_loads([
             FieldAccess(Token.dummy("lexeme"), PtrType(token), PtrType(immediate_string), 4),
             FieldAccess(Token.dummy("len"), PtrType(immediate_string), I32(), 0),
@@ -1414,8 +1427,8 @@ class DetermineLoadsToValueTests(unittest.TestCase):
             OffsetLoad(0, I32())])
 
     def test_set_field_through_bitshift(self) -> None:
-        token = StructType.dummy("Token", 8)
-        immediate_string = StructType.dummy("ImmediateString", 4)
+        token = CustomTypeType.dummy("Token", 8)
+        immediate_string = CustomTypeType.dummy("ImmediateString", 4)
         loads = determine_loads([
             FieldAccess(Token.dummy("lexeme"), token, PtrType(immediate_string), 4),
             FieldAccess(Token.dummy("len"), PtrType(immediate_string), I32(), 0),
@@ -1446,7 +1459,7 @@ def determine_loads(fields: List[FieldAccess], just_ref: bool = False, base_in_m
     if len(fields) == 0:
         return []
     field = fields[0]
-    if isinstance(field.source_taip, StructType):
+    if isinstance(field.source_taip, CustomTypeType):
         offset = field.offset
         if base_in_mem or field.source_taip.size() > 8:
             if len(fields) > 1 or just_ref:

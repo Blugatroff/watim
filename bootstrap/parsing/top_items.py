@@ -6,9 +6,9 @@ from lexer import Token
 from parsing.words import Word
 from parsing.types import Type, NamedType
 
-type TypeDefinition = 'Struct | Variant'
+type TypeDefinition = Struct | Variant
 
-type TopItem = 'Import | TypeDefinition | Global | Function | Extern'
+type TopItem = Import | TypeDefinition | Global | Function | Extern
 
 @dataclass(frozen=True, eq=True)
 class Import(Formattable):

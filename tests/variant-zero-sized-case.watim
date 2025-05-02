@@ -6,7 +6,7 @@ variant Foo {
 }
 
 fn main "_start" () {
-	make Zero make Foo.A match {
+	make Zero make Foo.A match Foo {
 		case A -> { drop }
 	}
 }

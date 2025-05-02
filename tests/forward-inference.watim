@@ -26,7 +26,7 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    custom-types=(Map
+    type-definitions=(Map
       "Array"=(Struct
         name=(IDENT Array 1 8),
         generic-parameters=[(IDENT T 1 14)],

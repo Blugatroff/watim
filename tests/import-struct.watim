@@ -13,7 +13,7 @@ check
 (Map
   "./struct.watim"=(Module
     imports=(Map),
-    custom-types=(Map
+    type-definitions=(Map
       "Struct"=(Struct
         name=(IDENT Struct 1 8),
         generic-parameters=[],
@@ -25,7 +25,7 @@ check
     imports=(Map
       "S"=[(Import (IMPORT import 1 1) 0 "./struct.watim" (IDENT S 1 28) [
         (ImportItem (IDENT Struct 1 31) (CustomTypeHandle 0 0))])]),
-    custom-types=(Map
+    type-definitions=(Map
       "Foo"=(Struct
         name=(IDENT Foo 2 8),
         generic-parameters=[],

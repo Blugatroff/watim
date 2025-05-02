@@ -1,7 +1,7 @@
 from typing import Dict, Tuple, List, Iterable, Callable
 
-from util import Ref, indent, reduce, intersperse
-from format import Formattable, FormatInstr, format_instrs, Indent, WriteIndent
+from util import Ref, intersperse
+from format import Formattable, FormatInstr, format_instrs, Indent, WriteIndent, format
 
 class IndexedDict[K, V](Formattable):
     inner: Dict[K, Ref[Tuple[V, int]]]
@@ -73,11 +73,7 @@ class IndexedDict[K, V](Formattable):
         del self.inner[self.pairs.pop(index)[0]]
 
     def __str__(self) -> str:
-        if len(self) == 0:
-            return "(Map)"
-        return "(Map\n" + indent(reduce(
-            lambda a,b: a+",\n"+b,
-            map(lambda kv: f"{format_instrs(kv[0])}={format_instrs(kv[1])}", self.items()))) + ")"
+        return format(self.format_instrs())
 
     def format_instrs(
             self,

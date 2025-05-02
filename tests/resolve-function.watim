@@ -12,7 +12,7 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    custom-types=(Map),
+    type-definitions=(Map),
     globals=(Map),
     functions=(Map
       "flip"=(Function

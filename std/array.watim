@@ -312,7 +312,7 @@ fn findMap<T, O>(self: .Array<T>, pred: (.T -> Maybe<O>)) -> Maybe<O> {
     0 @i
     loop {
         $i $self.len = if { make Maybe<O>.None break }
-        $self $i get<T> $pred -> match {
+        $self $i get<T> $pred -> match Maybe {
             case None -> {}
             case Some -> { make Maybe<O>.Some break }
         }
@@ -395,7 +395,7 @@ fn map-maybe<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> Maybe<O>)) -> Arr
     loop {
         $i $self.len = if { $new break }
         $self $i get<T> @v
-        $v $f -> match {
+        $v $f -> match Maybe {
             case None -> {}
             case Some -> { @v $arena &new $v push<O> }
         }

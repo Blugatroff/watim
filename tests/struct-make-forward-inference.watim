@@ -14,7 +14,7 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    custom-types=(Map
+    type-definitions=(Map
       "Two"=(Struct
         name=(IDENT Two 1 8),
         generic-parameters=[(IDENT T 1 12)],

@@ -8,7 +8,7 @@ variant Foo {
 fn main "_start" () {
 	block {
 		42
-		make Foo.A match {
+		make Foo.A match Foo {
 			case A -> { break }
 			case _ -> { drop drop 8 }
 		} proc_exit

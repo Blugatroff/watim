@@ -1,14 +1,14 @@
 from typing import List, Tuple, NoReturn, TypeGuard, Callable
 from dataclasses import dataclass
 
-from format import Formattable, FormatInstr, format_seq
+from format import Formattable, FormatInstr, format_seq, named_record
 from lexer import Token, TokenType, TokenLocation
 from parsing.types import Type, ForeignType, CustomTypeType, NamedType, I8, I32, I64, Bool, PtrType, GenericType, FunctionType, TupleType, HoleType
-from parsing.words import Word, Words, IfWord, NumberWord, StringWord, InlineRefWord, GetWord, RefWord, LoadWord, BlockAnnotation, BlockWord, StructWord, VariantWord, CastWord, SetWord, StoreWord, InitWord, UnnamedStructWord, IndirectCallWord, SizeofWord, GetFieldWord, TupleMakeWord, TupleUnpackWord, ForeignCallWord, FunRefWord, LoopWord, MatchCase, MatchWord, CallWord, BreakWord, StackAnnotation
-from parsing.top_items import Struct, Variant, Function, Extern, Global, TopItem, TypeDefinition, Import, VariantCase, FunctionSignature
+from parsing.words import Word, Words, IfWord, NumberWord, StringWord, InlineRefWord, GetWord, RefWord, LoadWord, BlockAnnotation, BlockWord, StructWord, VariantWord, CastWord, SetWord, StoreWord, InitWord, IndirectCallWord, SizeofWord, GetFieldWord, MakeTupleWord, TupleUnpackWord, ForeignCallWord, FunRefWord, LoopWord, MatchCase, MatchWord, CallWord, BreakWord, StackAnnotation, StructWordNamed
+from parsing.top_items import Struct, Variant, Function, Extern, Global, TypeDefinition, Import, VariantCase, FunctionSignature
 
 @dataclass
-class ParserException(Exception):
+class ParseException(Exception):
     location: TokenLocation | Tuple[str, str] | None
     message: str
 
@@ -31,14 +31,16 @@ class ParserException(Exception):
 class Module(Formattable):
     path: str
     file: str
-    top_items: List[TopItem]
     imports: List[Import]
     type_definitions: List[TypeDefinition]
     globals: List[Global]
     functions: List[Function | Extern]
-
     def format_instrs(self) -> List[FormatInstr]:
-        return format_seq(self.top_items, multi_line=True)
+        return named_record("Module", [
+            ("imports", format_seq(self.imports)),
+            ("type-definitions", format_seq(self.type_definitions)),
+            ("globals", format_seq(self.globals)),
+            ("functions", format_seq(self.functions))])
 
 @dataclass
 class Parser:
@@ -78,9 +80,9 @@ class Parser:
     def abort(self, message: str) -> NoReturn:
         if self.cursor < len(self.tokens):
             current = self.tokens[self.cursor]
-            raise ParserException(TokenLocation(self.file_path, current.line, current.column), message)
+            raise ParseException(TokenLocation(self.file_path, current.line, current.column), message)
         else:
-            raise ParserException((self.file_path, self.file), message)
+            raise ParseException((self.file_path, self.file), message)
 
 
     # ========================================
@@ -217,7 +219,7 @@ class Parser:
         type_definitions: List[TypeDefinition] = list(filter(is_type_definition, top_items))
         globals: List[Global] = list(filter(is_global, top_items))
         functions: List[Function | Extern] = [f for f in top_items if isinstance(f, Function) or isinstance(f, Extern)]
-        return Module(self.file_path, self.file, top_items, imports, type_definitions, globals, functions)
+        return Module(self.file_path, self.file, imports, type_definitions, globals, functions)
 
     def parse_function(self, start: Token) -> Function:
         signature = self.parse_function_signature()
@@ -298,9 +300,10 @@ class Parser:
         if token.ty == TokenType.IDENT:
             return self.parse_call_word(generic_parameters, token)
         if token.ty == TokenType.BACKSLASH:
+            backslash = token
             token = self.advance(skip_ws=True) # skip `\`
             assert(token is not None)
-            return FunRefWord(self.parse_call_word(generic_parameters, token))
+            return FunRefWord(backslash, self.parse_call_word(generic_parameters, token))
         if token.ty == TokenType.IF:
             brace = self.advance(skip_ws=True)
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
@@ -392,10 +395,15 @@ class Parser:
             if brace is not None and brace.ty == TokenType.LEFT_BRACE:
                 brace = self.advance(skip_ws=True)
                 words = self.parse_words(generic_parameters)
-                return StructWord(token, taip, words.words)
-            return UnnamedStructWord(token, taip)
+                return StructWordNamed(token, taip, words.words)
+            return StructWord(token, taip)
         if token.ty == TokenType.MATCH:
             brace = self.advance(skip_ws=True)
+            if brace is not None and brace.ty != TokenType.LEFT_BRACE:
+                match_taip = self.parse_struct_type(brace, generic_parameters)
+                brace = self.advance(skip_ws=True)
+            else:
+                match_taip = None
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
                 self.abort("Expected `{`")
             cases: List[MatchCase] = []
@@ -403,7 +411,7 @@ class Parser:
                 next = self.peek(skip_ws=True)
                 if next is None or next.ty == TokenType.RIGHT_BRACE:
                     self.advance(skip_ws=True)
-                    return MatchWord(token, tuple(cases), None)
+                    return MatchWord(token, match_taip, tuple(cases), None)
                 case = self.advance(skip_ws=True)
                 if case is None or case.ty != TokenType.CASE:
                     self.abort("expected `case`")
@@ -421,7 +429,7 @@ class Parser:
                     brace = self.advance(skip_ws=True)
                     if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                         self.abort("Expected `}`")
-                    return MatchWord(token, tuple(cases), MatchCase(next, case_name, words.words))
+                    return MatchWord(token, match_taip, tuple(cases), MatchCase(next, case_name, words.words))
                 cases.append(MatchCase(next, case_name, words.words))
         if token.ty == TokenType.LEFT_BRACKET:
             comma = self.advance(skip_ws=True)
@@ -435,7 +443,7 @@ class Parser:
             close = self.advance(skip_ws=True)
             if close is None or close.ty != TokenType.RIGHT_BRACKET:
                 self.abort("Expected `]`")
-            return TupleMakeWord(token, number_or_close)
+            return MakeTupleWord(token, number_or_close)
         if token.ty == TokenType.COLON:
             next = self.advance(skip_ws=True)
             if next is None or next.ty != TokenType.LEFT_PAREN:
@@ -445,13 +453,13 @@ class Parser:
                 next = self.peek(skip_ws=True)
                 if next is not None and next.ty == TokenType.RIGHT_PAREN:
                     self.advance(skip_ws=True)
-                    return StackAnnotation(token, [])
+                    return StackAnnotation(token, ())
                 types.append(self.parse_type(generic_parameters))
                 next = self.advance(skip_ws=True)
                 if next is None:
                     self.abort("Expected `,` or `)`")
                 if next.ty == TokenType.RIGHT_PAREN:
-                    return StackAnnotation(token, types)
+                    return StackAnnotation(token, tuple(types))
                 if next.ty != TokenType.COMMA:
                     self.abort("Expected `,` or `)`")
         self.abort("Expected word")

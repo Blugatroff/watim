@@ -14,7 +14,7 @@ check
 (Map
   "./function.watim"=(Module
     imports=(Map),
-    custom-types=(Map),
+    type-definitions=(Map),
     globals=(Map),
     functions=(Map
       "function-a"=(Function
@@ -47,7 +47,7 @@ check
     imports=(Map
       "F"=[(Import (IMPORT import 1 1) 0 "./function.watim" (IDENT F 1 30) [
         (ImportItem (IDENT function-b 1 33) (FunctionHandle 0 1))])]),
-    custom-types=(Map),
+    type-definitions=(Map),
     globals=(Map),
     functions=(Map
       "main"=(Function

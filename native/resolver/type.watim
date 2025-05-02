@@ -96,19 +96,19 @@ variant CustomType {
     case Variant -> Variant
 }
 fn CustomType-format(fmt: .Formatter, self: .CustomType) {
-    $fmt $self match {
+    $fmt $self match CustomType {
         case Struct -> { Struct-format }
         case Variant -> { Variant-format }
     }
 }
 fn CustomType-name(self: .CustomType) -> .Token {
-    $self match {
+    $self match CustomType {
         case Struct -> { .name }
         case Variant -> { .name }
     }
 }
 fn CustomType-generic-parameters(self: .CustomType) -> .Array<Token> {
-    $self match {
+    $self match CustomType {
         case Struct -> { .generic-parameters }
         case Variant -> { .generic-parameters }
     }
@@ -140,7 +140,7 @@ variant Type {
     case Hole -> Token
 }
 fn format(fmt: .Formatter, self: .Type) { block {
-    $fmt $self match {
+    $fmt $self match Type {
         case Bool -> { "Bool" }
         case I8 -> { "I8" }
         case I32 -> { "I32" }
@@ -159,7 +159,7 @@ fn format(fmt: .Formatter, self: .Type) { block {
     } Fmt:write
 } }
 fn pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
-    $fmt $self match {
+    $fmt $self match Type {
         case Bool -> { "bool" }
         case I8 -> { "i8" }
         case I32 -> { "i32" }
@@ -173,43 +173,43 @@ fn pretty(fmt: .Formatter, lookup: .TypeLookup, self: .Type) { block {
     } Fmt:write
 } }
 fn eq(a: .Type, b: .Type) -> bool {
-    $a match {
-        case Bool -> { $b match { case Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
-        case I8 -> { $b match { case I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
-        case I32 -> { $b match { case I32 -> { 1 1 = } case _ -> { drop 0 1 = } } }
-        case I64 -> { $b match { case I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+    $a match Type {
+        case Bool -> { $b match Type { case Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I8 -> { $b match Type { case I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I32 -> { $b match Type { case I32 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I64 -> { $b match Type { case I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case Ptr -> {
-            ~ $b match {
+            ~ $b match Type {
                 case Ptr -> { ~ eq }
                 case _ -> { drop drop 0 1 = }
             }
         }
         case Custom -> {
-            $b match {
+            $b match Type {
                 case Custom -> { CustomTypeType-eq }
                 case _ -> { drop drop 0 1 = }
             }
         }
         case Fun -> {
-            $b match {
+            $b match Type {
                 case Fun -> { FunType-eq }
                 case _ -> { drop drop 0 1 = }
             }
         }
         case Tuple -> {
-            $b match {
+            $b match Type {
                 case Tuple -> { TupleType-eq }
                 case _ -> { drop drop 0 1 = }
             }
         }
         case Generic -> {
-            .index ~ $b match {
+            .index ~ $b match Type {
                 case Generic -> { .index ~ = }
                 case _ -> { drop drop 0 1 = }
             }
         }
         case Hole -> {
-            drop $b match {
+            drop $b match Type {
                 case Hole -> { drop 1 1 = }
                 case _ -> { drop 0 1 = }
             }
@@ -217,7 +217,7 @@ fn eq(a: .Type, b: .Type) -> bool {
     }
 }
 fn find-hole(self: .Type) -> Maybe<.Token> {
-    $self match {
+    $self match Type {
         case Bool -> { make Maybe<.Token>.None }
         case I8 -> { make Maybe<.Token>.None }
         case I32 -> { make Maybe<.Token>.None }
@@ -228,7 +228,7 @@ fn find-hole(self: .Type) -> Maybe<.Token> {
         case Tuple -> { .items \find-hole Array:findMap<Type, .Token> }
         case Fun -> {
             @fun
-            &fun.parameters \find-hole Array:findMap<Type, .Token> match {
+            &fun.parameters \find-hole Array:findMap<Type, .Token> match Maybe<.Token> {
                 case None -> { &fun.returns \find-hole Array:findMap<Type, .Token> }
                 case _ -> {}
             }
@@ -323,7 +323,7 @@ fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
     $fmt ")" Fmt:write
 }
 fn CustomTypeType-pretty(fmt: .Formatter, thr: .TypeLookup, self: .CustomTypeType) {
-    $fmt $thr &self.type-definition lookup-type match {
+    $fmt $thr &self.type-definition lookup-type match CustomType {
         case Struct  -> { .name }
         case Variant -> { .name }
     } Token-lexeme Fmt:write

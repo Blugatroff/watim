@@ -10,7 +10,7 @@ variant FooOrI32 {
 fn main "_start" () {
     1 2 make Foo
     make FooOrI32.Foo
-    match {
+    match FooOrI32 {
         case I32 -> { drop }
         case Foo -> { @foo $foo.x $foo.y + drop }
         case _ -> { drop }

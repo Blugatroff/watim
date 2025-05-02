@@ -67,7 +67,7 @@ fn insert-assert-no-alloc<K, V>(self: .Map<K, V>, key: K, value: V) -> Maybe<V> 
     }
 }
 fn remove<K, V>(self: .Map<K, V>, key: .K) -> Maybe<V> {
-    $self $key get-index<K, V> match {
+    $self $key get-index<K, V> match Maybe<i32> {
         case None -> { make Maybe<V>.None }
         case Some -> {
             @index
@@ -77,7 +77,7 @@ fn remove<K, V>(self: .Map<K, V>, key: .K) -> Maybe<V> {
     }
 }
 fn get<K, V>(self: .Map<K, V>, key: .K) -> Maybe<.V> {
-    $self $key get-index<K, V> match {
+    $self $key get-index<K, V> match Maybe<i32> {
         case None -> { make Maybe<.V>.None }
         case Some -> { $self flip get-value<K, V> make Maybe<.V>.Some }
     }
@@ -134,7 +134,7 @@ fn get-bs<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Maybe<.V> 
 }
 fn get-bs-with-index<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Maybe<[.V, i32]> {
     $key-ptr $key-len make ByteSlice @key
-    $self &key get-index<ByteSlice, V> match {
+    $self &key get-index<ByteSlice, V> match Maybe<i32> {
         case None -> { make Maybe<[.V, i32]>.None }
         case Some -> {
             @index

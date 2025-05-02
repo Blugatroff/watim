@@ -13,7 +13,7 @@ fn foo() -> Either<i32, bool> {
 
 fn main "_start" () {
 	foo @either
-    &either match {
+    &either match Either<i32, bool> {
 		case Left -> { ~ }
 		case Right -> { drop 3 }
 		case Empty -> { 4 }

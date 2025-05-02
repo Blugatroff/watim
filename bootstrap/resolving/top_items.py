@@ -6,6 +6,9 @@ from lexer import Token
 from resolving.words import FunctionHandle, Scope, LocalId
 from resolving.types import CustomTypeHandle, Type, NamedType
 
+type TopItem = Import | Struct | Variant | Extern | Function
+type TypeDefinition = Struct | Variant
+
 @dataclass
 class ImportItem(Formattable):
     name: Token
@@ -57,8 +60,6 @@ class Variant(Formattable):
             ("generic-parameters", format_seq(self.generic_parameters)),
             ("cases", format_seq(self.cases, multi_line=True))])
 
-CustomType = Struct | Variant
-
 @dataclass
 class FunctionSignature(Formattable):
     generic_parameters: Tuple[Token, ...]
@@ -91,20 +92,18 @@ class LocalName(Formattable):
 @dataclass
 class Local(Formattable):
     name: LocalName
-    taip: Type
-    is_parameter: bool
-    was_reffed: bool = False
+    parameter: Type | None # if this local is a parameter, then this will be non-None
 
     @staticmethod
     def make(taip: NamedType) -> 'Local':
-        return Local(LocalName(taip.name), taip.taip, False)
+        return Local(LocalName(taip.name), None)
 
     @staticmethod
     def make_parameter(taip: NamedType) -> 'Local':
-        return Local(LocalName(taip.name), taip.taip, True)
+        return Local(LocalName(taip.name), taip.taip)
 
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Local", [self.name, self.taip, self.was_reffed, self.is_parameter])
+        return unnamed_record("Local", [self.name, self.parameter])
 
 @dataclass
 class Function(Formattable):

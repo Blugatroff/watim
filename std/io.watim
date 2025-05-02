@@ -12,7 +12,7 @@ fn error-from-raw(code: i32) -> Error { block {
     $code make Error.Raw
 } }
 fn error-to-raw(error: Error) -> i32 {
-    $error match {
+    $error match Error {
         case Noent -> { 44 }
         case Raw -> {}
     }
@@ -28,7 +28,7 @@ fn check(code: i32) {
 }
 
 fn unwrap<T>(res: Result<T, Error>) -> T {
-    $res match {
+    $res match Result {
         case Success -> {}
         case Error -> {
             error-to-raw @code

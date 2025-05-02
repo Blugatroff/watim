@@ -1,12 +1,12 @@
 [== Stdin Compiler ==]
-struct V2 {
-	x: i32
-	y: i32
-	z: i32
+struct V2<S> {
+	x: S
+	y: S
+	z: S
 }
 
 fn main() {
-	make V2 { 5 @y } drop
+	make V2<i32> { 5 @y } drop
 }
 [== Status Compiler ==]
 1

@@ -3,10 +3,12 @@ from dataclasses import dataclass, field
 
 from util import uhex, listtostr, align_to
 from lexer import Token
-from resolving.words import ScopeId, GlobalId, LocalId, ROOT_SCOPE
-from resolving.resolver import I8, I32, I64, Bool, NumberWord, BreakWord, IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicSetStackSize, IntrinsicMemGrow, StringWord
+from checking.words import StringWord, NumberWord
+from resolving.words import ScopeId, GlobalId, LocalId, BreakWord, ROOT_SCOPE
+from checking.intrinsics import IntrinsicMemCopy, IntrinsicMemGrow, IntrinsicDrop, IntrinsicMemFill, IntrinsicSetStackSize
+from parsing.types import I8, I32, I64, Bool
 import monomizer
-from monomizer import Type, Load, is_bitshift, I32InI64, I8InI32, I8InI64, Local, format_type, FunctionHandle, NamedType, GenericFunction, Extern, TupleMakeWord, UnnamedStructWord, Variant, IfWord, StructWord, MatchWord, LoadWord, BlockWord, LoopWord, SizeofWord, FunRefWord, MatchCase, PtrType, CastWord, IntrinsicUninit, IntrinsicFlip, IntrinsicShl, IntrinsicRotl, IntrinsicRotr, IntrinsicAnd, FunctionType, StoreWord, StructType, VariantWord, StructFieldInitWord, TupleUnpackWord, FunctionSignature, IntrinsicStore, IntrinsicAdd, IntrinsicMul, IntrinsicOr, IntrinsicEqual, IntrinsicNotEqual, IntrinsicGreaterEq, IntrinsicLess, IntrinsicShr, IntrinsicNot, IntrinsicGreater, IntrinsicLessEq, IntrinsicDiv, ParameterLocal, IndirectCallWord, ExternHandle, IntrinsicSub, Global, StructHandle, TypeDefinition, ConcreteFunction, Word, GetWord, GetFieldWord, SetWord, RefWord, InitWord, CallWord, IntrinsicMod, Function
+from monomizer import Type, Load, is_bitshift, I32InI64, I8InI32, I8InI64, Local, format_type, FunctionHandle, NamedType, GenericFunction, Extern, TupleMakeWord, UnnamedStructWord, Variant, IfWord, StructWord, MatchWord, LoadWord, BlockWord, LoopWord, SizeofWord, FunRefWord, MatchCase, PtrType, CastWord, IntrinsicUninit, IntrinsicFlip, IntrinsicShl, IntrinsicRotl, IntrinsicRotr, IntrinsicAnd, FunctionType, StoreWord, CustomTypeType, VariantWord, StructFieldInitWord, TupleUnpackWord, FunctionSignature, IntrinsicStore, IntrinsicAdd, IntrinsicMul, IntrinsicOr, IntrinsicEqual, IntrinsicNotEqual, IntrinsicGreaterEq, IntrinsicLess, IntrinsicShr, IntrinsicNot, IntrinsicGreater, IntrinsicLessEq, IntrinsicDiv, ParameterLocal, IndirectCallWord, ExternHandle, IntrinsicSub, Global, CustomTypeHandle, TypeDefinition, ConcreteFunction, Word, GetWord, GetFieldWord, SetWord, RefWord, InitWord, CallWord, IntrinsicMod, Function
 
 @dataclass
 class WatGenerator:
@@ -42,7 +44,7 @@ class WatGenerator:
     def dedent(self) -> None:
         self.indentation -= 1
 
-    def lookup_type_definition(self, handle: StructHandle) -> TypeDefinition:
+    def lookup_type_definition(self, handle: CustomTypeHandle) -> TypeDefinition:
         return self.modules[handle.module].type_definitions[handle.index][handle.instance]
 
     def lookup_extern(self, handle: ExternHandle) -> Extern:
@@ -431,7 +433,7 @@ class WatGenerator:
                 if isinstance(source, I32) and isinstance(taip, FunctionType):
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
-                if isinstance(source, I32) and isinstance(taip, StructType) and taip.size() == 4:
+                if isinstance(source, I32) and isinstance(taip, CustomTypeType) and taip.size() == 4:
                     self.write_line(f";; cast to {format_type(taip)}")
                     return
                 if (isinstance(source, Bool) or isinstance(source, I32)) and isinstance(taip, I64):

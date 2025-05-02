@@ -7,6 +7,29 @@ from lexer import Token
 
 type Type = PrimitiveType | PtrType | TupleType | GenericType | CustomTypeType | FunctionType | HoleType
 
+def with_generics(taip: Type, generics: Tuple[Type, ...]) -> Type:
+    match taip:
+        case PtrType(child):
+            return PtrType(with_generics(child, generics))
+        case CustomTypeType(name, type_definition, generic_arguments):
+            return CustomTypeType(
+                name,
+                type_definition,
+                tuple(with_generics(arg, generics) for arg in generic_arguments))
+        case TupleType(token, items):
+            return TupleType(
+                token,
+                tuple(with_generics(item, generics) for item in items))
+        case FunctionType(token, parameters, returns):
+            return FunctionType(
+                token,
+                tuple(with_generics(param, generics) for param in parameters),
+                tuple(with_generics(ret, generics)   for ret   in returns))
+        case GenericType(token, index):
+            return generics[index]
+        case other:
+            return other
+
 @dataclass(frozen=True, eq=True)
 class PtrType(Formattable):
     child: Type
@@ -20,7 +43,7 @@ class CustomTypeHandle(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("CustomTypeHandle", [self.module, self.index])
 
-@dataclass(eq=True)
+@dataclass(eq=True, frozen=True)
 class CustomTypeType(Formattable):
     name: Token = field(compare=False)
     type_definition: CustomTypeHandle

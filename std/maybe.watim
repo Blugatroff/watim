@@ -8,49 +8,49 @@ variant Maybe<T> {
 }
 
 fn ref<T>(self: .Maybe<T>) -> Maybe<.T> {
-    $self match {
+    $self match Maybe<T> {
         case None -> { make Maybe<.T>.None }
         case Some -> { make Maybe<.T>.Some }
     }
 }
 
 fn or-default<T>(o: Maybe<T>, default: T) -> T {
-    $o match {
+    $o match Maybe<T> {
         case Some -> {}
         case None -> { $default }
     }
 }
 
 fn assert-none<T>(o: Maybe<T>) {
-    $o match {
+    $o match Maybe<T> {
         case Some -> { drop 0 0 / drop }
         case None -> {}
     }
 }
 
 fn assert-some<T>(o: Maybe<T>) -> T {
-    $o match {
+    $o match Maybe<T> {
         case Some -> {}
         case None -> { unreachable<T> }
     }
 }
 
 fn is-some<T>(o: .Maybe<T>) -> bool {
-    1 $o match {
+    1 $o match Maybe<T> {
         case Some -> { drop 1 }
         case None -> { 0 }
     } =
 }
 
 fn is-none<T>(o: .Maybe<T>) -> bool {
-    0 $o match {
+    0 $o match Maybe<T> {
         case Some -> { drop 1 }
         case None -> { 0 }
     } =
 }
 
 fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>) {
-    $self match {
+    $self match Maybe<T> {
         case None -> { $fmt "None" Fmt:write }
         case Some -> {
             $fmt "(Some " Fmt:write
@@ -61,7 +61,7 @@ fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>
 }
 
 fn print<T>(fd: i32, print-inner: (i32, .T -> i32), self: .Maybe<T>) -> i32 { block (-> i32) {
-    $self match {
+    $self match Maybe<T> {
         case None -> { $fd "None" IO:write-all }
         case Some -> {
             $fd "(Some " IO:write-all Core:dup<i32> 0 /= if { break } drop
