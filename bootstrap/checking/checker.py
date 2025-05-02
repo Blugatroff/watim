@@ -667,8 +667,7 @@ class WordCtx:
 
         false_stack = stack.make_child()
 
-        true_scope_id = word.true_branch.id
-        true_words, true_words_diverge = self.check_words(true_stack, true_scope_id, list(word.true_branch.words))
+        true_words, true_words_diverge = self.check_words(true_stack, word.true_branch.id, list(word.true_branch.words))
         true_parameters = true_stack.negative
 
         if true_words_diverge and (word.false_branch is None or len(word.false_branch.words) == 0):
@@ -687,12 +686,11 @@ class WordCtx:
                 list(remaining_stack.negative),
                 None if diverges else list(remaining_stack.stack),
                 Scope(word.true_branch.id, true_words),
-                Scope(self.scope, checked_remaining_words),
+                Scope(word.false_branch.id, checked_remaining_words),
                 diverges)], diverges)
-        false_scope_id = self.scope if word.false_branch is None else word.false_branch.id
         false_words, false_words_diverge = self.check_words(
                 false_stack,
-                false_scope_id,
+                word.false_branch.id,
                 [] if word.false_branch is None else list(word.false_branch.words))
         if not true_words_diverge and not false_words_diverge:
             if not true_stack.compatible_with(false_stack):
@@ -726,8 +724,8 @@ class WordCtx:
             word.token,
             parameters,
             returns,
-            Scope(true_scope_id, true_words),
-            Scope(false_scope_id, false_words),
+            Scope(word.true_branch.id, true_words),
+            Scope(word.false_branch.id, false_words),
             diverges)], diverges)
 
     def check_loop(self, stack: Stack, word: resolved.words.LoopWord) -> Tuple[List[Word], bool]:

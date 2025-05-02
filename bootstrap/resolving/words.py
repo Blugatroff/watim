@@ -1,7 +1,7 @@
 from typing import List, Tuple
 from dataclasses import dataclass
 
-from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_str, format_optional
+from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_str
 from lexer import Token
 
 from resolving.intrinsics import IntrinsicType
@@ -141,12 +141,12 @@ class FunRefWord(Formattable):
 class IfWord(Formattable):
     token: Token
     true_branch: Scope
-    false_branch: Scope | None
+    false_branch: Scope
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("If", [
             ("token", self.token),
             ("true-branch", self.true_branch),
-            ("false-branch", format_optional(self.false_branch))])
+            ("false-branch", self.false_branch)])
 
 @dataclass
 class BlockAnnotation(Formattable):

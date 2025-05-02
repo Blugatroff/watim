@@ -121,7 +121,7 @@ class WordResolver:
                 return resolved.IfWord(
                     word.token,
                     self.resolve_scope(word.true_words.words),
-                    self.resolve_scope(word.false_words.words) if word.false_words is not None else None),
+                    self.resolve_scope(word.false_words.words if word.false_words is not None else ())),
             case parsing.LoopWord():
                 return resolved.LoopWord(word.token, self.resolve_scope(word.words.words), self.resolve_block_annotation(word.annotation)),
             case parsing.BlockWord():

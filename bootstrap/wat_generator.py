@@ -352,7 +352,7 @@ class WatGenerator:
                 self.write_line("call $intrinsic:flip-i64-i64")
             case IntrinsicShl(token, taip):
                 if isinstance(taip, I64):
-                    self.write_line("i64.rotl")
+                    self.write_line("i64.shl")
                 else:
                     self.write_line("i32.shl")
             case IntrinsicShr(token, taip):
