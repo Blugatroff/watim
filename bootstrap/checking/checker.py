@@ -4,13 +4,13 @@ import os
 import copy
 
 from util import seq_eq
-from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_list, format_dict, unnamed_record, format_optional
+from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_dict, unnamed_record, format_optional
 from indexed_dict import IndexedDict
 from lexer import Token
 from parsing.types import I8, I32, I64, Bool
 import resolving as resolved
 from resolving.top_items import LocalName, FunctionSignature, Import, Extern, TypeDefinition, Struct, Variant, Global
-from resolving.types import GenericType, HoleType, NamedType, Type, CustomTypeHandle, PtrType, CustomTypeType, FunctionType, TupleType, with_generics
+from resolving.types import GenericType, HoleType, NamedType, Type, PtrType, CustomTypeType, FunctionType, TupleType, with_generics
 from resolving.type_resolver import TypeLookup
 from resolving.words import NumberWord, BreakWord, ROOT_SCOPE, IntrinsicType
 from resolving.intrinsics import INTRINSIC_TO_LEXEME
@@ -47,18 +47,12 @@ class Function(Formattable):
 @dataclass
 class CheckException(Exception):
     path: str
-    file: str
     token: Token
     message: str
 
     def display(self) -> str:
-        if self.token is None:
-            lines = self.file.splitlines()
-            line = len(lines) + 1
-            column = len(lines[-1]) + 1 if len(lines) != 0 else 1
-        else:
-            line = self.token.line
-            column = self.token.column
+        line = self.token.line
+        column = self.token.column
         return f"{self.path}:{line}:{column} {self.message}"
 
 @dataclass
@@ -123,36 +117,11 @@ class CheckCtx:
     static_data: bytearray
 
     def abort(self, token: Token, message: str) -> NoReturn:
-        raise CheckException(self.resolved_modules.index_key(self.module_id), "", token, message)
+        raise CheckException(self.resolved_modules.index_key(self.module_id), token, message)
 
     @property
     def module(self) -> resolved.Module:
         return self.resolved_modules.index(self.module_id)
-    def forbid_directly_recursive_types(self, type_lookup: TypeLookup):
-        for i in range(len(type_lookup.type_definitions)):
-            handle = CustomTypeHandle(type_lookup.module, i)
-            if self.is_directly_recursive(type_lookup, handle, []):
-                token = type_lookup.lookup(handle).name
-                self.abort(token, "structs and variants cannot be recursive")
-
-    def is_directly_recursive(self, type_lookup: TypeLookup, handle: CustomTypeHandle, stack: List[CustomTypeHandle]) -> bool:
-        if handle in stack:
-            return True
-        taip = type_lookup.lookup(handle)
-        if isinstance(taip, Struct):
-            for field in taip.fields:
-                if isinstance(field.taip, CustomTypeType):
-                    if self.is_directly_recursive(type_lookup, field.taip.type_definition, [handle] + stack):
-                        return True
-            return False
-        if isinstance(taip, Variant):
-            for case in taip.cases:
-                if isinstance(case.taip, CustomTypeType):
-                    if self.is_directly_recursive(type_lookup, case.taip.type_definition, [handle] + stack):
-                        return True
-            return False
-        assert_never(taip)
-
     def generic_arguments_mismatch_error(self, token: Token, expected: int, actual: int):
         msg = f"expected {expected} generic arguments, not {actual}"
         self.abort(token, msg)
@@ -208,11 +177,6 @@ class WordCtx:
     reachable: bool = True
     scope = ROOT_SCOPE
     struct_literal_ctx: Tuple[Type, ...] | None = None
-
-    def with_env(self, env: Env) -> 'WordCtx':
-        new = copy.copy(self)
-        new.env = env
-        return new
 
     def with_break_stacks(self, break_stacks: List[BreakStack], block_returns: Tuple[Type, ...] | None) -> 'WordCtx':
         new = copy.copy(self)
@@ -311,7 +275,6 @@ class WordCtx:
             self.expect(stack, word.token, (self.struct_literal_ctx[word.field_index],))
             return ([StructFieldInitWord(word.token, word.field_index)], False)
         assert_never(word)
-
 
     def check_get_local(self, stack: Stack, word: resolved.words.GetWord) -> Tuple[List[Word], bool]:
         if isinstance(word.local_id, resolved.GlobalId):

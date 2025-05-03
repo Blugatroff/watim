@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Sequence, NoReturn
+from typing import Dict, Tuple, Sequence, NoReturn, Iterable, assert_never
 from dataclasses import dataclass
 
 from indexed_dict import IndexedDict
@@ -6,7 +6,7 @@ from lexer import Token
 import parsing.parser as parsed
 from parsing.types import I8, I32, I64, Bool, GenericType, HoleType
 from resolving.types import Type, NamedType, PtrType, FunctionType, TupleType, CustomTypeType, CustomTypeHandle
-from resolving.top_items import Import, TypeDefinition
+from resolving.top_items import Import, TypeDefinition, Struct, Variant
 from resolving.module import Module, ResolveException
 
 @dataclass
@@ -54,6 +54,31 @@ class TypeLookup:
             return taip.token.lexeme
         if isinstance(taip, HoleType):
             return taip.token.lexeme
+
+    def find_directly_recursive_types(self) -> Iterable[CustomTypeHandle]:
+        for i in range(len(self.type_definitions)):
+            handle = CustomTypeHandle(self.module, i)
+            if self.is_directly_recursive(handle, ()):
+                yield handle
+
+    def is_directly_recursive(self, handle: CustomTypeHandle, stack: Tuple[CustomTypeHandle, ...] = ()) -> bool:
+        if handle in stack:
+            return True
+        taip = self.lookup(handle)
+        match taip:
+            case Struct():
+                for field in taip.fields:
+                    if isinstance(field.taip, CustomTypeType):
+                        if self.is_directly_recursive(field.taip.type_definition, (handle,) + stack):
+                            return True
+            case Variant():
+                for case in taip.cases:
+                    if isinstance(case.taip, CustomTypeType):
+                        if self.is_directly_recursive(case.taip.type_definition, (handle,) + stack):
+                            return True
+            case other:
+                assert_never(other)
+        return False
 
 @dataclass
 class TypeResolver:

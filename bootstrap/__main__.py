@@ -84,7 +84,9 @@ def check_modules(resolved_modules: IndexedDict[str, resolved.Module]) -> Indexe
                 type_lookup,
                 id,
                 bytearray())
-        ctx.forbid_directly_recursive_types(type_lookup)
+        for handle in type_lookup.find_directly_recursive_types():
+            token = type_lookup.lookup(handle).name
+            raise CheckException(module_path, token, "structs and variants cannot be recursive")
         checked_modules[module_path] = checked.Module(
                 module.path,
                 module.id,
