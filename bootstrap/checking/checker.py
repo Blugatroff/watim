@@ -108,34 +108,6 @@ class BreakStack:
     reachable: bool
 
 @dataclass
-class StructLitContext:
-    struct: CustomTypeHandle
-    generic_arguments: Tuple[Type, ...]
-    fields: Dict[str, Tuple[int, Type]]
-
-type Env = Dict[LocalId, Local]
-
-@dataclass
-class ResolveWordContext:
-    env: Env
-    break_stacks: List[BreakStack] | None
-    block_returns: List[Type] | None
-    reachable: bool
-    struct_context: StructLitContext | None
-
-    def with_env(self, env: Env) -> 'ResolveWordContext':
-        return ResolveWordContext(env, self.break_stacks, self.block_returns, self.reachable, self.struct_context)
-
-    def with_break_stacks(self, break_stacks: List[BreakStack], block_returns: List[Type] | None) -> 'ResolveWordContext':
-        return ResolveWordContext(self.env, break_stacks, block_returns, self.reachable, self.struct_context)
-
-    def with_reachable(self, reachable: bool) -> 'ResolveWordContext':
-        return ResolveWordContext(self.env, self.break_stacks, self.block_returns, reachable, self.struct_context)
-
-    def with_struct_context(self, struct_context: StructLitContext) -> 'ResolveWordContext':
-        return ResolveWordContext(self.env, self.break_stacks, self.block_returns, self.reachable, struct_context)
-
-@dataclass
 class BlockAnnotation:
     parameters: Tuple[Type, ...]
     returns: Tuple[Type, ...]
@@ -221,6 +193,8 @@ class CheckCtx:
             offset = len(self.static_data)
             self.static_data.extend(data)
         return offset
+
+type Env = Dict[LocalId, Local]
 
 @dataclass
 class WordCtx:
