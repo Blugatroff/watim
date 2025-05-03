@@ -17,6 +17,7 @@ from resolving.intrinsics import INTRINSIC_TO_LEXEME
 import parsing.parser as parser
 from checking.intrinsics import IntrinsicShr, IntrinsicEqual, IntrinsicStore, IntrinsicNot, IntrinsicUninit, IntrinsicSetStackSize, IntrinsicRotr, IntrinsicGreater, IntrinsicGreaterEq, IntrinsicLess, IntrinsicLessEq, IntrinsicNotEqual, IntrinsicFlip, IntrinsicMemFill, IntrinsicAdd, IntrinsicSub, IntrinsicDiv, IntrinsicDrop, IntrinsicMemGrow, IntrinsicMod, IntrinsicMul, IntrinsicAnd, IntrinsicOr, IntrinsicShl, IntrinsicWord, IntrinsicRotl, IntrinsicMemCopy
 from checking.words import Word, FunctionHandle, StringWord, InitWord, RefWord, GetWord, CallWord, SizeofWord, UnnamedStructWord, StructWord, FunRefWord, StoreWord, LoadWord, MatchCase, MatchWord, VariantWord, LoopWord, CastWord, TupleMakeWord, TupleUnpackWord, GetFieldWord, IfWord, SetWord, BlockWord, IndirectCallWord, FieldAccess, Scope, ScopeId, GlobalId, LocalId, StructFieldInitWord
+from checking.stack import Stack
 
 @dataclass
 class Local(Formattable):
@@ -99,134 +100,6 @@ def determine_compilation_order(modules: Dict[str, parser.Module]) -> IndexedDic
             ordered[module_path] = module
             unprocessed.delete(i)
     return ordered
-
-@dataclass
-class Stack(Formattable):
-    parent: 'Stack | None'
-    stack: List[Type]
-    negative: List[Type]
-
-    @staticmethod
-    def empty() -> 'Stack':
-        return Stack(None, [], [])
-
-    def append(self, taip: Type):
-        self.push(taip)
-
-    def push(self, taip: Type):
-        self.stack.append(taip)
-
-    def push_many(self, taips: Sequence[Type]):
-        for taip in taips:
-            self.append(taip)
-
-    def pop(self) -> Type | None:
-        if len(self.stack) != 0:
-            return self.stack.pop()
-        if self.parent is None:
-            return None
-        taip = self.parent.pop()
-        if taip is None:
-            return None
-        self.negative.append(taip)
-        return taip
-
-    def drop_n(self, n: int):
-        for _ in range(n):
-            self.pop()
-
-    def pop_n(self, n: int) -> List[Type]:
-        popped: List[Type] = []
-        while n != 0:
-            popped_type = self.pop()
-            if popped_type is None:
-                break
-            popped.append(popped_type)
-            n -= 1
-        popped.reverse()
-        return popped
-
-    def clone(self) -> 'Stack':
-        return Stack(self.parent.clone() if self.parent is not None else None, list(self.stack), list(self.negative))
-
-    def dump(self) -> List[Type]:
-        dump: List[Type] = []
-        while True:
-            t = self.pop()
-            if t is None:
-                dump.reverse()
-                return dump
-            dump.append(t)
-
-    def make_child(self) -> 'Stack':
-        return Stack(self.clone(), [], [])
-
-    def apply(self, other: 'Stack'):
-        for _ in other.negative:
-            self.pop()
-        for added in other.stack:
-            self.append(added)
-
-    def use(self, n: int):
-        popped = []
-        for _ in range(n):
-            taip = self.pop()
-            assert(taip is not None)
-            popped.append(taip)
-        for taip in reversed(popped):
-            self.append(taip)
-
-    def compatible_with(self, other: 'Stack') -> bool:
-        if len(self) != len(other):
-            return False
-        self.use(len(other.stack))
-        other.use(len(self.stack))
-        negative_is_fine = self.negative == other.negative
-        positive_is_fine = self.stack == other.stack
-        return negative_is_fine and positive_is_fine
-
-    def __len__(self) -> int:
-        return len(self.stack) + (len(self.parent) if self.parent is not None else 0)
-
-    def __getitem__(self, index: int) -> Type:
-        if index > 0:
-            return self.stack[index]
-        if abs(index) <= len(self.stack):
-            return self.stack[index]
-        assert(self.parent is not None)
-        return self.parent[index + len(self.stack)]
-
-    def __eq__(self, b: object) -> bool:
-        if not isinstance(b, Stack):
-            return False
-        a = self
-        ia = len(a.stack)
-        ib = len(b.stack)
-        while True:
-            while ia == 0 and a.parent is not None:
-                a = a.parent
-                ia = len(a.stack)
-            while ib == 0 and b.parent is not None:
-                b = b.parent
-                ib = len(b.stack)
-            if (a is None) ^ (b is None):
-                return False
-            a_end = ia == 0 and a.parent is None
-            b_end = ib == 0 and b.parent is None
-            if a_end ^ b_end:
-                return False
-            if a_end and b_end:
-                return True
-            if a.stack[ia - 1] != b.stack[ib - 1]:
-                return False
-            ib -= 1
-            ia -= 1
-
-    def format_instrs(self) -> List[FormatInstr]:
-        return named_record("Stack", [
-            ("parent", self.parent),
-            ("stack", format_list(self.stack)),
-            ("negative", format_list(self.negative))])
 
 @dataclass
 class BreakStack:
