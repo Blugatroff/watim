@@ -1370,7 +1370,7 @@ fn resolve-mk-struc(ctx: .WordCtx, stack: .Stack, word: .P:MakeStruct) -> Result
         case Struct -> {}
         case Variant -> {
             drop
-            $ctx.ctx &word.token "can not make this type" abort<[Word, bool]> break
+            $ctx.ctx &word.token "named `make` can only be used for structs" abort<[Word, bool]> break
         }
     } @struc
 
@@ -2891,13 +2891,16 @@ fn resolve-imports(ctx: .Ctx) -> Result<Map<ByteSlice, Array<Import>>, ResolveEr
     $temp-arena $save Arena:restore
 }
 
-fn resolve-import-items(ctx: .Ctx, imported-module-id: ModuleId, items: .Array<Token>) -> Result<Array<ImportItem>, ResolveError> {
+fn resolve-import-items(ctx: .Ctx, imported-module-id: ModuleId, items: .Array<P:ImportItem>) -> Result<Array<ImportItem>, ResolveError> {
     $ctx.persistent $items.len Array:new-with-capacity<ImportItem> @resolved-items
     $ctx.parsed-modules $imported-module-id.index Map:get-value<ByteSlice, P:Module> @imported-module
     0 @i
     loop {
         $items.len $i = if { $resolved-items make Result<Array<ImportItem>, ResolveError>.Success break }
-        $items $i Array:get<Token> @item
+        $items $i Array:get<P:ImportItem> match {
+            case Item -> {}
+            case VariantWithConstructors -> { .name }
+        } @item
         $imported-module $imported-module-id $item lookup-item-in-module match {
             case None -> {
                 $ctx $item "not found" abort<Array<ImportItem>> break

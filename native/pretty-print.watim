@@ -1,7 +1,7 @@
 import "../std/core.watim" as Core
 import "../std/io.watim" as IO
 import "../std/array.watim" as Array (Array)
-import "./parser.watim" as Parser (Module, TopItem, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation)
+import "./parser.watim" as Parser (Module, TopItem, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation, ImportItem)
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-print)
 
 struct PrettyPrinter {
@@ -131,7 +131,7 @@ fn Import-pretty(self: .Import, pp: .PrettyPrinter) -> i32 { block {
         0 @i
         loop {
             $self.items.len $i = if { 0 break }
-            $pp &self.items $i Array:get<Token> write-token Core:dup<i32> 0 /= if { break } drop
+            &self.items $i Array:get<ImportItem> $pp ImportItem-pretty Core:dup<i32> 0 /= if { break } drop
             $i 1 + #i
             $self.items.len $i /= if {
                 $pp "," write Core:dup<i32> 0 /= if { break } drop
@@ -140,6 +140,27 @@ fn Import-pretty(self: .Import, pp: .PrettyPrinter) -> i32 { block {
         $pp ")" write Core:dup<i32> 0 /= if { break } drop
     }
     0
+} }
+
+fn ImportItem-pretty(self: .ImportItem, pp: .PrettyPrinter) -> i32 { block {
+    $self match {
+        case Item -> { $pp flip write-token }
+        case VariantWithConstructors -> {
+            @imp
+            $pp &imp.name write-token Core:dup<i32> 0 /= if { break } drop
+            $pp "(" write Core:dup<i32> 0 /= if { break } drop
+            0 @i
+            loop {
+                $imp.constructors.len $i = if { 0 break }
+                $pp &imp.constructors $i Array:get<Token> write-token Core:dup<i32> 0 /= if { break } drop
+                $i 1 + #i
+                $imp.constructors.len $i /= if {
+                    $pp "," write Core:dup<i32> 0 /= if { break } drop
+                }
+            } Core:dup<i32> 0 /= if { break } drop
+            $pp ")" write
+        }
+    }
 } }
 
 fn Function-pretty(self: .Function, pp: .PrettyPrinter) -> i32 { block {

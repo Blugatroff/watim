@@ -11,22 +11,46 @@ import "../std/util.watim" as Util (i32-format)
 
 import "./lexer.watim" as Lexer (Token, TokenTy, Token-ty, TokenTy-name, Token-lexeme, Token-format, Token-print, Token-location, Token-column, Token-eq-by-lexeme, Token-string-content)
 
+struct VariantImport {
+    name: Token
+    constructors: Array<Token>
+}
+fn VariantImport-format(fmt: .Formatter, self: .VariantImport) {
+    $fmt "(VariantImport " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.constructors Array:format<Token>
+    $fmt ")" Fmt:write
+}
+
+variant ImportItem {
+    case Item -> Token
+    case VariantWithConstructors -> VariantImport
+}
+fn ImportItem-format(fmt: .Formatter, self: .ImportItem) {
+    $fmt $self match {
+        case Item -> { Token-format }
+        case VariantWithConstructors -> { VariantImport-format }
+    }
+}
+
 struct Import {
     start: Token
     path: Token
     qualifier: Token
-    items: Array<Token>
+    items: Array<ImportItem>
 }
 fn Import-format(fmt: .Formatter, self: .Import) {
-    $fmt "(Import " Fmt:write
-    $fmt &self.start Token-format
-    $fmt " " Fmt:write
-    $fmt &self.path Token-format
-    $fmt " " Fmt:write
-    $fmt &self.qualifier Token-format
-    $fmt " " Fmt:write
-    $fmt \Token-format &self.items Array:format<Token>
-    $fmt ")" Fmt:write
+    $fmt "(Import\n" Fmt:write $fmt Fmt:indent
+    $fmt Fmt:write-indent $fmt "start=" Fmt:write
+    $fmt &self.start Token-format $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent $fmt "path=" Fmt:write
+    $fmt &self.path Token-format $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent $fmt "qualifier=" Fmt:write
+    $fmt &self.qualifier Token-format $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent $fmt "items=" Fmt:write
+    $fmt \ImportItem-format &self.items Array:format<_>
+    $fmt Fmt:dedent $fmt ")" Fmt:write
 }
 
 struct ForeignCustomType {
@@ -781,7 +805,7 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt "(Module\n" Fmt:write $fmt Fmt:indent
     $fmt Fmt:write-indent
     $fmt "imports=" Fmt:write
-    $fmt \Import-format &self.imports Array:format<_>
+    $fmt \Import-format &self.imports Array:format-multi-line<_>
     $fmt ",\n" Fmt:write $fmt Fmt:write-indent
     $fmt "type-definitions=" Fmt:write
     $fmt \TypeDefinition-format &self.type-definitions Array:format<_>
@@ -865,41 +889,92 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
                     $token ~ @start
                     $path ~ @path
                     $qualifier ~ @qualifier
-                    Array:new<Token> @items
+                    Array:new<ImportItem> @items
                 }
                 make TopItem.Import
                 make Result<TopItem, ParseError>.Success break
             }
-            Array:new<Token> @items
+            Array:new<ImportItem> @items
             $parser advance drop // drop the `(`
             loop {
                 $parser advance match {
-                    case None -> { $parser "expected `)` or an identifier" abort<Array<Token>> break }
+                    case None -> { $parser "expected `)` or an identifier" abort<Array<ImportItem>> break }
                     case Some -> {}
                 } @item
                 $item Token-ty match TokenTy {
                     case TOKEN_RIGHT_PAREN -> {
-                        $items make Result<Array<Token>, ParseError>.Success break
+                        $items make Result<Array<ImportItem>, ParseError>.Success break
                     }
                     case TOKEN_IDENT -> {
-                        $parser.arena &items $item ~ Array:push<Token>
                         $parser peek match Maybe<TokenTy> {
-                            case None -> { $parser "expected `)` or `,`" abort<Array<Token>> break }
+                            case None -> { $parser "expected `(`, `)` or `,`" abort<Array<ImportItem>> break }
                             case Some -> { }
                         } @comma
                         $comma Token-ty match TokenTy {
-                            case TOKEN_COMMA -> { $parser advance drop }
-                            case TOKEN_RIGHT_PAREN -> {
+                            case TOKEN_COMMA -> {
+                                $parser.arena &items $item ~ make ImportItem.Item Array:push<ImportItem>
                                 $parser advance drop
-                                $items make Result<Array<Token>, ParseError>.Success break
+                            }
+                            case TOKEN_RIGHT_PAREN -> {
+                                $parser.arena &items $item ~ make ImportItem.Item Array:push<ImportItem>
+                                $parser advance drop
+                                $items make Result<Array<ImportItem>, ParseError>.Success break
+                            }
+                            case TOKEN_LEFT_PAREN -> {
+                                $parser advance drop
+                                Array:new<Token> @constructors
+                                loop {
+                                    $parser advance match {
+                                        case None -> { $parser "expected `)` or a constructor" abort<Array<Token>> break }
+                                        case Some -> {}
+                                    } @constructor
+                                    $constructor Token-ty match {
+                                        case TOKEN_RIGHT_PAREN -> {
+                                            $constructors make Result<Array<Token>, ParseError>.Success break
+                                        }
+                                        case TOKEN_IDENT -> {
+                                            $parser.arena &constructors $constructor ~ Array:push<Token>
+                                            $parser peek match {
+                                                case None -> { $parser "expected `)` or `,`" abort<Array<Token>> break }
+                                                case Some -> {}
+                                            } @comma
+                                            $comma Token-ty match {
+                                                case TOKEN_COMMA -> { $parser advance drop }
+                                                case TOKEN_RIGHT_PAREN -> {
+                                                    $parser advance drop
+                                                    $constructors make Result<Array<Token>, ParseError>.Success break
+                                                }
+                                                case _ -> { drop $parser "expected `)` or `,`" abort<Array<Token>> break }
+                                            }
+                                        }
+                                        case _ -> {
+                                            drop $parser "expected `)` or `,`" abort<Array<Token>> break
+                                        }
+                                    }
+                                } match {
+                                    case Error -> { make Result<Array<ImportItem>, ParseError>.Error break }
+                                    case Success -> {}
+                                } @constructors
+
+                                $parser peek match Maybe<TokenTy> {
+                                    case None -> { $parser "`)` or `,`" abort<Array<ImportItem>> break }
+                                    case Some -> { }
+                                } Token-ty match {
+                                    case TOKEN_COMMA -> { $parser advance drop }
+                                    case _ -> { drop }
+                                }
+
+                                $parser.arena &items
+                                $item ~ $constructors make VariantImport make ImportItem.VariantWithConstructors
+                                Array:push<_>
                             }
                             case _ -> {
-                                drop $parser "expected `)` or `,`" abort<Array<Token>> break
+                                drop $parser "expected `)` or `,`" abort<Array<ImportItem>> break
                             }
                         }
                     }
                     case _ -> {
-                        drop $parser "expected `)` or an identifier" abort<Array<Token>> break
+                        drop $parser "expected `)` or an identifier" abort<Array<ImportItem>> break
                     }
                 }
             } match {

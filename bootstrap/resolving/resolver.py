@@ -5,7 +5,7 @@ import os
 from util import normalize_path
 from indexed_dict import IndexedDict
 from lexer import Token
-import parsing.parser as parser
+import parsing as parser
 from resolving.words import Scope
 from resolving.top_items import Function, FunctionSignature, Import, Global, Extern, Local, ImportItem, Struct, Variant, VariantCase, TypeDefinition
 from resolving.env import Env
@@ -70,7 +70,11 @@ class ModuleResolver:
         path = normalize_path(path + "/" + imp.file_path.lexeme[1:-1])
         imported_module_id = modules.index_of(path)
         imported_module = modules.index(imported_module_id)
-        def resolve_item(item_name: Token) -> ImportItem:
+        def resolve_item(parsed_item: parser.ImportItem) -> ImportItem:
+            if isinstance(parsed_item, Token):
+                item_name = parsed_item
+            else:
+                item_name = parsed_item.name
             item = imported_module.lookup_item(imported_module_id, item_name)
             if item is None:
                 raise ResolveException(importing_module_path, item_name, "not found")

@@ -1,0 +1,25 @@
+[== Stdin Compiler ==]
+import "./std/maybe.watim" as Maybe (Maybe(None, Some), Some(Some))
+import "./std/result.watim" as Result (Result())
+[== Args Compiler ==]
+parse
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Module
+  imports=[
+    (Import
+      start=(IMPORT import 1 1),
+      path=(STRING "./std/maybe.watim" 1 8),
+      qualifier=(IDENT Maybe 1 31),
+      items=[(VariantImport (IDENT Maybe 1 38) [(IDENT None 1 44), (IDENT Some 1 50)]), (VariantImport (IDENT Some 1 57) [(IDENT Some 1 62)])]),
+    (Import
+      start=(IMPORT import 2 1),
+      path=(STRING "./std/result.watim" 2 8),
+      qualifier=(IDENT Result 2 32),
+      items=[(VariantImport (IDENT Result 2 40) [])])],
+  type-definitions=[],
+  globals=[],
+  functions=[])

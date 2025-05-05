@@ -5,7 +5,7 @@ from format import Formattable, FormatInstr, format_seq, named_record
 from lexer import Token, TokenType, TokenLocation
 from parsing.types import Type, ForeignType, CustomTypeType, NamedType, I8, I32, I64, Bool, PtrType, GenericType, FunctionType, TupleType, HoleType
 from parsing.words import Word, Words, IfWord, NumberWord, StringWord, InlineRefWord, GetWord, RefWord, LoadWord, BlockAnnotation, BlockWord, StructWord, VariantWord, CastWord, SetWord, StoreWord, InitWord, IndirectCallWord, SizeofWord, GetFieldWord, MakeTupleWord, TupleUnpackWord, ForeignCallWord, FunRefWord, LoopWord, MatchCase, MatchWord, CallWord, BreakWord, StackAnnotation, StructWordNamed
-from parsing.top_items import Struct, Variant, Function, Extern, Global, TypeDefinition, Import, VariantCase, FunctionSignature
+from parsing.top_items import Struct, Variant, Function, Extern, Global, TypeDefinition, Import, VariantCase, FunctionSignature, VariantImport
 
 @dataclass
 class ParseException(Exception):
@@ -37,7 +37,7 @@ class Module(Formattable):
     functions: List[Function | Extern]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Module", [
-            ("imports", format_seq(self.imports)),
+            ("imports", format_seq(self.imports, multi_line=True)),
             ("type-definitions", format_seq(self.type_definitions)),
             ("globals", format_seq(self.globals)),
             ("functions", format_seq(self.functions))])
@@ -117,8 +117,28 @@ class Parser:
                             self.abort("expected a function or type to import")
                         if item.ty == TokenType.RIGHT_PAREN:
                             break
-                        items.append(item)
                         comma = self.advance(skip_ws=True)
+                        if comma is None or comma.ty == TokenType.RIGHT_PAREN:
+                            items.append(item)
+                            break
+                        if comma.ty == TokenType.LEFT_PAREN:
+                            constructors: List[Token] = []
+                            while True:
+                                constructor = self.advance(skip_ws=True)
+                                if constructor is None:
+                                    self.abort("expected a constructor to import")
+                                if constructor.ty == TokenType.RIGHT_PAREN:
+                                    break
+                                constructors.append(constructor)
+                                commaa = self.advance(skip_ws=True)
+                                if commaa is None or commaa.ty == TokenType.RIGHT_PAREN:
+                                    break
+                                if commaa.ty != TokenType.COMMA:
+                                    self.abort("expected `,`")
+                            comma = self.advance(skip_ws=True)
+                            items.append(VariantImport(item, tuple(constructors)))
+                        else:
+                            items.append(item)
                         if comma is None or comma.ty == TokenType.RIGHT_PAREN:
                             break
                         if comma.ty != TokenType.COMMA:
