@@ -12,7 +12,7 @@ import resolving.words as resolved
 from resolving.intrinsics import INTRINSICS
 from resolving.types import with_generics
 from resolving.type_resolver import TypeResolver, TypeLookup
-from resolving.top_items import Import, Local, LocalName, CustomTypeHandle, Variant, Struct, Global, LocalId, FunctionSignature
+from resolving.top_items import Import, Local, LocalName, CustomTypeHandle, Variant, Struct, Global, LocalId, FunctionSignature, VariantImport
 from resolving.env import Env
 
 @dataclass
@@ -71,12 +71,15 @@ class WordResolver:
             case parsing.BreakWord():
                 return word,
             case parsing.CallWord():
-                if word.ident.lexeme in INTRINSICS:
-                    return IntrinsicWord(
-                            word.ident,
-                            INTRINSICS[word.ident.lexeme],
-                            self.type_resolver.resolve_types(word.generic_arguments)),
-                return self.resolve_call(word),
+                call = self.resolve_call(word)
+                if call is None:
+                    if word.ident.lexeme in INTRINSICS:
+                        return IntrinsicWord(
+                                word.ident,
+                                INTRINSICS[word.ident.lexeme],
+                                self.type_resolver.resolve_types(word.generic_arguments)),
+                    self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
+                return call,
             case parsing.ForeignCallWord():
                 return self.resolve_foreign_call(word),
             case parsing.CastWord():
@@ -100,7 +103,10 @@ class WordResolver:
             case parsing.IndirectCallWord():
                 return word,
             case parsing.FunRefWord():
-                return resolved.FunRefWord(self.resolve_call(word.call)),
+                call = self.resolve_call(word.call)
+                if call is None:
+                    self.abort(word.call.ident, f"function `{word.call.ident.lexeme}` not found")
+                return resolved.FunRefWord(call),
             case parsing.MakeTupleWord():
                 return word,
             case parsing.GetFieldWord():
@@ -125,14 +131,18 @@ class WordResolver:
             case parsing.LoopWord():
                 return resolved.LoopWord(word.token, self.resolve_scope(word.words.words), self.resolve_block_annotation(word.annotation)),
             case parsing.BlockWord():
-                return resolved.BlockWord(word.token, word.words.end, self.resolve_scope(word.words.words), self.resolve_block_annotation(word.annotation)),
+                return resolved.BlockWord(
+                    word.token,
+                    word.words.end,
+                    self.resolve_scope(word.words.words),
+                    self.resolve_block_annotation(word.annotation)),
 
     def resolve_inline_ref_word(self, word: parsing.InlineRefWord) -> Sequence[resolved.Word]:
         local = Local(LocalName("synth:ref"), None)
         local_id = self.env.insert(local)
         return (resolved.InitWord(word.token, local_id), resolved.RefWord(word.token, local_id, ()))
 
-    def resolve_call(self, word: parsing.CallWord | parsing.ForeignCallWord) -> resolved.CallWord:
+    def resolve_call(self, word: parsing.CallWord | parsing.ForeignCallWord) -> resolved.CallWord | None:
         if isinstance(word, parsing.ForeignCallWord):
             return self.resolve_foreign_call(word)
         if word.ident.lexeme not in self.signatures:
@@ -144,7 +154,7 @@ class WordResolver:
                                 word.ident,
                                 item.handle,
                                 self.type_resolver.resolve_types(word.generic_arguments))
-            self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
+            return None
 
         function_handle = FunctionHandle(self.module_id, self.signatures.index_of(word.ident.lexeme))
         return resolved.CallWord(
@@ -157,7 +167,7 @@ class WordResolver:
             self.abort(word.module, "module not found")
         for imp in self.imports[word.module.lexeme]:
             module = self.modules.index(imp.module)
-            item = module.lookup_item(imp.module, word.ident)
+            item = module.lookup_item(word.ident)
             if isinstance(item, FunctionHandle):
                 return resolved.CallWord(word.ident, item, self.type_resolver.resolve_types(word.generic_arguments))
         self.abort(word.ident, f"function `{word.ident.lexeme}` not found")
@@ -177,14 +187,13 @@ class WordResolver:
                 del self.struct_literal_env.remaining_fields[field_name]
                 field_index = self.struct_literal_env.all_fields[field_name]
                 return resolved.StructFieldInitWord(word.token, self.struct_literal_env.struct, field_index)
-        self.env.insert(Local(LocalName(word.ident), None))
-        local_id = self.env.lookup(word.ident)
-        if local_id is None:
-            self.abort(word.ident, "local not found")
+        local_id = self.env.insert(Local(LocalName(word.ident), None))
         return resolved.InitWord(word.ident, local_id)
 
-    def resolve_scope(self, parsed_words: Tuple[parsing.Word, ...]) -> resolved.Scope:
+    def resolve_scope(self, parsed_words: Tuple[parsing.Word, ...], keep_struct_literal_env=False) -> resolved.Scope:
         env = self.env.child()
+        if not keep_struct_literal_env:
+            self = self.without_struct_literal_env()
         words = self.with_env(env).resolve_words(parsed_words)
         return resolved.Scope(env.scope_id, words)
 
@@ -216,14 +225,9 @@ class WordResolver:
         return resolved.VariantWord(word.token, tag, variant_type)
 
     def resolve_match_word(self, word: parsing.MatchWord) -> resolved.MatchWord:
-        if word.taip is not None:
-            variant_handle = self.type_resolver.resolve_custom_type(word.taip)
-            variant = self.type_lookup.lookup(variant_handle.type_definition)
-            if isinstance(variant, Struct):
-                self.abort(word.taip.name, "cannot match on a struct")
-        else:
-            variant_handle = None
-            variant = None
+        variant_handle = self.infer_match_type(word)
+        variant = self.type_lookup.lookup(variant_handle)
+        assert(isinstance(variant, Variant))
         cases = tuple(self.resolve_match_case(variant, cays) for cays in word.cases)
         default = self.resolve_scope(word.default.words) if word.default is not None else None
         return resolved.MatchWord(
@@ -233,14 +237,70 @@ class WordResolver:
                 default,
                 word.default.name if word.default is not None else None)
 
-    def resolve_match_case(self, variant: Variant | None, cays: parsing.MatchCase) -> resolved.MatchCase:
+    def infer_match_type(self, match: parsing.MatchWord) -> CustomTypeHandle:
+        inferred: CustomTypeHandle | None = None
+        for case in match.cases:
+            if case.module is None:
+                if case.variant is None:
+                    handle,_ = self.lookup_constructor(case.name)
+                    if inferred is not None and inferred != handle:
+                        self.abort(case.name, "constructors belong to different variants")
+                    inferred = handle
+                else:
+                    handle = self.type_resolver.resolve_custom_type_name(case.variant)
+                    if not isinstance(self.type_lookup.lookup(handle), Variant):
+                        self.abort(case.variant, "expected variant")
+                    if inferred is not None and inferred != handle:
+                        self.abort(case.name, "constructors belong to different variants")
+                    inferred = handle
+            else:
+                assert(case.variant is not None)
+                if case.module.lexeme not in self.imports:
+                    self.abort(case.module, "module not found")
+                for qualifier,imports in self.imports.items():
+                    if qualifier != case.module.lexeme:
+                        continue
+                    found = False
+                    for imp in imports:
+                        module = self.modules.index(imp.module)
+                        if case.variant.lexeme in module.type_definitions:
+                            handle = CustomTypeHandle(imp.module, module.type_definitions.index_of(case.variant.lexeme))
+                            if inferred is not None and inferred != handle:
+                                self.abort(case.name, "foo constructors belong to different variants")
+                            inferred = handle
+                            found = True
+                    if not found:
+                        self.abort(case.variant, "variant not found")
+
+        if inferred is None:
+            self.abort(match.token, "could not determine type of match")
+        return inferred
+
+    def lookup_constructor(self, name: Token) -> Tuple[CustomTypeHandle, int]:
+        for imports in self.imports.values():
+            for imp in imports:
+                for item in imp.items:
+                    if isinstance(item, VariantImport):
+                        variant = self.type_lookup.lookup(item.handle)
+                        assert(not isinstance(variant, Struct))
+                        for constructor in item.constructors:
+                            if variant.cases[constructor].name.lexeme == name.lexeme:
+                                return item.handle, constructor
+                    pass
+        for index, type_definition in enumerate(self.type_lookup.type_definitions.values()):
+            if not isinstance(type_definition, Struct):
+                for tag, case in enumerate(type_definition.cases):
+                    if case.name.lexeme == name.lexeme:
+                        return CustomTypeHandle(self.module_id, index), tag
+        self.abort(name, f"constructor {name.lexeme} not found")
+
+    def resolve_match_case(self, variant: Variant, cays: parsing.MatchCase) -> resolved.MatchCase:
         tag = None
-        if variant is not None:
-            for i, variant_case in enumerate(variant.cases):
-                if variant_case.name.lexeme == cays.name.lexeme:
-                    tag = i
-            if tag is None:
-                self.abort(cays.name, "case not found")
+        for i, variant_case in enumerate(variant.cases):
+            if variant_case.name.lexeme == cays.name.lexeme:
+                tag = i
+        if tag is None:
+            self.abort(cays.name, "case not found")
         return resolved.MatchCase(tag, cays.name, self.resolve_scope(cays.words))
 
     def resolve_struct_word_named(self, word: parsing.StructWordNamed) -> resolved.StructWordNamed:
@@ -249,7 +309,7 @@ class WordResolver:
         if isinstance(struct, Variant):
             self.abort(taip.name, "expected struct")
         struct_literal_env = StructLiteralEnv.of_struct(struct, taip.type_definition)
-        words = self.with_struct_literal_env(struct_literal_env).resolve_scope(word.words)
+        words = self.with_struct_literal_env(struct_literal_env).resolve_scope(word.words, keep_struct_literal_env=True)
         if len(struct_literal_env.remaining_fields) != 0:
             error_message = "missing fields in struct literal:"
             for field_name,field_index in struct_literal_env.remaining_fields.items():

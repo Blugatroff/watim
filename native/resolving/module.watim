@@ -1,0 +1,94 @@
+import "../../std/core.watim" as Core
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/maybe.watim" as Maybe (Maybe(Some, None))
+import "../../std/map.watim" as Map (Map)
+import "../../std/array.watim" as Array (Array)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
+import "../../std/io.watim" as IO
+
+import "../lexer.watim" as L (Token, Token-lexeme, Token-format)
+import "../parser.watim" as P
+
+import "./words.watim" as Words (GlobalId, FunctionHandle)
+import "./top-items.watim" as TopItems (
+    Import, Import-format, TypeDefinition, TypeDefinition-format,
+    Global, Global-format, FunctionOrExtern, FunctionOrExtern-format,
+    TopItemHandle,
+)
+import "./type.watim" as Types (ModuleId, CustomTypeHandle)
+
+struct ResolveError {
+    module: ModuleId
+    line: i32
+    column: i32
+    message: Array<i8>
+}
+fn ResolveError-print(fd: i32, self: ResolveError, modules: .Map<ByteSlice, P:Module>) -> i32 { block {
+    &modules.keys $self.module.index Array:get<ByteSlice> @file-path
+    $fd $file-path ~ ByteSlice:unpack IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.line IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd ":" IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd $self.column IO:print Core:dup<i32> 0 /= if { break } drop
+    $fd " " IO:write-all Core:dup<i32> 0 /= if { break } drop
+    $fd &self.message Array:unpack<_> IO:write-all
+} }
+
+struct Module {
+    id: ModuleId
+    imports: Map<ByteSlice, Array<Import>>
+    type-definitions: Map<ByteSlice, TypeDefinition>
+    globals: Map<ByteSlice, Global>
+    functions: Map<ByteSlice, FunctionOrExtern>
+    static-data: ByteSlice
+}
+fn lookup(self: .Module, name: .Token) -> Maybe<TopItemHandle> { block {
+    &self.type-definitions $name Token-lexeme Map:get-bs-index<TypeDefinition> match {
+        case Some -> {
+            $self.id flip make CustomTypeHandle
+            make TopItemHandle.TypeDefinition make Maybe<TopItemHandle>.Some break
+        }
+        case None -> {}
+    }
+    &self.functions $name Token-lexeme Map:get-bs-index<FunctionOrExtern> match {
+        case Some -> {
+            $self.id flip make FunctionHandle
+            make TopItemHandle.Function make Maybe<TopItemHandle>.Some break
+        }
+        case None -> {}
+    }
+    &self.globals $name Token-lexeme Map:get-bs-with-index<Global> match {
+        case Some -> {
+            [,] @index @globl
+            $globl.name $self.id $index make GlobalId
+            make TopItemHandle.Global make Maybe<TopItemHandle>.Some break
+        }
+        case None -> {}
+    }
+    make Maybe<TopItemHandle>.None
+} }
+fn format-imprt-array(fmt: .Formatter, self: .Array<Import>) {
+    $fmt \Import-format $self Array:format<Import>
+}
+fn Module-format(fmt: .Formatter, self: .Module) {
+    $fmt "(Module\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "imports=" Fmt:write
+    $fmt \ByteSlice-format \format-imprt-array &self.imports Map:format-multi-line<ByteSlice, Array<Import>>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type-definitions=" Fmt:write
+    $fmt \ByteSlice-format \TypeDefinition-format &self.type-definitions Map:format-multi-line<ByteSlice, TypeDefinition>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "globals=" Fmt:write
+    $fmt \ByteSlice-format \Global-format &self.globals Map:format-multi-line<ByteSlice, Global>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "functions=" Fmt:write
+    $fmt \ByteSlice-format \FunctionOrExtern-format &self.functions Map:format-multi-line<ByteSlice, FunctionOrExtern>
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}

@@ -1,17 +1,16 @@
 import "../../std/core.watim" as Core
-import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some))
 import "../../std/array.watim" as Array (Array)
 import "../../std/map.watim" as Map (Map)
 import "../../std/fmt.watim" as Fmt (Formatter)
 
 import "../lexer.watim" as Lexer (Token)
-import "../resolver/type.watim" as ResolvedType (CustomTypeHandle)
-import "../env.watim" as Env (LocalId)
-import "../resolver/ast.watim" as Resolved (GlobalId, VarId)
+import "../resolving/type.watim" as Resolved (CustomTypeHandle)
+import "../resolving/words.watim" as Resolved (LocalId, GlobalId, VarId(Global, Local))
 import "../monomizer.watim" as Monomized (
     Monomized, Type, TypeId, Key, Key-type,
     CustomType, FunctionHandle, Local, Global,
-    Module, Extern, Function, ExternOrInstances,
+    Module, Extern, Function, ExternOrInstances(Extern, Instances),
     can-live-in-reg, local-lives-in-memory, globl-lives-in-memory
 )
 
@@ -35,8 +34,8 @@ variant FunctionOrExtern {
 }
 fn FunctionOrExtern-name(self: .FunctionOrExtern) -> .Token {
     $self match {
-        case Extern -> { ~ .name }
-        case Function -> { ~ .name }
+        case FunctionOrExtern.Extern -> { ~ .name }
+        case FunctionOrExtern.Function -> { ~ .name }
     }
 }
 

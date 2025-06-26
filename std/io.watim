@@ -1,5 +1,5 @@
 import "./core.watim" as CORE
-import "./result.watim" as Result (Result)
+import "./result.watim" as Result (Result(Success, Error))
 extern "wasi_snapshot_preview1" "fd_read" fn raw_read(file: i32, iovs: .Iov, iovs_count: i32, read: .i32) -> i32
 extern "wasi_snapshot_preview1" "fd_write" fn raw_write(file: i32, iovs: .Iov, iovs_count: i32, written: .i32) -> i32
 
@@ -12,7 +12,7 @@ fn error-from-raw(code: i32) -> Error { block {
     $code make Error.Raw
 } }
 fn error-to-raw(error: Error) -> i32 {
-    $error match Error {
+    $error match {
         case Noent -> { 44 }
         case Raw -> {}
     }
@@ -28,7 +28,7 @@ fn check(code: i32) {
 }
 
 fn unwrap<T>(res: Result<T, Error>) -> T {
-    $res match Result {
+    $res match {
         case Success -> {}
         case Error -> {
             error-to-raw @code

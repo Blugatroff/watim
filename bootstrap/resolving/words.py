@@ -1,7 +1,7 @@
 from typing import List, Tuple
 from dataclasses import dataclass
 
-from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_str
+from format import Formattable, FormatInstr, unnamed_record, format_seq, named_record, format_str, format_optional
 from lexer import Token
 
 from resolving.intrinsics import IntrinsicType
@@ -165,7 +165,8 @@ class LoopWord(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Loop", [
             ("token", self.token),
-            ("body", self.body)])
+            ("body", self.body),
+            ("annotation", format_optional(self.annotation))])
 
 
 @dataclass
@@ -216,20 +217,33 @@ class VariantWord(Formattable):
     token: Token
     tag: int
     variant: CustomTypeType
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("MakeVariant", [
+            ("token", self.token),
+            ("tag", self.tag),
+            ("type", self.variant)])
 
 @dataclass
 class MatchCase(Formattable):
-    tag: int | None
+    tag: int
     name: Token
     body: Scope
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("MatchCase", [self.tag, self.name, self.body])
 
 @dataclass
 class MatchWord(Formattable):
     token: Token
-    variant: CustomTypeType | None
+    variant: CustomTypeHandle
     cases: Tuple[MatchCase, ...]
     default: Scope | None
     underscore: Token | None
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Match", [
+            ("token", self.token),
+            ("variant", self.variant),
+            ("cases", format_seq(self.cases, multi_line=True)),
+            ("default", format_optional(self.default))])
 
 @dataclass
 class StackAnnotation(Formattable):
@@ -245,4 +259,6 @@ class IntrinsicWord(Formattable):
     token: Token
     ty: IntrinsicType
     generic_arguments: Tuple[Type, ...]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("Intrinsic", [self.token, self.ty, format_seq(self.generic_arguments)])
 

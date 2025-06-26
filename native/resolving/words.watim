@@ -1,0 +1,532 @@
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/fmt-utils.watim" as Fmt
+import "../../std/bytes.watim" as Bytes
+import "../../std/array.watim" as Array (Array)
+import "../../std/util.watim" as U (i32-format)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+
+import "../lexer.watim" as Lexer (Token, Token-format)
+import "../parser.watim" as P (
+    MakeTuple, MakeTuple-format, GetField, GetField-format,
+)
+
+import "./type.watim" as Type (
+    ModuleId, CustomTypeHandle, Type, NamedType, CustomTypeType,
+    FunType, CustomTypeHandle-format, NamedType-format,
+    Types-format, CustomTypeType-format, FunType-format)
+import "./intrinsics.watim" as Intrinsics (Intrinsic, Intrinsic-format)
+
+struct FunctionHandle { module: ModuleId index: i32 }
+fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
+    $fmt "(FunctionHandle " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+fn FunctionHandle-eq(self: .FunctionHandle, other: .FunctionHandle) -> bool {
+    $self.module.index $other.module.index =
+    $self.index $other.index = and
+}
+
+struct LocalId {
+    name: ByteSlice
+    scope: ScopeId
+    shadow: i32
+}
+fn LocalId-eq(a: .LocalId, b: .LocalId) -> bool {
+    $a.scope $b.scope = $a.shadow $b.shadow = and if {
+        $a.name.ptr $a.name.len $b.name.ptr $b.name.len Bytes:eq
+    } else {
+        0 1 =
+    }
+}
+fn LocalId-format(fmt: .Formatter, self: .LocalId) {
+    $fmt "(LocalId " Fmt:write
+    $fmt &self.name Fmt:ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt $self.scope.raw i32-format
+    $fmt " " Fmt:write
+    $fmt $self.shadow i32-format
+    $fmt ")" Fmt:write
+}
+
+struct ScopeId { raw: i32 }
+fn ScopeId-format(fmt: .Formatter, self: .ScopeId) {
+    $fmt $self.raw i32-format
+}
+
+fn root-scope() -> ScopeId { 0 make ScopeId }
+
+struct Scope {
+    id: ScopeId
+    words: Array<Word>
+}
+fn Scope-format(fmt: .Formatter, self: .Scope) {
+    $fmt "(Scope " Fmt:write
+    $fmt &self.id ScopeId-format
+    $fmt " " Fmt:write
+    $fmt &self.words Words-format
+    $fmt ")" Fmt:write
+}
+
+struct GlobalId {
+    name: Token
+    module: ModuleId
+    index: i32
+}
+fn GlobalId-format(fmt: .Formatter, self: .GlobalId) {
+    $fmt "(GlobalId " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.index i32-format
+    $fmt ")" Fmt:write
+}
+
+variant VarId {
+    case Local -> LocalId
+    case Global -> GlobalId
+}
+fn VarId-format(fmt: .Formatter, self: .VarId) {
+    $self match {
+        case Local -> { $fmt flip LocalId-format }
+        case Global -> { $fmt flip GlobalId-format }
+    }
+}
+
+struct InitLocal {
+    name: Token
+    local: LocalId
+}
+fn InitLocal-format(fmt: .Formatter, self: .InitLocal) {
+    $fmt "(InitLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.local LocalId-format
+    $fmt ")" Fmt:write
+}
+
+struct GetLocal {
+    name: Token
+    var: VarId
+    fields: Array<Token>
+}
+fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
+    $fmt "(GetLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format-multi-line<Token>
+    $fmt ")" Fmt:write
+}
+
+struct SetLocal {
+    name: Token
+    var: VarId
+    fields: Array<Token>
+}
+fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
+    $fmt "(SetLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format-multi-line<Token>
+    $fmt ")" Fmt:write
+}
+
+struct StoreLocal {
+    name: Token
+    var: VarId
+    fields: Array<Token>
+}
+fn StoreLocal-format(fmt: .Formatter, self: .StoreLocal) {
+    $fmt "(StoreLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format-multi-line<Token>
+    $fmt ")" Fmt:write
+}
+
+struct RefLocal {
+    name: Token
+    var: VarId
+    fields: Array<Token>
+}
+fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
+    $fmt "(RefLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt \Token-format &self.fields Array:format-multi-line<Token>
+    $fmt ")" Fmt:write
+}
+
+struct StringWord {
+    token: Token
+    offset: i32
+    len: i32
+}
+fn StringWord-format(fmt: .Formatter, self: .StringWord) {
+    $fmt "(StringWord " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt $self.offset i32-format
+    $fmt " " Fmt:write
+    $fmt $self.len i32-format
+    $fmt ")" Fmt:write
+}
+
+struct Cast {
+    token: Token
+    dst: Type
+}
+fn Cast-format(fmt: .Formatter, self: .Cast) {
+    $fmt "(Cast " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.dst Type:format
+    $fmt ")" Fmt:write
+}
+
+struct Sizeof {
+    token: Token
+    type: Type
+}
+fn Sizeof-format(fmt: .Formatter, self: .Sizeof) {
+    $fmt "(Sizeof " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type:format
+    $fmt ")" Fmt:write
+}
+
+struct IntrinsicWord {
+    token: Token
+    intrinsic: Intrinsic
+    generic-arguments: Array<Type>
+}
+fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
+    $fmt "(Intrinsic " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.intrinsic Intrinsic-format
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.generic-arguments Array:format<_>
+    $fmt ")" Fmt:write
+}
+
+struct Call {
+    name: Token
+    function: FunctionHandle
+    generic-arguments: Array<Type>
+}
+fn Call-format(fmt: .Formatter, self: .Call) {
+    $fmt "(Call " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.function FunctionHandle-format
+    $fmt " " Fmt:write
+    $fmt &self.generic-arguments Types-format
+    $fmt ")" Fmt:write
+}
+
+struct FunRef {
+    call: Call
+}
+fn FunRef-format(fmt: .Formatter, self: .FunRef) {
+    $fmt "(FunRef " Fmt:write
+    $fmt &self.call Call-format
+    $fmt ")" Fmt:write
+}
+
+struct FieldInit {
+    name: Token
+    struc: CustomTypeHandle
+    field-index: i32
+}
+fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
+    $fmt "(FieldInit " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.struc CustomTypeHandle-format
+    $fmt " " Fmt:write
+    $fmt $self.field-index i32-format
+    $fmt ")" Fmt:write
+}
+
+struct MakeStructNamed {
+    token: Token
+    type: CustomTypeType
+    body: Scope
+}
+fn MakeStructNamed-format(fmt: .Formatter, self: .MakeStructNamed) {
+    $fmt "(MakeStructNamed\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type CustomTypeType-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct MakeStruct {
+    token: Token
+    type: CustomTypeType
+}
+fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
+    $fmt "(MakeStruct\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type CustomTypeType-format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct If {
+    token: Token
+    true-branch: Scope
+    false-branch: Scope
+}
+fn If-format(fmt: .Formatter, self: .If) {
+    $fmt "(If\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "true-branch=" Fmt:write
+    $fmt &self.true-branch Scope-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "false-branch=" Fmt:write
+    $fmt &self.false-branch Scope-format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct BlockAnnotation {
+    parameters: Array<Type>
+    returns: Array<Type>
+}
+fn BlockAnnotation-format(fmt: .Formatter, self: .BlockAnnotation) {
+    $fmt "(BlockAnnotation " Fmt:write
+    $fmt \Type:format &self.parameters Array:format<_>
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.returns Array:format<_>
+    $fmt ")" Fmt:write
+}
+
+struct Loop {
+    token: Token
+    body: Scope
+    annotation: Maybe<BlockAnnotation>
+}
+fn Loop-format(fmt: .Formatter, self: .Loop) {
+    $fmt "(Loop\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "annotation=" Fmt:write
+    $fmt \BlockAnnotation-format &self.annotation Maybe:format<_>
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+struct Block {
+    token: Token
+    end: Token
+    body: Scope
+    annotation: Maybe<BlockAnnotation>
+}
+fn Block-format(fmt: .Formatter, self: .Block) {
+    $fmt "(Block\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "annotation=" Fmt:write
+    $fmt \BlockAnnotation-format &self.annotation Maybe:format<_>
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct IndirectCall {
+    token: Token
+}
+fn IndirectCall-format(fmt: .Formatter, self: .IndirectCall) {
+    $fmt "(IndirectCall " Fmt:write
+    $fmt &self.token Token-format
+    $fmt ")" Fmt:write
+}
+
+struct Load {
+    token: Token
+}
+fn Load-format(fmt: .Formatter, self: .Load) {
+    $fmt "(Load " Fmt:write
+    $fmt &self.token Token-format
+    $fmt ")" Fmt:write
+}
+
+struct MatchCase {
+    tag: i32
+    name: Token
+    body: Scope
+}
+fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
+    $fmt "(MatchCase " Fmt:write
+    $fmt $self.tag i32-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.body Scope-format
+    $fmt ")" Fmt:write
+}
+struct Match {
+    token: Token
+    varint: CustomTypeHandle
+    cases: Array<MatchCase>
+    default: Maybe<Scope>
+}
+fn Match-format(fmt: .Formatter, self: .Match) {
+    $fmt "(Match\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "variant=" Fmt:write
+    $fmt &self.varint CustomTypeHandle-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "cases=" Fmt:write
+    $fmt \MatchCase-format &self.cases Array:format-multi-line<MatchCase>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "default=" Fmt:write
+    $fmt \Scope-format &self.default Maybe:format<Scope>
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct MakeVariant {
+    token: Token
+    tag: i32
+    type: CustomTypeType
+}
+fn MakeVariant-format(fmt: .Formatter, self: .MakeVariant) {
+    $fmt "(MakeVariant\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "tag=" Fmt:write
+    $fmt $self.tag i32-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type CustomTypeType-format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+variant Word {
+    case Number -> Token
+    case Drop -> Token
+    case GetLocal -> GetLocal
+    case RefLocal -> RefLocal
+    case InitLocal -> InitLocal
+    case SetLocal -> SetLocal
+    case StoreLocal -> StoreLocal
+    case String -> StringWord
+    case Intrinsic -> IntrinsicWord
+    case Cast -> Cast
+    case Sizeof -> Sizeof
+    case Call -> Call
+    case FieldInit -> FieldInit
+    case MakeStruct -> MakeStruct
+    case MakeStructNamed -> MakeStructNamed
+    case FunRef -> FunRef
+    case If -> If
+    case Loop -> Loop
+    case Break -> Token
+    case Block -> Block
+    case IndirectCall -> IndirectCall
+    case Load -> Load
+    case Match -> Match
+    case MakeVariant -> MakeVariant
+    case GetField -> GetField
+    case MakeTuple -> MakeTuple
+    case UnpackTuple -> Token
+}
+fn Word-format(fmt: .Formatter, self: .Word) {
+    $self match {
+        case Number -> { $fmt "(Number " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+        case Drop -> { $fmt "(Drop " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+        case GetLocal -> { $fmt flip GetLocal-format }
+        case RefLocal -> { $fmt flip RefLocal-format }
+        case InitLocal -> { $fmt flip InitLocal-format }
+        case SetLocal -> { $fmt flip SetLocal-format }
+        case StoreLocal -> { $fmt flip StoreLocal-format }
+        case String -> { $fmt flip StringWord-format }
+        case Intrinsic -> { $fmt flip IntrinsicWord-format }
+        case Cast -> { $fmt flip Cast-format }
+        case Sizeof -> { $fmt flip Sizeof-format }
+        case Call -> { $fmt flip Call-format }
+        case FieldInit -> { $fmt flip FieldInit-format }
+        case MakeStruct -> { $fmt flip MakeStruct-format }
+        case MakeStructNamed -> { $fmt flip MakeStructNamed-format }
+        case FunRef -> { $fmt flip FunRef-format }
+        case If -> { $fmt flip If-format }
+        case Loop -> { $fmt flip Loop-format }
+        case Break -> { $fmt "(Break " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+        case Block -> { $fmt flip Block-format }
+        case IndirectCall -> { $fmt flip IndirectCall-format }
+        case Load -> { $fmt flip Load-format }
+        case Match -> { $fmt flip Match-format }
+        case MakeVariant -> { $fmt flip MakeVariant-format }
+        case GetField -> { $fmt flip GetField-format }
+        case MakeTuple -> { $fmt flip MakeTuple-format }
+        case UnpackTuple -> { $fmt "(UnpackTuple " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+    }
+}
+fn Words-format(fmt: .Formatter, self: .Array<Word>) {
+    $fmt \Word-format $self Array:format-multi-line<Word>
+}

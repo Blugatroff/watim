@@ -23,6 +23,12 @@ class Formattable(Protocol):
     def __str__(self) -> str:
         return format(self.format_instrs())
 
+@dataclass
+class Instrs(Formattable):
+    instrs: List[FormatInstr]
+    def format_instrs(self) -> List[FormatInstr]:
+        return self.instrs
+
 def format_instrs(item: Any) -> List[FormatInstr]:
     if isinstance(item, Formattable):
         return item.format_instrs()

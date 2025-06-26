@@ -134,8 +134,18 @@ class CheckCtx:
             if isinstance(function, resolved.Function):
                 signature = function.signature
                 stack = Stack.empty()
-                locals = { local_id: Local(local.name, local.parameter, True, False) for local_id,local in function.locals.items() if local.parameter is not None }
-                ctx = WordCtx(self, locals, self.type_lookup, self.signatures, self.globals)
+                locals = {
+                    local_id: Local(local.name, local.parameter, True, False)
+                    for local_id,local in function.locals.items()
+                    if local.parameter is not None
+                }
+                ctx = WordCtx(
+                    self,
+                    locals,
+                    self.type_lookup,
+                    self.signatures,
+                    self.globals,
+                )
                 words, diverges = ctx.check_words(stack, function.body.id, list(function.body.words))
                 if not diverges and not seq_eq(stack.stack, signature.returns):
                     msg  = "unexpected return values:\n\texpected: "
@@ -289,7 +299,6 @@ class WordCtx:
     def check_ref_local(self, stack: Stack, word: resolved.words.RefWord) -> Tuple[List[Word], bool]:
         if isinstance(word.local_id, resolved.GlobalId):
             globl = self.globals.index(word.local_id.index)
-            globl.was_reffed = True
             def set_reffed():
                 globl.was_reffed = True
             taip = globl.taip
@@ -779,7 +788,15 @@ class WordCtx:
         stack.push_many(returns or [])
         if match_diverges:
             returns = None
-        return ([MatchWord(word.token, variant_type, by_ref, cases, default_case, parameters, returns)], match_diverges)
+        match_word = MatchWord(
+                word.token,
+                variant_type,
+                by_ref,
+                tuple(cases),
+                default_case,
+                tuple(parameters),
+                tuple(returns) if returns is not None else None)
+        return ([match_word], match_diverges)
 
     def check_make_variant(self, stack: Stack, word: resolved.words.VariantWord) -> Tuple[List[Word], bool]:
         variant = self.type_lookup.lookup(word.variant.type_definition)
@@ -1004,7 +1021,7 @@ class WordCtx:
                 self.expect_stack(token, stack, [PtrType(I8()), PtrType(I8()), I32()])
                 return IntrinsicMemCopy(token)
             case IntrinsicType.MEM_FILL:
-                self.expect_stack(token, stack, [PtrType(I32()), I32(), I32()])
+                self.expect_stack(token, stack, [PtrType(I8()), I8(), I32()])
                 return IntrinsicMemFill(token)
             case IntrinsicType.NOT_EQ | IntrinsicType.EQ:
                 if len(stack) < 2:

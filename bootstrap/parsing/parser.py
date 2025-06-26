@@ -40,7 +40,7 @@ class Module(Formattable):
             ("imports", format_seq(self.imports, multi_line=True)),
             ("type-definitions", format_seq(self.type_definitions)),
             ("globals", format_seq(self.globals)),
-            ("functions", format_seq(self.functions))])
+            ("functions", format_seq(self.functions, multi_line=True))])
 
 @dataclass
 class Parser:
@@ -419,25 +419,38 @@ class Parser:
             return StructWord(token, taip)
         if token.ty == TokenType.MATCH:
             brace = self.advance(skip_ws=True)
-            if brace is not None and brace.ty != TokenType.LEFT_BRACE:
-                match_taip = self.parse_struct_type(brace, generic_parameters)
-                brace = self.advance(skip_ws=True)
-            else:
-                match_taip = None
             if brace is None or brace.ty != TokenType.LEFT_BRACE:
                 self.abort("Expected `{`")
             cases: List[MatchCase] = []
             while True:
-                next = self.peek(skip_ws=True)
-                if next is None or next.ty == TokenType.RIGHT_BRACE:
+                cays = self.peek(skip_ws=True)
+                if cays is None or cays.ty == TokenType.RIGHT_BRACE:
                     self.advance(skip_ws=True)
-                    return MatchWord(token, match_taip, tuple(cases), None)
+                    return MatchWord(token, tuple(cases), None)
                 case = self.advance(skip_ws=True)
                 if case is None or case.ty != TokenType.CASE:
                     self.abort("expected `case`")
                 case_name = self.advance(skip_ws=True)
                 if case_name is None or (case_name.ty != TokenType.IDENT and case_name.ty != TokenType.UNDERSCORE):
                     self.abort("Expected an identifier")
+                next = self.peek()
+                if next is not None and next.ty == TokenType.COLON:
+                    self.advance()
+                    module_name = case_name
+                    case_name = self.advance()
+                    if case_name is None or case_name.ty != TokenType.IDENT:
+                        self.abort("Expected an identifier")
+                else:
+                    module_name = None
+                next = self.peek()
+                if next is not None and next.ty == TokenType.DOT:
+                    self.advance()
+                    variant_name = case_name
+                    case_name = self.advance()
+                    if case_name is None or case_name.ty != TokenType.IDENT:
+                        self.abort("Expected an identifier")
+                else:
+                    variant_name = None
                 arrow = self.advance(skip_ws=True)
                 if arrow is None or arrow.ty != TokenType.ARROW:
                     self.abort("Expected `->`")
@@ -449,8 +462,8 @@ class Parser:
                     brace = self.advance(skip_ws=True)
                     if brace is None or brace.ty != TokenType.RIGHT_BRACE:
                         self.abort("Expected `}`")
-                    return MatchWord(token, match_taip, tuple(cases), MatchCase(next, case_name, words.words))
-                cases.append(MatchCase(next, case_name, words.words))
+                    return MatchWord(token, tuple(cases), MatchCase(cays, None, None, case_name, words.words))
+                cases.append(MatchCase(cays, module_name, variant_name, case_name, words.words))
         if token.ty == TokenType.LEFT_BRACKET:
             comma = self.advance(skip_ws=True)
             if comma is None or comma.ty != TokenType.COMMA:

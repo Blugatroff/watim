@@ -1,7 +1,7 @@
 from typing import List, Tuple
 from dataclasses import dataclass
 
-from format import Formattable, FormatInstr, unnamed_record, format_seq, format_optional
+from format import Formattable, FormatInstr, unnamed_record, format_seq, format_optional, named_record
 from lexer import Token
 from parsing.types import Type, CustomTypeType, ForeignType
 
@@ -195,15 +195,28 @@ class VariantWord(Formattable):
 @dataclass
 class MatchCase(Formattable):
     case: Token
+    module: Token | None
+    variant: Token | None
     name: Token
     words: Tuple[Word, ...]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("MatchCase", [
+            self.case,
+            format_optional(self.module),
+            format_optional(self.variant),
+            self.name,
+            format_seq(self.words)])
 
 @dataclass
 class MatchWord(Formattable):
     token: Token
-    taip: CustomTypeType | ForeignType | None
     cases: Tuple[MatchCase, ...]
     default: MatchCase | None
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Match", [
+            ("token", self.token),
+            ("cases", format_seq(self.cases, multi_line=True)),
+            ("default", format_optional(self.default))])
 
 @dataclass
 class TupleUnpackWord(Formattable):

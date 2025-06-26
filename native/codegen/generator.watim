@@ -1,6 +1,6 @@
 import "../../std/core.watim" as Core (align-to)
 import "../../std/bytes.watim" as Bytes
-import "../../std/maybe.watim" as Maybe (Maybe, is-some)
+import "../../std/maybe.watim" as Maybe (Maybe(Some, None), is-some)
 import "../../std/arena.watim" as Arena (Arena)
 import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../../std/array.watim" as Array (Array)
@@ -11,11 +11,10 @@ import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
 import "../../std/util.watim" as Util (i32-format, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
-import "../resolver/type.watim" as Type (CustomTypeHandle)
-import "../env.watim" as Env (ScopeId, root-scope, LocalId, LocalId-eq, LocalName-unpack)
-import "../resolver/ast.watim" as Resolved (GlobalId, VarId)
+import "../resolving/top-items.watim" as TopItems (LocalName-unpack)
+import "../resolving/words.watim" as Resolved (ScopeId, root-scope, LocalId, LocalId-eq, GlobalId, VarId)
 import "../monomizer.watim" as Monomized (
-    Monomized, Module, ExternOrInstances,
+    Monomized, Module, ExternOrInstances(Extern, Instances),
     Extern, Function, FunctionHandle, Signature, Local, Global,
     Type, Key, Key-type, NamedTypeId, TypeId, TypeId-format,
     CustomType, CustomType-name, FunType,
@@ -303,9 +302,12 @@ fn generate-function(
     loop {
         $i $function.max-stack-returns = if { break }
         $ctx.fmt Fmt:write-indent
+        // TODO: only generate both of these locals when necessary
         $ctx.fmt "(local $s" Fmt:write
         $ctx.fmt $i i32-format
-        $ctx.fmt ":a i32)\n" Fmt:write
+        $ctx.fmt ":4 i32) (local $s" Fmt:write
+        $ctx.fmt $i i32-format
+        $ctx.fmt ":8 i64)\n" Fmt:write
         $i 1 + #i
     }
 

@@ -1,0 +1,26 @@
+[== Stdin Compiler ==]
+fn foo() {
+    match {
+        case Bar.Baz -> {}
+        case V:Maybe.None -> {}
+        case _ -> {}
+    }
+}
+[== Args Compiler ==]
+parse
+-
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Module
+  imports=[],
+  type-definitions=[],
+  globals=[],
+  functions=[
+    (Function (FN fn 1 1) (IDENT foo 1 4) None (Signature [] [] []) [
+      (Match
+        token=(MATCH match 2 5),
+        cases=[
+          (MatchCase (CASE case 3 9) None (Some (IDENT Bar 3 14)) (IDENT Baz 3 18) []),
+          (MatchCase (CASE case 4 9) (Some (IDENT V 4 14)) (Some (IDENT Maybe 4 16)) (IDENT None 4 22) [])],
+        default=(Some (MatchCase (CASE case 5 9) None None (UNDERSCORE _ 5 14) [])))])])

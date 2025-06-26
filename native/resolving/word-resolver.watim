@@ -1,0 +1,826 @@
+import "../../std/core.watim" as Core
+import "../../std/bytes.watim" as Bytes
+import "../../std/result.watim" as Result (Result(Error, Success))
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some), assert-some, assert-none)
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/map.watim" as Map (Map)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/array.watim" as Array (Array)
+import "../../std/fmt.watim" as Fmt
+import "../../std/fmt-utils.watim" as Fmt
+
+import "../parser.watim" as P (MakeTuple)
+import "../lexer.watim" as L (Token, Token-lexeme, Token-location, Token-format)
+
+import "./top-items.watim" as TopItem (
+    TypeDefinition(Struct, Variant), Import, Global, FunctionOrExtern,
+    ImportItem, StructImport, VariantImport, FunctionImport,
+    Variant, Struct, VariantCase, TypeDefinition-name,
+    Function, FunctionOrExtern, Extern, Signature, Local, LocalName,
+)
+import "./type.watim" as Type (
+    Type, ModuleId, NamedType,
+    CustomTypeType, CustomTypeHandle, CustomTypeHandle-eq,
+)
+import "./type-resolver.watim" as TypeResolver (TypeResolver)
+import "./type-lookup.watim" as TypeLookup (TypeLookup)
+import "./module.watim" as Module (Module, ResolveError)
+import "./words.watim" as Words (
+    Word, LocalId, LocalId-eq, ScopeId, Scope, VarId, GlobalId,
+    StringWord, GetLocal, BlockAnnotation, Loop, IntrinsicWord,
+    If, MakeVariant, Match, MatchCase, Cast, Sizeof, InitLocal,
+    FieldInit, Load, SetLocal, Call, FunctionHandle, RefLocal,
+    StoreLocal, Block, IndirectCall, MakeStructNamed, FunRef,
+    MakeStruct,
+)
+import "./env.watim" as Env (Env)
+import "./intrinsics.watim" as Intrinsics
+
+struct StructLiteralEnv {
+    struc: CustomTypeHandle
+    all_fields: Map<ByteSlice, i32>
+    remaining-fields: Map<ByteSlice, i32>
+}
+fn StructLiteralEnv-of-struc(arena: .Arena, struc: .Struct, handle: CustomTypeHandle) -> StructLiteralEnv {
+    $arena \ByteSlice:eq-by-ref $struc.fields.len Map:new-with-capacity<ByteSlice, i32> @all-fields
+    0 @i
+    loop {
+        $i $struc.fields.len = if { break }
+        &all-fields
+        &struc.fields $i Array:get<_> .name Token-lexeme make ByteSlice
+        $i Map:insert-assert-no-alloc<_, _> drop
+        $i 1 + #i
+    }
+    $handle
+    $all-fields
+    $arena &all-fields Map:clone<_, _>
+    make StructLiteralEnv
+}
+
+struct WordCtx {
+    arena: .Arena
+    module-id: ModuleId
+    module-path: ByteSlice
+    imports: .Map<ByteSlice, Array<Import>>
+    globals: .Map<ByteSlice, Global>
+    signatures: .Map<ByteSlice, Signature>
+    type-resolver: .TypeResolver
+    modules: .Map<ByteSlice, Module>
+    static-data: .Array<i8>
+    type-lookup: .TypeLookup
+    env: .Env
+    struc-literal-env: Maybe<.StructLiteralEnv>
+}
+
+fn with-env(ctx: .WordCtx, env: .Env) -> WordCtx {
+    $ctx ~ @new
+    $env #new.env
+    $new
+}
+fn with-struc-literal-env(ctx: .WordCtx, env: .StructLiteralEnv) -> WordCtx {
+    $ctx ~ @new
+    $env make Maybe<.StructLiteralEnv>.Some #new.struc-literal-env
+    $new
+}
+fn without-struc-literal-env(ctx: .WordCtx) -> WordCtx {
+    $ctx ~ @new
+    make Maybe<.StructLiteralEnv>.None #new.struc-literal-env
+    $new
+}
+
+fn allocate-static-data(ctx: .WordCtx, ptr: .i8, len: i32) -> i32, i32 {
+    $ctx.static-data.ptr $ctx.static-data.len $ptr $len Bytes:find-seq
+    if { $len } else {
+        drop
+        $ctx.static-data.len
+        $ctx.arena $ctx.static-data $ptr $len Array:append-raw<_>
+        $len
+    }
+}
+
+fn abort<T>(ctx: .WordCtx, token: .Token, msg-ptr: .i8, msg-len: i32) -> Result<T, ResolveError> {
+    $ctx.module-id $token Token-location $msg-ptr $msg-len Array:init-no-copy<_> make ResolveError
+    make Result<T, ResolveError>.Error
+}
+
+fn resolve-words(ctx: .WordCtx, words: .Array<P:Word>) -> Result<Array<Word>, ResolveError> {
+    $ctx.arena $words.len Array:new-with-capacity<Word> @resolved
+    0 @i
+    loop {
+        $i $words.len = if {
+            $resolved make Result<Array<Word>, ResolveError>.Success break
+        }
+        $ctx $words $i Array:get<P:Word> resolve-word match {
+            case Error -> { make Result<Array<Word>, ResolveError>.Error break }
+            case Success -> {}
+        } match {
+            case One -> { $ctx.arena flip &resolved flip Array:push<_> }
+            case Many -> { $ctx.arena flip &resolved flip & Array:append<_> }
+        }
+        $i 1 + #i
+    }
+}
+
+variant OneOrMany<T> {
+    case One -> T
+    case Many -> Array<T>
+}
+
+fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, ResolveError> { block (-> Result<OneOrMany<Word>, ResolveError>) {
+    $word match {
+        case P:Word.Number -> { ~ make Word.Number }
+        case P:Word.String -> {
+            @word
+            $word.token $ctx $word.data ByteSlice:unpack allocate-static-data make StringWord
+            make Word.String
+        }
+        case P:Word.GetLocal -> {
+            @word
+            $word.ident
+            $ctx &word.ident lookup-variable match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $word.fields make GetLocal make Word.GetLocal
+        }
+        case P:Word.InitLocal -> {
+            @word
+            $ctx.struc-literal-env match {
+                case Some -> {
+                    @struc-literal-env
+                    &word.ident Token-lexeme make ByteSlice @field-name
+                    &struc-literal-env.all_fields &field-name Map:get<_, _> match {
+                        case None -> {}
+                        case Some -> {
+                            ~ @field-index
+                            &struc-literal-env.remaining-fields &field-name Map:remove<_, _> assert-some<_>
+                            $word.ident $struc-literal-env.struc $field-index make FieldInit
+                            make Word.FieldInit make OneOrMany<Word>.One make Result<OneOrMany<Word>, ResolveError>.Success break
+                        }
+                    }
+                }
+                case None -> {}
+            }
+            make InitLocal {
+                $word.ident @name
+
+                $ctx.arena $ctx.env
+                make Local {
+                    $word.ident make LocalName.FromSource @name
+                    make Maybe<Type>.None @parameter
+                }
+                Env:insert @local
+            } make Word.InitLocal
+        }
+        case P:Word.SetLocal -> {
+            @word
+            $word.ident
+            $ctx &word.ident lookup-variable match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $word.fields
+            make SetLocal make Word.SetLocal
+        }
+        case P:Word.RefLocal -> {
+            @word
+            $word.ident
+            $ctx &word.ident lookup-variable match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $word.fields
+            make RefLocal make Word.RefLocal
+        }
+        case P:Word.Store -> {
+            @word
+            $word.ident
+            $ctx &word.ident lookup-variable match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $word.fields
+            make StoreLocal make Word.StoreLocal
+        }
+        case P:Word.Call -> {
+            @word
+            $ctx $word resolve-call match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } match {
+                case None -> {
+                    $word match {
+                        case P:Call.Local -> {
+                            @word
+                            &word.name Intrinsics:lookup match {
+                                case Some -> {
+                                    $word.name flip
+                                    $ctx.type-resolver $ctx.arena &word.generic-arguments TypeResolver:resolve-types match {
+                                        case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                                        case Success -> {}
+                                    }
+                                    make IntrinsicWord
+                                    make Word.Intrinsic
+                                    make OneOrMany<Word>.One
+                                    make Result<OneOrMany<Word>, ResolveError>.Success break
+                                }
+                                case None -> {}
+                            }
+                            &word.name Token-lexeme "drop" Bytes:eq if {
+                                $word.name make Word.Drop
+                                make OneOrMany<Word>.One
+                                make Result<OneOrMany<Word>, ResolveError>.Success break
+                            }
+                            &word.name
+                        }
+                        case P:Call.Foreign -> { .name }
+                    } @name
+                    $ctx $name "function not found" abort<OneOrMany<Word>> break
+                }
+                case Some -> {}
+            } make Word.Call
+        }
+        case P:Word.IndirectCall -> { ~ make IndirectCall make Word.IndirectCall }
+        case P:Word.Loop -> {
+            @word
+            $word.token
+            $ctx &word.words.words resolve-scope match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $ctx &word.annotation resolve-blok-annotation match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make Loop
+            make Word.Loop
+        }
+        case P:Word.Block -> {
+            @word
+            $word.token
+            $word.words.end
+            $ctx &word.words.words resolve-scope match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $ctx &word.annotation resolve-blok-annotation match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make Block
+            make Word.Block
+        }
+        case P:Word.Break -> { ~ make Word.Break }
+        case P:Word.If -> {
+            @word
+            $word.token
+            $ctx &word.true-words.words resolve-scope match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            Array:new<P:Word> @empty
+            $ctx &word.false-words match {
+                case Some -> { .words }
+                case None -> { &empty }
+            } resolve-scope match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make If
+            make Word.If
+        }
+        case P:Word.MakeVariant -> {
+            @word
+            $ctx.type-resolver $ctx.arena &word.type TypeResolver:resolve-custom-type match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } @type
+
+            $ctx.type-lookup &type.type-definition TypeLookup:lookup match {
+                case Struct -> { drop $ctx &word.token "not a variant" abort<OneOrMany<Word>> break }
+                case Variant -> {}
+            } @varint
+
+            0 @i
+            loop {
+                $i $varint.cases.len = if { $ctx &word.cays "not a case" abort<i32> break }
+                &varint.cases $i Array:get<_> @cays
+                &cays.name Token-lexeme &word.cays Token-lexeme Bytes:eq if {
+                    $i make Result<i32, ResolveError>.Success break
+                }
+                $i 1 + #i
+            } match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } @tag
+
+            $word.token
+            $tag
+            $type
+            make MakeVariant
+            make Word.MakeVariant
+        }
+        case P:Word.MakeStruct -> {
+            @word
+            $word.token
+            $ctx.type-resolver $ctx.arena &word.type TypeResolver:resolve-custom-type match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } make MakeStruct make Word.MakeStruct
+        }
+        case P:Word.MakeStructNamed -> {
+            @word
+            $ctx.type-resolver $ctx.arena &word.type TypeResolver:resolve-custom-type match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } @type
+            $ctx.type-lookup &type.type-definition TypeLookup:lookup match {
+                case Variant -> { $ctx &word.token "expected struct" abort<OneOrMany<Word>> break }
+                case Struct -> {}
+            } @struc
+            $ctx.arena Arena:temp @temp @save
+            $temp $struc $type.type-definition StructLiteralEnv-of-struc @struc-literal-env
+            $ctx &struc-literal-env with-struc-literal-env @ctx
+
+            &ctx &word.body.words resolve-scope-keep-struc-literal-env match {
+                case Error -> {
+                    $temp $save Arena:restore
+                    make Result<OneOrMany<Word>, ResolveError>.Error break
+                }
+                case Success -> {}
+            } @words
+
+            $struc-literal-env.remaining-fields.values.len 0 /= if {
+                $ctx.arena Fmt:into-new-string @buf @fmt
+                &fmt "missing fields in struct literal:" Fmt:write
+                0 @field-index
+                loop {
+                    $field-index $struc.fields.len = if { break }
+                    &struc.fields $field-index Array:get<_> @field
+                    &fmt "\n\t" Fmt:write &fmt &field.name Token-lexeme Fmt:write
+                    &fmt ": " Fmt:write
+                    &fmt $ctx.type-lookup &field.type TypeLookup:pretty
+                    $field-index 1 + #field-index
+                }
+                &ctx &word.token $buf Array:unpack<_> abort<OneOrMany<Word>> break
+            }
+
+            $word.token $type $words make MakeStructNamed make Word.MakeStructNamed
+            $temp $save Arena:restore
+        }
+        case P:Word.MakeTuple -> { ~ make Word.MakeTuple }
+        case P:Word.GetField -> { ~ make Word.GetField }
+        case P:Word.Match -> {
+            $ctx flip resolve-matsh match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } make Word.Match
+        }
+        case P:Word.Cast -> {
+            @word
+            $word.token
+            $ctx.type-resolver $ctx.arena &word.type TypeResolver:resolve-type match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } make Cast make Word.Cast
+        }
+        case P:Word.Sizeof -> {
+            @word
+            $word.token
+            $ctx.type-resolver $ctx.arena &word.type TypeResolver:resolve-type match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } make Sizeof make Word.Sizeof
+        }
+        case P:Word.Load -> { ~ make Load make Word.Load }
+        case P:Word.FunRef -> {
+            @word
+            $ctx &word.call resolve-call match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            } match {
+                case None -> {
+                    $ctx &word.call match { case P:Call.Local -> { .name } case P:Call.Foreign -> { .name } } "function not found" abort<OneOrMany<Word>> break
+                }
+                case Some -> {}
+            } make FunRef make Word.FunRef
+        }
+        case P:Word.UnpackTuple -> { ~ make Word.UnpackTuple }
+        case P:Word.Ref -> {
+            ~ @token
+            make Local {
+                "synth:ref" make ByteSlice make LocalName.Synthetic @name
+                make Maybe<Type>.None @parameter
+            } $ctx.arena flip $ctx.env flip Env:insert @local-id
+            $ctx.arena 2 Array:new-with-capacity<Word> @words
+            &words $token $local-id make InitLocal make Word.InitLocal Array:push-assert-no-alloc<_>
+            &words $token $local-id make VarId.Local Array:new<Token> make RefLocal make Word.RefLocal Array:push-assert-no-alloc<_>
+            $words make OneOrMany<Word>.Many make Result<OneOrMany<Word>, ResolveError>.Success break
+        }
+        case _ -> {
+            2 Fmt:to-fd @fmt
+            &fmt flip P:Word-format
+            Core:unreachable<Word>
+        }
+    }
+    make OneOrMany<Word>.One
+    make Result<OneOrMany<Word>, ResolveError>.Success
+} }
+
+fn lookup-variable(ctx: .WordCtx, name: .Token) -> Result<VarId, ResolveError> { block {
+    $ctx.env $name Env:lookup match {
+        case None -> {
+            $ctx.globals $name Token-lexeme Map:get-bs-index<_> match {
+                case Some -> {
+                    $name ~ flip $ctx.module-id flip make GlobalId
+                    make VarId.Global make Result<VarId, ResolveError>.Success break
+                }
+                case None -> {}
+            }
+        }
+        case Some -> { make VarId.Local make Result<VarId, ResolveError>.Success break }
+    }
+    $ctx $name "variable not found" abort<VarId>
+} }
+
+fn resolve-scope(ctx: .WordCtx, words: .Array<P:Word>) -> Result<Scope, ResolveError> {
+    $ctx.env Env:child @env
+    $ctx &env with-env & without-struc-literal-env @ctx
+    &ctx $words resolve-words match {
+        case Error -> { make Result<Scope, ResolveError>.Error }
+        case Success -> {
+            $env.scope-id flip make Scope make Result<Scope, ResolveError>.Success
+        }
+    }
+}
+
+fn resolve-scope-keep-struc-literal-env(ctx: .WordCtx, words: .Array<P:Word>) -> Result<Scope, ResolveError> {
+    $ctx.env Env:child @env
+    $ctx &env with-env @ctx
+    &ctx $words resolve-words match {
+        case Error -> { make Result<Scope, ResolveError>.Error }
+        case Success -> {
+            $env.scope-id flip make Scope make Result<Scope, ResolveError>.Success
+        }
+    }
+}
+
+
+fn resolve-blok-annotation(ctx: .WordCtx, annotation: .Maybe<P:BlockAnnotation>) -> Result<Maybe<BlockAnnotation>, ResolveError> { block (-> Result<Maybe<BlockAnnotation>, ResolveError>){
+    $annotation match {
+        case None -> { make Maybe<BlockAnnotation>.None make Result<Maybe<BlockAnnotation>, ResolveError>.Success break }
+        case Some -> {}
+    }
+    @annotation
+    $ctx.type-resolver $ctx.arena &annotation.parameters TypeResolver:resolve-types match {
+        case Error -> { make Result<Maybe<BlockAnnotation>, ResolveError>.Error break }
+        case Success -> {}
+    }
+    $ctx.type-resolver $ctx.arena &annotation.returns TypeResolver:resolve-types match {
+        case Error -> { make Result<Maybe<BlockAnnotation>, ResolveError>.Error break }
+        case Success -> {}
+    }
+    make BlockAnnotation make Maybe<BlockAnnotation>.Some make Result<Maybe<BlockAnnotation>, ResolveError>.Success
+} }
+
+fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveError> { block (-> Result<Maybe<Call>, ResolveError>) {
+    $call match {
+        case P:Call.Local -> {
+            @word
+            $ctx.type-resolver $ctx.arena &word.generic-arguments TypeResolver:resolve-types match {
+                case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
+                case Success -> {}
+            } @generic-arguments
+            $ctx.signatures &word.name Token-lexeme Map:get-bs-index<_> match {
+                case Some -> {
+                    $word.name flip
+                    $ctx.module-id flip make FunctionHandle
+                    $generic-arguments make Call make Maybe<Call>.Some
+                }
+                case None -> {
+                    $ctx.imports &word.name find-function-in-imports match {
+                        case None -> { make Maybe<Call>.None }
+                        case Some -> {
+                            $word.name flip $generic-arguments make Call make Maybe<Call>.Some
+                        }
+                    }
+                }
+            }
+        }
+        case P:Call.Foreign -> {
+            @word
+            $ctx.imports &word.module Token-lexeme Map:get-bs<_> match {
+                case None -> { $ctx &word.module "module not found" abort<Maybe<Call>> break }
+                case Some -> {}
+            } @imports
+            $ctx.type-resolver $ctx.arena &word.generic-arguments TypeResolver:resolve-types match {
+                case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
+                case Success -> {}
+            } @generic-arguments
+            0 @i
+            loop {
+                $i $imports.len = if {
+                    make Maybe<Call>.None make Result<Maybe<Call>, ResolveError>.Success break
+                }
+                $imports $i Array:get<_> @imp
+                &ctx.modules.values $imp.module.index Array:get<_> @module
+                &module.functions &word.name Token-lexeme Map:get-bs-index<_> match {
+                    case None -> {}
+                    case Some -> {
+                        $imp.module flip make FunctionHandle
+                        $word.name flip
+                        $generic-arguments make Call make Maybe<Call>.Some
+                        make Result<Maybe<Call>, ResolveError>.Success break
+                    }
+                }
+                $i 1 + #i
+            } break
+        }
+    } make Result<Maybe<Call>, ResolveError>.Success
+} }
+
+fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<Match, ResolveError> { block (-> Result<Match, ResolveError>) {
+    $ctx $matsh infer-matsh-type match {
+        case Error -> { make Result<Match, ResolveError>.Error break }
+        case Success -> {}
+    } @matsh-type
+
+    $ctx.type-lookup &matsh-type TypeLookup:lookup match {
+        case Struct -> { drop Core:unreachable<.Variant> }
+        case Variant -> {}
+    } @varint
+
+    $ctx.arena $matsh.cases.len Array:new-with-capacity<MatchCase> @cases
+    0 @i
+    loop {
+        $i $matsh.cases.len = if { [,0] make Result<[], ResolveError>.Success break }
+        $ctx $varint &matsh.cases $i Array:get<_> resolve-matsh-cays match {
+            case Error -> { make Result<[], ResolveError>.Error break }
+            case Success -> {}
+        } &cases flip Array:push-assert-no-alloc<_>
+        $i 1 + #i
+    } match {
+        case Error -> { make Result<Match, ResolveError>.Error break }
+        case Success -> { [,] }
+    }
+
+    &matsh.default match {
+        case None -> { make Maybe<Scope>.None }
+        case Some -> {
+            .body.words $ctx flip resolve-scope match {
+                case Error -> { make Result<Match, ResolveError>.Error break }
+                case Success -> {}
+            } make Maybe<Scope>.Some
+        }
+    } @default
+
+    $matsh.token
+    $matsh-type
+    $cases
+    $default
+    make Match
+    make Result<Match, ResolveError>.Success
+} }
+
+fn resolve-matsh-cays(ctx: .WordCtx, varint: .Variant, cays: .P:MatchCase) -> Result<MatchCase, ResolveError> { block {
+    0 @i
+    loop {
+        $i $varint.cases.len = if {
+            // infer-matsh-type has already made sure, that all cases have a valid constructor.
+            Core:unreachable<i32> break
+        }
+        &varint.cases $i Array:get<_> .name Token-lexeme &cays.name Token-lexeme Bytes:eq if {
+            $i break
+        }
+        $i 1 + #i
+    } @tag
+
+    $ctx &cays.body.words resolve-scope match {
+        case Error -> { make Result<MatchCase, ResolveError>.Error break }
+        case Success -> {}
+    }
+    $tag flip $cays.name flip make MatchCase
+    make Result<MatchCase, ResolveError>.Success
+} }
+
+fn infer-matsh-type(ctx: .WordCtx, matsh: .P:Match) -> Result<CustomTypeHandle, ResolveError> { block (-> Result<CustomTypeHandle, ResolveError>) {
+    make Maybe<CustomTypeHandle>.None @inferred
+    0 @i
+    loop {
+        $i $matsh.cases.len = if { [,0] make Result<[], ResolveError>.Success break }
+        &matsh.cases $i Array:get<_> @cays
+        &cays.module match {
+            case None -> {
+                &cays.varint match {
+                    case None -> {
+                        $ctx &cays.name lookup-constructor match {
+                            case Error -> { make Result<[], ResolveError>.Error break }
+                            case Success -> { [,] }
+                        } drop &inferred match {
+                            case None -> { make Maybe<CustomTypeHandle>.Some #inferred }
+                            case Some -> {
+                                flip & CustomTypeHandle-eq not if {
+                                    $ctx &matsh.token "constructors belong to different variants" abort<[]> break
+                                }
+                            }
+                        }
+                    }
+                    case Some -> {
+                        @varint
+                        $ctx.type-resolver $ctx.arena $varint TypeResolver:resolve-custom-type-name match {
+                            case None -> { $ctx $varint "variant not found" abort<[]> break }
+                            case Some -> {}
+                        } @handle
+                        $ctx.type-lookup &handle TypeLookup:lookup match {
+                            case Struct -> { drop $ctx $varint "expected variant" abort<[]> break }
+                            case Variant -> { drop }
+                        }
+                        &inferred match {
+                            case None -> { $handle make Maybe<CustomTypeHandle>.Some #inferred }
+                            case Some -> {
+                                &handle CustomTypeHandle-eq not if {
+                                    $ctx &matsh.token "constructors belong to different variants" abort<[]> break
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            case Some -> {
+                @module
+                &cays.varint match {
+                    case None -> { $ctx $module "TODO" abort<[]> break }
+                    case Some -> {}
+                } @varint
+                $ctx.imports $module Token-lexeme Map:get-bs<_> match {
+                    case None -> { $ctx $module "module not found" abort<[]> break }
+                    case Some -> {}
+                } @imports
+                0 @i
+                0 1 = @found
+                loop {
+                    $i $imports.len = if {
+                        $found if {
+                            [,0] make Result<[], ResolveError>.Success
+                        } else {
+                            $ctx $varint "variant not found" abort<[]>
+                        } break
+                    }
+                    $imports $i Array:get<_> @imp
+                    &ctx.modules.values $imp.module.index Array:get<_> @module
+                    &module.type-definitions $varint Token-lexeme Map:get-bs-with-index<_> match {
+                        case None -> {}
+                        case Some -> {
+                            [,] @index match {
+                                case Struct -> { drop $ctx $varint "expected variant" abort<[]> break }
+                                case Variant -> { drop }
+                            }
+                            1 1 = #found
+                            $imp.module $index make CustomTypeHandle @handle
+                            &inferred match {
+                                case None -> { $handle make Maybe<CustomTypeHandle>.Some #inferred }
+                                case Some -> {
+                                    &handle CustomTypeHandle-eq not if {
+                                        $ctx &matsh.token "constructors belong to different variants" abort<[]> break
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    $i 1 + #i
+                } match {
+                    case Error -> { make Result<[], ResolveError>.Error break }
+                    case Success -> { [,] }
+                }
+            }
+        }
+        $i 1 + #i
+    } match {
+        case Error -> { make Result<CustomTypeHandle, ResolveError>.Error break }
+        case Success -> { [,] }
+    }
+    $inferred match {
+        case None -> {
+            $ctx &matsh.token "could not determine type of match" abort<CustomTypeHandle> break
+        }
+        case Some -> {}
+    }
+    make Result<CustomTypeHandle, ResolveError>.Success
+} }
+
+fn lookup-constructor(ctx: .WordCtx, constructor: .Token) -> Result<[CustomTypeHandle, i32], ResolveError> { block (-> Result<[CustomTypeHandle, i32], ResolveError>) {
+    0 @i
+    loop {
+        $i $ctx.imports.values.len = if { make Maybe<[CustomTypeHandle, i32]>.None break }
+        &ctx.imports.values $i Array:get<_> @imports
+        0 @j
+        loop {
+            $j $imports.len = if { make Maybe<[CustomTypeHandle, i32]>.None break }
+            $imports $j Array:get<Import> @imp
+
+            0 @k
+            loop {
+                $k $imp.items.len = if { make Maybe<[CustomTypeHandle, i32]>.None break }
+                &imp.items $k Array:get<_> match {
+                    case Variant -> {
+                        @item
+                        $ctx.type-lookup &item.handle TypeLookup:lookup match {
+                            case Struct -> { drop Core:unreachable<.Variant> }
+                            case Variant -> {}
+                        } @varint
+                        0 @l
+                        loop {
+                            $l $item.constructors.len = if { make Maybe<[CustomTypeHandle, i32]>.None break }
+                            &item.constructors $l Array:get<i32> ~ @tag
+                            &varint.cases $tag Array:get<_> @cays
+                            &cays.name Token-lexeme $constructor Token-lexeme Bytes:eq if {
+                                $item.handle $tag [,2]
+                                make Maybe<[CustomTypeHandle, i32]>.Some break
+                            }
+
+                            $l 1 + #l
+                        } match {
+                            case Some -> { make Maybe<[CustomTypeHandle, i32]>.Some break }
+                            case None -> {}
+                        }
+                    }
+                    case _ -> { drop }
+                }
+                $k 1 + #k
+            } match {
+                case Some -> { make Maybe<[CustomTypeHandle, i32]>.Some break }
+                case None -> {}
+            }
+            $j 1 + #j
+        } match {
+            case Some -> { make Maybe<[CustomTypeHandle, i32]>.Some break }
+            case None -> {}
+        }
+        $i 1 + #i
+    } match {
+        case Some -> { make Result<[CustomTypeHandle, i32], ResolveError>.Success break }
+        case None -> {}
+    }
+
+    0 @i
+    loop {
+        $i $ctx.type-lookup.types.len = if {
+            $ctx $constructor "constructor not found" abort<[CustomTypeHandle, i32]> break
+        }
+        $ctx.type-lookup.types $i Array:get<_> match {
+            case Variant -> {
+                @varint
+                0 @tag
+                loop {
+                    $tag $varint.cases.len = if { make Maybe<[CustomTypeHandle, i32]>.None break }
+                    &varint.cases $tag Array:get<_> @cays
+                    &cays.name Token-lexeme $constructor Token-lexeme Bytes:eq if {
+                        $ctx.module-id $i make CustomTypeHandle $tag [,2] make Maybe<[CustomTypeHandle, i32]>.Some break
+                    }
+                    $tag 1 + #tag
+                } match {
+                    case None -> {}
+                    case Some -> { make Result<[CustomTypeHandle, i32], ResolveError>.Success break }
+                }
+            }
+            case _ -> { drop }
+        }
+        $i 1 + #i
+    }
+} }
+
+fn find-function-in-imports(imports: .Map<ByteSlice, Array<Import>>, name: .Token) -> Maybe<FunctionHandle> {
+    0 @i
+    loop {
+        $i $imports.values.len = if { make Maybe<FunctionHandle>.None break }
+        &imports.values $i Array:get<_> @imports
+        0 @j
+        loop {
+            $j $imports.len = if { make Maybe<FunctionHandle>.None break }
+            $imports $j Array:get<Import> @imp
+
+            0 @k
+            loop {
+                $k $imp.items.len = if { make Maybe<FunctionHandle>.None break }
+                &imp.items $k Array:get<_> match {
+                    case ImportItem.Function -> {
+                        @item
+                        &item.name Token-lexeme $name Token-lexeme Bytes:eq if {
+                            $item.handle make Maybe<FunctionHandle>.Some break
+                        }
+                    }
+                    case _ -> { drop }
+                }
+                $k 1 + #k
+            } match {
+                case Some -> { make Maybe<FunctionHandle>.Some break }
+                case None -> {}
+            }
+            $j 1 + #j
+        } match {
+            case Some -> { make Maybe<FunctionHandle>.Some break }
+            case None -> {}
+        }
+        $i 1 + #i
+    }
+}

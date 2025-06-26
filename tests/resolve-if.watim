@@ -7,7 +7,7 @@ fn foo() -> i32 {
     } +
 }
 [== Args Compiler ==]
-check
+resolve
 -
 --quiet
 [== Status Compiler ==]
@@ -31,13 +31,11 @@ check
           (Number (NUMBER 5 2 5)),
           (Number (NUMBER 0 2 7)),
           (Number (NUMBER 1 2 9)),
-          (Intrinsic (IDENT = 2 11) (Eq I32)),
+          (Intrinsic (IDENT = 2 11) Eq []),
           (If
             token=(IF if 2 13),
-            parameters=[],
-            returns=(Some [I32]),
             true-branch=(Scope 1 [
               (Number (NUMBER 9 3 9))]),
             false-branch=(Scope 2 [
               (Number (NUMBER 4 5 9))])),
-          (Intrinsic (IDENT + 6 7) (Add I32))])))))
+          (Intrinsic (IDENT + 6 7) Add [])])))))

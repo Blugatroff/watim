@@ -1,0 +1,241 @@
+import "../../std/core.watim" as Core
+import "../../std/result.watim" as Result (Result(Error, Success))
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some))
+import "../../std/bytes.watim" as Bytes
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/array.watim" as Array (Array)
+import "../../std/map.watim" as Map (Map)
+
+import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-location)
+import "../parser.watim" as Parsed
+
+import "./type.watim" as Type (Type, NamedType, ModuleId, FunType, TupleType, CustomTypeType, CustomTypeHandle)
+import "./top-items.watim" as TopItems (Import, TypeDefinition, TypeDefinition-name, ImportItem)
+import "./module.watim" as Module (Module, ResolveError)
+
+struct TypeResolver {
+    module-id: ModuleId
+    module-path: ByteSlice
+    imports: .Map<ByteSlice, Array<Import>>
+    module: .Parsed:Module
+    modules: .Map<ByteSlice, Module>
+}
+
+fn resolve-named-types(self: .TypeResolver, arena: .Arena, types: .Array<Parsed:NamedType>) -> Result<Array<NamedType>, ResolveError> {
+    $arena $types.len Array:new-with-capacity<NamedType> @resolved
+    0 @i
+    loop (-> Result<Array<NamedType>, ResolveError>) {
+        $i $types.len = if {
+            $resolved make Result<Array<NamedType>, ResolveError>.Success break
+        }
+        &resolved
+        $self $arena $types $i Array:get<_> resolve-named-type match {
+            case Error -> { make Result<Array<NamedType>, ResolveError>.Error break }
+            case Success -> {}
+        }
+        Array:push-assert-no-alloc<_>
+        $i 1 + #i
+    }
+}
+
+fn resolve-named-type(self: .TypeResolver, arena: .Arena, type: .Parsed:NamedType) -> Result<NamedType, ResolveError> {
+    $type.name
+    $self $arena &type.type resolve-type match {
+        case Error -> { flip drop make Result<NamedType, ResolveError>.Error }
+        case Success -> { make NamedType make Result<NamedType, ResolveError>.Success }
+    }
+}
+
+fn resolve-types(self: .TypeResolver, arena: .Arena, types: .Array<Parsed:Type>) -> Result<Array<Type>, ResolveError> {
+    $arena $types.len Array:new-with-capacity<Type> @resolved
+    0 @i
+    loop (-> Result<Array<Type>, ResolveError>) {
+        $i $types.len = if {
+            $resolved make Result<Array<Type>, ResolveError>.Success break
+        }
+        &resolved
+        $self $arena $types $i Array:get<Parsed:Type> resolve-type match {
+            case Error -> { make Result<Array<Type>, ResolveError>.Error break }
+            case Success -> {}
+        }
+        Array:push-assert-no-alloc<_>
+        $i 1 + #i
+    }
+}
+
+fn resolve-type(self: .TypeResolver, arena: .Arena, type: .Parsed:Type) -> Result<Type, ResolveError> { block (-> Result<Type, ResolveError>) {
+    $type match {
+        case Parsed:Type.Ptr -> {
+            .type ~
+            $self flip $arena flip resolve-type match {
+                case Success -> {
+                    $arena flip Arena:push<_>
+                    make Type.Ptr make Result<Type, ResolveError>.Success
+                }
+                case _ -> {}
+            }
+        }
+        case Parsed:Type.Hole -> { ~ make Type.Hole make Result<Type, ResolveError>.Success }
+        case Parsed:Type.Bool -> { drop make Type.Bool make Result<Type, ResolveError>.Success }
+        case Parsed:Type.I8 -> { drop make Type.I8 make Result<Type, ResolveError>.Success }
+        case Parsed:Type.I32 -> { drop make Type.I32 make Result<Type, ResolveError>.Success }
+        case Parsed:Type.I64 -> { drop make Type.I64 make Result<Type, ResolveError>.Success }
+        case Parsed:Type.Fun -> {
+            @fun
+            $fun.token
+            $self $arena &fun.parameters resolve-types match {
+                case Error -> { make Result<Type, ResolveError>.Error break }
+                case Success -> {}
+            }
+            $self $arena &fun.returns resolve-types match {
+                case Error -> { make Result<Type, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make FunType
+            make Type.Fun
+            make Result<Type, ResolveError>.Success
+        }
+        case Parsed:Type.Tuple -> {
+            @tuple
+            $tuple.token
+            $self $arena &tuple.items resolve-types match {
+                case Error -> { flip drop make Result<Type, ResolveError>.Error }
+                case Success -> { make TupleType make Type.Tuple make Result<Type, ResolveError>.Success }
+            }
+        }
+        case Parsed:Type.Generic -> { ~ make Type.Generic make Result<Type, ResolveError>.Success }
+        case Parsed:Type.Custom -> {
+            $self flip $arena flip resolve-custom-type match {
+                case Error -> { make Result<Type, ResolveError>.Error }
+                case Success -> { make Type.Custom make Result<Type, ResolveError>.Success }
+            }
+        }
+    }
+} }
+
+fn resolve-custom-type-name(self: .TypeResolver, arena: .Arena, name: .Token) -> Maybe<CustomTypeHandle> { block {
+    0 @i
+    loop {
+        $i $self.module.type-definitions.len = if {
+            make Maybe<CustomTypeHandle>.None break
+        }
+        &self.module.type-definitions $i Array:get<_> @type-definition
+        $type-definition Parsed:TypeDefinition-name Token-lexeme $name Token-lexeme Bytes:eq if {
+            $self.module-id $i make CustomTypeHandle make Maybe<CustomTypeHandle>.Some break
+        }
+        $i 1 + #i
+    } match {
+        case Some -> { make Maybe<CustomTypeHandle>.Some break }
+        case None -> {}
+    }
+
+    0 @i
+    loop {
+        $i $self.imports.values.len = if { make Maybe<CustomTypeHandle>.None break }
+        &self.imports.values $i Array:get<_> @imports
+
+        0 @j
+        loop {
+            $j $imports.len = if { make Maybe<CustomTypeHandle>.None break }
+            $imports $j Array:get<_> @imp
+
+            0 @k
+            loop {
+                $k $imp.items.len = if { make Maybe<CustomTypeHandle>.None break }
+                block (-> Maybe<CustomTypeHandle>) {
+                    &imp.items $k Array:get<ImportItem> match {
+                        case ImportItem.Struct -> { Core:dup<_> .handle flip .name }
+                        case ImportItem.Variant -> { Core:dup<_> .handle flip .name }
+                        case ImportItem.Function -> { make Maybe<CustomTypeHandle>.None break }
+                    } Token-lexeme $name Token-lexeme Bytes:eq if {
+                        ~ make Maybe<CustomTypeHandle>.Some break
+                    } else { drop }
+                    make Maybe<CustomTypeHandle>.None
+                } match {
+                    case None -> {}
+                    case _ -> { break }
+                }
+                $k 1 + #k
+            } match {
+                case None -> {}
+                case _ -> { break }
+            }
+
+            $j 1 + #j
+        } match {
+            case None -> {}
+            case _ -> { break }
+        }
+
+        $i 1 + #i
+    }
+} }
+
+fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomType) -> Result<CustomTypeType, ResolveError> {
+    block (-> Result<CustomTypeType, ResolveError>) {
+        $type match {
+            case Parsed:CustomType.Foreign -> {
+                @type
+                $self $arena &type.generic-arguments resolve-types match {
+                    case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
+                    case Success -> {}
+                } @generic-arguments
+                $self.imports &type.module Token-lexeme Map:get-bs<Array<Import>> match {
+                    case None -> {
+                        $self.module-id &type.module Token-location
+                        "module not found" Array:init-no-copy<i8>
+                        make ResolveError
+                        make Result<CustomTypeType, ResolveError>.Error break
+                    }
+                    case Some -> {}
+                } @imports
+                0 @i
+                loop {
+                    $i $imports.len = if {
+                        $self.module-id &type.name Token-location
+                        "type not found" Array:init-no-copy<i8>
+                        make ResolveError
+                        make Result<CustomTypeType, ResolveError>.Error break
+                    }
+                    $imports $i Array:get<Import> @imp
+                    &self.modules.values $imp.module.index Array:get<Module> @module
+                    0 @j
+                    loop {
+                        $j $module.type-definitions.values.len = if { make Maybe<CustomTypeType>.None break }
+                        &module.type-definitions.values $j Array:get<TypeDefinition>
+                        TypeDefinition-name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                            $imp.module $j make CustomTypeHandle $generic-arguments make CustomTypeType
+                            make Maybe<CustomTypeType>.Some break
+                        }
+                        $j 1 + #j
+                    } match {
+                        case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
+                        case None -> {}
+                    }
+                    $i 1 + #i
+                }
+            }
+            case Parsed:CustomType.Local -> {
+                @type
+                $self $arena &type.generic-arguments resolve-types match {
+                    case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
+                    case Success -> {}
+                } @generic-arguments
+                $self $arena &type.name resolve-custom-type-name match {
+                    case None -> {
+                        $self.module-id &type.name Token-location
+                        "type not found" Array:init-no-copy<i8>
+                        make ResolveError
+                        make Result<CustomTypeType, ResolveError>.Error
+                    }
+                    case Some -> {
+                        $generic-arguments make CustomTypeType
+                        make Result<CustomTypeType, ResolveError>.Success break
+                    }
+                }
+            }
+        }
+    }
+}
+

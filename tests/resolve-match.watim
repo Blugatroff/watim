@@ -1,0 +1,54 @@
+[== Stdin Compiler ==]
+import "./variant.watim" as V (Maybe(None, Some))
+fn foo() {
+    make Maybe<i32>.None match {
+        case None -> {}
+        case _ -> { drop }
+    }
+}
+[== Args Compiler ==]
+resolve
+-
+--quiet
+[== Status Compiler ==]
+0
+[== Stdout Compiler ==]
+(Map
+  "./variant.watim"=(Module
+    imports=(Map),
+    type-definitions=(Map
+      "Maybe"=(Variant
+        name=(IDENT Maybe 1 9),
+        generic-parameters=[(IDENT T 1 15)],
+        cases=[
+          (VariantCase (IDENT Some 2 10) (Some (GenericType (IDENT T 2 18) 0))),
+          (VariantCase (IDENT None 3 10) None)])),
+    globals=(Map),
+    functions=(Map)),
+  "-"=(Module
+    imports=(Map
+      "V"=[(Import (IMPORT import 1 1) 0 "./variant.watim" (IDENT V 1 29) [
+        (VariantImport (IDENT Maybe 1 32) (CustomTypeHandle 0 0) [1, 0])])]),
+    type-definitions=(Map),
+    globals=(Map),
+    functions=(Map
+      "foo"=(Function
+        name=(IDENT foo 2 4),
+        export=None,
+        signature=(Signature
+          generic-parameters=[],
+          parameters=[],
+          returns=[]),
+        locals=(Map),
+        body=(Scope 0 [
+          (MakeVariant
+            token=(MAKE make 3 5),
+            tag=1,
+            type=(CustomType 0 0 [I32])),
+          (Match
+            token=(MATCH match 3 26),
+            variant=(CustomTypeHandle 0 0),
+            cases=[
+              (MatchCase 1 (IDENT None 4 14) (Scope 1 []))],
+            default=(Some (Scope 2 [
+              (Intrinsic (IDENT drop 5 21) Drop [])])))])))))

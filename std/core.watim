@@ -128,7 +128,7 @@ fn escape(char: i8, dest: .i8) -> i32 {
     }
 }
 
-fn clear(ptr: .i32, len: i32) {
-    $ptr 0 $len mem-fill
+fn clear(ptr: .i8, len: i32) {
+    $ptr 0 !i8 $len mem-fill
 }
 

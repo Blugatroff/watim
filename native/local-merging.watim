@@ -1,13 +1,12 @@
-import "../std/maybe.watim" as Maybe (Maybe, assert-some)
+import "../std/maybe.watim" as Maybe (Maybe(None, Some), assert-some)
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
 
-import "./resolver/ast.watim" as Resolved (VarId)
-import "./env.watim" as Env (ScopeId, LocalId, LocalId-eq, root-scope)
+import "./resolving/words.watim" as Resolved (ScopeId, LocalId, LocalId-eq, root-scope, VarId(Local, Global))
 import "./monomizer.watim" as Monomizer (
-    Monomized, Module, ExternOrInstances,
+    Monomized, Module, ExternOrInstances(Extern, Instances),
     Function, Local, Scope, Word, If, MatchCase,
     TypeId, type-size, local-lives-in-memory
 )
@@ -72,7 +71,7 @@ fn merge-locals-word(
     scope: ScopeId
 ) {
     $word match {
-        case InitLocal -> {
+        case Word.InitLocal -> {
             @word
             $locals &word.local Map:get<LocalId, Local> assert-some<.Local> @local
             $arena $sizes $locals $disjoint $local find-disjoint-local match {
@@ -85,11 +84,11 @@ fn merge-locals-word(
                 }
             }
         }
-        case GetLocal -> { .var $disjoint fixup-var }
-        case SetLocal -> { .var $disjoint fixup-var }
-        case RefLocal -> { .var $disjoint fixup-var }
-        case StoreLocal -> { .var $disjoint fixup-var }
-        case If -> {
+        case Word.GetLocal -> { .var $disjoint fixup-var }
+        case Word.SetLocal -> { .var $disjoint fixup-var }
+        case Word.RefLocal -> { .var $disjoint fixup-var }
+        case Word.StoreLocal -> { .var $disjoint fixup-var }
+        case Word.If -> {
             @word
             $disjoint.reused.len @outer-reused
             $arena $sizes &word.true-branch $locals $disjoint merge-locals-scope
@@ -104,7 +103,7 @@ fn merge-locals-word(
             $arena &disjoint.scopes $word.true-branch.id  Array:push<ScopeId>
             $arena &disjoint.scopes $word.false-branch.id Array:push<ScopeId>
         }
-        case Block -> {
+        case Word.Block -> {
             @word
 
             $disjoint.reused.len @outer-reused
@@ -112,7 +111,7 @@ fn merge-locals-word(
             &disjoint.reused $outer-reused Array:truncate<LocalId>
             $arena &disjoint.scopes $word.body.id Array:push<ScopeId>
         }
-        case Loop -> {
+        case Word.Loop -> {
             @word
 
             $disjoint.reused.len @outer-reused
@@ -120,7 +119,7 @@ fn merge-locals-word(
             &disjoint.reused $outer-reused Array:truncate<LocalId>
             $arena &disjoint.scopes $word.body.id Array:push<ScopeId>
         }
-        case StructNamed -> {
+        case Word.StructNamed -> {
             @word
 
             $disjoint.reused.len @outer-reused
@@ -128,7 +127,7 @@ fn merge-locals-word(
             &disjoint.reused $outer-reused Array:truncate<LocalId>
             $arena &disjoint.scopes $word.body.id Array:push<ScopeId>
         }
-        case Match -> {
+        case Word.Match -> {
             @word
             0 @i
             loop {

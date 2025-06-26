@@ -1,0 +1,4 @@
+variant Maybe<T> {
+    case Some -> T
+    case None
+}

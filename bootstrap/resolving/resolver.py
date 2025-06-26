@@ -7,7 +7,7 @@ from indexed_dict import IndexedDict
 from lexer import Token
 import parsing as parser
 from resolving.words import Scope
-from resolving.top_items import Function, FunctionSignature, Import, Global, Extern, Local, ImportItem, Struct, Variant, VariantCase, TypeDefinition
+from resolving.top_items import Function, FunctionSignature, Import, Global, Extern, Local, ImportItem, Struct, Variant, VariantCase, TypeDefinition, FunctionImport, StructImport, VariantImport, FunctionHandle, ImportItem, CustomTypeHandle
 from resolving.env import Env
 from resolving.word_resolver import WordResolver
 from resolving.type_resolver import TypeResolver, TypeLookup
@@ -72,13 +72,29 @@ class ModuleResolver:
         imported_module = modules.index(imported_module_id)
         def resolve_item(parsed_item: parser.ImportItem) -> ImportItem:
             if isinstance(parsed_item, Token):
-                item_name = parsed_item
+                item = imported_module.lookup_item(parsed_item)
+                if item is None:
+                    raise ResolveException(importing_module_path, parsed_item, "not found")
+                if isinstance(item, FunctionHandle):
+                    return FunctionImport(parsed_item, item)
+                else:
+                    if isinstance(modules.index(item.module).type_definitions.index(item.index), Variant):
+                        return VariantImport(parsed_item, item, ())
+                    return StructImport(parsed_item, item)
             else:
-                item_name = parsed_item.name
-            item = imported_module.lookup_item(imported_module_id, item_name)
-            if item is None:
-                raise ResolveException(importing_module_path, item_name, "not found")
-            return ImportItem(item_name, item)
+                item = imported_module.lookup_item(parsed_item.name)
+                if item is None or not isinstance(item, CustomTypeHandle):
+                    raise ResolveException(importing_module_path, parsed_item.name, "not a variant")
+                variant = modules.index(item.module).type_definitions.index(item.index)
+                if not isinstance(variant, Variant):
+                    raise ResolveException(importing_module_path, parsed_item.name, "not a variant")
+                def lookup_constructor(constructor: Token) -> int:
+                    for i,case in enumerate(variant.cases):
+                        if case.name.lexeme == constructor.lexeme:
+                            return i
+                    raise ResolveException(importing_module_path, constructor, "constructor not found")
+                return VariantImport(parsed_item.name, item, tuple(
+                    (lookup_constructor(constructor) for constructor in parsed_item.constructors)))
         return Import(imp.token, path, imp.qualifier, imported_module_id, tuple(map(resolve_item, imp.items)))
 
     def resolve_type_definition(self, type_definition: parser.TypeDefinition) -> TypeDefinition:

@@ -1,5 +1,6 @@
 import "../std/core.watim" as Core
 import "../std/io.watim" as IO
+import "../std/maybe.watim" as Maybe (Maybe(None, Some))
 import "../std/array.watim" as Array (Array)
 import "./parser.watim" as Parser (Module, TopItem, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation, ImportItem)
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-print)
@@ -52,12 +53,12 @@ fn write-token(pp: .PrettyPrinter, token: .Token) -> i32 { block {
 
 fn TopItem-pretty(self: .TopItem, pp: .PrettyPrinter) -> i32 {
     $self match {
-        case Import -> { $pp Import-pretty }
-        case Extern -> { $pp Extern-pretty }
-        case Struct -> { $pp Struct-pretty }
-        case Function -> { $pp Function-pretty }
-        case Variant -> { $pp Variant-pretty }
-        case Global -> { $pp Global-pretty }
+        case TopItem.Import -> { $pp Import-pretty }
+        case TopItem.Extern -> { $pp Extern-pretty }
+        case TopItem.Struct -> { $pp Struct-pretty }
+        case TopItem.Function -> { $pp Function-pretty }
+        case TopItem.Variant -> { $pp Variant-pretty }
+        case TopItem.Global -> { $pp Global-pretty }
     }
 }
 
@@ -144,8 +145,8 @@ fn Import-pretty(self: .Import, pp: .PrettyPrinter) -> i32 { block {
 
 fn ImportItem-pretty(self: .ImportItem, pp: .PrettyPrinter) -> i32 { block {
     $self match {
-        case Item -> { $pp flip write-token }
-        case VariantWithConstructors -> {
+        case ImportItem.Item -> { $pp flip write-token }
+        case ImportItem.VariantWithConstructors -> {
             @imp
             $pp &imp.name write-token Core:dup<i32> 0 /= if { break } drop
             $pp "(" write Core:dup<i32> 0 /= if { break } drop
@@ -191,32 +192,32 @@ fn Words-pretty(self: .Words, pp: .PrettyPrinter) -> i32 { block {
 
 fn Word-pretty(self: .Word, pp: .PrettyPrinter) -> i32 { block {
     $self match {
-        case Number -> { $pp flip write-token }
-        case Call -> { $pp Call-pretty }
-        case String -> { .token $pp flip write-token }
-        case If -> { $pp If-pretty }
-        case Block -> { $pp Block-pretty }
-        case Loop -> { $pp Loop-pretty }
-        case GetLocal -> { $pp GetLocal-pretty }
-        case RefLocal -> { $pp RefLocal-pretty }
-        case SetLocal -> { $pp SetLocal-pretty }
-        case InitLocal -> { $pp InitLocal-pretty }
-        case FunRef -> { $pp FunRef-pretty }
-        case Load -> { $pp flip write-token }
-        case Ref -> { $pp flip write-token }
-        case Cast -> { $pp Cast-pretty }
-        case Break -> { $pp flip write-token }
-        case MakeStruct -> { $pp MakeStruct-pretty }
-        case MakeStructNamed -> { $pp MakeStructNamed-pretty }
-        case MakeVariant -> { $pp MakeVariant-pretty }
-        case Match -> { $pp Match-pretty }
-        case GetField -> { $pp GetField-pretty }
-        case Sizeof -> { $pp Sizeof-pretty }
-        case IndirectCall -> { $pp flip write-token }
-        case Store -> { $pp Store-pretty }
-        case UnpackTuple -> { $pp UnpackTuple-pretty }
-        case MakeTuple -> { $pp MakeTuple-pretty }
-        case StackAnnotation -> { $pp StackAnnotation-pretty }
+        case Word.Number -> { $pp flip write-token }
+        case Word.Call -> { $pp Call-pretty }
+        case Word.String -> { .token $pp flip write-token }
+        case Word.If -> { $pp If-pretty }
+        case Word.Block -> { $pp Block-pretty }
+        case Word.Loop -> { $pp Loop-pretty }
+        case Word.GetLocal -> { $pp GetLocal-pretty }
+        case Word.RefLocal -> { $pp RefLocal-pretty }
+        case Word.SetLocal -> { $pp SetLocal-pretty }
+        case Word.InitLocal -> { $pp InitLocal-pretty }
+        case Word.FunRef -> { $pp FunRef-pretty }
+        case Word.Load -> { $pp flip write-token }
+        case Word.Ref -> { $pp flip write-token }
+        case Word.Cast -> { $pp Cast-pretty }
+        case Word.Break -> { $pp flip write-token }
+        case Word.MakeStruct -> { $pp MakeStruct-pretty }
+        case Word.MakeStructNamed -> { $pp MakeStructNamed-pretty }
+        case Word.MakeVariant -> { $pp MakeVariant-pretty }
+        case Word.Match -> { $pp Match-pretty }
+        case Word.GetField -> { $pp GetField-pretty }
+        case Word.Sizeof -> { $pp Sizeof-pretty }
+        case Word.IndirectCall -> { $pp flip write-token }
+        case Word.Store -> { $pp Store-pretty }
+        case Word.UnpackTuple -> { $pp UnpackTuple-pretty }
+        case Word.MakeTuple -> { $pp MakeTuple-pretty }
+        case Word.StackAnnotation -> { $pp StackAnnotation-pretty }
     }
 } }
 
@@ -322,7 +323,7 @@ fn SetLocal-pretty(self: .SetLocal, pp: .PrettyPrinter) -> i32 { block {
 
 fn Store-pretty(self: .Store, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.start write-token Core:dup<i32> 0 /= if { break } drop
-    $pp &self.name write-token Core:dup<i32> 0 /= if { break } drop
+    $pp &self.ident write-token Core:dup<i32> 0 /= if { break } drop
     $pp &self.fields write-fields
 } }
 
@@ -404,8 +405,8 @@ fn Loop-pretty(self: .Loop, pp: .PrettyPrinter) -> i32 { block {
 
 fn Call-pretty(self: .Call, pp: .PrettyPrinter) -> i32 {
     $self match {
-        case Local -> { $pp LocalCall-pretty }
-        case Foreign -> { $pp ForeignCall-pretty }
+        case Call.Local -> { $pp LocalCall-pretty }
+        case Call.Foreign -> { $pp ForeignCall-pretty }
     }
 }
 
@@ -474,20 +475,20 @@ fn GenericParameters-pretty(self: .Array<Token>, pp: .PrettyPrinter) -> i32 { bl
 
 fn Type-pretty(self: .Type, pp: .PrettyPrinter) -> i32 { block (-> i32) {
     $pp $self match {
-        case Bool -> {}
-        case I8 -> {}
-        case I32 -> {}
-        case I64 -> {}
-        case Ptr -> {
+        case Type.Bool -> {}
+        case Type.I8 -> {}
+        case Type.I32 -> {}
+        case Type.I64 -> {}
+        case Type.Ptr -> {
             @ptr-type
             $pp &ptr-type.dot write-token Core:dup<i32> 0 /= if { break } drop
             $ptr-type.type $pp Type-pretty break
         }
-        case Custom -> { flip CustomType-pretty break }
-        case Fun -> { flip FunType-pretty break }
-        case Tuple -> { flip TupleType-pretty break }
-        case Generic -> { .name }
-        case Hole -> {}
+        case Type.Custom -> { flip CustomType-pretty break }
+        case Type.Fun -> { flip FunType-pretty break }
+        case Type.Tuple -> { flip TupleType-pretty break }
+        case Type.Generic -> { .name }
+        case Type.Hole -> {}
     } write-token
 } }
 
@@ -530,8 +531,8 @@ fn FunType-pretty(self: .FunType, pp: .PrettyPrinter) -> i32 { block {
 
 fn CustomType-pretty(self: .CustomType, pp: .PrettyPrinter) -> i32 {
     $self match {
-        case Local -> { $pp LocalCustomType-pretty }
-        case Foreign -> { $pp ForeignCustomType-pretty }
+        case CustomType.Local -> { $pp LocalCustomType-pretty }
+        case CustomType.Foreign -> { $pp ForeignCustomType-pretty }
     }
 }
 

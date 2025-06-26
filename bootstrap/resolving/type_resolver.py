@@ -115,34 +115,31 @@ class TypeResolver:
         return tuple(self.resolve_type(taip) for taip in types)
 
     def resolve_custom_type(self, taip: parsed.CustomTypeType | parsed.ForeignType) -> CustomTypeType:
-        type_index = 0
         generic_arguments = self.resolve_types(taip.generic_arguments)
         if isinstance(taip, parsed.CustomTypeType):
-            for type_definition in self.module.type_definitions:
-                if isinstance(type_definition, parsed.Struct) or isinstance(type_definition, parsed.Variant):
-                    if type_definition.name.lexeme == taip.name.lexeme:
-                        if len(type_definition.generic_parameters) != len(generic_arguments):
-                            self.generic_arguments_mismatch_error(taip.name, len(type_definition.generic_parameters), len(generic_arguments))
-                        return CustomTypeType(
-                            taip.name,
-                            CustomTypeHandle(self.module_id, type_index),
-                            generic_arguments,
-                        )
-                    type_index += 1
-            for imports_with_same_qualifier in self.imports.values():
-                for imp in imports_with_same_qualifier:
-                    for item in imp.items:
-                        if isinstance(item.handle, CustomTypeHandle) and item.name.lexeme == taip.name.lexeme:
-                            return CustomTypeType(taip.name, item.handle, generic_arguments)
-            self.abort(taip.name, "type not found")
+            handle = self.resolve_custom_type_name(taip.name)
+            return CustomTypeType(taip.name, handle, generic_arguments)
         if isinstance(taip, parsed.ForeignType):
+            if taip.module.lexeme not in self.imports:
+                self.abort(taip.module, "module not found")
             for imp in self.imports[taip.module.lexeme]:
                 module = self.modules.index(imp.module)
                 for j,custom_type in enumerate(module.type_definitions.values()):
                     if custom_type.name.lexeme == taip.name.lexeme:
                         assert(len(custom_type.generic_parameters) == len(generic_arguments))
                         return CustomTypeType(taip.name, CustomTypeHandle(imp.module, j), generic_arguments)
-            assert(False)
+            self.abort(taip.name, "type not found")
+
+    def resolve_custom_type_name(self, name: Token) -> CustomTypeHandle:
+        for (type_index, type_definition) in enumerate(self.module.type_definitions):
+            if type_definition.name.lexeme == name.lexeme:
+                return CustomTypeHandle(self.module_id, type_index)
+        for imports_with_same_qualifier in self.imports.values():
+            for imp in imports_with_same_qualifier:
+                for item in imp.items:
+                    if isinstance(item.handle, CustomTypeHandle) and item.name.lexeme == name.lexeme:
+                        return item.handle
+        self.abort(name, "type not found")
 
     def generic_arguments_mismatch_error(self, token: Token, expected: int, actual: int):
         msg = f"expected {expected} generic arguments, not {actual}"

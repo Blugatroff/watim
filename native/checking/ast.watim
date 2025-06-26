@@ -7,149 +7,39 @@ import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
 import "../../std/util.watim" as Util (i32-format, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-format)
-import "../env.watim" as Env (
-    LocalId, ScopeId, Local, LocalId-format, ScopeId-format,
-    Local-format)
-import "./type.watim" as Type (
-    ModuleId, CustomTypeHandle, Type, NamedType, CustomTypeType,
-    FunType, CustomType, CustomTypeHandle-format,
+import "../resolving/words.watim" as Resolved (
+    LocalId, GlobalId, GlobalId-format, ScopeId, ScopeId-format,
+    LocalId-format, FunctionHandle, FunctionHandle-format,
+    VarId, VarId-format, StringWord, StringWord-format,
+    Call, Call-format, FunRef, FunRef-format)
+import "../resolving/top-items.watim" as Resolved (
+    Global, Global-format,
+    TypeDefinition, TypeDefinition-format,
+    Import, Import-format, Extern, Extern-format,
+    Signature, Signature-format, LocalName, LocalName-format,
+)
+import "../resolving/type.watim" as Type (
+    CustomTypeHandle, Type, NamedType, CustomTypeType,
+    FunType, CustomTypeHandle-format, ModuleId,
     NamedType-format, Types-format, CustomTypeType-format,
-    FunType-format, CustomType-format)
+    FunType-format)
 
-struct FunctionHandle { module: ModuleId index: i32 }
-fn FunctionHandle-format(fmt: .Formatter, self: .FunctionHandle) {
-    $fmt "(FunctionHandle " Fmt:write
-    $fmt $self.module.index i32-format
-    $fmt " " Fmt:write
-    $fmt $self.index i32-format
-    $fmt ")" Fmt:write
-}
-fn FunctionHandle-eq(self: .FunctionHandle, other: .FunctionHandle) -> bool {
-    $self.module.index $other.module.index =
-    $self.index $other.index = and
-}
-
-variant ImportItemItem {
-    case Function -> FunctionHandle
-    case CustomType -> CustomTypeHandle
-}
-
-struct ImportItem {
-    name: Token
-    handle: ImportItemItem
-}
-fn ImportItem-format(fmt: .Formatter, self: .ImportItem) {
-    $fmt "(ImportItem " Fmt:write
-    $fmt &self.name Token-format
-    $fmt " " Fmt:write
-    $fmt &self.handle match {
-        case Function -> { FunctionHandle-format }
-        case CustomType -> { CustomTypeHandle-format }
-    }
-    $fmt ")" Fmt:write
-}
-
-struct Import {
-    token: Token
-    module: ModuleId
-    path: ByteSlice
-    qualifier: Token
-    items: Array<ImportItem>
-}
-fn Import-format(fmt: .Formatter, self: .Import) {
-    $fmt "(Import " Fmt:write
-    $fmt &self.token Token-format
-    $fmt " " Fmt:write
-    $fmt $self.module.index i32-format
-    $fmt " " Fmt:write
-    $fmt &self.path ByteSlice-format
-    $fmt " " Fmt:write
-    $fmt &self.qualifier Token-format
-    $fmt " " Fmt:write
-    $fmt \ImportItem-format &self.items Array:format-multi-line<ImportItem>
-    $fmt ")" Fmt:write
-}
-
-struct Global {
-    name: Token
+struct Local {
+    name: LocalName
     type: Type
     reffed: bool
+    is-parameter: bool
 }
-fn Global-format(fmt: .Formatter, self: .Global) {
-    $fmt "(Global " Fmt:write
-    $fmt &self.name Token-format
+fn Local-format(fmt: .Formatter, self: .Local) {
+    $fmt "(Local " Fmt:write
+    $fmt &self.name LocalName-format
     $fmt " " Fmt:write
     $fmt &self.type Type:format
     $fmt " " Fmt:write
     $fmt $self.reffed bool-format
+    $fmt " " Fmt:write
+    $fmt $self.is-parameter bool-format
     $fmt ")" Fmt:write
-}
-
-struct Signature {
-    generic-parameters: Array<Token>
-    parameters: Array<NamedType>
-    returns: Array<Type>
-}
-fn Signature-format(fmt: .Formatter, self: .Signature) {
-    $fmt "(Signature\n" Fmt:write
-    $fmt Fmt:indent
-    $fmt Fmt:write-indent
-    $fmt "generic-parameters=" Fmt:write
-    $fmt \Token-format &self.generic-parameters Array:format<Token>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "parameters=" Fmt:write
-    $fmt \NamedType-format &self.parameters Array:format<NamedType>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "returns=" Fmt:write
-    $fmt &self.returns Types-format
-    $fmt ")" Fmt:write
-    $fmt Fmt:dedent
-}
-
-struct Extern {
-    name: Token
-    extrn-module: ByteSlice
-    extrn-name: ByteSlice
-    signature: Signature
-}
-fn Extern-format(fmt: .Formatter, self: .Extern) {
-    $fmt "(Extern " Fmt:write
-    $fmt &self.name Token-format
-    $fmt " " Fmt:write
-    $fmt &self.extrn-module ByteSlice-format
-    $fmt " " Fmt:write
-    $fmt &self.extrn-name ByteSlice-format
-    $fmt " " Fmt:write
-    $fmt &self.signature Signature-format
-    $fmt ")" Fmt:write
-}
-
-struct GlobalId {
-    name: Token
-    module: ModuleId
-    index: i32
-}
-fn GlobalId-format(fmt: .Formatter, self: .GlobalId) {
-    $fmt "(GlobalId " Fmt:write
-    $fmt &self.name Token-format
-    $fmt " " Fmt:write
-    $fmt $self.module.index i32-format
-    $fmt " " Fmt:write
-    $fmt $self.index i32-format
-    $fmt ")" Fmt:write
-}
-
-variant VarId {
-    case Local -> LocalId
-    case Global -> GlobalId
-}
-fn VarId-format(fmt: .Formatter, self: .VarId) {
-    $self match VarId {
-        case Local -> { $fmt flip LocalId-format }
-        case Global -> { $fmt flip GlobalId-format }
-    }
 }
 
 struct FieldAccess {
@@ -257,21 +147,6 @@ fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
     $fmt ")" Fmt:write
 }
 
-struct StringWord {
-    token: Token
-    offset: i32
-    len: i32
-}
-fn StringWord-format(fmt: .Formatter, self: .StringWord) {
-    $fmt "(StringWord " Fmt:write
-    $fmt &self.token Token-format
-    $fmt " " Fmt:write
-    $fmt $self.offset i32-format
-    $fmt " " Fmt:write
-    $fmt $self.len i32-format
-    $fmt ")" Fmt:write
-}
-
 struct Cast {
     token: Token
     src: Type
@@ -287,15 +162,15 @@ fn Cast-format(fmt: .Formatter, self: .Cast) {
     $fmt ")" Fmt:write
 }
 
-struct Sizeof {
-    token: Token
-    type: Type
+struct Flip {
+    lower: Type
+    upper: Type
 }
-fn Sizeof-format(fmt: .Formatter, self: .Sizeof) {
-    $fmt "(Sizeof " Fmt:write
-    $fmt &self.token Token-format
+fn Flip-format(fmt: .Formatter, self: .Flip) {
+    $fmt "(Flip " Fmt:write
+    $fmt &self.lower Type:format
     $fmt " " Fmt:write
-    $fmt &self.type Type:format
+    $fmt &self.upper Type:format
     $fmt ")" Fmt:write
 }
 
@@ -322,10 +197,12 @@ variant Intrinsic {
     case Le -> Type
     case Not -> Type
     case Store -> Type
+    case Uninit -> Type
+    case Flip -> Flip
     case SetStackSize
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
-    $self match Intrinsic {
+    $self match {
         case Gt -> { $fmt "(Gt " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case Lt -> { $fmt "(Lt " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case Add -> { $fmt "(Add " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
@@ -349,6 +226,8 @@ fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
         case Not -> { $fmt "(Not " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case Store -> { $fmt "(Store " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
         case SetStackSize -> { $fmt "SetStackSize" Fmt:write }
+        case Uninit -> { $fmt "(Uninit " Fmt:write $fmt flip Type:format $fmt ")" Fmt:write }
+        case Flip -> { $fmt flip Flip-format }
     }
 }
 
@@ -361,57 +240,6 @@ fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
     $fmt &self.token Token-format
     $fmt " " Fmt:write
     $fmt &self.intrinsic Intrinsic-format
-    $fmt ")" Fmt:write
-}
-
-struct Flip {
-    token: Token
-    lower: Type
-    upper: Type
-}
-fn Flip-format(fmt: .Formatter, self: .Flip) {
-    $fmt "(Flip " Fmt:write
-    $fmt &self.token Token-format
-    $fmt " " Fmt:write
-    $fmt &self.lower Type:format
-    $fmt " " Fmt:write
-    $fmt &self.upper Type:format
-    $fmt ")" Fmt:write
-}
-
-struct Call {
-    name: Token
-    function: FunctionHandle
-    generic-arguments: Array<Type>
-}
-fn Call-format(fmt: .Formatter, self: .Call) {
-    $fmt "(Call " Fmt:write
-    $fmt &self.name Token-format
-    $fmt " " Fmt:write
-    $fmt &self.function FunctionHandle-format
-    $fmt " " Fmt:write
-    $fmt &self.generic-arguments Types-format
-    $fmt ")" Fmt:write
-}
-
-struct FunRef {
-    call: Call
-}
-fn FunRef-format(fmt: .Formatter, self: .FunRef) {
-    $fmt "(FunRef " Fmt:write
-    $fmt &self.call Call-format
-    $fmt ")" Fmt:write
-}
-
-struct Uninit {
-    token: Token
-    type: Type
-}
-fn Uninit-format(fmt: .Formatter, self: .Uninit) {
-    $fmt "(Uninit " Fmt:write
-    $fmt &self.token Token-format
-    $fmt " " Fmt:write
-    $fmt &self.type Type:format
     $fmt ")" Fmt:write
 }
 
@@ -634,7 +462,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "varint=" Fmt:write
+    $fmt "variant=" Fmt:write
     $fmt &self.varint CustomTypeType-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
@@ -725,6 +553,18 @@ fn UnpackTuple-format(fmt: .Formatter, self: .UnpackTuple) {
     $fmt ")" Fmt:write
 }
 
+struct Drop {
+    token: Token
+    type: Type
+}
+fn Drop-format(fmt: .Formatter, self: .Drop) {
+    $fmt "(Drop " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type:format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case GetLocal -> GetLocal
@@ -735,11 +575,9 @@ variant Word {
     case String -> StringWord
     case Intrinsic -> IntrinsicWord
     case Cast -> Cast
-    case Sizeof -> Sizeof
+    case Sizeof -> Resolved:Sizeof
     case Call -> Call
-    case Drop -> Token
-    case Flip -> Flip
-    case Uninit -> Uninit
+    case Drop -> Drop
     case FieldInit -> FieldInit
     case StructWord -> StructWord
     case StructWordNamed -> StructWordNamed
@@ -757,7 +595,7 @@ variant Word {
     case UnpackTuple -> UnpackTuple
 }
 fn Word-format(fmt: .Formatter, self: .Word) {
-    $self match Word {
+    $self match {
         case Number -> { $fmt "(Number " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
         case GetLocal -> { $fmt flip GetLocal-format }
         case RefLocal -> { $fmt flip RefLocal-format }
@@ -767,11 +605,9 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case String -> { $fmt flip StringWord-format }
         case Intrinsic -> { $fmt flip IntrinsicWord-format }
         case Cast -> { $fmt flip Cast-format }
-        case Sizeof -> { $fmt flip Sizeof-format }
+        case Sizeof -> { $fmt flip Resolved:Sizeof-format }
         case Call -> { $fmt flip Call-format }
-        case Drop -> { $fmt "(Drop " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
-        case Flip -> { $fmt flip Flip-format }
-        case Uninit -> { $fmt flip Uninit-format }
+        case Drop -> { $fmt flip Drop-format }
         case FieldInit -> { $fmt flip FieldInit-format }
         case StructWord -> { $fmt flip StructWord-format }
         case StructWordNamed -> { $fmt flip StructWordNamed-format }
@@ -798,15 +634,15 @@ variant FunctionOrExtern {
     case Function -> Function
 }
 fn FunctionOrExtern-format(fmt: .Formatter, self: .FunctionOrExtern) {
-    $fmt $self match FunctionOrExtern {
-        case Extern -> { Extern-format }
-        case Function -> { Function-format }
+    $fmt $self match {
+        case FunctionOrExtern.Extern -> { Extern-format }
+        case FunctionOrExtern.Function -> { Function-format }
     }
 }
 fn FunctionOrExtern-signature(self: .FunctionOrExtern) -> .Signature {
-    $self match FunctionOrExtern {
-        case Extern -> { .signature }
-        case Function -> { .signature }
+    $self match {
+        case FunctionOrExtern.Extern -> { .signature }
+        case FunctionOrExtern.Function -> { .signature }
     }
 }
 
@@ -845,7 +681,7 @@ fn Function-format(fmt: .Formatter, self: .Function) {
 
 struct Module {
     imports: Map<ByteSlice, Array<Import>>
-    custom-types: Map<ByteSlice, CustomType>
+    type-definitions: Map<ByteSlice, TypeDefinition>
     globals: Map<ByteSlice, Global>
     functions: Map<ByteSlice, FunctionOrExtern>
     static-data: ByteSlice
@@ -862,7 +698,7 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "type-definitions=" Fmt:write
-    $fmt \ByteSlice-format \CustomType-format &self.custom-types Map:format-multi-line<ByteSlice, CustomType>
+    $fmt \ByteSlice-format \TypeDefinition-format &self.type-definitions Map:format-multi-line<ByteSlice, TypeDefinition>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "globals=" Fmt:write

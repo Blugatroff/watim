@@ -1,5 +1,5 @@
 import "./core.watim" as CORE
-import "./maybe.watim" as Maybe (Maybe)
+import "./maybe.watim" as Maybe (Maybe(Some, None))
 import "./io.watim" as IO
 import "./arena.watim" as A
 import "./fmt.watim" as FMT (Formatter)
@@ -312,7 +312,7 @@ fn findMap<T, O>(self: .Array<T>, pred: (.T -> Maybe<O>)) -> Maybe<O> {
     0 @i
     loop {
         $i $self.len = if { make Maybe<O>.None break }
-        $self $i get<T> $pred -> match Maybe {
+        $self $i get<T> $pred -> match {
             case None -> {}
             case Some -> { make Maybe<O>.Some break }
         }
@@ -395,7 +395,7 @@ fn map-maybe<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> Maybe<O>)) -> Arr
     loop {
         $i $self.len = if { $new break }
         $self $i get<T> @v
-        $v $f -> match Maybe {
+        $v $f -> match {
             case None -> {}
             case Some -> { @v $arena &new $v push<O> }
         }

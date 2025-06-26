@@ -1,10 +1,11 @@
 import "../std/core.watim" as Core
-import "../std/maybe.watim" as Maybe (Maybe, or-default)
+import "../std/result.watim" as Result (Result(Success, Error))
+import "../std/maybe.watim" as Maybe (Maybe(None, Some), or-default)
 import "../std/page-alloc.watim" as PageAlloc
 import "../std/arena.watim" as Arena (Arena)
 import "../std/args.watim" as Args
 import "../std/array.watim" as Array (Array)
-import "../std/io.watim" as IO
+import "../std/io.watim" as IO (Error(Noent, Raw))
 import "../std/fs.watim" as FS (FileSystem)
 import "../std/bytes.watim" as Bytes
 import "../std/byte-slice.watim" as ByteSlice (ByteSlice)
@@ -18,8 +19,11 @@ import "./logging.watim" as Logging
 import "./lexer.watim" as Lexer (Token, Token-lexeme, TokenLocation)
 import "./parser.watim" as Parser (parse, ParseError-print, ParseError)
 import "./pretty-print.watim" as PrettyPrint (PrettyPrinter-new)
-import "./resolver/ast.watim" as Resolved
-import "./resolver/resolver.watim" as Resolver (resolve-modules, ResolveError-print)
+import "./checking/ast.watim" as Checked
+import "./checking/checker.watim" as Checker (check-modules, CheckError-print)
+import "./resolving/resolver.watim" as Resolved
+import "./resolving/module.watim" as Resolved
+import "./resolving/top-items.watim" as Resolved
 import "./monomizer.watim" as Monomizer (Monomized-format, monomize)
 import "./local-merging.watim" as LocalMerging (merge-locals)
 import "./codegen/generator.watim" as Generator
@@ -61,7 +65,7 @@ variant SingleFileCommand {
     case Pretty -> Maybe<ByteSlice>
 }
 fn SingleFileCommand-path(cmd: .SingleFileCommand) -> .Maybe<ByteSlice> {
-    $cmd match SingleFileCommand {
+    $cmd match {
         case Lex -> {}
         case Parse -> {}
         case Pretty -> {}
@@ -74,6 +78,7 @@ struct InferenceTreeArgs {
 }
 
 variant ProjectWideCommand {
+    case Resolve -> Maybe<ByteSlice>
     case Check -> Maybe<ByteSlice>
     case Monomize -> Maybe<ByteSlice>
     case Optimize -> Maybe<ByteSlice>
@@ -81,7 +86,8 @@ variant ProjectWideCommand {
 }
 
 fn ProjectWideCommand-path(cmd: .ProjectWideCommand) -> .Maybe<ByteSlice> {
-    $cmd match ProjectWideCommand {
+    $cmd match {
+        case Resolve -> {}
         case Check -> {}
         case Monomize -> {}
         case Optimize -> {}
@@ -123,6 +129,9 @@ fn parse-args(arena: .Arena) -> CliArgs {
         $command ByteSlice:unpack "pretty" Bytes:eq if {
             $path make SingleFileCommand.Pretty make CliCommand.SingleFile break
         }
+        $command ByteSlice:unpack "resolve" Bytes:eq if {
+            $path make ProjectWideCommand.Resolve make CliCommand.ProjectWide break
+        }
         $command ByteSlice:unpack "check" Bytes:eq if {
             $path make ProjectWideCommand.Check make CliCommand.ProjectWide break
         }
@@ -159,9 +168,9 @@ fn read-file-or-stdin(
     } match {
         case Success -> {}
         case Error -> {
-            match IO:Error {
+            match {
                 case Noent -> {
-                    $file-path match Maybe<ByteSlice> {
+                    $file-path match {
                         case None -> { "-" }
                         case Some -> { ByteSlice:unpack }
                     } @file-path-len @file-path-ptr
@@ -208,7 +217,7 @@ fn main "_start" () {
     &arena parse-args @args
     $args.quiet if { Logging:disable }
 
-    &fs $args.command match CliCommand {
+    &fs $args.command match {
         case SingleFile -> { run-single-file-command }
         case ProjectWide -> { run-project-wide-command }
     }
@@ -216,7 +225,7 @@ fn main "_start" () {
     exit
 }
 
-fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
+fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) { block {
     "Main" Arena:new @arena
     &command SingleFileCommand-path ~ @file-path
 
@@ -227,7 +236,7 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
     &tokens-arena &watim-code Array:to-slice lex @tokens
     &files-arena Arena:shred
 
-    $command match SingleFileCommand {
+    $command match {
         case Lex -> {
             drop
             0 @i
@@ -244,14 +253,14 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
             }
             &tokens-arena Arena:clear
             &arena Arena:clear
-            exit
+            break
         }
         case _ -> { drop }
     }
 
     &arena $tokens parse match {
         case Error -> {
-            2 flip $file-path match Maybe<ByteSlice> {
+            2 flip $file-path match {
                 case None -> { "-" }
                 case Some -> { ByteSlice:unpack }
             } ParseError-print drop
@@ -276,11 +285,11 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
 
             &tokens-arena Arena:clear
             &arena Arena:clear
-            exit
+            break
         }
         case _ -> { drop }
     }
-    $command match SingleFileCommand {
+    $command match {
         case Pretty -> {
             drop
             \write-stdout  PrettyPrinter-new @pp
@@ -296,11 +305,11 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) {
 
             &tokens-arena Arena:clear
             &arena Arena:clear
-            exit
+            break
         }
         case _ -> { drop Core:unreachable<[]> drop }
     }
-}
+} }
 
 fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { block {
     "Main" Arena:new @arena
@@ -311,17 +320,18 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     &arena &modules determine-compilation-order @modules
     "Resolving" Arena:new @resolving-arena
     &resolving-arena Arena:usage @start-usage
-    &resolving-arena &modules resolve-modules match {
+    &resolving-arena &modules Resolved:resolve-modules match {
         case Error -> {
-            2 flip &modules ResolveError-print drop
+            2 flip &modules Resolved:ResolveError-print drop
             2 IO:newline
             1 Core:exit
             Core:unreachable<Map<ByteSlice, Resolved:Module>>
         }
         case Success -> {}
-    } @modules
-    $command match ProjectWideCommand {
-        case Check -> {
+    } @resolved-modules
+
+    $command match {
+        case Resolve -> {
             drop
             Logging:enabled if {
                 &resolving-arena Arena:usage @end-usage
@@ -334,7 +344,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
             }
             1 Fmt:to-fd @fmt
             &arena &fmt 1024 Fmt:buffered @buf @fmt
-            &fmt \ByteSlice-format \Resolved:Module-format &modules Map:format-multi-line<ByteSlice, Resolved:Module>
+            &fmt \ByteSlice-format \Resolved:Module-format &resolved-modules Map:format-multi-line<ByteSlice, Resolved:Module>
             &fmt "\n" Fmt:write
             $buf Fmt:flush
             &resolving-arena Arena:shred
@@ -344,10 +354,48 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
         case _ -> { drop }
     }
 
+    "Checking" Arena:new @checking-arena
+    &checking-arena Arena:usage @start-usage
+    &checking-arena &resolved-modules check-modules match {
+        case Error -> {
+            2 flip &modules CheckError-print drop
+            2 IO:newline
+            1 Core:exit
+            Core:unreachable<Map<ByteSlice, Checked:Module>>
+        }
+        case Success -> {}
+    } @modules
+
+    $command match {
+        case Check -> {
+            drop
+            Logging:enabled if {
+                &checking-arena Arena:usage @end-usage
+                $end-usage $start-usage - @usage
+                2 "checking used: " IO:write-all IO:check
+                2 $usage IO:print IO:check
+                2 " bytes (" IO:write-all IO:check
+                2 $usage print-byte-count IO:check
+                2 ")\n" IO:write-all IO:check
+            }
+            1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
+            &fmt \ByteSlice-format \Checked:Module-format &modules Map:format-multi-line<ByteSlice, Checked:Module>
+            &fmt "\n" Fmt:write
+            $buf Fmt:flush
+            &resolving-arena Arena:shred
+            &checking-arena Arena:shred
+            &arena Arena:shred
+            break
+        }
+        case _ -> { drop }
+    }
+
     "Monomizing" Arena:new @monomizing-arena
     &monomizing-arena &modules monomize @monomized
     &resolving-arena Arena:shred
-    $command match ProjectWideCommand {
+    &checking-arena Arena:shred
+    $command match {
         case Monomize -> {
             drop
             1 Fmt:to-fd @fmt
@@ -363,7 +411,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     }
 
     &monomized merge-locals
-    $command match ProjectWideCommand {
+    $command match {
         case Optimize -> {
             drop
             1 Fmt:to-fd @fmt
@@ -389,17 +437,22 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
 } }
 
 fn print-byte-count(fd: i32, bytes: i32) -> i32 {
-    " KMGTP" @prefixes-len @prefixes
+    "KMGTP" @prefixes-len @prefixes
+    0 @i
     loop {
-        $prefixes-len 0 = if { 0 0 / break }
+        $i $prefixes-len = if { 0 0 / break }
         $bytes 1024 lt if {
             $fd $bytes IO:print Core:dup<i32> 0 /= if { break } drop
-            $fd $prefixes ~ IO:write-byte Core:dup<i32> 0 /= if { break } drop
-            $fd "iB" IO:write-all break
+            $i 0 = if {
+                $fd "B" IO:write-all
+            } else {
+                $fd $prefixes $i + ~ IO:write-byte Core:dup<i32> 0 /= if { break } drop
+                $fd "iB" IO:write-all
+            } break
         }
         $bytes 1024 / #bytes
         $prefixes 1 + #prefixes
-        $prefixes-len 1 - #prefixes-len
+        $i 1 + #i
     }
 }
 
@@ -410,11 +463,11 @@ fn load-modules-recursively(
     file-path-location: .TokenLocation,
     modules: .Map<ByteSlice, Parser:Module>
 ) { block {
-    $file-path match Maybe<ByteSlice> {
+    $file-path match {
         case None -> { "-" make ByteSlice }
         case Some -> {}
     } @file-path-or-dash
-    $modules &file-path-or-dash Map:get<ByteSlice, Parser:Module> match Maybe<Parser:Module> {
+    $modules &file-path-or-dash Map:get<ByteSlice, Parser:Module> match {
         case None -> {}
         case Some -> { drop break }
     }
@@ -453,7 +506,7 @@ fn load-modules-recursively(
         &module.imports $i Array:get<Parser:Import> @imp
         &imp.path Token-lexeme 2 - flip 1 + flip make ByteSlice @imp-path
         $file-path-or-dash &imp.path Lexer:Token-location make TokenLocation @imp-path-loc
-        $file-path match Maybe<ByteSlice> {
+        $file-path match {
             case None -> {
                 $arena $fs $imp-path make Maybe<ByteSlice>.Some &imp-path-loc $modules load-modules-recursively
             }
@@ -550,6 +603,6 @@ fn exit() {
         }
         2 "\n" IO:write-all IO:check
     }
-    0 Core:exit
+    ActiveMemory:get 0 = if { 0 } else { 1 } Core:exit
 }
 

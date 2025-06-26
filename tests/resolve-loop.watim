@@ -6,7 +6,7 @@ fn foo() -> i32 {
     } +
 }
 [== Args Compiler ==]
-check
+resolve
 -
 --quiet
 [== Status Compiler ==]
@@ -30,10 +30,9 @@ check
           (Number (NUMBER 5 2 5)),
           (Loop
             token=(LOOP loop 2 7),
-            parameters=[I32],
-            returns=(Some [I32, I32]),
             body=(Scope 1 [
               (Number (NUMBER 3 3 9)),
               (Break (BREAK break 3 11)),
-              (Number (NUMBER 1 4 9))])),
-          (Intrinsic (IDENT + 5 7) (Add I32))])))))
+              (Number (NUMBER 1 4 9))]),
+            annotation=None),
+          (Intrinsic (IDENT + 5 7) Add [])])))))

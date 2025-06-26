@@ -2,8 +2,8 @@ from typing import Dict, List, Tuple
 
 from util import Ref
 from lexer import Token
-from resolving.top_items import Local, LocalId
-from resolving.words import ScopeId
+from resolving.top_items import Local
+from resolving.words import ScopeId, LocalId
 
 class Env:
     parent: 'Env | None'

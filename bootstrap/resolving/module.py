@@ -22,13 +22,11 @@ class Module(Formattable):
             ("globals", self.globals.format_instrs(format_str)),
             ("functions", self.functions.format_instrs(format_str))])
 
-    def lookup_item(self, module_id: int, name: Token) -> FunctionHandle | CustomTypeHandle | None:
-        for function_index, function in enumerate(self.functions.values()):
-            if function.name.lexeme == name.lexeme:
-                return FunctionHandle(module_id, function_index)
-        for type_index, type_definition in enumerate(self.type_definitions.values()):
-            if type_definition.name.lexeme == name.lexeme:
-                return CustomTypeHandle(module_id, type_index)
+    def lookup_item(self, name: Token) -> FunctionHandle | CustomTypeHandle | None:
+        if name.lexeme in self.functions:
+            return FunctionHandle(self.id, self.functions.index_of(name.lexeme))
+        if name.lexeme in self.type_definitions:
+            return CustomTypeHandle(self.id, self.type_definitions.index_of(name.lexeme))
         return None
 
 @dataclass

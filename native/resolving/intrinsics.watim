@@ -1,0 +1,98 @@
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/bytes.watim" as Bytes
+
+import "../lexer.watim" as L (Token, Token-lexeme)
+
+variant Intrinsic {
+    case Flip
+    case Gt
+    case Lt
+    case Add
+    case Sub
+    case Mul
+    case Div
+    case Mod
+    case Eq
+    case NotEq
+    case MemGrow
+    case MemCopy
+    case MemFill
+    case Uninit
+    case Shl
+    case Shr
+    case Rotl
+    case Rotr
+    case And
+    case Or
+    case Ge
+    case Le
+    case Not
+    case Store
+    case SetStackSize
+}
+fn Intrinsic-eq(a: .Intrinsic, b: .Intrinsic) -> bool {
+    $a !.i32 ~ $b !.i32 ~ =
+}
+fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
+    $fmt $self match {
+        case Flip -> { "Flip" }
+        case Gt -> { "Gt" }
+        case Lt -> { "Lt" }
+        case Add -> { "Add" }
+        case Sub -> { "Sub" }
+        case Mul -> { "Mul" }
+        case Div -> { "Div" }
+        case Mod -> { "Mod" }
+        case Eq -> { "Eq" }
+        case NotEq -> { "NotEq" }
+        case MemGrow -> { "MemGrow" }
+        case MemCopy -> { "MemCopy" }
+        case MemFill -> { "MemFill" }
+        case Uninit -> { "Uninit" }
+        case Shl -> { "Shl" }
+        case Shr -> { "Shr" }
+        case Rotl -> { "Rotl" }
+        case Rotr -> { "Rotr" }
+        case And -> { "And" }
+        case Or -> { "Or" }
+        case Ge -> { "Ge" }
+        case Le -> { "Le" }
+        case Not -> { "Not" }
+        case Store -> { "Store" }
+        case SetStackSize -> { "SetStackSize" }
+    } Fmt:write
+}
+
+fn lookup(name: .Token) -> Maybe<Intrinsic> { block {
+    $name Token-lexeme @len @ptr
+    $ptr $len "+"    Bytes:eq if { make Intrinsic.Add   make Maybe<Intrinsic>.Some break }
+    $ptr $len "-"    Bytes:eq if { make Intrinsic.Sub   make Maybe<Intrinsic>.Some break }
+    $ptr $len "="    Bytes:eq if { make Intrinsic.Eq    make Maybe<Intrinsic>.Some break }
+    $ptr $len "gt"   Bytes:eq if { make Intrinsic.Gt    make Maybe<Intrinsic>.Some break }
+    $ptr $len "lt"   Bytes:eq if { make Intrinsic.Lt    make Maybe<Intrinsic>.Some break }
+    $ptr $len "ge"   Bytes:eq if { make Intrinsic.Ge    make Maybe<Intrinsic>.Some break }
+    $ptr $len "le"   Bytes:eq if { make Intrinsic.Le    make Maybe<Intrinsic>.Some break }
+    $ptr $len "%"    Bytes:eq if { make Intrinsic.Mod   make Maybe<Intrinsic>.Some break }
+    $ptr $len "/"    Bytes:eq if { make Intrinsic.Div   make Maybe<Intrinsic>.Some break }
+    $ptr $len "*"    Bytes:eq if { make Intrinsic.Mul   make Maybe<Intrinsic>.Some break }
+    $ptr $len "/="   Bytes:eq if { make Intrinsic.NotEq make Maybe<Intrinsic>.Some break }
+    $ptr $len "flip" Bytes:eq if { make Intrinsic.Flip  make Maybe<Intrinsic>.Some break }
+    $ptr $len "and"  Bytes:eq if { make Intrinsic.And   make Maybe<Intrinsic>.Some break }
+    $ptr $len "or"   Bytes:eq if { make Intrinsic.Or    make Maybe<Intrinsic>.Some break }
+    $ptr $len "not"  Bytes:eq if { make Intrinsic.Not   make Maybe<Intrinsic>.Some break }
+    $ptr $len "shr"  Bytes:eq if { make Intrinsic.Shr   make Maybe<Intrinsic>.Some break }
+    $ptr $len "shl"  Bytes:eq if { make Intrinsic.Shl   make Maybe<Intrinsic>.Some break }
+    $ptr $len "rotr" Bytes:eq if { make Intrinsic.Rotr  make Maybe<Intrinsic>.Some break }
+    $ptr $len "rotl" Bytes:eq if { make Intrinsic.Rotl  make Maybe<Intrinsic>.Some break }
+
+    $ptr $len "mem-copy" Bytes:eq if { make Intrinsic.MemCopy make Maybe<Intrinsic>.Some break }
+    $ptr $len "mem-fill" Bytes:eq if { make Intrinsic.MemFill make Maybe<Intrinsic>.Some break }
+    $ptr $len "mem-grow" Bytes:eq if { make Intrinsic.MemGrow make Maybe<Intrinsic>.Some break }
+    $ptr $len "uninit"   Bytes:eq if { make Intrinsic.Uninit  make Maybe<Intrinsic>.Some break }
+    $ptr $len "store"    Bytes:eq if { make Intrinsic.Store   make Maybe<Intrinsic>.Some break }
+
+    $ptr $len "set-stack-size" Bytes:eq if { make Intrinsic.SetStackSize make Maybe<Intrinsic>.Some break }
+    make Maybe<Intrinsic>.None
+} }
+

@@ -185,22 +185,38 @@ class VariantWord(Formattable):
     token: Token
     tag: int
     variant: CustomTypeType
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("VariantWord", [
+            ("token", self.token),
+            ("tag", self.tag),
+            ("type", self.variant)])
 
 @dataclass
 class MatchCase(Formattable):
     taip: Type | None
     tag: int
     body: Scope
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("MatchCase", [format_optional(self.taip), self.tag, self.body])
 
 @dataclass
 class MatchWord(Formattable):
     token: Token
     variant: CustomTypeType
     by_ref: bool
-    cases: List[MatchCase]
+    cases: Tuple[MatchCase, ...]
     default: Scope | None
-    parameters: List[Type]
-    returns: List[Type] | None
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...] | None
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("Match", [
+            ("token", self.token),
+            ("variant", self.variant),
+            ("by-ref", self.by_ref),
+            ("cases", format_seq(self.cases, multi_line=True)),
+            ("default", format_optional(self.default)),
+            ("parameters", format_seq(self.parameters)),
+            ("returns", format_optional(self.returns, format_seq))])
 
 @dataclass
 class TupleMakeWord(Formattable):

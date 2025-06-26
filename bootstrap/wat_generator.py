@@ -116,7 +116,7 @@ class WatGenerator:
         self.write_locals(function.locals)
         for i in range(0, function.max_struct_ret_count):
             self.write_indent()
-            self.write(f"(local $s{i}:a i32)\n")
+            self.write(f"(local $s{i}:4 i32) (local $s{i}:8 i64)\n")
         if function.locals_copy_space != 0:
             self.write_indent()
             self.write("(local $locl-copy-spac:e i32)\n")
@@ -565,6 +565,9 @@ class WatGenerator:
                 assert(not isinstance(struct, Variant))
                 if taip.can_live_in_reg():
                     fields = struct.fields.get()
+                    if len(fields) == 1:
+                        self.write(f";; make {format_type(taip)}\n")
+                        return
                     if taip.size() == 0:
                         for field in fields:
                             self.write("drop ")
@@ -779,10 +782,15 @@ class WatGenerator:
                         self.write("call $intrinsic:rotate-left ")
                         self.write(f"i32.const {item.size()} memory.copy")
                         copy_space_offset += item.size()
-                    else:
+                    elif item.size() <= 4:
                         self.write("i32.load")
+                    else:
+                        self.write("i64.load")
                     if i + 1 != len(items):
-                        self.write(" call $intrinsic:flip")
+                        if item.size() <= 4 or item.size() > 8:
+                            self.write(" call $intrinsic:flip")
+                        else:
+                            self.write(" call $intrinsic:flip-i32-i64")
                     self.write("\n")
                     offset += item.size()
                 self.dedent()
@@ -887,15 +895,17 @@ class WatGenerator:
         self.write("\n")
         if all(t.can_live_in_reg() for t in returns):
             return
-        for i in range(0, len(returns)):
-            self.write_line(f"local.set $s{i}:a")
         for i in range(len(returns), 0, -1):
-            ret = returns[len(returns) - i]
+            ret = returns[i - 1]
+            size = 4 if ret.size() > 8 or ret.size() <= 4 else 8
+            self.write_line(f"local.set $s{i - 1}:{size}")
+        for i,ret in enumerate(returns):
+            size = 4 if ret.size() > 8 or ret.size() <= 4 else 8
             if not ret.can_live_in_reg():
-                self.write_line(f"local.get $locl-copy-spac:e i32.const {offset} i32.add call $intrinsic:dupi32 local.get $s{i - 1}:a i32.const {ret.size()} memory.copy")
+                self.write_line(f"local.get $locl-copy-spac:e i32.const {offset} i32.add call $intrinsic:dupi32 local.get $s{i}:{size} i32.const {ret.size()} memory.copy")
                 offset += ret.size()
             else:
-                self.write_line(f"local.get $s{i - 1}:a")
+                self.write_line(f"local.get $s{i}:{size}")
 
     def write_signature(self, module: int, name: Token, export_name: Token | None, signature: FunctionSignature, instance_id: int | None, locals: Dict[LocalId, Local]) -> None:
         self.write(f"func ${module}:{name.lexeme}")

@@ -1,0 +1,317 @@
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/array.watim" as Array (Array)
+import "../../std/map.watim" as Map (Map)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
+import "../../std/util.watim" as U (i32-format, bool-format, i32-format-ref)
+
+import "../lexer.watim" as L (Token, Token-format, Token-lexeme)
+import "./type.watim" as Type (
+    Type, NamedType, NamedType-format, Types-format,
+    CustomTypeHandle, CustomTypeHandle-format,
+    ModuleId,
+)
+import "./words.watim" as Words (
+    LocalId, LocalId-format, GlobalId,
+    Scope, ScopeId, Scope-format,
+    FunctionHandle, FunctionHandle-format,
+)
+
+struct Struct {
+    name: Token
+    generic-parameters: Array<Token>
+    fields: Array<NamedType>
+}
+fn Struct-format(fmt: .Formatter, self: .Struct) {
+    $fmt "(Struct\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "generic-parameters=" Fmt:write
+    $fmt \Token-format &self.generic-parameters Array:format<Token>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "fields=" Fmt:write
+    $fmt \NamedType-format &self.fields Array:format-multi-line<NamedType>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct VariantCase {
+    name: Token
+    type: Maybe<Type>
+}
+fn VariantCase-format(fmt: .Formatter, self: .VariantCase) {
+    $fmt "(VariantCase " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.type Maybe:format<Type>
+    $fmt ")" Fmt:write
+}
+fn VariantCase-name(self: .VariantCase) -> ByteSlice {
+    &self.name Token-lexeme make ByteSlice
+}
+
+struct Variant {
+    name: Token
+    generic-parameters: Array<Token>
+    cases: Array<VariantCase>
+}
+fn Variant-format(fmt: .Formatter, self: .Variant) {
+    $fmt "(Variant\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "generic-parameters=" Fmt:write
+    $fmt \Token-format &self.generic-parameters Array:format<Token>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "cases=" Fmt:write
+    $fmt \VariantCase-format &self.cases Array:format-multi-line<VariantCase>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+variant TypeDefinition {
+    case Struct -> Struct
+    case Variant -> Variant
+}
+fn TypeDefinition-format(fmt: .Formatter, self: .TypeDefinition) {
+    $fmt $self match {
+        case Struct -> { Struct-format }
+        case Variant -> { Variant-format }
+    }
+}
+fn TypeDefinition-name(self: .TypeDefinition) -> .Token {
+    $self match {
+        case Struct -> { .name }
+        case Variant -> { .name }
+    }
+}
+fn TypeDefinition-generic-parameters(self: .TypeDefinition) -> .Array<Token> {
+    $self match {
+        case Struct -> { .generic-parameters }
+        case Variant -> { .generic-parameters }
+    }
+}
+
+struct StructImport {
+    name: Token
+    handle: CustomTypeHandle
+}
+fn StructImport-format(fmt: .Formatter, self: .StructImport) {
+    $fmt "(StructImport " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.handle CustomTypeHandle-format
+    $fmt ")" Fmt:write
+}
+
+struct VariantImport {
+    name: Token
+    handle: CustomTypeHandle
+    constructors: Array<i32>
+}
+fn VariantImport-format(fmt: .Formatter, self: .VariantImport) {
+    $fmt "(VariantImport " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.handle CustomTypeHandle-format
+    $fmt " " Fmt:write
+    $fmt \i32-format-ref &self.constructors Array:format<i32>
+    $fmt ")" Fmt:write
+}
+
+struct FunctionImport {
+    name: Token
+    handle: FunctionHandle
+}
+fn FunctionImport-format(fmt: .Formatter, self: .FunctionImport) {
+    $fmt "(FunctionImport " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.handle FunctionHandle-format
+    $fmt ")" Fmt:write
+}
+
+variant ImportItem {
+    case Struct -> StructImport
+    case Variant -> VariantImport
+    case Function -> FunctionImport
+}
+fn ImportItem-format(fmt: .Formatter, self: .ImportItem) {
+    $fmt $self match {
+        case ImportItem.Struct -> { StructImport-format }
+        case ImportItem.Variant -> { VariantImport-format }
+        case ImportItem.Function -> { FunctionImport-format }
+    }
+}
+
+struct Import {
+    token: Token
+    module: ModuleId
+    path: ByteSlice
+    qualifier: Token
+    items: Array<ImportItem>
+}
+fn Import-format(fmt: .Formatter, self: .Import) {
+    $fmt "(Import " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt $self.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt &self.path ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt &self.qualifier Token-format
+    $fmt " " Fmt:write
+    $fmt \ImportItem-format &self.items Array:format-multi-line<ImportItem>
+    $fmt ")" Fmt:write
+}
+
+struct Global {
+    name: Token
+    type: Type
+    reffed: bool
+}
+fn Global-format(fmt: .Formatter, self: .Global) {
+    $fmt "(Global " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type:format
+    $fmt ")" Fmt:write
+}
+
+struct Signature {
+    generic-parameters: Array<Token>
+    parameters: Array<NamedType>
+    returns: Array<Type>
+}
+fn Signature-format(fmt: .Formatter, self: .Signature) {
+    $fmt "(Signature\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "generic-parameters=" Fmt:write
+    $fmt \Token-format &self.generic-parameters Array:format<Token>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \NamedType-format &self.parameters Array:format<NamedType>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt &self.returns Types-format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct Extern {
+    name: Token
+    extrn-module: ByteSlice
+    extrn-name: ByteSlice
+    signature: Signature
+}
+fn Extern-format(fmt: .Formatter, self: .Extern) {
+    $fmt "(Extern " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.extrn-module ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt &self.extrn-name ByteSlice-format
+    $fmt " " Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt ")" Fmt:write
+}
+
+variant LocalName {
+    case FromSource -> Token
+    case Synthetic -> ByteSlice
+}
+fn LocalName-format(fmt: .Formatter, self: .LocalName) {
+    $fmt $self match {
+        case FromSource -> { Token-format }
+        case Synthetic -> { Fmt:ByteSlice-format }
+    }
+}
+fn LocalName-unpack(self: .LocalName) -> .i8, i32 {
+    $self match {
+        case FromSource -> { Token-lexeme }
+        case Synthetic -> { ~ ByteSlice:unpack }
+    }
+}
+
+struct Local {
+    name: LocalName
+    // if this local is a parameter, then this will be non-None
+    parameter: Maybe<Type>
+}
+fn Local-format(fmt: .Formatter, self: .Local) {
+    $fmt "(Local " Fmt:write
+    $fmt &self.name LocalName-format
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.parameter Maybe:format<Type>
+    $fmt ")" Fmt:write
+}
+
+struct Function {
+    name: Token
+    export: Maybe<Token>
+    signature: Signature
+    locals: Map<LocalId, Local>
+    body: Scope
+}
+fn Function-format(fmt: .Formatter, self: .Function) {
+    $fmt "(Function\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "export=" Fmt:write
+    $fmt \Token-format &self.export Maybe:format<Token>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "signature=" Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "locals=" Fmt:write
+    $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<LocalId, Local>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+variant FunctionOrExtern {
+    case Extern -> Extern
+    case Function -> Function
+}
+fn FunctionOrExtern-format(fmt: .Formatter, self: .FunctionOrExtern) {
+    $fmt $self match {
+        case FunctionOrExtern.Extern -> { Extern-format }
+        case FunctionOrExtern.Function -> { Function-format }
+    }
+}
+fn FunctionOrExtern-signature(self: .FunctionOrExtern) -> .Signature {
+    $self match {
+        case FunctionOrExtern.Extern -> { .signature }
+        case FunctionOrExtern.Function -> { .signature }
+    }
+}
+
+variant TopItemHandle {
+    case Function -> FunctionHandle
+    case TypeDefinition -> CustomTypeHandle
+    case Global -> GlobalId
+}
+

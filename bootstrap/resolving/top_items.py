@@ -1,7 +1,7 @@
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
-from format import Formattable, FormatInstr, unnamed_record, format_str, format_seq, named_record, format_optional, format_dict
+from format import Formattable, FormatInstr, Instrs, unnamed_record, format_str, format_seq, named_record, format_optional, format_dict
 from lexer import Token
 from resolving.words import FunctionHandle, Scope, LocalId
 from resolving.types import CustomTypeHandle, Type, NamedType
@@ -10,11 +10,31 @@ type TopItem = Import | Struct | Variant | Extern | Function
 type TypeDefinition = Struct | Variant
 
 @dataclass
-class ImportItem(Formattable):
+class StructImport(Formattable):
     name: Token
-    handle: FunctionHandle | CustomTypeHandle
+    handle: CustomTypeHandle
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("ImportItem", [self.name, self.handle])
+        return unnamed_record("StructImport", [self.name, self.handle])
+
+@dataclass
+class VariantImport(Formattable):
+    name: Token
+    handle: CustomTypeHandle
+    constructors: Tuple[int, ...]
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("VariantImport", [
+            self.name,
+            self.handle,
+            format_seq([Instrs([constructor]) for constructor in self.constructors])])
+
+@dataclass
+class FunctionImport(Formattable):
+    name: Token
+    handle: FunctionHandle
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("FunctionImport", [self.name, self.handle])
+
+type ImportItem = VariantImport | FunctionImport | StructImport
 
 @dataclass
 class Import(Formattable):
@@ -103,7 +123,7 @@ class Local(Formattable):
         return Local(LocalName(taip.name), taip.taip)
 
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Local", [self.name, self.parameter])
+        return unnamed_record("Local", [self.name, format_optional(self.parameter)])
 
 @dataclass
 class Function(Formattable):

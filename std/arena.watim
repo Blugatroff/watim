@@ -45,16 +45,16 @@ fn free-page(page: .Page) { block {
     }
     0 0 / drop
 } }
-fn visit-page-mem(page: .Page, f: (.i32, i32 ->)) { block {
+fn visit-page-mem(page: .Page, f: (.i8, i32 ->)) { block {
     $page.type SINGLE_PAGE = if {
-        $page sizeof(Page) + !.i32 PA:page-size sizeof(Page) - $f ->
+        $page sizeof(Page) + !.i8 PA:page-size sizeof(Page) - $f ->
         break
     }
     $page.type MULTIPLE_PAGE = if {
         $page.num-pages @n
         loop {
             $n 0 = if { break }
-            $page $n PA:page-size * + sizeof(Page) + !.i32 PA:page-size sizeof(Page) - $f ->
+            $page $n PA:page-size * + sizeof(Page) + !.i8 PA:page-size sizeof(Page) - $f ->
             $n 1 - #n
         }
     }
@@ -100,7 +100,7 @@ fn clear(self: .Arena) {
     0 #self.size
     $ON_CLEAR 0 !(.Arena, i32 ->) /= if { $self $bytes-cleared $ON_CLEAR -> }
 }
-fn visit-mem(self: .Arena, f: (.i32, i32 ->)) {
+fn visit-mem(self: .Arena, f: (.i8, i32 ->)) {
     $self.used-pages @cursor
     loop {
         $cursor 0 !.Page = if { break }
@@ -204,7 +204,7 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
             #self.used-pages
         }
         $self.used-pages 0!.Page /= if {
-            $self.used-pages !.i32 sizeof(Page) + $point.pos +
+            $self.used-pages !.i8 sizeof(Page) + $point.pos +
             $self.used-pages.pos $point.pos - CORE:clear
             $point.pos #self.used-pages.pos
         }

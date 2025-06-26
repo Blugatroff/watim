@@ -1,0 +1,544 @@
+import "../../std/core.watim" as Core
+import "../../std/bytes.watim" as Bytes
+import "../../std/result.watim" as Result (Result(Error, Success))
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some), assert-some, assert-none)
+import "../../std/io.watim" as IO
+import "../../std/fs.watim" as FS
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/map.watim" as Map (Map)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/array.watim" as Array (Array)
+
+import "../parser.watim" as P
+import "../lexer.watim" as L (Token, Token-lexeme, Token-location)
+
+import "./top-items.watim" as TopItem (
+    TypeDefinition, Import, Global, FunctionOrExtern, TopItemHandle,
+    ImportItem, StructImport, VariantImport, FunctionImport,
+    Variant, Struct, VariantCase, TypeDefinition-name,
+    Function, FunctionOrExtern, Extern, Signature, Local, LocalName)
+import "./type.watim" as Type (Type, ModuleId, NamedType)
+import "./type-resolver.watim" as TypeResolver (TypeResolver)
+import "./type-lookup.watim" as TypeLookup (TypeLookup)
+import "./module.watim" as Module (Module, ResolveError)
+import "./words.watim" as Words (Word, LocalId, LocalId-eq, ScopeId, Scope)
+import "./env.watim" as Env (Env)
+import "./word-resolver.watim" as WordResolver
+
+fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, P:Module>)
+    -> Result<Map<ByteSlice, Module>, ResolveError> {
+    \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @resolved-modules
+    0 @i
+    loop (-> Result<[], ResolveError>) {
+        $i $modules.values.len = if { [,0] make Result<[], ResolveError>.Success break }
+        &modules.values $i Array:get<P:Module> @module
+        $arena &resolved-modules
+        &modules.keys $i Array:get<ByteSlice> Core:dup<_> @module-path ~
+        $arena &resolved-modules $module $i make ModuleId $module-path resolve-module match {
+            case Success -> {}
+            case Error -> { make Result<[], ResolveError>.Error break }
+        }
+        Map:insert<_, _> drop
+        $i 1 + #i
+    } match {
+        case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error }
+        case Success -> { 
+            [,] $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success
+        }
+    }
+}
+
+fn resolve-module(
+    arena: .Arena,
+    modules: .Map<ByteSlice, Module>,
+    module: .P:Module,
+    id: ModuleId,
+    module-path: .ByteSlice
+) -> Result<Module, ResolveError> { block {
+    $arena \ByteSlice:eq-by-ref $module.imports.len Map:new-with-capacity<ByteSlice, Array<Import>> @imports
+
+    0 @i
+    loop (-> Result<[], ResolveError>) {
+        $i $module.imports.len = if { [,0] make Result<[], ResolveError>.Success break }
+        &module.imports $i Array:get<_> @imp
+        $arena
+        &imports &imp.qualifier Token-lexeme Map:get-bs<_> match {
+            case None -> {
+                $arena &imports
+                &imp.qualifier Token-lexeme make ByteSlice Array:new<Import>
+                Map:insert<ByteSlice, Array<Import>> assert-none<_>
+                &imports &imp.qualifier Token-lexeme Map:get-bs<_> assert-some<_>
+            }
+            case Some -> {}
+        }
+        $arena $modules $module-path $id $imp resolve-imprt match {
+            case Error -> { make Result<[], ResolveError>.Error break }
+            case Success -> {}
+        }
+        Array:push<Import>
+        $i 1 + #i
+    } match {
+        case Error -> { make Result<Module, ResolveError>.Error break }
+        case Success -> { [,] }
+    }
+
+    $id
+    $module-path ~
+    &imports
+    $module
+    $modules
+    make TypeResolver @type-resolver
+
+    $arena
+    $id
+    $module-path ~
+    &imports
+    $module
+    $modules
+    &type-resolver
+    Array:new<i8>
+    make ModuleCtx @ctx
+
+    &ctx &module.type-definitions resolve-type-definitions match {
+        case Error -> { make Result<Module, ResolveError>.Error break }
+        case Success -> {}
+    } @type-definitions
+
+    &ctx &module.globals resolve-globals match {
+        case Error -> { make Result<Module, ResolveError>.Error break }
+        case Success -> {}
+    } @globals
+
+    &ctx &module.functions resolve-signatures match {
+        case Error -> { make Result<Module, ResolveError>.Error break }
+        case Success -> {}
+    } @signatures
+
+    $id &type-definitions.values $modules make TypeLookup @type-lookup
+
+    &ctx &globals &signatures &type-lookup &module.functions resolve-functions match {
+        case Error -> { make Result<Module, ResolveError>.Error break }
+        case Success -> {}
+    } @functions
+
+    $id
+    $imports
+    $type-definitions
+    $globals
+    $functions
+    $ctx.static-data.ptr $ctx.static-data.len make ByteSlice
+    make Module
+    make Result<Module, ResolveError>.Success
+} }
+
+fn resolve-imprt(
+    arena: .Arena,
+    modules: .Map<ByteSlice, Module>,
+    module-path: .ByteSlice,
+    id: ModuleId,
+    imp: .P:Import,
+) -> Result<Import, ResolveError> { block {
+    $arena Arena:temp @temp-arena @save
+
+    $module-path ~ ByteSlice:unpack "-" Bytes:eq if {
+        "" Array:init-no-copy<_>
+    } else {
+        $module-path ~ ByteSlice:unpack FS:path-dir Array:init-no-copy<_>
+    } @path
+
+    $temp-arena &path &imp.path Token-lexeme 2 - flip 1 + flip Array:append-raw<_>
+    $temp-arena &path Array:unpack<_> FS:normalize make ByteSlice @path
+    $modules &path Map:get-index<ByteSlice, _> assert-some<i32> make ModuleId @imported-module-id
+    $arena $path ByteSlice:copy @path
+
+    &modules.values $imported-module-id.index Array:get<Module> @imported-module
+
+    Array:new<ImportItem> @items
+    0 @i
+    loop {
+        $i $imp.items.len = if { $items make Result<Array<ImportItem>, ResolveError>.Success break }
+        &imp.items $i Array:get<P:ImportItem> @item
+
+        $arena $id $imported-module $item resolve-imprt-item match {
+            case Error -> { make Result<Array<ImportItem>, ResolveError>.Error break }
+            case Success -> {}
+        } @item
+
+        $arena &items $item Array:push<_>
+        $i 1 + #i
+    } match {
+        case Error -> { make Result<Import, ResolveError>.Error break }
+        case Success -> {}
+    } @items
+    $temp-arena $save Arena:restore
+
+    $imp.start $imported-module-id $path $imp.qualifier $items make Import make Result<Import, ResolveError>.Success
+} }
+
+fn resolve-imprt-item(
+    arena: .Arena,
+    module: ModuleId,
+    imported-module: .Module,
+    item: .P:ImportItem,
+) -> Result<ImportItem, ResolveError> { block (-> Result<ImportItem, ResolveError>) {
+    $item match {
+        case P:ImportItem.Item -> {
+            @item
+            $imported-module $item Module:lookup match {
+                case None -> {
+                    $module $item Token-location "not found" Array:init-no-copy<i8>
+                    make ResolveError make Result<ImportItem, ResolveError>.Error break
+                }
+                case Some -> {}
+            }
+            match {
+                case TopItemHandle.TypeDefinition -> {
+                    @handle
+                    &imported-module.type-definitions.values $handle.index Array:get<TypeDefinition> match {
+                        case TypeDefinition.Struct -> {
+                            drop $item ~ $handle make StructImport
+                            make ImportItem.Struct
+                        }
+                        case TypeDefinition.Variant -> {
+                            drop $item ~ $handle Array:new<i32> make VariantImport
+                            make ImportItem.Variant
+                        }
+                    }
+                }
+                case TopItemHandle.Function -> {
+                    $item ~ flip make FunctionImport
+                    make ImportItem.Function
+                }
+                case TopItemHandle.Global -> {
+                    drop $module $item Token-location "globals cannot be imported" Array:init-no-copy<i8>
+                    make ResolveError make Result<ImportItem, ResolveError>.Error break
+                }
+            }
+            make Result<ImportItem, ResolveError>.Success break
+        }
+        case P:ImportItem.VariantWithConstructors -> {
+            @item
+            $imported-module &item.name Module:lookup match {
+                case None -> {
+                    $module &item.name Token-location "not found" Array:init-no-copy<i8>
+                    make ResolveError make Result<ImportItem, ResolveError>.Error break
+                }
+                case Some -> {}
+            } match {
+                case TopItemHandle.TypeDefinition -> {
+                    @handle
+                    &imported-module.type-definitions.values $handle.index Array:get<TypeDefinition> match {
+                        case TypeDefinition.Struct -> {
+                            drop $module &item.name Token-location "only variants have constructors" Array:init-no-copy<i8>
+                            make ResolveError make Result<ImportItem, ResolveError>.Error break
+                        }
+                        case TypeDefinition.Variant -> {
+                            @varint
+                            $item.name $handle
+                            $arena $module $varint &item.constructors resolve-varint-constructors match {
+                                case Error -> { make Result<ImportItem, ResolveError>.Error break }
+                                case Success -> {}
+                            }
+                            make VariantImport
+                            make ImportItem.Variant
+                            make Result<ImportItem, ResolveError>.Success
+                        }
+                    }
+                }
+                case _ -> {
+                    drop $module &item.name Token-location "only variants have constructors" Array:init-no-copy<i8>
+                    make ResolveError make Result<ImportItem, ResolveError>.Error break
+                }
+            }
+        }
+    }
+} }
+
+fn resolve-varint-constructors(arena: .Arena, module: ModuleId, varint: .Variant, constructors: .Array<Token>) -> Result<Array<i32>, ResolveError> {
+    $arena $constructors.len Array:new-with-capacity<i32> @resolved
+    0 @i
+    loop {
+        $i $constructors.len = if { $resolved make Result<Array<i32>, ResolveError>.Success break }
+        $constructors $i Array:get<Token> @constructor
+        0 @tag
+        loop {
+            $tag $varint.cases.len = if {
+                $module $constructor Token-location "constructor not found" Array:init-no-copy<i8> make ResolveError
+                make Result<[], ResolveError>.Error break
+            }
+            &varint.cases $tag Array:get<VariantCase> .name Token-lexeme $constructor Token-lexeme Bytes:eq if {
+                &resolved $tag Array:push-assert-no-alloc<_>
+                [,0] make Result<[], ResolveError>.Success break
+            }
+            $tag 1 + #tag
+        } match {
+            case Error -> { make Result<Array<i32>, ResolveError>.Error break }
+            case Success -> { [,] }
+        }
+        $i 1 + #i
+    }
+}
+
+struct ModuleCtx {
+    arena: .Arena
+    id: ModuleId
+    path: ByteSlice
+    imports: .Map<ByteSlice, Array<Import>>
+    module: .P:Module
+    modules: .Map<ByteSlice, Module>
+    type-resolver: .TypeResolver
+    static-data: Array<i8>
+}
+
+fn resolve-type-definitions(ctx: .ModuleCtx, type-definitions: .Array<P:TypeDefinition>) -> Result<Map<ByteSlice, TypeDefinition>, ResolveError> {
+    $ctx.arena \ByteSlice:eq-by-ref $type-definitions.len Map:new-with-capacity<ByteSlice, TypeDefinition> @resolved
+    0 @i
+    loop {
+        $i $type-definitions.len = if { $resolved make Result<Map<ByteSlice, TypeDefinition>, ResolveError>.Success break }
+        $ctx $type-definitions $i Array:get<_> resolve-type-definition match {
+            case Error -> { make Result<Map<ByteSlice, TypeDefinition>, ResolveError>.Error break }
+            case Success -> {}
+        } @type-definition
+        &resolved
+        &type-definition TypeDefinition-name Token-lexeme make ByteSlice
+        $type-definition Map:insert-assert-no-alloc<_, _> drop
+        $i 1 + #i
+    }
+}
+
+fn resolve-type-definition(ctx: .ModuleCtx, type-definition: .P:TypeDefinition) -> Result<TypeDefinition, ResolveError> {
+    $ctx $type-definition match {
+        case P:TypeDefinition.Struct -> { resolve-struc match {
+            case Error -> { make Result<TypeDefinition, ResolveError>.Error }
+            case Success -> { make TypeDefinition.Struct make Result<TypeDefinition, ResolveError>.Success }
+        } }
+        case P:TypeDefinition.Variant -> { resolve-varint match {
+            case Error -> { make Result<TypeDefinition, ResolveError>.Error }
+            case Success -> { make TypeDefinition.Variant make Result<TypeDefinition, ResolveError>.Success }
+        } }
+    }
+}
+
+fn resolve-struc(ctx: .ModuleCtx, struc: .P:Struct) -> Result<Struct, ResolveError> {
+    $struc.name
+    $struc.generic-parameters
+    &struc.fields
+    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-named-types match {
+        case Error -> { flip drop flip drop make Result<Struct, ResolveError>.Error }
+        case Success -> { make Struct make Result<Struct, ResolveError>.Success }
+    }
+}
+
+fn resolve-varint(ctx: .ModuleCtx, varint: .P:Variant) -> Result<Variant, ResolveError> {
+    $varint.name
+    $varint.generic-parameters
+    $ctx &varint.cases resolve-varint-cases match {
+        case Error -> { flip drop flip drop make Result<Variant, ResolveError>.Error }
+        case Success -> { make Variant make Result<Variant, ResolveError>.Success }
+    }
+}
+
+fn resolve-varint-cases(ctx: .ModuleCtx, cases: .Array<P:VariantCase>) -> Result<Array<VariantCase>, ResolveError> {
+    $ctx.arena $cases.len Array:new-with-capacity<VariantCase> @resolved
+    0 @i
+    loop {
+        $i $cases.len = if { $resolved make Result<Array<VariantCase>, ResolveError>.Success break }
+        $ctx $cases $i Array:get<_> resolve-varint-cays match {
+            case Error -> { make Result<Array<VariantCase>, ResolveError>.Error break }
+            case Success -> {}
+        } &resolved flip Array:push-assert-no-alloc<_>
+        $i 1 + #i
+    }
+}
+
+fn resolve-varint-cays(ctx: .ModuleCtx, cays: .P:VariantCase) -> Result<VariantCase, ResolveError> { block (-> Result<VariantCase, ResolveError>) {
+    $cays.name
+    &cays.type match {
+        case None -> { make Maybe<Type>.None }
+        case Some -> {
+            $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-type match {
+                case Error -> { make Result<VariantCase, ResolveError>.Error break }
+                case Success -> {}
+            } make Maybe<Type>.Some
+        }
+    }
+    make VariantCase
+    make Result<VariantCase, ResolveError>.Success
+} }
+
+fn resolve-globals(ctx: .ModuleCtx, globals: .Array<P:Global>) -> Result<Map<ByteSlice, Global>, ResolveError> {
+    $ctx.arena \ByteSlice:eq-by-ref $globals.len Map:new-with-capacity<ByteSlice, Global> @resolved
+    0 @i
+    loop (-> Result<Map<ByteSlice, Global>, ResolveError>) {
+        $i $globals.len = if { $resolved make Result<Map<ByteSlice, Global>, ResolveError>.Success break }
+        $globals $i Array:get<_> @globl
+        &resolved &globl.name Token-lexeme make ByteSlice
+        $ctx $globl resolve-globl match {
+            case Error -> { make Result<Map<ByteSlice, Global>, ResolveError>.Error break }
+            case Success -> {}
+        }
+        Map:insert-assert-no-alloc<_, _> drop
+        $i 1 + #i
+    }
+}
+
+fn resolve-globl(ctx: .ModuleCtx, globl: .P:Global) -> Result<Global, ResolveError> { block (-> Result<Global, ResolveError>) {
+    $globl.name
+    $ctx.type-resolver $ctx.arena &globl.type TypeResolver:resolve-type match {
+        case Error -> { make Result<Global, ResolveError>.Error break }
+        case Success -> {}
+    }
+    0 1 = make Global
+    make Result<Global, ResolveError>.Success
+} }
+
+fn resolve-functions(
+    ctx: .ModuleCtx,
+    globals: .Map<ByteSlice, Global>,
+    signatures: .Map<ByteSlice, Signature>,
+    type-lookup: .TypeLookup,
+    functions: .Array<P:FunctionOrExtern>,
+) -> Result<Map<ByteSlice, FunctionOrExtern>, ResolveError> {
+    $ctx.arena \ByteSlice:eq-by-ref $functions.len Map:new-with-capacity<ByteSlice, FunctionOrExtern> @resolved
+    0 @i
+    loop {
+        $i $functions.len = if { $resolved make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Success break }
+        $functions $i Array:get<_> @function
+        $function match {
+            case P:FunctionOrExtern.Extern -> {
+                $ctx flip $signatures flip resolve-extrn match {
+                    case Error -> { make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Error break }
+                    case Success -> { make FunctionOrExtern.Extern }
+                }
+            }
+            case P:FunctionOrExtern.Function -> {
+                $ctx flip $globals flip $signatures flip $type-lookup flip resolve-function match {
+                    case Error -> { make Result<Map<ByteSlice, FunctionOrExtern>, ResolveError>.Error break }
+                    case Success -> { make FunctionOrExtern.Function }
+                }
+            }
+        }
+        &resolved flip
+        $function P:FunctionOrExtern-name Token-lexeme make ByteSlice flip
+        Map:insert-assert-no-alloc<_, _> drop
+        $i 1 + #i
+    }
+}
+
+fn resolve-extrn(ctx: .ModuleCtx, signatures: .Map<ByteSlice, Signature>, extrn: .P:Extern) -> Result<Extern, ResolveError> {
+    $extrn.name
+    &extrn.extrn-module Token-lexeme 2 - flip 1 + flip make ByteSlice
+    &extrn.extrn-name Token-lexeme 2 - flip 1 + flip make ByteSlice
+    $signatures &extrn.name Token-lexeme Map:get-bs<Signature> Maybe:assert-some<_> ~
+    make Extern make Result<Extern, ResolveError>.Success
+}
+
+fn resolve-signatures(ctx: .ModuleCtx, functions: .Array<P:FunctionOrExtern>) -> Result<Map<ByteSlice, Signature>, ResolveError> {
+    $ctx.arena \ByteSlice:eq-by-ref $functions.len Map:new-with-capacity<_, Signature> @signatures
+    0 @i
+    loop {
+        $i $functions.len = if { $signatures make Result<Map<ByteSlice, Signature>, ResolveError>.Success break }
+        $ctx $functions $i Array:get<_> match {
+            case P:FunctionOrExtern.Extern -> { Core:dup<_> .signature flip .name }
+            case P:FunctionOrExtern.Function -> { Core:dup<_> .signature flip .name }
+        } @name resolve-signature match {
+            case Error -> { make Result<Map<ByteSlice, Signature>, ResolveError>.Error break }
+            case Success -> {}
+        } &signatures flip $name Token-lexeme make ByteSlice flip Map:insert-assert-no-alloc<_, _> drop
+        $i 1 + #i
+    }
+}
+
+fn resolve-signature(ctx: .ModuleCtx, signature: .P:Signature) -> Result<Signature, ResolveError> { block (-> Result<Signature, ResolveError>) {
+    $signature.generic-parameters
+    $ctx.type-resolver $ctx.arena &signature.parameters TypeResolver:resolve-named-types match {
+        case Error -> { make Result<Signature, ResolveError>.Error break }
+        case Success -> {}
+    }
+    $ctx.type-resolver $ctx.arena &signature.returns TypeResolver:resolve-types match {
+        case Error -> { make Result<Signature, ResolveError>.Error break }
+        case Success -> {}
+    }
+    make Signature
+    make Result<Signature, ResolveError>.Success
+} }
+
+fn resolve-function(
+    ctx: .ModuleCtx,
+    globals: .Map<ByteSlice, Global>,
+    signatures: .Map<ByteSlice, Signature>,
+    type-lookup: .TypeLookup,
+    function: .P:Function
+) -> Result<Function, ResolveError> { block (-> Result<Function, ResolveError>) {
+    $signatures &function.name Token-lexeme Map:get-bs<_> Maybe:assert-some<_> ~ @signature
+
+    $ctx.arena Env:root @env
+
+    0 @i
+    loop (->) {
+        $i $signature.parameters.len = if { break }
+        &signature.parameters $i Array:get<NamedType> @param
+        $ctx.arena &env
+        $param.name make LocalName.FromSource $param.type make Maybe<Type>.Some make Local
+        Env:insert drop
+        $i 1 + #i
+    }
+
+    $ctx.arena $ctx.id $ctx.path $ctx.imports $globals $signatures $ctx.type-resolver $ctx.modules &ctx.static-data
+    $type-lookup &env make Maybe<.WordResolver:StructLiteralEnv>.None make WordResolver:WordCtx @word-ctx
+
+    $function.name
+    $function.export
+    $signature
+    &word-ctx &function.body.words WordResolver:resolve-words match {
+        case Error -> { make Result<Function, ResolveError>.Error break }
+        case Success -> {}
+    } @words
+    $env.vars-by-id ~
+    $env.scope-id $words make Scope
+    make Function
+    make Result<Function, ResolveError>.Success
+} }
+
+
+
+
+
+
+
+
+
+
+// fn resolve-module(arena: .Arena, modules: .Map<ByteSlice, Module>, module: .P:Module, id: i32) -> Result<Module, ResolveError> { block {
+//     (@imports (
+//         Map:new-with-capacity<ByteSlice, Array<Import>>
+//             $arena \ByteSlice:eq-by-ref $module.imports.len))
+//
+//     (@i 0)
+//     (match (loop (-> Result<[], ResolveError>) {
+//         (if (= $i $module.imports.len) { (break (make Result<[], ResolveError>.Success [,0]) })
+//         (Array:get<_> &module.imports $i) @imp
+//         (Array:push<Import>
+//             $arena
+//             (match (Map:get-bs<_> &imports (Token-lexeme &imp.qualifier)) {
+//                 case None -> {
+//                     (assert-none<_>
+//                         (Map:insert<ByteSlice, Array<Import>>
+//                             $arena
+//                             $imports
+//                             (make ByteSlice (Token-lexeme &imp.qualifier))
+//                             (Array:new<Import>)))
+//                     (assert-some<_> (Map:get-bs<_> &imports (Token-lexeme &imp.qualifier)))
+//                 }
+//                 case Some -> {}
+//             })
+//             (match (resolve-imprt $arena $modules (Array:get<_> &modules.keys $id) $imp) {
+//                     case Error -> { make Result<[], ResolveError>.Error break }
+//                     case Success -> {}
+//             }))
+//         (#i (+ $i 1))
+//     }) {
+//         case Error -> { make Result<Module, ResolveError>.Error break }
+//         case Success -> { [,] }
+//     })
+// } }
