@@ -1,4 +1,5 @@
-import "./std/maybe.watim" as Maybe (Maybe, assert-some)
+import "./std/maybe.watim" as Maybe (Maybe(Some, None), assert-some)
+import "./std/result.watim" as Result (Result(Success, Error))
 import "./std/args.watim" as Args
 import "./std/bytes.watim" as Bytes
 import "./std/byte-slice.watim" as ByteSlice (ByteSlice)
@@ -10,7 +11,7 @@ import "./std/arena.watim" as Arena (Arena)
 import "./std/array.watim" as Array
 import "./std/map.watim" as Map (Map)
 import "./std/util.watim" as Util
-import "./std/json.watim" as Json (Value)
+import "./std/json.watim" as Json (Value(Object, String, Null, Number, Array))
 import "./std/fmt.watim" as Fmt
 import "./std/fmt-utils.watim" as Fmt
 
