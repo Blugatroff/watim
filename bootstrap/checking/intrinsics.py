@@ -22,8 +22,10 @@ class IntrinsicSub(Formattable):
 @dataclass
 class IntrinsicDrop(Formattable):
     token: Token
+    taip: Type
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Drop", [self.token])
+        return unnamed_record("Intrinsic", [
+            self.token, unnamed_record("Drop", [self.taip])])
 
 @dataclass
 class IntrinsicMod(Formattable):

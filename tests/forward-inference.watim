@@ -90,5 +90,5 @@ check
           (FunRef (Call (IDENT is-zero 16 6) (FunctionHandle 0 2) [])),
           (Number (NUMBER 2 16 14)),
           (Call (IDENT twice 16 16) (FunctionHandle 0 1) [I32, Bool]),
-          (Drop (IDENT drop 16 28)),
-          (Drop (IDENT drop 16 33))])))))
+          (Intrinsic (IDENT drop 16 28) (Drop Bool)),
+          (Intrinsic (IDENT drop 16 33) (Drop Bool))])))))

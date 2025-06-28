@@ -7,7 +7,7 @@ from indexed_dict import IndexedDict
 from lexer import Token
 import parsing as parser
 from resolving.words import Scope
-from resolving.top_items import Function, FunctionSignature, Import, Global, Extern, Local, ImportItem, Struct, Variant, VariantCase, TypeDefinition, FunctionImport, StructImport, VariantImport, FunctionHandle, ImportItem, CustomTypeHandle
+from resolving.top_items import Function, FunctionSignature, Import, Global, Extern, Local, Struct, Variant, VariantCase, TypeDefinition, FunctionImport, StructImport, VariantImport, FunctionHandle, ImportItem, CustomTypeHandle
 from resolving.env import Env
 from resolving.word_resolver import WordResolver
 from resolving.type_resolver import TypeResolver, TypeLookup

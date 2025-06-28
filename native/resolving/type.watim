@@ -206,3 +206,48 @@ fn CustomTypeHandle-eq(a: .CustomTypeHandle, b: .CustomTypeHandle) -> bool {
     $a.module.index $b.module.index = $a.index $b.index = and
 }
 
+fn with-generics(arena: .Arena, type: .Type, generics: .Array<Type>) -> Type {
+    $type match {
+        case Ptr -> {
+            $arena flip ~ $generics with-generics
+            $arena flip Arena:push<_> make Type.Ptr
+        }
+        case Tuple -> {
+            @tuple
+            $tuple.token
+            $arena &tuple.items $generics all-with-generics
+            make TupleType
+            make Type.Tuple
+        }
+        case Generic -> {
+            .index $generics flip ~ Array:get<_> ~
+        }
+        case Fun -> {
+            @fun
+            $fun.token
+            $arena &fun.parameters $generics all-with-generics
+            $arena &fun.returns $generics all-with-generics
+            make FunType
+            make Type.Fun
+        }
+        case Custom -> {
+            @custom
+            $custom.type-definition
+            $arena &custom.generic-arguments $generics all-with-generics
+            make CustomTypeType
+            make Type.Custom
+        }
+        case _ -> { ~ }
+    }
+}
+
+fn all-with-generics(arena: .Arena, types: .Array<Type>, generics: .Array<Type>) -> Array<Type> {
+    $arena $types.len Array:new-with-capacity<Type> @filled
+    loop {
+        $filled.len $types.len = if { $filled break }
+        &filled
+        $arena $types $filled.len Array:get<_> $generics with-generics
+        Array:push-assert-no-alloc<_>
+    }
+}
+

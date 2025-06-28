@@ -6,12 +6,17 @@ import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../../std/arena.watim" as Arena (Arena)
 import "../../std/array.watim" as Array (Array)
 import "../../std/map.watim" as Map (Map)
+import "../../std/fmt.watim" as Fmt
+import "../../std/fmt-utils.watim" as Fmt
+import "../../std/util.watim" as Util (i32-format)
 
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-location)
 import "../parser.watim" as Parsed
 
 import "./type.watim" as Type (Type, NamedType, ModuleId, FunType, TupleType, CustomTypeType, CustomTypeHandle)
-import "./top-items.watim" as TopItems (Import, TypeDefinition, TypeDefinition-name, ImportItem)
+import "./top-items.watim" as TopItems (
+    Import,  ImportItem,
+    TypeDefinition, TypeDefinition-name, TypeDefinition-generic-parameters)
 import "./module.watim" as Module (Module, ResolveError)
 
 struct TypeResolver {
@@ -202,13 +207,27 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
                     &self.modules.values $imp.module.index Array:get<Module> @module
                     0 @j
                     loop {
-                        $j $module.type-definitions.values.len = if { make Maybe<CustomTypeType>.None break }
-                        &module.type-definitions.values $j Array:get<TypeDefinition>
-                        TypeDefinition-name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+                        $j $module.type-definitions.values.len = if { make Maybe<CustomTypeType>.None make Result<Maybe<CustomTypeType>, ResolveError>.Success break }
+                        &module.type-definitions.values $j Array:get<TypeDefinition> @type-definition
+                        $type-definition TypeDefinition-name Token-lexeme &type.name Token-lexeme Bytes:eq if {
+
+                            $type-definition TypeDefinition-generic-parameters @generic-parameters
+
+                            $generic-arguments.len $generic-parameters.len /= if {
+                                $self.module-id $arena &type.name
+                                $generic-parameters.len $generic-arguments.len
+                                generic-arguments-mismatch-error
+                                make Result<Maybe<CustomTypeType>, ResolveError>.Error break
+                            }
+
                             $imp.module $j make CustomTypeHandle $generic-arguments make CustomTypeType
-                            make Maybe<CustomTypeType>.Some break
+                            make Maybe<CustomTypeType>.Some
+                            make Result<Maybe<CustomTypeType>, ResolveError>.Success break
                         }
                         $j 1 + #j
+                    } match {
+                        case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
+                        case Success -> {}
                     } match {
                         case Some -> { make Result<CustomTypeType, ResolveError>.Success break }
                         case None -> {}
@@ -230,12 +249,35 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
                         make Result<CustomTypeType, ResolveError>.Error
                     }
                     case Some -> {
-                        $generic-arguments make CustomTypeType
+                        @handle
+
+                        $handle.module $self.module-id = if {
+                            &self.module.type-definitions $handle.index Array:get<_> Parsed:TypeDefinition-generic-parameters .len ~
+                        } else {
+                            &self.modules.values $handle.module.index Array:get<_> .type-definitions.values
+                            $handle.index Array:get<_> TypeDefinition-generic-parameters .len ~
+                        } @generic-parameters
+
+                        $generic-parameters $generic-arguments.len /= if {
+                            $self.module-id $arena &type.name $generic-parameters $generic-arguments.len generic-arguments-mismatch-error
+                            make Result<CustomTypeType, ResolveError>.Error break
+                        }
+
+                        $handle $generic-arguments make CustomTypeType
                         make Result<CustomTypeType, ResolveError>.Success break
                     }
                 }
             }
         }
     }
+}
+
+fn generic-arguments-mismatch-error(module-id: ModuleId, arena: .Arena, token: .Token, expected: i32, actual: i32) -> ResolveError {
+    $arena Fmt:into-new-string @msg @fmt
+    &fmt "expected " Fmt:write
+    &fmt $expected i32-format
+    &fmt " generic arguments, not " Fmt:write
+    &fmt $actual i32-format
+    $module-id $token Token-location $msg ~ make ResolveError
 }
 

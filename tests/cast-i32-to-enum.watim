@@ -7,7 +7,7 @@ variant Enum {
 	case C
 }
 fn main "_start" () {
-	2 !Enum match Enum {
+	2 !Enum match {
 		case A -> { 42 }
 		case B -> { 43 }
 		case C -> { 44 }

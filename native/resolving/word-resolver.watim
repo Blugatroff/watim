@@ -19,7 +19,7 @@ import "./top-items.watim" as TopItem (
     Function, FunctionOrExtern, Extern, Signature, Local, LocalName,
 )
 import "./type.watim" as Type (
-    Type, ModuleId, NamedType,
+    Type, ModuleId, NamedType, with-generics,
     CustomTypeType, CustomTypeHandle, CustomTypeHandle-eq,
 )
 import "./type-resolver.watim" as TypeResolver (TypeResolver)
@@ -31,7 +31,7 @@ import "./words.watim" as Words (
     If, MakeVariant, Match, MatchCase, Cast, Sizeof, InitLocal,
     FieldInit, Load, SetLocal, Call, FunctionHandle, RefLocal,
     StoreLocal, Block, IndirectCall, MakeStructNamed, FunRef,
-    MakeStruct,
+    MakeStruct, DefaultCase, StackAnnotation,
 )
 import "./env.watim" as Env (Env)
 import "./intrinsics.watim" as Intrinsics
@@ -226,16 +226,15 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
                                 }
                                 case None -> {}
                             }
-                            &word.name Token-lexeme "drop" Bytes:eq if {
-                                $word.name make Word.Drop
-                                make OneOrMany<Word>.One
-                                make Result<OneOrMany<Word>, ResolveError>.Success break
-                            }
                             &word.name
                         }
                         case P:Call.Foreign -> { .name }
                     } @name
-                    $ctx $name "function not found" abort<OneOrMany<Word>> break
+                    $ctx.arena Fmt:into-new-string @buf @fmt
+                    &fmt "function `" Fmt:write
+                    &fmt $name Token-lexeme Fmt:write
+                    &fmt "` not found" Fmt:write
+                    $ctx $name $buf Array:unpack<_> abort<OneOrMany<Word>> break
                 }
                 case Some -> {}
             } make Word.Call
@@ -353,14 +352,18 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
             $struc-literal-env.remaining-fields.values.len 0 /= if {
                 $ctx.arena Fmt:into-new-string @buf @fmt
                 &fmt "missing fields in struct literal:" Fmt:write
-                0 @field-index
+                0 @i
                 loop {
-                    $field-index $struc.fields.len = if { break }
-                    &struc.fields $field-index Array:get<_> @field
-                    &fmt "\n\t" Fmt:write &fmt &field.name Token-lexeme Fmt:write
+                    $i $struc-literal-env.remaining-fields.values.len = if { break }
+                    &struc-literal-env.remaining-fields.values $i Array:get<_> ~ @field-index
+                    &struc-literal-env.remaining-fields.keys   $i Array:get<_> @name
+                    $temp
+                    &struc.fields $field-index Array:get<_> .type
+                    &type.generic-arguments with-generics @type
+                    &fmt "\n\t" Fmt:write &fmt $name ~ ByteSlice:unpack Fmt:write
                     &fmt ": " Fmt:write
-                    &fmt $ctx.type-lookup &field.type TypeLookup:pretty
-                    $field-index 1 + #field-index
+                    &fmt $ctx.type-lookup &type TypeLookup:pretty
+                    $i 1 + #i
                 }
                 &ctx &word.token $buf Array:unpack<_> abort<OneOrMany<Word>> break
             }
@@ -417,10 +420,14 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
             &words $token $local-id make VarId.Local Array:new<Token> make RefLocal make Word.RefLocal Array:push-assert-no-alloc<_>
             $words make OneOrMany<Word>.Many make Result<OneOrMany<Word>, ResolveError>.Success break
         }
-        case _ -> {
-            2 Fmt:to-fd @fmt
-            &fmt flip P:Word-format
-            Core:unreachable<Word>
+        case P:Word.StackAnnotation -> {
+            @word
+            $word.token
+            $ctx.type-resolver $ctx.arena &word.types TypeResolver:resolve-types match {
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                case Success -> {}
+            }
+            make StackAnnotation make Word.StackAnnotation
         }
     }
     make OneOrMany<Word>.One
@@ -565,12 +572,15 @@ fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<Match, ResolveError> 
     }
 
     &matsh.default match {
-        case None -> { make Maybe<Scope>.None }
+        case None -> { make Maybe<DefaultCase>.None }
         case Some -> {
-            .body.words $ctx flip resolve-scope match {
+            @default
+            $default.name
+            $ctx &default.body.words resolve-scope match {
                 case Error -> { make Result<Match, ResolveError>.Error break }
                 case Success -> {}
-            } make Maybe<Scope>.Some
+            }
+            make DefaultCase make Maybe<DefaultCase>.Some
         }
     } @default
 

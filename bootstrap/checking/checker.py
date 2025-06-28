@@ -746,11 +746,10 @@ class WordCtx:
         else:
             def_stack = stack.make_child()
             def_stack.push(arg_item)
-            words, default_diverges = self.check_words(def_stack, word.default.id, list(word.default.words))
+            words, default_diverges = self.check_words(def_stack, word.default.body.id, list(word.default.body.words))
             match_diverges = match_diverges and default_diverges
-            assert(word.underscore is not None)
-            case_stacks.append((def_stack, word.underscore, default_diverges))
-            default_case = Scope(word.default.id, words)
+            case_stacks.append((def_stack, word.default.underscore, default_diverges))
+            default_case = Scope(word.default.body.id, words)
 
         first_non_diverging_case: Stack | None = None
         for case_stack,case_token,case_diverges in case_stacks:
@@ -931,10 +930,10 @@ class WordCtx:
                 if intrinsic == IntrinsicType.SUB:
                     return IntrinsicSub(token, narrow_type)
             case IntrinsicType.DROP:
-                if len(stack) == 0:
+                dropped_taip = stack.pop()
+                if dropped_taip is None:
                     self.abort(token, "`drop` expected non empty stack")
-                stack.pop()
-                return IntrinsicDrop(token)
+                return IntrinsicDrop(token, dropped_taip)
             case IntrinsicType.MOD | IntrinsicType.MUL | IntrinsicType.DIV:
                 if len(stack) < 2:
                     self.abort(token, f"`{INTRINSIC_TO_LEXEME[intrinsic]}` expected two items on stack")

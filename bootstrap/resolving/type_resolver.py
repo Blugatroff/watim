@@ -118,6 +118,12 @@ class TypeResolver:
         generic_arguments = self.resolve_types(taip.generic_arguments)
         if isinstance(taip, parsed.CustomTypeType):
             handle = self.resolve_custom_type_name(taip.name)
+            if handle.module == self.module_id:
+                expected = len(self.module.type_definitions[handle.index].generic_parameters)
+            else:
+                expected = len(self.modules.index(handle.module).type_definitions.index(handle.index).generic_parameters)
+            if len(generic_arguments) != expected:
+                self.generic_arguments_mismatch_error(taip.name, expected, len(generic_arguments))
             return CustomTypeType(taip.name, handle, generic_arguments)
         if isinstance(taip, parsed.ForeignType):
             if taip.module.lexeme not in self.imports:
@@ -127,6 +133,8 @@ class TypeResolver:
                 for j,custom_type in enumerate(module.type_definitions.values()):
                     if custom_type.name.lexeme == taip.name.lexeme:
                         assert(len(custom_type.generic_parameters) == len(generic_arguments))
+                        if len(custom_type.generic_parameters) != len(generic_arguments):
+                            self.generic_arguments_mismatch_error(taip.name, len(custom_type.generic_parameters), len(generic_arguments))
                         return CustomTypeType(taip.name, CustomTypeHandle(imp.module, j), generic_arguments)
             self.abort(taip.name, "type not found")
 

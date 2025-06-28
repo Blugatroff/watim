@@ -5,6 +5,7 @@ import "../../std/bytes.watim" as Bytes
 import "../lexer.watim" as L (Token, Token-lexeme)
 
 variant Intrinsic {
+    case Drop
     case Flip
     case Gt
     case Lt
@@ -36,6 +37,7 @@ fn Intrinsic-eq(a: .Intrinsic, b: .Intrinsic) -> bool {
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
     $fmt $self match {
+        case Drop -> { "Drop" }
         case Flip -> { "Flip" }
         case Gt -> { "Gt" }
         case Lt -> { "Lt" }
@@ -77,6 +79,7 @@ fn lookup(name: .Token) -> Maybe<Intrinsic> { block {
     $ptr $len "/"    Bytes:eq if { make Intrinsic.Div   make Maybe<Intrinsic>.Some break }
     $ptr $len "*"    Bytes:eq if { make Intrinsic.Mul   make Maybe<Intrinsic>.Some break }
     $ptr $len "/="   Bytes:eq if { make Intrinsic.NotEq make Maybe<Intrinsic>.Some break }
+    $ptr $len "drop" Bytes:eq if { make Intrinsic.Drop  make Maybe<Intrinsic>.Some break }
     $ptr $len "flip" Bytes:eq if { make Intrinsic.Flip  make Maybe<Intrinsic>.Some break }
     $ptr $len "and"  Bytes:eq if { make Intrinsic.And   make Maybe<Intrinsic>.Some break }
     $ptr $len "or"   Bytes:eq if { make Intrinsic.Or    make Maybe<Intrinsic>.Some break }

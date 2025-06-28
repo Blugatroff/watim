@@ -38,8 +38,8 @@ class Module(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Module", [
             ("imports", format_seq(self.imports, multi_line=True)),
-            ("type-definitions", format_seq(self.type_definitions)),
-            ("globals", format_seq(self.globals)),
+            ("type-definitions", format_seq(self.type_definitions, multi_line=True)),
+            ("globals", format_seq(self.globals, multi_line=True)),
             ("functions", format_seq(self.functions, multi_line=True))])
 
 @dataclass

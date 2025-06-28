@@ -7,7 +7,7 @@ variant Foo {
 
 fn main "_start" () {
 	block {
-		make Foo.A match Foo {
+		make Foo.A match {
 			case A -> { 23 }
 			case B -> { make Foo.B break }
 			case _ -> { break }

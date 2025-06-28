@@ -1257,6 +1257,7 @@ variant Intrinsic {
     case Le -> TypeId
     case Not -> TypeId
     case Store -> TypeId
+    case Drop -> TypeId
     case SetStackSize
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
@@ -1283,6 +1284,7 @@ fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
         case Le -> { $fmt "(Le " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
         case Not -> { $fmt "(Not " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
         case Store -> { $fmt "(Store " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
+        case Drop -> { $fmt "(Drop " Fmt:write $fmt flip TypeId-format $fmt ")" Fmt:write }
         case SetStackSize -> { $fmt "SetStackSize" Fmt:write }
     }
 }
@@ -1597,7 +1599,6 @@ variant Word {
     case Cast -> Cast
     case Call -> Call
     case Intrinsic -> IntrinsicWord
-    case Drop -> Token
     case If -> If
     case Loop -> Loop
     case Flip -> Flip
@@ -1629,7 +1630,6 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Word.Cast -> { Cast-format break }
         case Word.Call -> { Call-format break }
         case Word.Intrinsic -> { IntrinsicWord-format break }
-        case Word.Drop -> { $fmt "(Drop " Fmt:write Token-format $fmt ")" }
         case Word.Flip -> { Flip-format break }
         case Word.Break -> { $fmt "(Break " Fmt:write Token-format $fmt ")" }
         case Word.If -> { If-format break }
@@ -1775,6 +1775,7 @@ fn monomize-intrinsic(ctx: .Ctx, word: .Checked:IntrinsicWord, generic-arguments
         case Checked:Intrinsic.Le -> { $generic-arguments monomize-type make Intrinsic.Le }
         case Checked:Intrinsic.Not -> { $generic-arguments monomize-type make Intrinsic.Not }
         case Checked:Intrinsic.Store -> { $generic-arguments monomize-type make Intrinsic.Store }
+        case Checked:Intrinsic.Drop -> { $generic-arguments monomize-type make Intrinsic.Drop }
         case Checked:Intrinsic.SetStackSize -> { drop make Intrinsic.SetStackSize }
         case Checked:Intrinsic.Uninit -> {
             $generic-arguments monomize-type 0 not make Uninit make Word.Uninit break
@@ -1963,7 +1964,6 @@ fn monomize-word(ctx: .Ctx, word: .Checked:Word, generic-arguments: .Array<TypeI
         case Checked:Word.Cast -> { $generic-arguments monomize-cast }
         case Checked:Word.Call -> { $generic-arguments monomize-call make Word.Call }
         case Checked:Word.Intrinsic -> { $generic-arguments monomize-intrinsic }
-        case Checked:Word.Drop -> { .token flip drop ~ make Word.Drop }
         case Checked:Word.If -> { $generic-arguments monomize-iff }
         case Checked:Word.Loop -> { $generic-arguments monomize-lop }
         case Checked:Word.Block -> { $generic-arguments monomize-blok }

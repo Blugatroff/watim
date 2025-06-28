@@ -185,6 +185,8 @@ fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.type Type:format
+    $fmt " " Fmt:write
+    $fmt $self.reffed bool-format
     $fmt ")" Fmt:write
 }
 

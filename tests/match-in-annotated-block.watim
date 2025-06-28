@@ -9,7 +9,7 @@ variant Type {
 fn main "_start" () {
     block (-> i32) {
         make Type.Bool @b
-        &b make Type.Ptr match Type {
+        &b make Type.Ptr match {
             case Bool -> { "bool" }
             case Ptr -> {
                 "." write dup<i32> 0 /= if { break } drop

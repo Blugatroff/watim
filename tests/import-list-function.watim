@@ -46,7 +46,7 @@ check
   "-"=(Module
     imports=(Map
       "F"=[(Import (IMPORT import 1 1) 0 "./function.watim" (IDENT F 1 30) [
-        (ImportItem (IDENT function-b 1 33) (FunctionHandle 0 1))])]),
+        (FunctionImport (IDENT function-b 1 33) (FunctionHandle 0 1))])]),
     type-definitions=(Map),
     globals=(Map),
     functions=(Map
@@ -61,4 +61,4 @@ check
         body=(Scope 0 [
           (Number (NUMBER 0 4 5)),
           (Call (IDENT function-b 4 7) (FunctionHandle 0 1) []),
-          (Drop (IDENT drop 4 18))])))))
+          (Intrinsic (IDENT drop 4 18) (Drop Bool))])))))

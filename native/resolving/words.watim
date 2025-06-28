@@ -416,11 +416,24 @@ fn MatchCase-format(fmt: .Formatter, self: .MatchCase) {
     $fmt &self.body Scope-format
     $fmt ")" Fmt:write
 }
+
+struct DefaultCase {
+    underscore: Token
+    body: Scope
+}
+fn DefaultCase-format(fmt: .Formatter, self: .DefaultCase) {
+    $fmt "(DefaultCase " Fmt:write
+    $fmt &self.underscore Token-format
+    $fmt " " Fmt:write
+    $fmt &self.body Scope-format
+    $fmt ")" Fmt:write
+}
+
 struct Match {
     token: Token
     varint: CustomTypeHandle
     cases: Array<MatchCase>
-    default: Maybe<Scope>
+    default: Maybe<DefaultCase>
 }
 fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt "(Match\n" Fmt:write
@@ -439,7 +452,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "default=" Fmt:write
-    $fmt \Scope-format &self.default Maybe:format<Scope>
+    $fmt \DefaultCase-format &self.default Maybe:format<_>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -467,9 +480,20 @@ fn MakeVariant-format(fmt: .Formatter, self: .MakeVariant) {
     $fmt Fmt:dedent
 }
 
+struct StackAnnotation {
+    token: Token
+    types: Array<Type>
+}
+fn StackAnnotation-format(fmt: .Formatter, self: .StackAnnotation) {
+    $fmt "(StackAnnotation" Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.types Array:format<_>
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
-    case Drop -> Token
     case GetLocal -> GetLocal
     case RefLocal -> RefLocal
     case InitLocal -> InitLocal
@@ -495,11 +519,11 @@ variant Word {
     case GetField -> GetField
     case MakeTuple -> MakeTuple
     case UnpackTuple -> Token
+    case StackAnnotation -> StackAnnotation
 }
 fn Word-format(fmt: .Formatter, self: .Word) {
     $self match {
         case Number -> { $fmt "(Number " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
-        case Drop -> { $fmt "(Drop " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
         case GetLocal -> { $fmt flip GetLocal-format }
         case RefLocal -> { $fmt flip RefLocal-format }
         case InitLocal -> { $fmt flip InitLocal-format }
@@ -525,6 +549,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case GetField -> { $fmt flip GetField-format }
         case MakeTuple -> { $fmt flip MakeTuple-format }
         case UnpackTuple -> { $fmt "(UnpackTuple " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
+        case StackAnnotation -> { $fmt flip StackAnnotation-format }
     }
 }
 fn Words-format(fmt: .Formatter, self: .Array<Word>) {

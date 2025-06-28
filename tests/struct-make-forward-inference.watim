@@ -37,4 +37,4 @@ check
           (StructWord
             token=(MAKE make 4 9),
             type=(CustomType 0 0 [I32])),
-          (Drop (IDENT drop 4 21))])))))
+          (Intrinsic (IDENT drop 4 21) (Drop (CustomType 0 0 [I32])))])))))

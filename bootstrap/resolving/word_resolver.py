@@ -229,13 +229,14 @@ class WordResolver:
         variant = self.type_lookup.lookup(variant_handle)
         assert(isinstance(variant, Variant))
         cases = tuple(self.resolve_match_case(variant, cays) for cays in word.cases)
-        default = self.resolve_scope(word.default.words) if word.default is not None else None
+        default = resolved.DefaultCase(
+                word.default.name,
+                self.resolve_scope(word.default.words)) if word.default is not None else None
         return resolved.MatchWord(
                 word.token,
                 variant_handle,
                 cases,
-                default,
-                word.default.name if word.default is not None else None)
+                default)
 
     def infer_match_type(self, match: parsing.MatchWord) -> CustomTypeHandle:
         inferred: CustomTypeHandle | None = None

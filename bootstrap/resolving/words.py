@@ -232,12 +232,18 @@ class MatchCase(Formattable):
         return unnamed_record("MatchCase", [self.tag, self.name, self.body])
 
 @dataclass
+class DefaultCase(Formattable):
+    underscore: Token
+    body: Scope
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("DefaultCase", [self.underscore, self.body])
+
+@dataclass
 class MatchWord(Formattable):
     token: Token
     variant: CustomTypeHandle
     cases: Tuple[MatchCase, ...]
-    default: Scope | None
-    underscore: Token | None
+    default: DefaultCase | None
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Match", [
             ("token", self.token),

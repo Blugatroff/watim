@@ -1,7 +1,7 @@
 [== Stdin Compiler ==]
 variant Foo { case A case B case C }
 fn foo(a: Foo) -> i32 {
-	2 1 $a match Foo {
+	2 1 $a match {
 		case A -> { 1 }
 		case B -> { 2 + 3 }
 		case C -> { + 2 + 4 5 }

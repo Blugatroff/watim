@@ -17,6 +17,7 @@ import "./common.watim" as Common (generate-store)
 
 fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block (->) {
     $ctx.fmt $intrinsic match {
+        case Intrinsic.Drop -> { drop "drop" }
         case Intrinsic.Add -> { $ctx.program flip ~ lookup-type match {
             case I64 -> { "i64.add" }
             case _ -> { drop "i32.add" }

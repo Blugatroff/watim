@@ -24,7 +24,7 @@ check
   "-"=(Module
     imports=(Map
       "S"=[(Import (IMPORT import 1 1) 0 "./struct.watim" (IDENT S 1 28) [
-        (ImportItem (IDENT Struct 1 31) (CustomTypeHandle 0 0))])]),
+        (StructImport (IDENT Struct 1 31) (CustomTypeHandle 0 0))])]),
     type-definitions=(Map
       "Foo"=(Struct
         name=(IDENT Foo 2 8),

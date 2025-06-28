@@ -65,9 +65,6 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx.fmt " i32.const " Fmt:write
             $ctx.fmt $word.len i32-format
         }
-        case Word.Drop -> {
-            drop $ctx.fmt "drop" Fmt:write
-        }
         case Word.Intrinsic -> {
             .intrinsic $ctx flip generate-intrinsic
         }

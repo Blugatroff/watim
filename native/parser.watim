@@ -825,6 +825,12 @@ fn TypeDefinition-format(fmt: .Formatter, self: .TypeDefinition) {
         case Struct -> { Struct-format }
     }
 }
+fn TypeDefinition-generic-parameters(self: .TypeDefinition) -> .Array<Token> {
+    $self match {
+        case Variant -> { .generic-parameters }
+        case Struct -> { .generic-parameters }
+    }
+}
 
 struct Module {
     imports: Array<Import>
