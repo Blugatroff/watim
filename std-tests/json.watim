@@ -1,12 +1,12 @@
 import "../std/core.watim" as Core
 import "../std/maybe.watim" as Maybe (assert-some)
-import "../std/result.watim" as Result (Result)
+import "../std/result.watim" as Result (Result(Success, Error))
 import "../std/io.watim" as IO
 import "../std/bytes.watim" as Bytes
 import "../std/array.watim" as Array
 import "../std/map.watim" as Map
 import "../std/arena.watim" as Arena (Arena)
-import "../std/json.watim" as Json (Value)
+import "../std/json.watim" as Json (Value(Null, Number, String, Array, Object))
 
 fn crash(ptr: .i8, len: i32) {
     2 $ptr $len IO:write-all IO:check

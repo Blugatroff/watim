@@ -1,5 +1,5 @@
 import "./bytes.watim" as Bytes
-import "./result.watim" as Result (Result)
+import "./result.watim" as Result (Result(Success, Error))
 import "./arena.watim" as Arena (Arena)
 import "./array.watim" as Array (Array)
 import "./map.watim" as Map (Map)
