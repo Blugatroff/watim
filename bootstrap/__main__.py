@@ -134,10 +134,11 @@ Usage: watim <command> <watim-source-file> [options]
 Commands:
   lex       [path]   Lex code and print the Tokens.
   parse     [path]   Parse code and print the AST
-  check     [path]   Typecheck and print the AST
-  monomize  [path]   Monomize the entire program
-  optimize  [path]   Optimize the entire program
-  compile   [path]   Compile the entire program
+  resolve   [path]   resolve all identifiers
+  check     [path]   run type inference and type checking
+  monomize  [path]   monomorphize all generic functions
+  optimize  [path]   run optimization passes
+  compile   [path]   compile to webassembly text format
 Options:
   -q, --quiet  Don't print any logs to stderr
 """

@@ -634,7 +634,7 @@ fn intrinsics(arena: .Arena, ptr-I8: .Type) -> Map<Resolved:Intrinsic, Intrinsic
         2 @parameter-count
 
         block {
-            $arena 1 Array:new-with-capacity<IntrinsicDescription> @overloadings
+            $arena 2 Array:new-with-capacity<IntrinsicDescription> @overloadings
 
             &overloadings make IntrinsicDescription {
                 block {
@@ -644,6 +644,18 @@ fn intrinsics(arena: .Arena, ptr-I8: .Type) -> Map<Resolved:Intrinsic, Intrinsic
                     $parameters
                 } @parameters
                 $arena make Intrinsics:Type.I32 Array:singleton<_> make IntrinsicReturns.Constant @returns
+                \construct-sub @construct-intrinsic
+            } Array:push-assert-no-alloc<IntrinsicDescription>
+
+            &overloadings make IntrinsicDescription {
+                $arena "a" make ByteSlice make Intrinsics:Type.MetaVar Arena:push<_> make Intrinsics:Type.Ptr @a
+                block {
+                    $arena 2 Array:new-with-capacity<Intrinsics:Type> @parameters
+                    &parameters $a Array:push-assert-no-alloc<_>
+                    &parameters make Intrinsics:Type.I32 Array:push-assert-no-alloc<_>
+                    $parameters
+                } @parameters
+                $arena $a Array:singleton<_> make IntrinsicReturns.Constant @returns
                 \construct-sub @construct-intrinsic
             } Array:push-assert-no-alloc<IntrinsicDescription>
 

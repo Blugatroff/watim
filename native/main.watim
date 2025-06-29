@@ -34,10 +34,11 @@ fn print-usage-and-exit() {
     2 "Commands:\n" IO:write-all IO:check
     2 "  lex       [path]   Lex code and print the Tokens.\n" IO:write-all IO:check
     2 "  parse     [path]   Parse code and print the AST\n" IO:write-all IO:check
-    2 "  check     [path]   Typecheck and print the AST\n" IO:write-all IO:check
-    2 "  monomize  [path]   Monomize the entire program\n" IO:write-all IO:check
-    2 "  optimize  [path]   Optimize the entire program\n" IO:write-all IO:check
-    2 "  compile   [path]   Compile the entire program\n" IO:write-all IO:check
+    2 "  resolve   [path]   resolve all identifiers\n" IO:write-all IO:check
+    2 "  check     [path]   run type inference and type checking\n" IO:write-all IO:check
+    2 "  monomize  [path]   monomorphize all generic functions\n" IO:write-all IO:check
+    2 "  optimize  [path]   run optimization passes\n" IO:write-all IO:check
+    2 "  compile   [path]   compile to webassembly text format\n" IO:write-all IO:check
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
     1 Core:exit
@@ -136,7 +137,7 @@ fn parse-args(arena: .Arena) -> CliArgs {
             $path make ProjectWideCommand.Check make CliCommand.ProjectWide break
         }
         $command ByteSlice:unpack "monomize" Bytes:eq if {
-            $path make ProjectWideCommand.Check make CliCommand.ProjectWide break
+            $path make ProjectWideCommand.Monomize make CliCommand.ProjectWide break
         }
         $command ByteSlice:unpack "optimize" Bytes:eq if {
             $path make ProjectWideCommand.Optimize make CliCommand.ProjectWide break
@@ -195,7 +196,6 @@ fn read-file-or-stdin(
 
 fn lex(arena: .Arena, watim-code: ByteSlice) -> Array<Token> {
     $arena Arena:temp @tmp-arena @save
-    "Lexer" Arena:new @lexer-arena
     $tmp-arena &watim-code Lexer:lex @tokens
     $arena &watim-code Lexer:lex @tokens
     "Tokens" Arena:new @tokens-arena
@@ -446,12 +446,11 @@ fn print-byte-count(fd: i32, bytes: i32) -> i32 {
             $i 0 = if {
                 $fd "B" IO:write-all
             } else {
-                $fd $prefixes $i + ~ IO:write-byte Core:dup<i32> 0 /= if { break } drop
+                $fd $prefixes $i + 1 - ~ IO:write-byte Core:dup<i32> 0 /= if { break } drop
                 $fd "iB" IO:write-all
             } break
         }
         $bytes 1024 / #bytes
-        $prefixes 1 + #prefixes
         $i 1 + #i
     }
 }
