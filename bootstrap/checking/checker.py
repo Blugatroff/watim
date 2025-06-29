@@ -267,6 +267,8 @@ class WordCtx:
             return self.check_load(stack, word)
         if isinstance(word, resolved.words.MatchWord):
             return self.check_match(stack, word)
+        if isinstance(word, resolved.words.MatchVoidWord):
+            return self.check_match_void(stack, word)
         if isinstance(word, resolved.words.VariantWord):
             return self.check_make_variant(stack, word)
         if isinstance(word, resolved.words.GetFieldWord):
@@ -683,6 +685,21 @@ class WordCtx:
             self.abort(word.token, msg)
         stack.push(taip.child)
         return ([LoadWord(word.token, taip.child)], False)
+
+    def check_match_void(self, stack: Stack, word: resolved.words.MatchVoidWord) -> Tuple[List[Word], bool]:
+        arg_item = stack.pop()
+        if arg_item is None:
+            self.abort(word.token, "expected a value to match on")
+        arg = arg_item.child if isinstance(arg_item, PtrType) else arg_item
+        if not isinstance(arg, CustomTypeType):
+            self.abort(word.token, "can only match n variants")
+        variant = self.type_lookup.lookup(arg.type_definition)
+        if not isinstance(variant, Variant):
+            self.abort(word.token, "can only match on variants")
+        if len(variant.cases) != 0:
+            self.abort(word.token, "expected variant with zero cases")
+        return ([word], True)
+
 
     def check_match(self, stack: Stack, word: resolved.words.MatchWord) -> Tuple[List[Word], bool]:
         match_diverges = True

@@ -8,7 +8,7 @@ from resolving.words import ScopeId, GlobalId, LocalId, BreakWord, ROOT_SCOPE
 from checking.intrinsics import IntrinsicMemCopy, IntrinsicMemGrow, IntrinsicDrop, IntrinsicMemFill, IntrinsicSetStackSize
 from parsing.types import I8, I32, I64, Bool
 import monomizer
-from monomizer import Type, Load, is_bitshift, I32InI64, I8InI32, I8InI64, Local, format_type, FunctionHandle, NamedType, GenericFunction, Extern, TupleMakeWord, UnnamedStructWord, Variant, IfWord, StructWord, MatchWord, LoadWord, BlockWord, LoopWord, SizeofWord, FunRefWord, MatchCase, PtrType, CastWord, IntrinsicUninit, IntrinsicFlip, IntrinsicShl, IntrinsicRotl, IntrinsicRotr, IntrinsicAnd, FunctionType, StoreWord, CustomTypeType, VariantWord, StructFieldInitWord, TupleUnpackWord, FunctionSignature, IntrinsicStore, IntrinsicAdd, IntrinsicMul, IntrinsicOr, IntrinsicEqual, IntrinsicNotEqual, IntrinsicGreaterEq, IntrinsicLess, IntrinsicShr, IntrinsicNot, IntrinsicGreater, IntrinsicLessEq, IntrinsicDiv, ParameterLocal, IndirectCallWord, ExternHandle, IntrinsicSub, Global, CustomTypeHandle, TypeDefinition, ConcreteFunction, Word, GetWord, GetFieldWord, SetWord, RefWord, InitWord, CallWord, IntrinsicMod, Function
+from monomizer import Type, Load, is_bitshift, I32InI64, I8InI32, I8InI64, Local, format_type, FunctionHandle, NamedType, GenericFunction, Extern, TupleMakeWord, UnnamedStructWord, Variant, IfWord, StructWord, MatchWord, LoadWord, BlockWord, LoopWord, SizeofWord, FunRefWord, MatchCase, PtrType, CastWord, IntrinsicUninit, IntrinsicFlip, IntrinsicShl, IntrinsicRotl, IntrinsicRotr, IntrinsicAnd, FunctionType, StoreWord, CustomTypeType, VariantWord, StructFieldInitWord, TupleUnpackWord, FunctionSignature, IntrinsicStore, IntrinsicAdd, IntrinsicMul, IntrinsicOr, IntrinsicEqual, IntrinsicNotEqual, IntrinsicGreaterEq, IntrinsicLess, IntrinsicShr, IntrinsicNot, IntrinsicGreater, IntrinsicLessEq, IntrinsicDiv, ParameterLocal, IndirectCallWord, ExternHandle, IntrinsicSub, Global, CustomTypeHandle, TypeDefinition, ConcreteFunction, Word, GetWord, GetFieldWord, SetWord, RefWord, InitWord, CallWord, IntrinsicMod, Function, MatchVoidWord
 
 @dataclass
 class WatGenerator:
@@ -221,7 +221,7 @@ class WatGenerator:
                     return
                 self.write_indent()
                 if not on_ptr and not target_taip.can_live_in_reg():
-                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 ")
+                    self.write(f"local.get $locl-copy-spac:e i32.const {copy_space_offset} i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left ")
                 for load in loads:
                     self.write(str(load))
                 self.write("\n")
@@ -622,6 +622,9 @@ class WatGenerator:
                     self.flip_i64_i32_used = True
                 self.write_store(taip)
                 self.write("\n")
+            case MatchVoidWord(token):
+                self.write_line(";; match on variant {}")
+                self.write_line("unreachable")
             case MatchWord(_, variant_handle, by_ref, cases, default, parameters, returns):
                 variant = self.lookup_type_definition(variant_handle)
                 def go(remaining_cases: List[MatchCase]):
@@ -860,25 +863,13 @@ class WatGenerator:
             if isinstance(last_load, I8InI32) and last_load.offset != 0:
                 self.write(f"i32.const {last_load.offset * 8} i32.shl ")
             self.write("i32.or " if isinstance(last_load, I8InI32) else "i64.or ")
-            if not target_lives_in_memory:
-                if isinstance(local_id, LocalId):
-                    self.write("local.set ")
-                else:
-                    self.write("global.set ")
-                write_ident()
-                self.write("\n")
-                return
+            if isinstance(local_id, LocalId):
+                self.write("local.set ")
             else:
-                if isinstance(local_id, LocalId):
-                    self.write("local.get ")
-                else:
-                    self.write("global.get ")
-                write_ident()
-                self.write(" call $intrinsic:flip-i64-i32 ")
-                self.flip_i64_i32_used = True
-                self.write_store(target_taip)
-                self.write("\n")
-                return
+                self.write("global.set ")
+            write_ident()
+            self.write("\n")
+            return
 
         for i, load in enumerate(loads):
             self.write(f" {load}")

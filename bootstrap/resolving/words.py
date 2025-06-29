@@ -41,6 +41,7 @@ type Word = (
     | StructWordNamed
     | StructWord
     | VariantWord
+    | MatchVoidWord
     | MatchWord
     | MakeTupleWord
     | TupleUnpackWord
@@ -250,6 +251,12 @@ class MatchWord(Formattable):
             ("variant", self.variant),
             ("cases", format_seq(self.cases, multi_line=True)),
             ("default", format_optional(self.default))])
+
+@dataclass
+class MatchVoidWord(Formattable):
+    token: Token
+    def format_instrs(self) -> List[FormatInstr]:
+        return unnamed_record("MatchVoid", [self.token])
 
 @dataclass
 class StackAnnotation(Formattable):

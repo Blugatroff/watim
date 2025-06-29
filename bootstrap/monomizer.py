@@ -12,6 +12,7 @@ from parsing.parser import NumberWord, BreakWord
 import resolving.resolver as resolver
 from resolving import LocalName, ScopeId, GlobalId, LocalId
 from checking.intrinsics import IntrinsicDrop, IntrinsicMemCopy, IntrinsicMemFill, IntrinsicMemGrow, IntrinsicSetStackSize
+from checking.words import MatchVoidWord as MatchVoidWord
 import checking as checked
 
 @dataclass
@@ -637,7 +638,36 @@ type IntrinsicWord = (
     | IntrinsicSetStackSize
 )
 
-type Word = NumberWord | checked.words.StringWord | CallWord | GetWord | InitWord | CastWord | SetWord | LoadWord | IntrinsicWord | IfWord | RefWord | IndirectCallWord | StoreWord | FunRefWord | LoopWord | BreakWord | SizeofWord | BlockWord | GetFieldWord | StructWord | StructFieldInitWord | UnnamedStructWord | VariantWord | MatchWord | InitWord | TupleMakeWord | TupleUnpackWord
+type Word = (
+      NumberWord 
+    | checked.words.StringWord
+    | CallWord
+    | GetWord
+    | InitWord
+    | CastWord
+    | SetWord
+    | LoadWord
+    | IntrinsicWord
+    | IfWord
+    | RefWord
+    | IndirectCallWord
+    | StoreWord
+    | FunRefWord
+    | LoopWord
+    | BreakWord
+    | SizeofWord
+    | BlockWord
+    | GetFieldWord
+    | StructWord
+    | StructFieldInitWord
+    | UnnamedStructWord
+    | VariantWord
+    | MatchWord
+    | MatchVoidWord
+    | InitWord
+    | TupleMakeWord
+    | TupleUnpackWord
+)
 
 @dataclass
 class Module:
@@ -970,6 +1000,8 @@ class Monomizer:
                 if variant.size() > 8:
                     copy_space_offset.value += variant.size()
                 return VariantWord(token, case, variant_handle, offset)
+            case checked.words.MatchVoidWord():
+                return word
             case checked.words.MatchWord(token, resolved_variant_type, by_ref, cases, default_case, resolved_parameters, resolved_returns):
                 monomized_cases: List[MatchCase] = []
                 for resolved_case in cases:

@@ -422,6 +422,7 @@ fn check-word(
         case Resolved:Word.StoreLocal -> { $ctx flip $stack flip check-store }
         case Resolved:Word.Load -> { $ctx flip $stack flip check-load }
         case Resolved:Word.Match -> { $ctx flip $stack flip check-matsh }
+        case Resolved:Word.MatchVoid -> { $ctx flip $stack flip check-matsh-void }
         case Resolved:Word.MakeVariant -> { $ctx flip $stack flip check-mk-varint }
         case Resolved:Word.GetField -> { $ctx flip $stack flip check-get-field }
         case Resolved:Word.MakeTuple -> { $ctx flip $stack flip check-mk-tuple }
@@ -1360,6 +1361,30 @@ fn check-field-init(ctx: .WordCtx, stack: .Stack, word: .Resolved:FieldInit) -> 
 
     $word.name $word.struc $type ~ $word.field-index make FieldInit make Word.FieldInit
     0 1 = [,2] make Result<[Word, bool], CheckError>.Success
+} }
+
+fn check-matsh-void(ctx: .WordCtx, stack: .Stack, word: .Token) -> Result<[Word, bool], CheckError> { block (-> Result<[Word, bool], CheckError>) {
+    $ctx $stack $word "expected a value to match on" pop1 match {
+        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Success -> {}
+    } & match {
+        case Ptr -> { ~ }
+        case _ -> {}
+    } match {
+        case Custom -> {
+            @type
+            $ctx.type-lookup &type.type-definition TypeLookup:lookup match {
+                case Variant -> {}
+                case _ -> { $ctx.ctx $word "can only match on variants" abort<[Word, bool]> break }
+            }
+        }
+        case _ -> { drop $ctx.ctx $word "can only match on variants" abort<[Word, bool]> break }
+    } @varint
+    $varint.cases.len 0 /= if {
+        $ctx.ctx $word "expected variant with zero cases" abort<[Word, bool]> break
+    }
+    $word ~ make Word.MatchVoid 1 1 = [,2]
+    make Result<[Word, bool], CheckError>.Success
 } }
 
 fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[Word, bool], CheckError> { block (-> Result<[Word, bool], CheckError>) {

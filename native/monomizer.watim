@@ -1614,6 +1614,7 @@ variant Word {
     case GetField -> GetField
     case FunRef -> FunRef
     case Match -> Match
+    case MatchVoid -> Token
     case Struct -> StructWord
     case StructNamed -> StructWordNamed
     case Variant -> VariantWord
@@ -1645,6 +1646,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case Word.GetField -> { GetField-format break }
         case Word.FunRef -> { FunRef-format break }
         case Word.Match -> { Match-format break }
+        case Word.MatchVoid -> { $fmt "(MatchVoid " Fmt:write Token-format $fmt ")" }
         case Word.Struct -> { StructWord-format break }
         case Word.StructNamed -> { StructWordNamed-format break }
         case Word.Variant -> { VariantWord-format break }
@@ -1976,6 +1978,7 @@ fn monomize-word(ctx: .Ctx, word: .Checked:Word, generic-arguments: .Array<TypeI
         case Checked:Word.Break -> { flip drop ~ make Word.Break }
         case Checked:Word.GetField -> { $generic-arguments monomize-get-field }
         case Checked:Word.FunRef -> { $generic-arguments monomize-fun-ref }
+        case Checked:Word.MatchVoid -> { flip drop ~ make Word.MatchVoid }
         case Checked:Word.Match -> { $generic-arguments monomize-matsh }
         case Checked:Word.StructWord -> { $generic-arguments monomize-struc-word }
         case Checked:Word.StructWordNamed -> { $generic-arguments monomize-struc-word-named }

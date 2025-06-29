@@ -122,7 +122,7 @@ class WordResolver:
             case parsing.StructWordNamed():
                 return self.resolve_struct_word_named(word),
             case parsing.MatchWord():
-                return self.resolve_match_word(word),
+                return self.resolve_match_word(word)
             case parsing.IfWord():
                 return resolved.IfWord(
                     word.token,
@@ -224,7 +224,11 @@ class WordResolver:
         case = variant.cases[tag]
         return resolved.VariantWord(word.token, tag, variant_type)
 
-    def resolve_match_word(self, word: parsing.MatchWord) -> resolved.MatchWord:
+    def resolve_match_word(self, word: parsing.MatchWord) -> Sequence[resolved.Word]:
+        if len(word.cases) == 0 and word.default is None:
+            return resolved.MatchVoidWord(word.token),
+        if len(word.cases) == 0 and word.default is not None:
+            return self.resolve_scope(word.default.words).words
         variant_handle = self.infer_match_type(word)
         variant = self.type_lookup.lookup(variant_handle)
         assert(isinstance(variant, Variant))
@@ -236,7 +240,7 @@ class WordResolver:
                 word.token,
                 variant_handle,
                 cases,
-                default)
+                default),
 
     def infer_match_type(self, match: parsing.MatchWord) -> CustomTypeHandle:
         inferred: CustomTypeHandle | None = None

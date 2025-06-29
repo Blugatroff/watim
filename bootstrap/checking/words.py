@@ -6,6 +6,7 @@ from lexer import Token
 
 from parsing.words import BreakWord, NumberWord
 from resolving.types import CustomTypeType, PtrType, Type, FunctionType, TupleType
+from resolving.words import MatchVoidWord
 from resolving.words import ScopeId, LocalId, GlobalId, FunctionHandle
 from checking import intrinsics as intrinsics
 from checking.intrinsics import IntrinsicWord
@@ -253,6 +254,7 @@ type Word = (
     | UnnamedStructWord
     | VariantWord
     | MatchWord
+    | MatchVoidWord
     | TupleMakeWord
     | TupleUnpackWord
 )

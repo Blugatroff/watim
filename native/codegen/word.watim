@@ -424,6 +424,12 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx.fmt "." Fmt:write
             $ctx.fmt &cays.name Token-lexeme Fmt:write
         } }
+        case Word.MatchVoid -> {
+            drop
+            $ctx.fmt ";; match on variant {}\n" Fmt:write
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "unreachable" Fmt:write
+        }
         case Word.Match -> {
             @word
             $ctx.program $word.type lookup-type match {
@@ -639,7 +645,7 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
                 $word.on-ptr not $target-type-can-live-in-reg not and if {
                     $ctx.fmt "local.get $locl-copy-spac:e i32.const " Fmt:write
                     $ctx.fmt $word.copy-space-offset i32-format
-                    $ctx.fmt " i32.add call $intrinsic:dupi32 " Fmt:write
+                    $ctx.fmt " i32.add call $intrinsic:dupi32 call $intrinsic:rotate-left" Fmt:write
                 }
                 $ctx &loads generate-loads
             }

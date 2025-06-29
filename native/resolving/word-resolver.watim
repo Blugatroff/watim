@@ -373,12 +373,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
         }
         case P:Word.MakeTuple -> { ~ make Word.MakeTuple }
         case P:Word.GetField -> { ~ make Word.GetField }
-        case P:Word.Match -> {
-            $ctx flip resolve-matsh match {
-                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
-                case Success -> {}
-            } make Word.Match
-        }
+        case P:Word.Match -> { $ctx flip resolve-matsh break }
         case P:Word.Cast -> {
             @word
             $word.token
@@ -546,9 +541,24 @@ fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveErro
     } make Result<Maybe<Call>, ResolveError>.Success
 } }
 
-fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<Match, ResolveError> { block (-> Result<Match, ResolveError>) {
+fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<OneOrMany<Word>, ResolveError> { block (-> Result<OneOrMany<Word>, ResolveError>) {
+    $matsh.cases.len 0 = if {
+        &matsh.default match {
+            case None -> {
+                $matsh.token make Word.MatchVoid make OneOrMany<Word>.One make Result<OneOrMany<Word>, ResolveError>.Success break
+            }
+            case Some -> {
+                .body.words
+                $ctx flip resolve-scope match {
+                    case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                    case Success -> {}
+                }
+                .words make OneOrMany<Word>.Many make Result<OneOrMany<Word>, ResolveError>.Success break
+            }
+        }
+    }
     $ctx $matsh infer-matsh-type match {
-        case Error -> { make Result<Match, ResolveError>.Error break }
+        case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
         case Success -> {}
     } @matsh-type
 
@@ -567,7 +577,7 @@ fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<Match, ResolveError> 
         } &cases flip Array:push-assert-no-alloc<_>
         $i 1 + #i
     } match {
-        case Error -> { make Result<Match, ResolveError>.Error break }
+        case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
         case Success -> { [,] }
     }
 
@@ -577,7 +587,7 @@ fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<Match, ResolveError> 
             @default
             $default.name
             $ctx &default.body.words resolve-scope match {
-                case Error -> { make Result<Match, ResolveError>.Error break }
+                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
                 case Success -> {}
             }
             make DefaultCase make Maybe<DefaultCase>.Some
@@ -589,7 +599,9 @@ fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<Match, ResolveError> 
     $cases
     $default
     make Match
-    make Result<Match, ResolveError>.Success
+    make Word.Match
+    make OneOrMany<Word>.One
+    make Result<OneOrMany<Word>, ResolveError>.Success
 } }
 
 fn resolve-matsh-cays(ctx: .WordCtx, varint: .Variant, cays: .P:MatchCase) -> Result<MatchCase, ResolveError> { block {

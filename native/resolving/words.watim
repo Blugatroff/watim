@@ -515,6 +515,7 @@ variant Word {
     case IndirectCall -> IndirectCall
     case Load -> Load
     case Match -> Match
+    case MatchVoid -> Token
     case MakeVariant -> MakeVariant
     case GetField -> GetField
     case MakeTuple -> MakeTuple
@@ -545,6 +546,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case IndirectCall -> { $fmt flip IndirectCall-format }
         case Load -> { $fmt flip Load-format }
         case Match -> { $fmt flip Match-format }
+        case MatchVoid -> { $fmt "(MatchVoid " Fmt:write $fmt flip Token-format $fmt ")" Fmt:write }
         case MakeVariant -> { $fmt flip MakeVariant-format }
         case GetField -> { $fmt flip GetField-format }
         case MakeTuple -> { $fmt flip MakeTuple-format }
