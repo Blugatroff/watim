@@ -292,14 +292,8 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) { block 
     $command match {
         case Pretty -> {
             drop
-            \write-stdout  PrettyPrinter-new @pp
-            // 0 @i
-            // loop {
-            //     $items.len $i = if { break }
-            //     &items $i Array:get<TopItem> @item
-            //     $item &pp PrettyPrint:TopItem-pretty IO:check
-            //     $i 1 + #i
-            // }
+            \write-stdout PrettyPrinter-new @pp
+            &module &pp PrettyPrint:Module-pretty IO:check
             1 IO:newline
             1 IO:newline
 

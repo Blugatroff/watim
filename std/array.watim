@@ -4,6 +4,7 @@ import "./io.watim" as IO
 import "./arena.watim" as A
 import "./fmt.watim" as FMT (Formatter)
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
+import "./list.watim" as List (List)
 
 struct Array<T> {
     ptr: .T
@@ -411,6 +412,16 @@ fn repeat-element<T>(arena: .A:Arena, n: i32, v: T) -> Array<T> {
 }
 fn to-slice(self: .Array<i8>) -> ByteSlice {
     $self unpack<_> make ByteSlice
+}
+fn to-list<T>(arena: .A:Arena, self: .Array<T>) -> List<T> {
+    List:empty<T> @list
+    $self.len loop {
+        @i
+        $i 0 = if { $list break }
+        $self $i 1 - get<_> ~
+        $arena $list A:push<_> List:cons<_> #list
+        $i 1 -
+    }
 }
 fn unescape(arena: .A:Arena, self: ByteSlice) -> Array<i8> {
     $arena $self.len new-with-capacity<i8> @out

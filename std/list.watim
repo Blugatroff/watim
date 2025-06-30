@@ -129,6 +129,16 @@ fn eq<T>(eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) -> bool {
     }
 }
 
+fn append<T>(base: .List<T>, extension: .List<T>) {
+    $base loop {
+        @base
+        $base match {
+            case Empty -> { $extension ~ =>base break }
+            case Cons -> {}
+        } .next ~
+    }
+}
+
 fn merge-sort<T>(less-eq: (.T, .T -> bool), list: .List<T>) {
     block {
         $list match {

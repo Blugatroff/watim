@@ -889,6 +889,16 @@ variant TopItem {
     case Variant -> Variant
     case Global -> Global
 }
+fn TopItem-start-token(item: .TopItem) -> .Token {
+    $item match {
+        case TopItem.Import -> { .start }
+        case TopItem.Extern -> { .token }
+        case TopItem.Function -> { .start }
+        case TopItem.Struct -> { .start }
+        case TopItem.Variant -> { .start }
+        case TopItem.Global -> { .token }
+    }
+}
 fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { block (-> Result<TopItem, ParseError>) {
     $token Token-ty match {
         case TOKEN_IMPORT -> {

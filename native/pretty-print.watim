@@ -2,8 +2,10 @@ import "../std/core.watim" as Core
 import "../std/io.watim" as IO
 import "../std/maybe.watim" as Maybe (Maybe(None, Some))
 import "../std/array.watim" as Array (Array)
-import "./parser.watim" as Parser (Module, TopItem, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation, ImportItem)
-import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-print)
+import "../std/arena.watim" as Arena (Arena)
+import "../std/list.watim" as List (List)
+import "./parser.watim" as Parser (Module, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation, ImportItem, FunctionOrExtern, TypeDefinition, TopItem, TopItem-start-token)
+import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-print, Token-line, Token-column)
 
 struct PrettyPrinter {
     line: i32
@@ -51,6 +53,59 @@ fn write-token(pp: .PrettyPrinter, token: .Token) -> i32 { block {
     $pp $token Token-lexeme write
 } }
 
+fn List-pretty<T>(self: .List<T>, pretty: (.T, .PrettyPrinter -> i32), pp: .PrettyPrinter) -> i32 {
+    $self loop {
+        match {
+            case List.Empty -> { 0 break }
+            case List.Cons -> {}
+        }
+        @cons
+        &cons.elem $pp $pretty -> Core:dup<i32> 0 /= if { break } else { drop }
+        $cons.next
+    }
+}
+
+fn TopItem-mk-imp(item: .Import) -> TopItem { $item ~ make TopItem.Import }
+fn TopItem-mk-type-definition(item: .TypeDefinition) -> TopItem {
+    $item match {
+        case TypeDefinition.Struct -> { ~ make TopItem.Struct }
+        case TypeDefinition.Variant -> { ~ make TopItem.Variant }
+    }
+}
+fn TopItem-mk-function(item: .FunctionOrExtern) -> TopItem {
+    $item match {
+        case FunctionOrExtern.Function -> { ~ make TopItem.Function }
+        case FunctionOrExtern.Extern -> { ~ make TopItem.Extern }
+    }
+}
+fn TopItem-mk-globl(globl: .Global) -> TopItem { $globl ~ make TopItem.Global }
+
+fn TopItem-cmp(a: .TopItem, b: .TopItem) -> bool {
+    $a TopItem-start-token @a
+    $b TopItem-start-token @b
+    $a Token-line $b Token-line = if {
+        $a Token-column $b Token-column le
+    } else {
+        $a Token-line $b Token-line le
+    }
+}
+
+fn Module-pretty(self: .Module, pp: .PrettyPrinter) -> i32 {
+    0 !.Arena Arena:temp @arena @save
+
+    List:empty<TopItem> @top-items
+
+    &top-items $arena $arena &self.type-definitions \TopItem-mk-type-definition Array:map<_, _> & Array:to-list<_> & List:append<_>
+    &top-items $arena $arena &self.imports \TopItem-mk-imp Array:map<_, _> & Array:to-list<_> & List:append<_>
+    &top-items $arena $arena &self.functions \TopItem-mk-function Array:map<_, _> & Array:to-list<_> & List:append<_>
+    &top-items $arena $arena &self.globals \TopItem-mk-globl Array:map<_, _> & Array:to-list<_> & List:append<_>
+
+    \TopItem-cmp &top-items List:merge-sort<_>
+    &top-items \TopItem-pretty $pp List-pretty<_>
+
+    $arena $save Arena:restore
+}
+
 fn TopItem-pretty(self: .TopItem, pp: .PrettyPrinter) -> i32 {
     $self match {
         case TopItem.Import -> { $pp Import-pretty }
@@ -69,6 +124,13 @@ fn Global-pretty(self: .Global, pp: .PrettyPrinter) -> i32 { block {
     &self.type $pp Type-pretty
 } }
 
+fn FunctionOrExtern-pretty(self: .FunctionOrExtern, pp: .PrettyPrinter) -> i32 {
+    $self match {
+        case FunctionOrExtern.Extern -> { $pp Extern-pretty }
+        case FunctionOrExtern.Function -> { $pp Function-pretty }
+    }
+}
+
 fn Extern-pretty(self: .Extern, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.token write-token Core:dup<i32> 0 /= if { break } drop
     $pp &self.extrn-module write-token Core:dup<i32> 0 /= if { break } drop
@@ -77,6 +139,13 @@ fn Extern-pretty(self: .Extern, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.name write-token Core:dup<i32> 0 /= if { break } drop
     &self.signature $pp Signature-pretty
 } }
+
+fn TypeDefinition-pretty(self: .TypeDefinition, pp: .PrettyPrinter) -> i32 {
+    $self match {
+        case TypeDefinition.Struct -> { $pp Struct-pretty }
+        case TypeDefinition.Variant -> { $pp Variant-pretty }
+    }
+}
 
 fn Struct-pretty(self: .Struct, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.start write-token Core:dup<i32> 0 /= if { break } drop
