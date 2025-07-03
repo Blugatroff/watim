@@ -402,8 +402,8 @@ variant Call {
 }
 fn Call-format(fmt: .Formatter, self: .Call) {
     $self match {
-        case Local -> { $fmt flip LocalCall-format }
-        case Foreign -> { $fmt flip ForeignCall-format }
+        case Call.Local -> { $fmt flip LocalCall-format }
+        case Call.Foreign -> { $fmt flip ForeignCall-format }
     }
 }
 

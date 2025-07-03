@@ -1,15 +1,16 @@
 import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/io.watim" as IO
 
-import "../monomizer.watim" as Monomized (
+import "../monomorphization/monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances,
     Extern, Function, FunctionHandle, Signature, Local, Global,
-    Type(I32, I64, I8, Bool),
-    Key, Key-type, NamedTypeId, TypeId, TypeId-format,
-    CustomType, CustomType-name, FunType,
-    Variant, VariantCase, Struct,
+    Key, Key-type,
     Word, Intrinsic, FieldAccess, MatchCase,
     I32-id, I64-id, type-size, field-offset, can-live-in-reg
+)
+import "../monomorphization/type.watim" as Type (
+    Type(I32, I64, I8, Bool), NamedTypeId, TypeId, TypeId-format, FunType,
+    CustomType, CustomType-name, Variant, VariantCase, Struct,
 )
 
 import "./ctx.watim" as Ctx (Ctx, lookup-type)
@@ -37,12 +38,11 @@ fn generate-intrinsic(ctx: .Ctx, intrinsic: .Intrinsic) { block (->) {
         }
         case Intrinsic.NotEq -> {
             ~ @type
-            $ctx.program $type lookup-type match {
-                case I64 -> { "i64.ne" }
-                case _ -> {
-                    0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
-                    drop "i32.ne"
-                }
+            &ctx.program.sizes $type type-size 4 gt if {
+                0 &ctx.program.sizes $type can-live-in-reg !i32 / drop // assert
+                "i64.ne"
+            } else {
+                "i32.ne"
             }
         }
         case Intrinsic.Mod -> { $ctx.program flip ~ lookup-type match {

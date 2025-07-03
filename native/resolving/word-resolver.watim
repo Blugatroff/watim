@@ -744,7 +744,7 @@ fn lookup-constructor(ctx: .WordCtx, constructor: .Token) -> Result<[CustomTypeH
             loop {
                 $k $imp.items.len = if { make Maybe<[CustomTypeHandle, i32]>.None break }
                 &imp.items $k Array:get<_> match {
-                    case Variant -> {
+                    case ImportItem.Variant -> {
                         @item
                         $ctx.type-lookup &item.handle TypeLookup:lookup match {
                             case Struct -> { drop Core:unreachable<.Variant> }

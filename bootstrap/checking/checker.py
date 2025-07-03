@@ -715,6 +715,10 @@ class WordCtx:
         variant = self.type_lookup.lookup(arg.type_definition)
         if not isinstance(variant, Variant):
             self.abort(word.token, "can only match on variants")
+
+        if word.variant != arg.type_definition:
+            self.abort(word.token, f"match argument mismatch.\nExpected to match on:\n\t{self.type_lookup.lookup(word.variant).name.lexeme}\nbut got:\n\t{variant.name.lexeme}")
+
         remaining_cases: List[str] = [case.name.lexeme for case in variant.cases]
         case_stacks: List[Tuple[Stack, Token, bool]] = []
         visited_cases: List[Token] = []

@@ -5,11 +5,12 @@ import "../std/array.watim" as Array (Array)
 import "../std/map.watim" as Map (Map)
 
 import "./resolving/words.watim" as Resolved (ScopeId, LocalId, LocalId-eq, root-scope, VarId(Local, Global))
-import "./monomizer.watim" as Monomizer (
+import "./monomorphization/monomizer.watim" as Monomizer (
     Monomized, Module, ExternOrInstances(Extern, Instances),
     Function, Local, Scope, Word, If, MatchCase,
-    TypeId, type-size, local-lives-in-memory
+    local-lives-in-memory, type-size,
 )
+import "./monomorphization/type.watim" as Type (TypeId)
 
 fn merge-locals(monomized: .Monomized) {
     0 @i

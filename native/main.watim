@@ -24,7 +24,7 @@ import "./checking/checker.watim" as Checker (check-modules, CheckError-print)
 import "./resolving/resolver.watim" as Resolved
 import "./resolving/module.watim" as Resolved
 import "./resolving/top-items.watim" as Resolved
-import "./monomizer.watim" as Monomizer (Monomized-format, monomize)
+import "./monomorphization/monomizer.watim" as Monomizer (Monomized-format, monomize)
 import "./local-merging.watim" as LocalMerging (merge-locals)
 import "./codegen/generator.watim" as Generator
 

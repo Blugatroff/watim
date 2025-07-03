@@ -1425,6 +1425,18 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         }
     } @generic-arguments @varint ~ @varint-type
 
+    $varint-type.type-definition $word.varint /= if {
+        $ctx.temp Fmt:into-new-string @buf @fmt
+        &fmt "match argument mismatch.\nExpected to match on:\n\t" Fmt:write
+        $ctx.type-lookup &word.varint TypeLookup:lookup match {
+            case Variant -> {}
+            case _ -> { drop Core:unreachable<.Variant> }
+        } .name &fmt flip Token-lexeme Fmt:write
+        &fmt "\nbut got:\n\t" Fmt:write
+        &fmt &varint.name Token-lexeme Fmt:write
+        $ctx.ctx &word.token $buf Array:unpack<_> abort<[Word, bool]> break
+    }
+
     $ctx.temp $varint.cases.len Array:new-with-capacity<bool> @visited-tags
     loop {
         $varint.cases.len $visited-tags.len = if { break }

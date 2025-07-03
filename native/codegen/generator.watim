@@ -13,15 +13,17 @@ import "../../std/util.watim" as Util (i32-format, bool-format)
 import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format)
 import "../resolving/top-items.watim" as TopItems (LocalName-unpack)
 import "../resolving/words.watim" as Resolved (ScopeId, root-scope, LocalId, LocalId-eq, GlobalId, VarId)
-import "../monomizer.watim" as Monomized (
+import "../monomorphization/monomizer.watim" as Monomized (
     Monomized, Module, ExternOrInstances(Extern, Instances),
     Extern, Function, FunctionHandle, Signature, Local, Global,
-    Type, Key, Key-type, NamedTypeId, TypeId, TypeId-format,
-    CustomType, CustomType-name, FunType,
-    Variant, VariantCase, Struct,
+    Key, Key-type,
     Word, Intrinsic, FieldAccess, MatchCase,
     I32-id, I64-id, type-size, field-offset, can-live-in-reg,
     local-lives-in-memory
+)
+import "../monomorphization/type.watim" as Type (
+    Type, NamedTypeId, TypeId, TypeId-format, FunType,
+    CustomType, CustomType-name, Variant, VariantCase, Struct,
 )
 
 import "./ctx.watim" as Ctx (

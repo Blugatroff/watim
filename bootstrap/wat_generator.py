@@ -297,7 +297,8 @@ class WatGenerator:
                 assert(taip.can_live_in_reg())
                 self.write_line("i32.eq")
             case IntrinsicNotEqual(_, taip):
-                if isinstance(taip, I64):
+                if taip.size() > 4:
+                    assert(taip.can_live_in_reg())
                     self.write_line("i64.ne")
                     return
                 assert(taip.can_live_in_reg())

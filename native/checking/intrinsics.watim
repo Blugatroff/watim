@@ -32,13 +32,13 @@ fn Type-pretty(fmt: .Formatter, self: .Type) { block {
 } }
 fn Type-compare-to-actual(meta-vars: .Map<ByteSlice, .Type:Type>, a: .Type, b: .Type:Type) -> bool {
     $a match {
-        case Bool -> { $b match { case Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
-        case I8 -> { $b match { case I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
-        case I32 -> { $b match { case I32 -> { 1 1 = } case _ -> { drop 0 1 = } } }
-        case I64 -> { $b match { case I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case Bool -> { $b match { case Type:Type.Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I8 -> { $b match { case Type:Type.I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I32 -> { $b match { case Type:Type.I32 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I64 -> { $b match { case Type:Type.I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
         case Ptr -> {
             $meta-vars flip ~ $b match {
-                case Ptr -> { ~ Type-compare-to-actual }
+                case Type:Type.Ptr -> { ~ Type-compare-to-actual }
                 case _ -> { drop drop drop 0 1 = }
             }
         }

@@ -1,0 +1,17 @@
+[== Stdin Compiler ==]
+variant Foo { case A case B }
+variant Bar { case Baz }
+
+fn foo() {
+	make Bar.Baz match {
+		case B -> { 0 }
+	} drop
+}
+[== Status Compiler ==]
+1
+[== Stderr Compiler ==]
+-:5:15 match argument mismatch.
+Expected to match on:
+	Foo
+but got:
+	Bar

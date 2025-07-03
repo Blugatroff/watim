@@ -9,9 +9,9 @@ import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../lexer.watim" as Lexer (Token-lexeme)
 import "../resolving/top-items.watim" as Resolved (LocalName-unpack)
 import "../resolving/words.watim" as Resolved (LocalId, root-scope, VarId(Local, Global))
-import "../monomizer.watim" as Monomized (
-    Type(I32, I64, Bool, I8, Ptr, Tuple, Fun, Custom),
-    TypeId, type-size, Local, CustomType-name,
+import "../monomorphization/monomizer.watim" as Monomized (type-size, Local)
+import "../monomorphization/type.watim" as Type (
+    Type(I32, I64, Bool, I8, Ptr, Tuple, Fun, Custom), TypeId, CustomType-name,
 )
 
 import "./ctx.watim" as Ctx (Ctx, lookup-type, lookup-globl, lookup-custom-type)

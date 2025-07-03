@@ -7,12 +7,13 @@ import "../../std/fmt.watim" as Fmt (Formatter)
 import "../lexer.watim" as Lexer (Token)
 import "../resolving/type.watim" as Resolved (CustomTypeHandle)
 import "../resolving/words.watim" as Resolved (LocalId, GlobalId, VarId(Global, Local))
-import "../monomizer.watim" as Monomized (
-    Monomized, Type, TypeId, Key, Key-type,
-    CustomType, FunctionHandle, Local, Global,
+import "../monomorphization/monomizer.watim" as Monomized (
+    Monomized, Key, Key-type,
+    FunctionHandle, Local, Global,
     Module, Extern, Function, ExternOrInstances(Extern, Instances),
     can-live-in-reg, local-lives-in-memory, globl-lives-in-memory
 )
+import "../monomorphization/type.watim" as Type (Type, TypeId, CustomType)
 
 struct Ctx {
     fmt: .Formatter
