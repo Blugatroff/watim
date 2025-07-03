@@ -8,6 +8,11 @@ import sys
 import os
 import difflib
 
+sys.path.insert(0, os.path.abspath('./bootstrap'))
+from bootstrap import __main__
+bootstrap_compiler = __main__
+
+
 if not os.path.isfile("test.wat"):
     if subprocess.run("bash ./run.sh ./native/main.watim compile ./test.watim -q > test.wat", shell=True).returncode != 0:
         exit(1)
@@ -46,9 +51,26 @@ def run_native_compiler(args: List[str] | None, stdin: str):
     return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
 
 bootstrap_entry_path = os.path.realpath("./bootstrap")
-def run_bootstrap_compiler(args: List[str] | None, stdin: str):
-    compiler = subprocess.run(["python", bootstrap_entry_path] + (args or ["compile", "-", "--quiet"]), input=bytes(stdin, 'UTF-8'), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return CompilerOutput(compiler.returncode, compiler.stdout.decode("UTF-8").strip(), compiler.stderr.decode("UTF-8").strip())
+def run_bootstrap_compiler(args: List[str] | None, stdin: str) -> CompilerOutput:
+    main = bootstrap_compiler.main
+    stderr = ""
+    stdout = ""
+    status = 0
+    try:
+        stdout = main(["bootstrap.py"] + (args or ["compile", "-", "--quiet"]), stdin=stdin)
+    except bootstrap_compiler.CliArgException as e:
+        stderr = e.message
+        status = 1
+    except bootstrap_compiler.ParseException as e:
+        stderr = e.display()
+        status = 1
+    except bootstrap_compiler.ResolveException as e:
+        stderr = e.display()
+        status = 1
+    except bootstrap_compiler.CheckException as e:
+        stderr = e.display()
+        status = 1
+    return CompilerOutput(status, stdout.strip(), stderr.strip())
 
 if len(sys.argv) > 2 and sys.argv[1] == "accept":
     paths = sys.argv[2:]
