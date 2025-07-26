@@ -1,0 +1,322 @@
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/maybe.watim" as Maybe (Maybe)
+import "../../std/array.watim" as Array (Array)
+import "../../std/util.watim" as Util (i32-format, bool-format)
+
+import "../lexer.watim" as Lexer (Token, Token-format)
+
+import "../resolving/type.watim" as Type (Type)
+import "../resolving/type.watim" as Resolved (CustomTypeHandle, CustomTypeHandle-format)
+import "../resolving/words.watim" as Resolved (
+    GlobalId, LocalId, GlobalId-format, LocalId-format,
+    FunctionHandle, FunctionHandle-format,
+)
+
+import "./word.watim" as Word (
+    InferenceHole, InferenceHole-format,
+    FieldAccess, FieldAccess-format,
+)
+
+struct FromLocal {
+    token: Token
+    var: LocalId
+    type: InferenceHole
+    fields: Array<FieldAccess>
+    result-taip: InferenceHole
+    by-reference: bool
+}
+fn FromLocal-format(fmt: .Formatter, self: .FromLocal) {
+    $fmt "(FromLocal\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "var=" Fmt:write
+    $fmt &self.var LocalId-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "fields=" Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "result-type=" Fmt:write
+    $fmt &self.result-taip InferenceHole-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "by-reference=" Fmt:write
+    $fmt $self.by-reference bool-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct FromGlobal {
+    var: GlobalId
+}
+fn FromGlobal-format(fmt: .Formatter, self: .FromGlobal) {
+    $fmt "(FromGlobal " Fmt:write
+    $fmt &self.var GlobalId-format
+    $fmt ")" Fmt:write
+}
+
+struct FromAdd {
+    base: .Maybe<Source>
+    addition: .Maybe<Source>
+    type: InferenceHole
+}
+fn FromAdd-format(fmt: .Formatter, self: .FromAdd) {
+    $fmt "(FromAdd\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "base=" Fmt:write
+    $fmt \Source-format $self.base Maybe:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "addition=" Fmt:write
+    $fmt \Source-format $self.addition Maybe:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct FromUninit {
+    token: Token
+    generic-arguments: Array<InferenceHole>
+}
+fn FromUninit-format(fmt: .Formatter, self: .FromUninit) {
+    $fmt "(FromUninit " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \InferenceHole-format &self.generic-arguments Array:format<_>
+    $fmt ")" Fmt:write
+}
+
+struct FromEq {
+    token: Token
+    type: InferenceHole
+    a: .Maybe<Source>
+    b: .Maybe<Source>
+}
+fn FromEq-format(fmt: .Formatter, self: .FromEq) {
+    $fmt "(FromEq\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "a=" Fmt:write
+    $fmt \Source-format $self.a Maybe:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "b=" Fmt:write
+    $fmt \Source-format $self.b Maybe:format<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+variant FromIntrinsic {
+    case Add -> FromAdd
+    case Uninit -> FromUninit
+    case Eq -> FromEq
+}
+fn FromIntrinsic-format(fmt: .Formatter, self: .FromIntrinsic) {
+    $fmt $self match {
+        case Add -> { FromAdd-format }
+        case Uninit -> { FromUninit-format }
+        case Eq -> { FromEq-format }
+    }
+}
+
+struct FromMakeStruct {
+    type-definition: CustomTypeHandle
+    arguments: Array<Source>
+    type: InferenceHole
+}
+fn FromMakeStruct-format(fmt: .Formatter, self: .FromMakeStruct) {
+    $fmt "(FromMakeStruct\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "type-definition=" Fmt:write
+    $fmt &self.type-definition CustomTypeHandle-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "arguments=" Fmt:write
+    $fmt \Source-format &self.arguments Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct FromCall {
+    function: FunctionHandle
+    generic-arguments: Array<InferenceHole>
+    arguments: Array<Source>
+}
+fn FromCall-format(fmt: .Formatter, self: .FromCall) {
+    $fmt "(FromCall\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "function=" Fmt:write
+    $fmt &self.function FunctionHandle-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "generic-arguments=" Fmt:write
+    $fmt \InferenceHole-format &self.generic-arguments Array:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "arguments=" Fmt:write
+    $fmt \Source-format &self.arguments Array:format-multi-line<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct FromCast {
+    src-type: InferenceHole
+    dst-type: Type
+    src: .Maybe<Source>
+}
+fn FromCast-format(fmt: .Formatter, self: .FromCast) {
+    $fmt "(FromCast " Fmt:write
+    $fmt &self.src-type InferenceHole-format
+    $fmt " " Fmt:write
+    $fmt &self.dst-type Type:format
+    $fmt " " Fmt:write
+    $fmt \Source-format $self.src Maybe:format<_>
+    $fmt ")" Fmt:write
+}
+
+struct FromLoad {
+    type: InferenceHole
+    src: .Maybe<Source>
+}
+fn FromLoad-format(fmt: .Formatter, self: .FromLoad) {
+    $fmt "(FromLoad " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt " " Fmt:write
+    $fmt \Source-format $self.src Maybe:format<_>
+    $fmt ")" Fmt:write
+}
+
+struct FromIfEntry {
+    token: Token
+    condition: Source
+    arguments: Array<Source>
+}
+fn FromIfEntry-format(fmt: .Formatter, self: .FromIfEntry) {
+    $fmt "(FromIfEntry\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "condition=" Fmt:write
+    $fmt &self.condition Source-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "arguments=" Fmt:write
+    $fmt \Source-format &self.arguments Array:format-multi-line<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct FromIfExit {
+    token: Token
+    condition: Source
+    arguments: Array<Source>
+    true-branch-returns: Array<Source>
+    false-branch-returns: Array<Source>
+}
+fn FromIfExit-format(fmt: .Formatter, self: .FromIfExit) {
+    $fmt "(FromIfExit\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "condition=" Fmt:write
+    $fmt &self.condition Source-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "arguments=" Fmt:write
+    $fmt \Source-format &self.arguments Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "true-branch-returns=" Fmt:write
+    $fmt \Source-format &self.true-branch-returns Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "false-branch-returns=" Fmt:write
+    $fmt \Source-format &self.false-branch-returns Array:format-multi-line<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+variant MultiReturnNode {
+    case PlaceHolder
+    case Call -> FromCall
+    case IfEntry -> FromIfEntry
+    case IfExit -> FromIfExit
+}
+fn MultiReturnNode-format(fmt: .Formatter, self: .MultiReturnNode) {
+    $fmt $self match {
+        case PlaceHolder -> { "PlaceHolder" Fmt:write }
+        case Call -> { FromCall-format }
+        case IfEntry -> { FromIfEntry-format }
+        case IfExit -> { FromIfExit-format }
+    }
+}
+
+struct FromNode {
+    index: i32
+    ret: i32
+}
+fn FromNode-format(fmt: .Formatter, self: .FromNode) {
+    $fmt "(FromNode " Fmt:write
+    $fmt $self.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.ret i32-format
+    $fmt ")" Fmt:write
+}
+
+variant Source {
+    case FromLocal -> FromLocal
+    case FromGlobal -> FromGlobal
+    case FromNumber -> Token
+    case FromString
+    case FromIntrinsic -> FromIntrinsic
+    case FromMakeStruct -> FromMakeStruct
+    case FromNode -> FromNode
+    case FromCast -> FromCast
+    case FromLoad -> FromLoad
+}
+fn Source-format(fmt: .Formatter, self: .Source) {
+    $fmt $self match {
+        case FromLocal -> { FromLocal-format }
+        case FromGlobal -> { FromGlobal-format }
+        case FromNumber -> { $fmt "(FromNumber " Fmt:write Token-format $fmt ")" Fmt:write }
+        case FromString -> { "FromString" Fmt:write }
+        case FromIntrinsic -> { FromIntrinsic-format }
+        case FromMakeStruct -> { FromMakeStruct-format }
+        case FromNode -> { FromNode-format }
+        case FromCast -> { FromCast-format }
+        case FromLoad -> { FromLoad-format }
+    }
+}

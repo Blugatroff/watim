@@ -671,9 +671,9 @@ fn Function-format(fmt: .Formatter, self: .Function) {
 
 struct Module {
     imports: Map<ByteSlice, Array<Import>>
-    type-definitions: Map<ByteSlice, TypeDefinition>
-    globals: Map<ByteSlice, Global>
-    functions: Map<ByteSlice, FunctionOrExtern>
+    type-definitions: Array<TypeDefinition>
+    globals: Array<Global>
+    functions: Array<FunctionOrExtern>
     static-data: ByteSlice
 }
 fn format-import-array(fmt: .Formatter, self: .Array<Import>) {
@@ -688,15 +688,15 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "type-definitions=" Fmt:write
-    $fmt \ByteSlice-format \TypeDefinition-format &self.type-definitions Map:format-multi-line<ByteSlice, TypeDefinition>
+    $fmt \TypeDefinition-format &self.type-definitions Array:format-multi-line<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "globals=" Fmt:write
-    $fmt \ByteSlice-format \Global-format &self.globals Map:format-multi-line<ByteSlice, Global>
+    $fmt \Global-format &self.globals Array:format-multi-line<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "functions=" Fmt:write
-    $fmt \ByteSlice-format \FunctionOrExtern-format &self.functions Map:format-multi-line<ByteSlice, FunctionOrExtern>
+    $fmt \FunctionOrExtern-format &self.functions Array:format-multi-line<_>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }

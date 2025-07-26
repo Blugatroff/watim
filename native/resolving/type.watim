@@ -206,6 +206,25 @@ fn CustomTypeHandle-eq(a: .CustomTypeHandle, b: .CustomTypeHandle) -> bool {
     $a.module.index $b.module.index = $a.index $b.index = and
 }
 
+fn contains-generic(type: .Type) -> bool {
+    $type match {
+        case I8 -> { 0 1 = }
+        case I32 -> { 0 1 = }
+        case I64 -> { 0 1 = }
+        case Bool -> { 0 1 = }
+        case Ptr -> { ~ contains-generic }
+        case Hole -> { drop 0 1 = }
+        case Fun -> {
+            @fun
+            &fun.parameters \contains-generic Array:any<_>
+            &fun.returns \contains-generic Array:any<_> or
+        }
+        case Custom -> { .generic-arguments \contains-generic Array:any<_> }
+        case Tuple -> { .items \contains-generic Array:any<_> }
+        case Generic -> { drop 1 1 = }
+    }
+}
+
 fn with-generics(arena: .Arena, type: .Type, generics: .Array<Type>) -> Type {
     $type match {
         case Ptr -> {

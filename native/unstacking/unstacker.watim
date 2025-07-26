@@ -1,0 +1,729 @@
+import "../../std/core.watim" as Core
+import "../../std/maybe.watim" as Maybe (Maybe(Some, None))
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/array.watim" as Array (Array)
+import "../../std/map.watim" as Map (Map)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
+import "../../std/util.watim" as Util (bool-format)
+
+import "../lexer.watim" as Lexer (Token, Token-format)
+
+import "../resolving/type.watim" as Type (Type, CustomTypeHandle)
+import "../resolving/words.watim" as Resolved (VarId, LocalId, LocalId-format)
+import "../resolving/intrinsics.watim" as Resolved
+import "../resolving/top-items.watim" as Resolved (Signature, Signature-format, LocalName, LocalName-token)
+import "../resolving/module.watim" as Resolved
+
+import "./stack.watim" as Stack (Stack)
+import "./source.watim" as Source (Source, Source-format, MultiReturnNode)
+import "./word.watim" as Word (InferenceHole, InferenceHole-format, InferenceFieldHole, Word, Scope, Scope-format)
+
+struct Module {
+    imports: Map<ByteSlice, Array<Resolved:Import>>
+    functions: Map<ByteSlice, FunctionOrExtern>
+    globals: Array<Resolved:Global>
+    type-definitions: Array<Resolved:TypeDefinition>
+    static-data: ByteSlice
+}
+fn Module-format(fmt: .Formatter, self: .Module) {
+    $fmt "(Module\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "imports=" Fmt:write
+    $fmt \ByteSlice-format \Resolved:format-imprt-array &self.imports Map:format-multi-line<ByteSlice, Array<Resolved:Import>>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type-definitions=" Fmt:write
+    $fmt \Resolved:TypeDefinition-format &self.type-definitions Array:format-multi-line<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "globals=" Fmt:write
+    $fmt \Resolved:Global-format &self.globals Array:format-multi-line<Resolved:Global>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "functions=" Fmt:write
+    $fmt \ByteSlice-format \FunctionOrExtern-format &self.functions Map:format-multi-line<ByteSlice, FunctionOrExtern>
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+fn unstack(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Map<ByteSlice, Module> {
+    $arena \ByteSlice:eq-by-ref $modules.values.len Map:new-with-capacity<ByteSlice, Module> @unstacked
+    0 loop {
+        @i
+        $i $modules.values.len = if { break }
+        &unstacked
+        &modules.keys $i Array:get<_> ~
+        $arena &modules.values &modules.values $i Array:get<_> unstack-module Map:insert-assert-no-alloc<_, _> drop
+        $i 1 +
+    }
+    $unstacked
+}
+
+variant FunctionOrExtern {
+    case Extern -> Resolved:Extern
+    case Function -> Function
+}
+fn FunctionOrExtern-format(fmt: .Formatter, self: .FunctionOrExtern) {
+    $fmt $self match {
+        case Extern -> { Resolved:Extern-format }
+        case Function -> { Function-format }
+    }
+}
+fn FunctionOrExtern-signature(self: .FunctionOrExtern) -> .Signature {
+    $self match {
+        case Extern -> { .signature }
+        case Function -> { .signature }
+    }
+}
+
+fn unstack-module(arena: .Arena, modules: .Array<Resolved:Module>, module: .Resolved:Module) -> Module {
+    $arena \ByteSlice:eq-by-ref $module.functions.values.len Map:new-with-capacity<ByteSlice, FunctionOrExtern> @unstacked-functions
+    0 loop {
+        @i
+        $i $module.functions.values.len = if { break }
+        &unstacked-functions
+        &module.functions.keys $i Array:get<_> ~
+        &module.functions.values $i Array:get<_> match {
+            case Resolved:FunctionOrExtern.Extern -> {
+                ~ make FunctionOrExtern.Extern
+            }
+            case Resolved:FunctionOrExtern.Function -> {
+                $arena flip $modules flip unstack-function make FunctionOrExtern.Function
+            }
+        } Map:insert-assert-no-alloc<_, _> drop
+        $i 1 +
+    }
+    make Module {
+        $module.imports @imports
+        $module.type-definitions.values @type-definitions
+        $unstacked-functions @functions
+        $module.globals.values @globals
+        $module.static-data @static-data
+    }
+}
+
+struct Assignment {
+    token: Token
+    source: Maybe<Source>
+    fields: Array<Word:FieldAccess>
+    type: InferenceHole
+}
+fn Assignment-format(fmt: .Formatter, self: .Assignment) {
+    $fmt "(Assignment " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Source-format &self.source Maybe:format<_>
+    $fmt " " Fmt:write
+    $fmt \Word:FieldAccess-format &self.fields Array:format-multi-line<_>
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Local {
+    name: LocalName
+    type: InferenceHole
+    // if this local is a parameter, then this will be non-None
+    parameter: Maybe<Type>
+    assignments: Array<Assignment>
+    reffed: bool
+}
+fn Local-format(fmt: .Formatter, self: .Local) {
+    $fmt "(Local " Fmt:write
+    $fmt &self.name Resolved:LocalName-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.parameter Maybe:format<_>
+    $fmt " " Fmt:write
+    $fmt $self.reffed bool-format
+    $fmt " " Fmt:write
+    $fmt \Assignment-format &self.assignments Array:format-multi-line<_>
+    $fmt ")" Fmt:write
+}
+
+struct Function {
+    name: Token
+    export: Maybe<Token>
+    signature: Signature
+    locals: Map<LocalId, Local>
+    drops: Array<[Maybe<Source>, InferenceHole]>
+    holes: Holes
+    nodes: Array<MultiReturnNode>
+    body: Scope
+    returns: Array<Source>
+}
+fn Function-format(fmt: .Formatter, self: .Function) {
+    $fmt "(Function\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "export=" Fmt:write
+    $fmt \Token-format &self.export Maybe:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "signature=" Fmt:write
+    $fmt &self.signature Signature-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "locals=" Fmt:write
+    $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<_, _>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "drops=" Fmt:write
+    $fmt \IntoDrop-format &self.drops Array:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "holes=" Fmt:write
+    $fmt &self.holes Holes-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "nodes=" Fmt:write
+    $fmt \Source:MultiReturnNode-format &self.nodes Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt \Source:Source-format &self.returns Array:format-multi-line<_>
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+fn IntoDrop-format(fmt: .Formatter, self: .[Maybe<Source>, InferenceHole]) {
+    $self ~ [,] @hole @source
+    $fmt "(IntoDrop\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "source=" Fmt:write
+    $fmt \Source-format &source Maybe:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &hole InferenceHole-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct Holes {
+    holes: Array<Maybe<Type>>
+}
+fn Holes-empty() -> Holes {
+    Array:new<Maybe<Type>> make Holes
+}
+fn Holes-clone(arena: .Arena, self: .Holes) -> Holes {
+    $arena &self.holes Array:clone<_> make Holes
+}
+fn Holes-fill(arena: .Arena, self: .Holes, hole: .InferenceHole, known: Type) {
+    loop {
+        $self.holes.len $hole.index gt if { break }
+        $arena &self.holes make Maybe<Type>.None Array:push<_>
+    }
+    &self.holes $hole.index $known make Maybe<Type>.Some Array:set<_> match {
+        case None -> {}
+        case Some -> {
+            & &known Type:eq not if { 0 0 / drop }
+        }
+    }
+}
+fn Holes-lookup(self: .Holes, hole: .InferenceHole) -> Maybe<.Type> {
+    $self.holes.len $hole.index le if {
+        make Maybe<.Type>.None
+    } else {
+        &self.holes $hole.index Array:get<_> Maybe:ref<_>
+    }
+}
+fn Holes-format(fmt: .Formatter, self: .Holes) {
+    $fmt "(Holes " Fmt:write
+    $fmt \MaybeType-format &self.holes Array:format-multi-line<_>
+    $fmt ")" Fmt:write
+}
+fn MaybeType-format(fmt: .Formatter, self: .Maybe<Type>) {
+    $fmt \Type:format $self Maybe:format<_>
+}
+
+struct Unstacker {
+    arena: .Arena
+    locals: .Map<LocalId, Local>
+    modules: .Array<Resolved:Module>
+    drops: .Array<[Maybe<Source>, InferenceHole]>
+    holes: Holes
+    multi-return-nodes: Array<Source:MultiReturnNode>
+    next-inference-hole-index: i32
+    next-inference-field-hole-index: i32
+}
+fn fresh-hole(unstacker: .Unstacker, token: Token) -> InferenceHole {
+    $token $unstacker.next-inference-hole-index make InferenceHole
+    $unstacker.next-inference-hole-index 1 + #unstacker.next-inference-hole-index
+}
+fn fresh-holes(unstacker: .Unstacker, token: Token, n: i32) -> Array<InferenceHole> {
+    $unstacker.arena $n Array:new-with-capacity<InferenceHole> @holes
+    loop {
+        $holes.len $n = if { break }
+        &holes $unstacker $token fresh-hole Array:push-assert-no-alloc<_>
+    }
+    $holes
+}
+fn fresh-field-hole(unstacker: .Unstacker) -> InferenceFieldHole {
+    $unstacker.next-inference-field-hole-index make InferenceFieldHole
+    $unstacker.next-inference-field-hole-index 1 + #unstacker.next-inference-field-hole-index
+}
+fn lookup-type-definition(unstacker: .Unstacker, handle: CustomTypeHandle) -> .Resolved:TypeDefinition {
+    $unstacker.modules $handle.module.index Array:get<_> .type-definitions.values $handle.index Array:get<_>
+}
+fn lookup-signature(unstacker: .Unstacker, handle: Resolved:FunctionHandle) -> .Resolved:Signature {
+    $unstacker.modules $handle.module.index Array:get<_>
+    .functions.values $handle.index Array:get<_> Resolved:FunctionOrExtern-signature
+}
+fn pre-add-node(unstacker: .Unstacker) -> i32 {
+    $unstacker.multi-return-nodes.len
+    $unstacker.arena &unstacker.multi-return-nodes make Source:MultiReturnNode.PlaceHolder Array:push<_>
+}
+fn add-node(unstacker: .Unstacker, node: Source:MultiReturnNode) -> i32 {
+    $unstacker.multi-return-nodes.len
+    $unstacker.arena &unstacker.multi-return-nodes $node Array:push<_>
+}
+fn fill-node(unstacker: .Unstacker, index: i32, node: Source:MultiReturnNode) {
+    &unstacker.multi-return-nodes $index Array:get<_> match {
+        case Source:MultiReturnNode.PlaceHolder -> {
+            &unstacker.multi-return-nodes $index $node Array:set<_> drop
+        }
+        case _ -> { drop 0 0 / drop }
+    }
+}
+
+fn unstack-function(arena: .Arena, modules: .Array<Resolved:Module>, function: .Resolved:Function) -> Function {
+    Stack:root @stack
+    0 $stack.negative.len 0 = !i32 / drop
+
+    $arena \Resolved:LocalId-eq $function.locals.values.len Map:new-with-capacity<LocalId, Local> @locals
+    Array:new<[Maybe<Source>, InferenceHole]> @drops
+    $arena &locals $modules &drops Holes-empty Array:new<MultiReturnNode> 0 0 make Unstacker @unstacker
+    0 loop {
+        @i $i $function.locals.values.len = if { break }
+        &locals
+        &function.locals.keys $i Array:get<_> ~
+        &function.locals.values $i Array:get<_> @local
+        make Local {
+            $local.name @name
+            $local.parameter @parameter
+            &unstacker &local.name LocalName-token ~ fresh-hole @type
+            Array:new<Assignment> @assignments
+            0 1 = @reffed
+        } Map:insert-assert-no-alloc<_, _> drop
+        $i 1 +
+    }
+
+    &unstacker &stack &function.body unstack-scope @body
+
+    make Function {
+        $function.name @name
+        $function.export @export
+        $locals @locals
+        $drops @drops
+        $function.signature @signature
+        $unstacker.holes @holes
+        $unstacker.multi-return-nodes @nodes
+        $body @body
+        $stack.positive @returns
+    }
+}
+
+fn unstack-scope(unstacker: .Unstacker, stack: .Stack, scope: .Resolved:Scope) -> Scope {
+    $scope.id $unstacker $stack &scope.words unstack-words make Scope
+}
+
+fn unstack-words(unstacker: .Unstacker, stack: .Stack, words: .Array<Resolved:Word>) -> Array<Word> {
+    $unstacker.arena $words.len Array:new-with-capacity<Word> @unstacked-words
+    0 loop {
+        @i $i $words.len = if { break }
+        &unstacked-words
+        $unstacker $stack $words $i Array:get<_> unstack-word
+        Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
+    $unstacked-words
+}
+
+fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> Word {
+    $word match {
+        case Resolved:Word.GetLocal -> {
+            @word
+            $word.var match {
+                case VarId.Local -> {
+                    @local-id
+                    $unstacker.locals &local-id Map:get<_, _> Maybe:assert-some<_> @local
+                    $unstacker $word.name fresh-hole @result-type
+
+                    $unstacker &word.fields unstack-field-accesses @fields
+
+                    $word.name $local-id $local.type $fields $result-type 0 1 = make Source:FromLocal
+                    make Source.FromLocal
+                    $unstacker.arena flip $stack flip Stack:push
+
+                    make Word:GetLocal {
+                        $word.name @name
+                        $word.var @var
+                        $local.type @var-type
+                        $fields @fields
+                        $result-type @result-type
+                    } make Word.GetLocal
+                }
+                case VarId.Global -> {
+                    drop Core:unreachable<Word>
+                }
+            }
+        }
+        case Resolved:Word.RefLocal -> {
+            @word
+            $word.var match {
+                case VarId.Local -> {
+                    @local-id
+                    $unstacker.locals &local-id Map:get<_, _> Maybe:assert-some<_> @local
+                    $unstacker $word.name fresh-hole @result-type
+
+                    $unstacker &word.fields unstack-field-accesses @fields
+
+                    $word.name $local-id $local.type $fields $result-type 1 1 = make Source:FromLocal
+                    make Source.FromLocal
+                    $unstacker.arena flip $stack flip Stack:push
+
+                    make Word:RefLocal {
+                        $word.name @name
+                        $word.var @var
+                        $local.type @var-type
+                        $fields @fields
+                        $result-type @result-type
+                    } make Word.RefLocal
+                }
+                case VarId.Global -> {
+                    drop Core:unreachable<Word>
+                }
+            }
+        }
+        case Resolved:Word.Number -> {
+            ~ @token
+            $token make Word.Number
+            $unstacker.arena $stack $token make Source.FromNumber Stack:push
+        }
+        case Resolved:Word.Intrinsic -> {
+            @word
+            $word.intrinsic match {
+                case Resolved:Intrinsic.Add -> {
+                    $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @addition
+                    $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @base
+
+                    $unstacker $word.token fresh-hole @type
+
+                    $base $addition $type make Source:FromAdd make Source:FromIntrinsic.Add make Source.FromIntrinsic
+                    $unstacker.arena flip $stack flip Stack:push
+
+                    make Word:Add {
+                        $word.token @token
+                        $type @type
+                    } make Word:Intrinsic.Add make Word:Word.Intrinsic
+                }
+                case Resolved:Intrinsic.Eq -> {
+                    $unstacker $word.token fresh-hole @type
+                    $unstacker.arena $stack make Source:FromEq {
+                        $word.token @token
+                        $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @a
+                        $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @b
+                        $type @type
+                    } make Source:FromIntrinsic.Eq make Source.FromIntrinsic Stack:push
+                    make Word:Eq {
+                        $word.token @token
+                        $type @type
+                    } make Word:Intrinsic.Eq make Word:Word.Intrinsic
+                }
+                case Resolved:Intrinsic.Uninit -> {
+                    $unstacker &word.token &word.generic-arguments 1 unstack-generic-arguments @generic-arguments
+                    make Source:FromUninit {
+                        $word.token @token
+                        $generic-arguments @generic-arguments
+                    } make Source:FromIntrinsic.Uninit make Source.FromIntrinsic
+                    $unstacker.arena flip $stack flip Stack:push
+                    make Word:Uninit {
+                        $word.token @token
+                        &generic-arguments 0 Array:get<_> ~ @type
+                    } make Word:Intrinsic.Uninit make Word:Word.Intrinsic
+                }
+                case Resolved:Intrinsic.Drop -> {
+                    $unstacker $word.token fresh-hole @type
+                    $unstacker.arena $stack Stack:pop @src
+                    $unstacker.arena $unstacker.drops $src $type [,2] Array:push<_>
+                    make Word:Drop {
+                        $word.token @token
+                        $type @type
+                    } make Word:Intrinsic.Drop make Word:Word.Intrinsic
+                }
+                case _ -> { 
+                    @word
+                    2 Fmt:to-fd @fmt
+                    &fmt &word Resolved:Intrinsic-format
+                    &fmt "\n" Fmt:write
+                    Core:unreachable<Word> }
+            }
+        }
+        case Resolved:Word.MakeStruct -> {
+            @word
+
+            $unstacker $word.type.type-definition lookup-type-definition match {
+                case Resolved:TypeDefinition.Variant -> { drop Core:unreachable<.Resolved:Struct> }
+                case Resolved:TypeDefinition.Struct -> {}
+            } @struc
+
+            $unstacker.arena $stack $struc.fields.len Stack:pop-n @arguments
+
+            $unstacker $word.token fresh-hole @type
+
+            $unstacker.arena $stack
+            make Source:FromMakeStruct {
+                $word.type.type-definition @type-definition
+                $type @type
+                $arguments @arguments
+            } make Source.FromMakeStruct
+            Stack:push
+
+            make Word:MakeStruct {
+                $word.token @token
+                $word.type.type-definition @struc
+                $arguments @arguments
+                $type @type
+            } make Word:Word.MakeStruct
+        }
+        case Resolved:Word.InitLocal -> {
+            @word
+            $unstacker.arena $stack Stack:pop @source
+            $unstacker.locals &word.local Map:get<_, _> Maybe:assert-some<_> @local
+            $unstacker $word.name fresh-hole @type // This InferenceHole is never read
+            $unstacker.arena &local.assignments $word.name $source Array:new<Word:FieldAccess> $type
+            make Assignment Array:push<_>
+
+            make Resolved:InitLocal {
+                $word.name @name
+                $word.local @local
+            } make Word:Word.InitLocal
+        }
+        case Resolved:Word.SetLocal -> {
+            @word
+            $unstacker.arena $stack Stack:pop @source
+            $unstacker &word.fields unstack-field-accesses @fields
+            $fields.len 0 = if {
+                $unstacker $word.name fresh-hole
+            } else {
+                &fields 0 Array:get<_> .target-type ~
+            } @field-type
+            $word.var match {
+                case VarId.Local -> {
+                    @local-id
+                    $unstacker.locals &local-id Map:get<_, _> Maybe:assert-some<_> @local
+                    $unstacker.arena &local.assignments
+                    $word.name $source $fields $field-type make Assignment
+                    Array:push<_>
+
+                    make Word:SetLocal {
+                        $local-id @local
+                        $word.var @var
+                        $word.name @name
+                        $fields @fields
+                        $field-type @field-type
+                    } make Word:Word.SetLocal
+                }
+                case VarId.Global -> {
+                    @global-id
+                    make Word:SetGlobal {
+                        $global-id @globl
+                        $word.name @name
+                        $fields @fields
+                        $field-type @field-type
+                    } make Word:Word.SetGlobal
+                }
+            }
+        }
+        case Resolved:Word.Call -> {
+            @word
+            $unstacker $word.function lookup-signature @signature
+
+            $unstacker.arena $stack $signature.parameters.len Stack:pop-n @arguments
+
+            $unstacker $word.name $signature.generic-parameters.len fresh-holes @generic-arguments
+
+            $unstacker
+            $word.function $generic-arguments $arguments make Source:FromCall make Source:MultiReturnNode.Call
+            add-node @node-index
+
+            0 loop {
+                @i $i $signature.returns.len = if { break }
+                $unstacker.arena $stack $node-index $i make Source:FromNode make Source.FromNode Stack:push
+                $i 1 +
+            }
+
+            make Word:Call {
+                $word.name @name
+                $word.function @function
+                $generic-arguments @generic-arguments
+                $arguments @arguments
+            }
+            make Word:Word.Call
+        }
+        case Resolved:Word.Cast -> {
+            @word
+            $unstacker $word.token fresh-hole @src-type
+            $unstacker.arena $stack Stack:pop @src
+
+            $unstacker.arena $stack 
+            make Source:FromCast {
+                $src-type @src-type
+                $word.dst @dst-type
+                $unstacker.arena $src Arena:push<_> @src
+            } make Source.FromCast
+            Stack:push
+
+            make Word:Cast {
+                $word.token @token
+                $src-type @src-type
+                $word.dst @dst-type
+            } make Word:Word.Cast
+        }
+        case Resolved:Word.Load -> {
+            @word
+            $unstacker $word.token fresh-hole @type
+            $unstacker.arena $stack Stack:pop @src
+
+            $unstacker.arena $stack
+            make Source:FromLoad {
+                $type @type
+                $unstacker.arena $src Arena:push<_> @src
+            } make Source.FromLoad
+            Stack:push
+
+            make Word:Load {
+                $word.token @token
+                $type @type
+            } make Word:Word.Load
+        }
+        case Resolved:Word.String -> {
+            @word
+            $unstacker.arena $stack make Source.FromString Stack:push
+            $unstacker.arena $stack $word.token make Source.FromNumber Stack:push
+            $word ~ make Word:Word.String
+        }
+        case Resolved:Word.If -> {
+            @word
+
+            $unstacker pre-add-node @entry-node
+
+            $unstacker.arena $stack Stack:pop Maybe:assert-some<_> @condition
+
+            $stack
+            $entry-node make Stack:ParentOfIf make Stack:ParentOf.If 
+            Stack:child @true-stack
+
+            $unstacker.arena $stack Stack:clone &
+            $entry-node make Stack:ParentOfIf make Stack:ParentOf.If
+            Stack:child @false-stack
+
+            $unstacker &true-stack &word.true-branch unstack-scope @true-body
+            $unstacker &false-stack &word.false-branch unstack-scope @false-body
+
+            $true-stack.negative @arguments
+
+            $unstacker $entry-node
+            $word.token $condition $arguments make Source:FromIfEntry
+            make Source:MultiReturnNode.IfEntry fill-node
+
+            $unstacker
+            make Source:FromIfExit {
+                $word.token @token
+                $condition @condition
+                $arguments @arguments
+                $true-stack.positive  @true-branch-returns
+                $false-stack.positive @false-branch-returns
+            } make Source:MultiReturnNode.IfExit add-node @exit-node
+
+            0 loop {
+                @i $i $true-stack.positive.len = $i $false-stack.positive.len = or if {
+                    break
+                }
+                $unstacker.arena $stack 
+                $exit-node $i make Source:FromNode make Source:Source.FromNode
+                Stack:push
+                $i 1 +
+            }
+
+            $word.token make Word:Word.Number
+        }
+        case Resolved:Word.Loop -> {
+            @word
+
+            // $stack
+            // make Stack:ParentOfLoop make Stack:ParentOf.Loop
+            // Stack:child @loop-stack
+            // $unstacker &loop-stack &word.body unstack-scope @body
+            // $loop-stack.negative
+            // Core:unreachable<Word>
+            $word.token make Word:Word.Number
+        }
+        case _ -> {
+            @word
+            2 Fmt:to-fd @fmt
+            &fmt $word Resolved:Word-format
+            &fmt "\n" Fmt:write
+            Core:unreachable<Word>
+        }
+    }
+}
+
+fn unstack-generic-arguments(unstacker: .Unstacker, token: .Token, generic-arguments: .Array<Type>, expected-arguments: i32) -> Array<InferenceHole> {
+    $unstacker.arena $generic-arguments.len $expected-arguments Core:max Array:new-with-capacity<InferenceHole> @holes
+    0 loop {
+        @i $i $expected-arguments = if { $holes break }
+        $i $generic-arguments.len lt if {
+            $generic-arguments $i Array:get<_> @generic-argument
+            $generic-argument match {
+                case Type.Hole -> {
+                    $unstacker flip ~ fresh-hole
+                }
+                case _ -> {
+                    $unstacker $token ~ fresh-hole @hole
+                    $unstacker.arena flip &unstacker.holes flip &hole flip ~ Holes-fill
+                    $hole
+                }
+            }
+        } else {
+            $unstacker $token ~ fresh-hole
+        }
+        &holes flip Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
+}
+
+fn unstack-field-accesses(unstacker: .Unstacker, accesses: .Array<Token>) -> Array<Word:FieldAccess> {
+    $unstacker.arena $accesses.len Array:new-with-capacity<Word:FieldAccess> @unstacked-accesses
+    0 loop {
+        @i $i $accesses.len = if { break }
+        &unstacked-accesses
+        $unstacker $accesses $i Array:get<_> unstack-field-access
+        Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
+    $unstacked-accesses
+}
+
+fn unstack-field-access(unstacker: .Unstacker, access: .Token) -> Word:FieldAccess {
+    make Word:FieldAccess {
+        $access ~ @name
+        $unstacker fresh-field-hole @field-index
+        $unstacker $access ~ fresh-hole @source-type
+        $unstacker $access ~ fresh-hole @target-type
+    }
+}
+

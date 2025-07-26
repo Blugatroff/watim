@@ -329,7 +329,7 @@ fn lookup-function(ctx: .Ctx, handle: Resolved:FunctionHandle, generic-arguments
 } }
 fn lookup-resolved-function(ctx: .Ctx, handle: Resolved:FunctionHandle) -> .Checked:FunctionOrExtern {
     $ctx.resolved-modules $handle.module.index Array:get<Checked:Module>
-    .functions.values $handle.index Array:get<Checked:FunctionOrExtern>
+    .functions $handle.index Array:get<Checked:FunctionOrExtern>
 }
 fn insert-into-function-table(ctx: .Ctx, handle: FunctionHandle) -> i32 {
     $ctx.function-table \FunctionHandle-eq  &handle Array:find<FunctionHandle, .FunctionHandle> 
@@ -522,7 +522,7 @@ fn monomize-custom-type(
     custom-type: .Checked:CustomTypeType,
     generic-arguments: .Array<TypeId>
 ) -> CustomTypeHandle {
-    $ctx.resolved-modules $custom-type.type-definition.module.index Array:get<Checked:Module> .type-definitions.values
+    $ctx.resolved-modules $custom-type.type-definition.module.index Array:get<Checked:Module> .type-definitions
     $custom-type.type-definition.index Array:get<Resolved:TypeDefinition> @resolved-custom-type
 
     $resolved-custom-type match {
@@ -612,8 +612,8 @@ fn monomize(arena: .Arena, modules: .Map<ByteSlice, Checked:Module>) -> Monomize
         $arena &monomized-modules
         &modules.keys $i Array:get<ByteSlice> ~
         make Module {
-            &ctx &module.globals.values monomize-globals @globals
-            &ctx &module.functions.values monomize-functions
+            &ctx &module.globals monomize-globals @globals
+            &ctx &module.functions monomize-functions
             $ctx.custom-types @custom-types
             $arena $module.static-data ByteSlice:copy @static-data
             Array:new<ExternOrInstances> @functions

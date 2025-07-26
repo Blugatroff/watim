@@ -24,8 +24,8 @@ import "../resolving/module.watim" as Resolved
 import "../resolving/top-items.watim" as Resolved (
     Struct, Variant, VariantCase,
     TypeDefinition(Struct, Variant), TypeDefinition-name,
-    VariantCase-name, LocalName, LocalName-format, Global,
-    Import, Extern, Signature)
+    VariantCase-name, LocalName, LocalName-format, SyntheticName,
+    Global, Import, Extern, Signature)
 import "../resolving/resolver.watim" as Resolved
 import "../resolving/words.watim" as Resolved (
     ScopeId, ScopeId-format, LocalId, LocalId-format, LocalId-eq,
@@ -154,8 +154,8 @@ fn check-modules(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Re
         make Module {
             $module-path @module-path
             $module.imports @imports
-            $module.type-definitions @type-definitions
-            $module.globals @globals
+            $module.type-definitions.values @type-definitions
+            $module.globals.values @globals
             $functions @functions
             $module.static-data @static-data
         } Map:insert-assert-no-alloc<ByteSlice, Module> Maybe:assert-none<_>
@@ -227,14 +227,13 @@ fn is-directly-recursive(ctx: .Ctx, type-lookup: .TypeLookup, handle: .CustomTyp
     }
 } }
 
-fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckError> {
+fn check-functions(ctx: .Ctx) -> Result<Array<FunctionOrExtern>, CheckError> {
     $ctx resolved-module @resolved-module
-    $ctx.persistent \ByteSlice:eq-by-ref $resolved-module.functions.values.len
-    Map:new-with-capacity<ByteSlice, FunctionOrExtern> @functions
+    $ctx.persistent $resolved-module.functions.values.len Array:new-with-capacity<FunctionOrExtern> @functions
     0 @i
-    loop (-> Result<Map<ByteSlice, FunctionOrExtern>, CheckError>) {
+    loop (-> Result<Array<FunctionOrExtern>, CheckError>) {
         $resolved-module.functions.values.len $i = if {
-            $functions make Result<Map<ByteSlice, FunctionOrExtern>, CheckError>.Success break
+            $functions make Result<Array<FunctionOrExtern>, CheckError>.Success break
         }
         &resolved-module.functions.values $i Array:get<Resolved:FunctionOrExtern> match {
             case Resolved:FunctionOrExtern.Function -> {
@@ -265,7 +264,7 @@ fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckE
 
                 $ctx.temp $ctx &locals $ctx.type-lookup $ctx.signatures $ctx.globals WordCtx-new @word-ctx
                 &word-ctx &stack &fun.body.words check-words match {
-                    case Error -> { make Result<Map<ByteSlice, FunctionOrExtern>, CheckError>.Error break }
+                    case Error -> { make Result<Array<FunctionOrExtern>, CheckError>.Error break }
                     case Success -> {}
                 } [,] @diverges @words
                 $diverges not if {
@@ -275,7 +274,7 @@ fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckE
                         &fmt $ctx.type-lookup &fun.signature.returns Types-pretty-bracketed
                         &fmt "\n\tactual:   " Fmt:write
                         &fmt $ctx.type-lookup &stack.positive Types-pretty-bracketed
-                        $ctx &fun.name $msg Array:unpack<_> abort<Map<ByteSlice, FunctionOrExtern>> break
+                        $ctx &fun.name $msg Array:unpack<_> abort<Array<FunctionOrExtern>> break
                     }
                 }
 
@@ -283,15 +282,13 @@ fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckE
                 $fun.body.id $words make Scope
                 make Function make FunctionOrExtern.Function
                 &functions flip
-                &fun.name Token-lexeme make ByteSlice flip
-                Map:insert-assert-no-alloc<ByteSlice, FunctionOrExtern> drop
+                Array:push-assert-no-alloc<_>
             }
             case Resolved:FunctionOrExtern.Extern -> {
                 @extrn
                 &functions
-                &extrn.name Token-lexeme make ByteSlice
                 $extrn ~ make FunctionOrExtern.Extern
-                Map:insert-assert-no-alloc<ByteSlice, FunctionOrExtern> drop
+                Array:push-assert-no-alloc<_>
             }
         }
         $i 1 + #i
@@ -365,7 +362,7 @@ fn lookup-signature(ctx: .WordCtx, function: .FunctionHandle) -> .Signature {
         $ctx.signatures $function.index Array:get<Signature>
     } else {
         $ctx.ctx.checked-modules $function.module.index Array:get<Module> @module
-        &module.functions.values $function.index Array:get<FunctionOrExtern> FunctionOrExtern-signature
+        &module.functions $function.index Array:get<FunctionOrExtern> FunctionOrExtern-signature
     }
 }
 
@@ -2703,7 +2700,7 @@ fn check-init-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:InitLocal) -> 
     $ctx.persistent $ctx.env $word.local
     make Local {
         // TODO: why does this say Synthetic?
-        $word.local.name make LocalName.Synthetic @name
+        $word.name $word.local.name make SyntheticName make LocalName.Synthetic @name
         $type @type
         0 1 = @reffed
         0 1 = @is-parameter

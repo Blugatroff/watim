@@ -1,0 +1,112 @@
+import "../../std/maybe.watim" as Maybe (Maybe(Some, None), assert-some)
+import "../../std/array.watim" as Array (Array)
+import "../../std/arena.watim" as Arena (Arena)
+
+import "./source.watim" as Source (Source)
+
+struct ParentOfLoop {
+}
+
+struct ParentOfIf {
+    node: i32
+}
+
+variant ParentOf {
+    // case Loop -> ParentOfLoop
+    case If -> ParentOfIf
+}
+
+struct Parent {
+    stack: .Stack
+    type: ParentOf
+}
+
+struct Stack {
+    parent: Maybe<Parent>
+    positive: Array<Source>
+    negative: Array<Source>
+}
+fn root() -> Stack {
+    make Maybe<Parent>.None Array:new<Source> Array:new<Source> make Stack
+}
+fn child(self: .Stack, parent: ParentOf) -> Stack {
+    $self $parent make Parent make Maybe<Parent>.Some Array:new<Source> Array:new<Source> make Stack
+}
+fn clone(arena: .Arena, self: .Stack) -> Stack {
+    $self.parent match {
+        case None -> { make Maybe<Parent>.None }
+        case Some -> {
+            @parent
+            $arena $parent.stack ~ Arena:push<Stack>
+            $parent.type make Parent make Maybe<Parent>.Some
+        }
+    }
+    $arena &self.positive Array:clone<_>
+    $arena &self.negative Array:clone<_>
+    make Stack
+}
+fn push(arena: .Arena, self: .Stack, source: Source) {
+    $arena &self.positive $source Array:push<_>
+}
+fn push-many(arena: .Arena, self: .Stack, sources: .Array<Source>) {
+    0 @i
+    loop {
+        $i $sources.len = if { break }
+        $arena $self $sources $i Array:get<_> ~ push
+        $i 1 + #i
+    }
+}
+fn pop(arena: .Arena, self: .Stack) -> Maybe<Source> {
+    $self.positive.len 0 = if {
+        $self.parent match {
+            case None -> { make Maybe<Source>.None }
+            case Some -> {
+                @parent
+                $parent.stack $arena flip pop match {
+                    case None -> { make Maybe<Source>.None }
+                    case Some -> {
+                        @source
+                        &parent.type match {
+                            case If -> {
+                                .node ~ $self.negative.len make Source:FromNode
+                                make Source.FromNode
+                            }
+                        } @source
+                        $arena &self.negative $source Array:push<_>
+                        $source make Maybe<Source>.Some
+                    }
+                }
+            }
+        }
+    } else {
+        &self.positive Array:pop<_> make Maybe<Source>.Some
+    }
+}
+fn pop-n(arena: .Arena, self: .Stack, n: i32) -> Array<Source> {
+    $arena $n Array:new-with-capacity<Source> @popped
+    $n loop {
+        @n $n 0 = if { break }
+        $arena $self pop match {
+            case None -> { break }
+            case Some -> {}
+        }
+        &popped flip Array:push-assert-no-alloc<_>
+        $n 1 -
+    }
+    &popped Array:reverse<_>
+    $popped
+}
+fn size(self: .Stack) -> i32 {
+    $self.positive.len
+    $self.parent match {
+        case None -> {}
+        case Some -> { .stack size + }
+    }
+}
+fn index(self: .Stack, index: i32) -> .Source {
+    $index $self.positive.len lt if {
+        &self.positive $self.positive.len $index - 1 - Array:get<_>
+    } else {
+        &self.parent Maybe:ref<_> assert-some<.Parent> .stack ~ $index $self.positive.len - index
+    }
+}

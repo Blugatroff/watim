@@ -16,7 +16,8 @@ import "./top-items.watim" as TopItem (
     TypeDefinition(Struct, Variant), Import, Global, FunctionOrExtern,
     ImportItem, StructImport, VariantImport, FunctionImport,
     Variant, Struct, VariantCase, TypeDefinition-name,
-    Function, FunctionOrExtern, Extern, Signature, Local, LocalName,
+    Function, FunctionOrExtern, Extern, Signature,
+    Local, LocalName, SyntheticName,
 )
 import "./type.watim" as Type (
     Type, ModuleId, NamedType, with-generics,
@@ -407,7 +408,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
         case P:Word.Ref -> {
             ~ @token
             make Local {
-                "synth:ref" make ByteSlice make LocalName.Synthetic @name
+                $token "synth:ref" make ByteSlice make SyntheticName make LocalName.Synthetic @name
                 make Maybe<Type>.None @parameter
             } $ctx.arena flip $ctx.env flip Env:insert @local-id
             $ctx.arena 2 Array:new-with-capacity<Word> @words
