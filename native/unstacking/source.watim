@@ -22,7 +22,7 @@ struct FromLocal {
     var: LocalId
     type: InferenceHole
     fields: Array<FieldAccess>
-    result-taip: InferenceHole
+    result-type: InferenceHole
     by-reference: bool
 }
 fn FromLocal-format(fmt: .Formatter, self: .FromLocal) {
@@ -46,7 +46,7 @@ fn FromLocal-format(fmt: .Formatter, self: .FromLocal) {
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "result-type=" Fmt:write
-    $fmt &self.result-taip InferenceHole-format
+    $fmt &self.result-type InferenceHole-format
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "by-reference=" Fmt:write
@@ -65,6 +65,7 @@ fn FromGlobal-format(fmt: .Formatter, self: .FromGlobal) {
 }
 
 struct FromAdd {
+    token: Token
     base: .Maybe<Source>
     addition: .Maybe<Source>
     type: InferenceHole
@@ -72,6 +73,10 @@ struct FromAdd {
 fn FromAdd-format(fmt: .Formatter, self: .FromAdd) {
     $fmt "(FromAdd\n" Fmt:write
     $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "base=" Fmt:write
     $fmt \Source-format $self.base Maybe:format<_>
@@ -164,6 +169,7 @@ fn FromMakeStruct-format(fmt: .Formatter, self: .FromMakeStruct) {
 }
 
 struct FromCall {
+    token: Token
     function: FunctionHandle
     generic-arguments: Array<InferenceHole>
     arguments: Array<Source>
@@ -171,6 +177,10 @@ struct FromCall {
 fn FromCall-format(fmt: .Formatter, self: .FromCall) {
     $fmt "(FromCall\n" Fmt:write
     $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "function=" Fmt:write
     $fmt &self.function FunctionHandle-format
@@ -187,12 +197,15 @@ fn FromCall-format(fmt: .Formatter, self: .FromCall) {
 }
 
 struct FromCast {
+    token: Token
     src-type: InferenceHole
     dst-type: Type
     src: .Maybe<Source>
 }
 fn FromCast-format(fmt: .Formatter, self: .FromCast) {
     $fmt "(FromCast " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
     $fmt &self.src-type InferenceHole-format
     $fmt " " Fmt:write
     $fmt &self.dst-type Type:format
@@ -202,11 +215,14 @@ fn FromCast-format(fmt: .Formatter, self: .FromCast) {
 }
 
 struct FromLoad {
+    token: Token
     type: InferenceHole
     src: .Maybe<Source>
 }
 fn FromLoad-format(fmt: .Formatter, self: .FromLoad) {
     $fmt "(FromLoad " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
     $fmt &self.type InferenceHole-format
     $fmt " " Fmt:write
     $fmt \Source-format $self.src Maybe:format<_>
@@ -216,6 +232,7 @@ fn FromLoad-format(fmt: .Formatter, self: .FromLoad) {
 struct FromIfEntry {
     token: Token
     condition: Source
+    parameters: Array<InferenceHole>
     arguments: Array<Source>
 }
 fn FromIfEntry-format(fmt: .Formatter, self: .FromIfEntry) {
@@ -230,6 +247,10 @@ fn FromIfEntry-format(fmt: .Formatter, self: .FromIfEntry) {
     $fmt &self.condition Source-format
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \InferenceHole-format &self.parameters Array:format<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "arguments=" Fmt:write
     $fmt \Source-format &self.arguments Array:format-multi-line<_>
     $fmt Fmt:dedent
@@ -239,7 +260,7 @@ fn FromIfEntry-format(fmt: .Formatter, self: .FromIfEntry) {
 struct FromIfExit {
     token: Token
     condition: Source
-    arguments: Array<Source>
+    return-types: Array<InferenceHole>
     true-branch-returns: Array<Source>
     false-branch-returns: Array<Source>
 }
@@ -255,8 +276,8 @@ fn FromIfExit-format(fmt: .Formatter, self: .FromIfExit) {
     $fmt &self.condition Source-format
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "arguments=" Fmt:write
-    $fmt \Source-format &self.arguments Array:format-multi-line<_>
+    $fmt "return-types=" Fmt:write
+    $fmt \InferenceHole-format &self.return-types Array:format-multi-line<_>
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "true-branch-returns=" Fmt:write
@@ -300,7 +321,7 @@ variant Source {
     case FromLocal -> FromLocal
     case FromGlobal -> FromGlobal
     case FromNumber -> Token
-    case FromString
+    case FromString -> Token
     case FromIntrinsic -> FromIntrinsic
     case FromMakeStruct -> FromMakeStruct
     case FromNode -> FromNode
@@ -312,7 +333,7 @@ fn Source-format(fmt: .Formatter, self: .Source) {
         case FromLocal -> { FromLocal-format }
         case FromGlobal -> { FromGlobal-format }
         case FromNumber -> { $fmt "(FromNumber " Fmt:write Token-format $fmt ")" Fmt:write }
-        case FromString -> { "FromString" Fmt:write }
+        case FromString -> { $fmt "(FromString " Fmt:write Token-format $fmt ")" Fmt:write }
         case FromIntrinsic -> { FromIntrinsic-format }
         case FromMakeStruct -> { FromMakeStruct-format }
         case FromNode -> { FromNode-format }

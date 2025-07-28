@@ -146,12 +146,36 @@ fn Add-format(fmt: .Formatter, self: .Add) {
     $fmt ")" Fmt:write
 }
 
+struct Sub {
+    token: Token
+    type: InferenceHole
+}
+fn Sub-format(fmt: .Formatter, self: .Sub) {
+    $fmt "(Sub " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
 struct Eq {
     token: Token
     type: InferenceHole
 }
 fn Eq-format(fmt: .Formatter, self: .Eq) {
     $fmt "(Eq " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct NotEq {
+    token: Token
+    type: InferenceHole
+}
+fn NotEq-format(fmt: .Formatter, self: .NotEq) {
+    $fmt "(NotEq " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
     $fmt &self.type InferenceHole-format
@@ -184,14 +208,18 @@ fn Drop-format(fmt: .Formatter, self: .Drop) {
 
 variant Intrinsic {
     case Add -> Add
+    case Sub -> Sub
     case Eq -> Eq
+    case NotEq -> NotEq
     case Uninit -> Uninit
     case Drop -> Drop
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
     $fmt $self match {
         case Add -> { Add-format }
+        case Sub -> { Sub-format }
         case Eq -> { Eq-format }
+        case NotEq -> { NotEq-format }
         case Uninit -> { Uninit-format }
         case Drop -> { Drop-format }
     }
@@ -262,6 +290,39 @@ fn Load-format(fmt: .Formatter, self: .Load) {
     $fmt ")" Fmt:write
 }
 
+struct If {
+    token: Token
+    parameters: Array<InferenceHole>
+    returns: Array<InferenceHole>
+    true-branch: Scope
+    false-branch: Scope
+}
+fn If-format(fmt: .Formatter, self: .If) {
+    $fmt "(If\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \InferenceHole-format &self.parameters Array:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt \InferenceHole-format &self.returns Array:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "true-branch=" Fmt:write
+    $fmt &self.true-branch Scope-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "false-branch=" Fmt:write
+    $fmt &self.false-branch Scope-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case GetLocal -> GetLocal
     case RefLocal -> RefLocal
@@ -275,6 +336,7 @@ variant Word {
     case Cast -> Cast
     case Load -> Load
     case String -> Resolved:StringWord
+    case If -> If
 }
 fn Word-format(fmt: .Formatter, self: .Word) {
     $fmt $self match {
@@ -290,6 +352,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case Cast -> { Cast-format }
         case Load -> { Load-format }
         case String -> { Resolved:StringWord-format }
+        case If -> { If-format }
     }
 }
 fn Words-format(fmt: .Formatter, self: .Array<Word>) {

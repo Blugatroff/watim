@@ -71,9 +71,8 @@ fn pop(arena: .Arena, self: .Stack) -> Maybe<Source> {
                                 .node ~ $self.negative.len make Source:FromNode
                                 make Source.FromNode
                             }
-                        } @source
+                        } make Maybe<Source>.Some
                         $arena &self.negative $source Array:push<_>
-                        $source make Maybe<Source>.Some
                     }
                 }
             }

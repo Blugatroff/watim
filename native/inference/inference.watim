@@ -143,20 +143,38 @@ fn infer-function(
     }
 
     0 loop (i32 -> Maybe<InferenceError>) {
-        @i $i $function.drops.len = if { make Maybe<InferenceError>.None break }
-        &function.drops $i Array:get<_> ~ [,] @hole @source
-        &ctx &source match {
-            case None -> { &function.name "drop expected item" error make Maybe<InferenceError>.Some break }
-            case Some -> {}
-        } infer match {
-            case Error -> { make Maybe<InferenceError>.Some break }
-            case Success -> {}
-        } match {
+        @i $i $function.voids.len = if { make Maybe<InferenceError>.None break }
+        &function.voids $i Array:get<_> @void
+        &void.source match {
             case None -> {
-                &function.name "failed to infer type of drop" error make Maybe<InferenceError>.Some break
+                Core:unreachable<.Source>
             }
             case Some -> {}
-        } &ctx flip $hole flip & fill-hole
+        } @source
+        &void.known match {
+            case None -> {
+                &ctx $source infer match {
+                    case Error -> { make Maybe<InferenceError>.Some break }
+                    case Success -> {}
+                } match {
+                    case None -> {
+                        &function.name "failed to infer type of drop" error make Maybe<InferenceError>.Some break
+                    }
+                    case Some -> {}
+                }
+            }
+            case Some -> {
+                @known
+                &ctx $source $known check match {
+                    case None -> {}
+                    case _ -> { break }
+                }
+                $known ~
+            }
+        } $void.type match {
+            case None -> { drop }
+            case Some -> { @hole &ctx flip $hole flip & fill-hole }
+        }
         $i 1 +
     } match {
         case None -> {}
@@ -194,6 +212,12 @@ fn get-node(ctx: .Ctx, index: i32) -> .MultiReturnNode {
 }
 
 fn fill-hole(ctx: .Ctx, hole: InferenceHole, known: .Type) {
+    2 Fmt:to-fd @fmt
+    &fmt "fill-hole: " Fmt:write
+    &fmt &hole Unstacked:InferenceHole-format
+    &fmt ", " Fmt:write
+    &fmt $known Type:format
+    &fmt "\n" Fmt:write
     $ctx.arena &ctx.holes &hole $known ~ Holes-fill
 }
 
@@ -287,16 +311,33 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
             }
         }
         case Source.FromString -> {
-            $known match {
+            @token $known match {
                 case Ptr -> {
                     ~ match {
                         case I8 -> { make Maybe<InferenceError>.None break }
                         case _ -> { drop } } }
                 case _ -> { drop  } }
-            0 !.Token "check FromNumber: known /= i32" error make Maybe<InferenceError>.Some break
+            $token "check FromNumber: known /= i32" error make Maybe<InferenceError>.Some break
         }
         case Source.FromLocal -> {
             @source
+            $ctx $source.result-type lookup-hole match {
+                case None -> {}
+                case Some -> {
+                    @result-type
+                    $result-type $known Type:eq not if {
+                        2 Fmt:to-fd @fmt
+                        &fmt $source Source:FromLocal-format
+                        &fmt "\n" Fmt:write
+                        &fmt $result-type Type:format
+                        &fmt " " Fmt:write
+                        &fmt $known Type:format
+                        &fmt "\n" Fmt:write
+                        &source.token "expected local to have different type" error make Maybe<InferenceError>.Some break
+                    }
+                    make Maybe<InferenceError>.None break
+                }
+            }
             $ctx.locals &source.var Map:get<_, _> Maybe:assert-some<_> @local
             $ctx $local.type lookup-hole match {
                 case None -> {
@@ -318,7 +359,7 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
                             case _ -> { break }
                         }
                         $ctx $local.type $expected-local-type fill-hole
-                        $ctx $source.result-taip $known fill-hole
+                        $ctx $source.result-type $known fill-hole
 
                         0 loop (i32 -> Maybe<InferenceError>) {
                             @i $i $local.assignments.len = if { make Maybe<InferenceError>.None break }
@@ -368,19 +409,8 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
                         $ctx.arena $result-type Arena:push<_> make Type.Ptr
                     } else { $result-type } @result-type
 
-                    &result-type $known Type:eq not if {
-                        2 Fmt:to-fd @fmt
-                        &fmt $source Source:FromLocal-format
-                        &fmt "\n" Fmt:write
-                        &fmt $local-type Type:format
-                        &fmt "\n" Fmt:write
-                        &fmt &result-type Type:format
-                        &fmt " " Fmt:write
-                        &fmt $known Type:format
-                        &fmt "\n" Fmt:write
-                        &source.token "expected local to have different type" error make Maybe<InferenceError>.Some break
-                    }
-                    $ctx $source.result-taip &result-type fill-hole
+                    $ctx $source.result-type &result-type fill-hole
+                    $ctx $source ~ make Source.FromLocal & $known check break
                 }
             }
         }
@@ -453,23 +483,40 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
                         case Success -> {}
                     } match {
                         case None -> {
-                            // TODO: it would actually be enough, if just the type of one of the arguments can be
-                            //       inferred, the other can then be checked against it.
-                            &source.token "`=` failed to infer type of arguments" error make Maybe<InferenceError>.Some break
+                            $ctx $b infer match {
+                                case Error -> { make Maybe<InferenceError>.Some break }
+                                case Success -> {}
+                            } match {
+                                case None -> {
+                                    &source.token "`=` failed to infer type of arguments" error make Maybe<InferenceError>.Some break
+                                }
+                                case Some -> {}
+                            } @b
+                            $ctx $source.type &b fill-hole
+                            $ctx $a &b check break
                         }
-                        case Some -> {}
-                    } @a
-                    $ctx $b infer match {
-                        case Error -> { make Maybe<InferenceError>.Some break }
-                        case Success -> {}
-                    } match {
-                        case None -> {
-                            &source.token "`=` failed to infer type of arguments" error make Maybe<InferenceError>.Some break
+                        case Some -> {
+                            @a
+                            $ctx $b infer match {
+                                case Error -> { make Maybe<InferenceError>.Some break }
+                                case Success -> {}
+                            } match {
+                                case None -> {
+                                    $ctx $source.type &a fill-hole
+                                    $ctx $b &a check break
+                                }
+                                case Some -> {}
+                            } @b
+                            &a &b Type:eq not if {
+                                $ctx.arena Fmt:into-new-string @buf @fmt
+                                &fmt "`=` cannot compare values of different types:\n\t" Fmt:write
+                                &fmt &a Type:format
+                                &fmt "\n\t" Fmt:write
+                                &fmt &b Type:format
+                                &source.token $buf Array:unpack<_> error make Maybe<InferenceError>.Some break
+                            }
+                            $ctx $source.type &a fill-hole
                         }
-                        case Some -> {}
-                    } @b
-                    &a &b Type:eq not if {
-                        &source.token "`=` cannot compare values of different types" error make Maybe<InferenceError>.Some break
                     }
                 }
             }
@@ -559,9 +606,33 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
                 }
                 case IfEntry -> {
                     @source
+
+                    $ctx
+                    &source.parameters $return-index Array:get<_> ~
+                    $known fill-hole
                 }
                 case IfExit -> {
                     @source
+
+                    $ctx
+                    &source.return-types $return-index Array:get<_> ~
+                    $known fill-hole
+
+                    &source.true-branch-returns  $return-index Array:get<_> @true-source
+                    &source.false-branch-returns $return-index Array:get<_> @false-source
+
+                    $ctx $true-source $known check match {
+                        case None -> {}
+                        case _ -> { break }
+                    }
+                    $ctx $false-source $known check match {
+                        case None -> {}
+                        case _ -> { break }
+                    }
+                    $ctx &source.condition make Type.Bool & check match {
+                        case None -> {}
+                        case _ -> { break }
+                    }
                 }
             }
         }
@@ -721,6 +792,14 @@ fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type
         case Type.I8 -> { make Maybe<InferenceError>.None }
         case Type.I32 -> { make Maybe<InferenceError>.None }
         case Type.I64 -> { make Maybe<InferenceError>.None }
+        case Type.Custom -> {
+            @holey
+            $holey.generic-arguments.len 0 /= if {
+                0 !.Token "unify-types: TODO Type.Custom" error make Maybe<InferenceError>.Some
+            } else {
+                make Maybe<InferenceError>.None
+            }
+        }
         case _ -> {
             drop
             0 !.Token "unify-types: TODO" error make Maybe<InferenceError>.Some
@@ -728,252 +807,329 @@ fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type
     }
 } }
 
-fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> { block (-> Result<Maybe<Type>, InferenceError>) {
+fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
     2 Fmt:to-fd @fmt
     &fmt "infer: " Fmt:write
     &fmt $source Source:Source-format
-    &fmt "\n" Fmt:write
-    $source match {
-        case Source.FromMakeStruct -> {
-            @source
-            // TODO: check source.arguments against source.type-definition.fields
+    block (-> Result<Maybe<Type>, InferenceError>) {
+        $source match {
+            case Source.FromMakeStruct -> {
+                @source
+                // TODO: check source.arguments against source.type-definition.fields
 
-            $ctx &source.type-definition lookup-type-definition match {
-                case TypeDefinition.Struct -> {}
-                case TypeDefinition.Variant -> {
-                    drop
-                    0 !.Token "`make` expected struct" error make Result<Maybe<Type>, InferenceError>.Error break
+                $ctx &source.type-definition lookup-type-definition match {
+                    case TypeDefinition.Struct -> {}
+                    case TypeDefinition.Variant -> {
+                        drop
+                        0 !.Token "`make` expected struct" error make Result<Maybe<Type>, InferenceError>.Error break
+                    }
+                } @struc
+
+                $source.arguments.len $struc.fields.len /= if {
+                    0 !.Token "`make struct` expected more arguments" error make Result<Maybe<Type>, InferenceError>.Error break
                 }
-            } @struc
 
-            $source.arguments.len $struc.fields.len /= if {
-                0 !.Token "`make struct` expected more arguments" error make Result<Maybe<Type>, InferenceError>.Error break
+                $ctx.arena $struc.fields.len Array:new-with-capacity<Maybe<Type>> @field-types
+                0 loop {
+                    @i $i $source.arguments.len = if { make Maybe<InferenceError>.None break }
+                    &struc.fields $i Array:get<_> @field
+                    &source.arguments $i Array:get<_> @field-source
+                    $ctx $field-source infer match {
+                        case Error -> { make Maybe<InferenceError>.Some break }
+                        case Success -> {}
+                    } &field-types flip Array:push-assert-no-alloc<_>
+                    $i 1 +
+                } match {
+                    case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                    case None -> {}
+                }
+
+                $struc.generic-parameters.len 0 = if {
+                    $source.type-definition Array:new<Type> make Type:CustomTypeType make Type.Custom @known
+
+                    $ctx $source ~ make Source.FromMakeStruct & &known check match {
+                        case None -> {}
+                        case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                    }
+
+                    $known make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
+                } else {
+                    0 !.Token "infer FromMakeStruct: generic-parameters /= 0: TODO" error make Result<Maybe<Type>, InferenceError>.Error
+                }
             }
+            case Source.FromNumber -> { drop make Type.I32 make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success }
+            case Source.FromString -> { drop $ctx.arena make Type.I8 Arena:push<_> make Type.Ptr make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success }
+            case Source.FromLocal -> {
+                @source
+                $ctx $source.result-type lookup-hole match {
+                    case Some -> { ~ make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success break }
+                    case None -> {}
+                }
+                $ctx.locals &source.var Map:get<_, _> Maybe:assert-some<_> @local
 
-            $ctx.arena $struc.fields.len Array:new-with-capacity<Maybe<Type>> @field-types
-            0 loop {
-                @i $i $source.arguments.len = if { make Maybe<InferenceError>.None break }
-                &struc.fields $i Array:get<_> @field
-                &source.arguments $i Array:get<_> @field-source
-                $ctx $field-source infer match {
-                    case Error -> { make Maybe<InferenceError>.Some break }
-                    case Success -> {}
-                } &field-types flip Array:push-assert-no-alloc<_>
-                $i 1 +
-            } match {
-                case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                case None -> {}
-            }
+                $ctx $local.type lookup-hole match {
+                    case Some -> { ~ }
+                    case None -> {
+                        0 loop {
+                            @i $i $local.assignments.len = if { make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success break }
+                            &local.assignments $i Array:get<_> @assignment
+                            &assignment.source match {
+                                case None -> { 0 !.Token "var assignment expected item on stack" error make Result<Maybe<Type>, InferenceError>.Error break }
+                                case Some -> {}
+                            } @assignment-source
 
-            $struc.generic-parameters.len 0 = if {
-                $source.type-definition Array:new<Type> make Type:CustomTypeType make Type.Custom @known
+                            $assignment.fields.len 0 = if {
+                                $ctx $assignment-source infer match {
+                                    case Success -> {}
+                                    case _ -> { break }
+                                } match {
+                                    case None -> {}
+                                    case _ -> { make Result<Maybe<Type>, InferenceError>.Success break }
+                                }
+                            }
+                            $i 1 +
+                        } match {
+                            case Success -> {}
+                            case _ -> { break }
+                        } match {
+                            case None -> { 
+                                make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success break }
+                            case Some -> {}
+                        }
+                    }
+                } @inferred
+                $ctx $local.type &inferred fill-hole
 
-                $ctx $source ~ make Source.FromMakeStruct & &known check match {
+                0 loop (i32 -> Maybe<InferenceError>) {
+                    @i $i $local.assignments.len = if { make Maybe<InferenceError>.None break }
+                    &local.assignments $i Array:get<_> @assignment
+                    $ctx &inferred &assignment.fields traverse-fields match {
+                        case Error -> { make Maybe<InferenceError>.Some break }
+                        case Success -> {}
+                    } @field-type
+                    $ctx $assignment.type &field-type fill-hole
+                    $ctx &assignment.source match {
+                        case None -> {
+                            &assignment.token "assignment expected item" error make Maybe<InferenceError>.Some break
+                        }
+                        case Some -> {}
+                    } &field-type check match {
+                        case None -> {}
+                        case _ -> { break }
+                    }
+                    $i 1 +
+                } match {
                     case None -> {}
                     case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
                 }
 
-                $known make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
-            } else {
-                0 !.Token "infer FromMakeStruct: generic-parameters /= 0: TODO" error make Result<Maybe<Type>, InferenceError>.Error
-            }
-        }
-        case Source.FromNumber -> { drop make Type.I32 make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success }
-        case Source.FromString -> { $ctx.arena make Type.I32 Arena:push<_> make Type.Ptr make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success }
-        case Source.FromLocal -> {
-            @source
-            $ctx $source.type lookup-hole match {
-                case Some -> { ~ make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success break }
-                case None -> {}
-            }
-            $ctx.locals &source.var Map:get<_, _> Maybe:assert-some<_> @local
-
-            0 loop {
-                @i $i $local.assignments.len = if { make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success break }
-                &local.assignments $i Array:get<_> @assignment
-                &assignment.source match {
-                    case None -> { 0 !.Token "var assignment expected item on stack" error make Result<Maybe<Type>, InferenceError>.Error break }
-                    case Some -> {}
-                } @assignment-source
-
-                $assignment.fields.len 0 = if {
-                    $ctx $assignment-source infer match {
-                        case Success -> {}
-                        case _ -> { break }
-                    } match {
-                        case None -> {}
-                        case _ -> { make Result<Maybe<Type>, InferenceError>.Success break }
-                    }
-                }
-                $i 1 +
-            } match {
-                case Success -> {}
-                case _ -> { break }
-            } match {
-                case None -> { make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success break }
-                case Some -> {}
-            } @inferred
-
-            $ctx $local.type &inferred fill-hole
-
-            0 loop (i32 -> Maybe<InferenceError>) {
-                @i $i $local.assignments.len = if { make Maybe<InferenceError>.None break }
-                &local.assignments $i Array:get<_> @assignment
-                $ctx &inferred &assignment.fields traverse-fields match {
-                    case Error -> { make Maybe<InferenceError>.Some break }
+                $ctx &inferred &source.fields traverse-fields match {
+                    case Error -> { make Result<Maybe<Type>, InferenceError>.Error break }
                     case Success -> {}
-                } @field-type
-                $ctx $assignment.type &field-type fill-hole
-                $ctx &assignment.source match {
-                    case None -> {
-                        &assignment.token "assignment expected item" error make Maybe<InferenceError>.Some break
-                    }
-                    case Some -> {}
-                } &field-type check match {
+                } @type
+
+                $source.by-reference if {
+                    // TODO: Don't mark this local as reffed, if the fields pass through a ptr.
+                    //       See `fields-go-through-ptr` in checker.watim
+                    1 1 = #local.reffed
+
+                    $ctx.arena $type Arena:push<_> make Type.Ptr
+                } else { $type } @type
+
+                $ctx $source.result-type &type fill-hole
+
+                $ctx $source ~ make Source.FromLocal & &type check match {
                     case None -> {}
-                    case _ -> { break }
+                    case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
                 }
-                $i 1 +
-            } match {
-                case None -> {}
-                case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                $type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
             }
-
-            $ctx &inferred &source.fields traverse-fields match {
-                case Error -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                case Success -> {}
-            } @type
-
-            $source.by-reference if {
-                // TODO: Don't mark this local as reffed, if the fields pass through a ptr.
-                //       See `fields-go-through-ptr` in checker.watim
-                1 1 = #local.reffed
-
-                $ctx.arena $type Arena:push<_> make Type.Ptr
-            } else { $type } @type
-
-            $ctx $source.result-taip &type fill-hole
-
-            $ctx $source ~ make Source.FromLocal & &type check match {
-                case None -> {}
-                case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-            }
-            $type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
-        }
-        case Source.FromIntrinsic -> {
-            match {
-                case Uninit -> {
-                    @source
-                    $ctx &source.generic-arguments 0 Array:get<_> ~ lookup-hole
-                    Maybe:deref<_> make Result<Maybe<Type>, InferenceError>.Success
-                }
-                case Add -> {
-                    @source
-                    $source.base match {
-                        case None -> {
-                            0 !.Token "`+` expected two items" error
-                            make Result<Maybe<Type>, InferenceError>.Error break
-                        }
-                        case Some -> {}
-                    } $ctx flip infer match {
-                        case Error -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                        case Success -> {}
-                    } match {
-                        case Some -> {
-                            @type
-                            $ctx $source.type &type fill-hole
-                            $type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success break
-                        }
-                        case _ -> { make Result<Maybe<Type>, InferenceError>.Success break }
+            case Source.FromIntrinsic -> {
+                match {
+                    case Uninit -> {
+                        @source
+                        $ctx &source.generic-arguments 0 Array:get<_> ~ lookup-hole
+                        Maybe:deref<_> make Result<Maybe<Type>, InferenceError>.Success
                     }
-                }
-                case Eq -> {
-                    @source
-                    make Type.Bool @known
-                    $source.a match {
-                        case None -> { &source.token "`=` expected two items" error make Result<Maybe<Type>, InferenceError>.Error break }
-                        case Some -> {}
-                    } $ctx flip &known check match {
-                        case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                        case None -> {}
-                    }
-                    $source.b match {
-                        case None -> { &source.token "`=` expected two items" error make Result<Maybe<Type>, InferenceError>.Error break }
-                        case Some -> {}
-                    } $ctx flip &known check match {
-                        case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                        case None -> {}
-                    }
-                    $known make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
-                }
-            }
-        }
-        case Source.FromNode -> {
-            @source
-            $source.ret @return-index
-            $ctx $source.index get-node match {
-                case PlaceHolder -> { Core:unreachable<Result<Maybe<Type>, InferenceError>> }
-                case Call -> {
-                    @source
-                    $ctx $source.function lookup-signature @signature
-                    0 loop {
-                        @i $i $source.arguments.len = if { make Maybe<InferenceError>.None break }
-                        &source.arguments $i Array:get<_> @argument
-                        $ctx $argument infer match {
+                    case Add -> {
+                        @source
+                        $source.base match {
+                            case None -> {
+                                0 !.Token "`+` expected two items" error
+                                make Result<Maybe<Type>, InferenceError>.Error break
+                            }
+                            case Some -> {}
+                        } $ctx flip infer match {
+                            case Error -> { make Result<Maybe<Type>, InferenceError>.Error break }
                             case Success -> {}
-                            case Error -> { make Maybe<InferenceError>.Some break }
                         } match {
-                            case None -> {}
                             case Some -> {
-                                @argument
-                                $ctx &signature.parameters &source.generic-arguments $i &argument fit-to-types-named match {
+                                @type
+                                $ctx $source.type &type fill-hole
+                                $ctx $source.addition match {
+                                    case None -> {
+                                        &source.token "`+` expected two items" error
+                                        make Result<Maybe<Type>, InferenceError>.Error break
+                                    }
+                                    case Some -> {}
+                                } &type match {
+                                    case I8 -> { $type }
+                                    case I32 -> { $type }
+                                    case I64 -> { $type }
+                                    case Ptr -> { drop make Type.I32 }
+                                    case _ -> {
+                                        drop
+                                        &source.token "`+` cannot add to this type" error
+                                        make Result<Maybe<Type>, InferenceError>.Error break
+                                    }
+                                } & check match {
+                                    case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
                                     case None -> {}
-                                    case _ -> { break }
+                                }
+                                $type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success break
+                            }
+                            case _ -> { make Result<Maybe<Type>, InferenceError>.Success break }
+                        }
+                    }
+                    case Eq -> {
+                        @source
+                        make Type.Bool @known
+                        $source.a match {
+                            case None -> { &source.token "`=` expected two items" error make Result<Maybe<Type>, InferenceError>.Error break }
+                            case Some -> {}
+                        } $ctx flip &known check match {
+                            case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                            case None -> {}
+                        }
+                        $source.b match {
+                            case None -> { &source.token "`=` expected two items" error make Result<Maybe<Type>, InferenceError>.Error break }
+                            case Some -> {}
+                        } $ctx flip &known check match {
+                            case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                            case None -> {}
+                        }
+                        $known make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
+                    }
+                }
+            }
+            case Source.FromNode -> {
+                @source
+                $source.index @node-index
+                $source.ret @return-index
+                $ctx $node-index get-node match {
+                    case PlaceHolder -> { Core:unreachable<Result<Maybe<Type>, InferenceError>> }
+                    case Call -> {
+                        @source
+                        $ctx $source.function lookup-signature @signature
+                        0 loop {
+                            @i $i $source.arguments.len = if { make Maybe<InferenceError>.None break }
+                            &source.arguments $i Array:get<_> @argument
+                            $ctx $argument infer match {
+                                case Success -> {}
+                                case Error -> { make Maybe<InferenceError>.Some break }
+                            } match {
+                                case None -> {}
+                                case Some -> {
+                                    @argument
+                                    $ctx &signature.parameters &source.generic-arguments $i &argument fit-to-types-named match {
+                                        case None -> {}
+                                        case _ -> { break }
+                                    }
                                 }
                             }
+                            $i 1 +
+                        } match {
+                            case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                            case None -> {}
                         }
-                        $i 1 +
-                    } match {
-                        case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                        case None -> {}
+                        $ctx &signature.returns $return-index Array:get<_> &source.generic-arguments try-with-generics match {
+                            case None -> {
+                                make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success
+                            }
+                            case Some -> {
+                                @inferred
+                                $ctx
+                                $node-index $return-index make Source:FromNode make Source:Source.FromNode &
+                                &inferred check match {
+                                    case None -> {}
+                                    case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                                }
+                                $inferred make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
+                            }
+                        }
                     }
-                    $ctx &signature.returns $return-index Array:get<_> &source.generic-arguments try-with-generics
-                    make Result<Maybe<Type>, InferenceError>.Success
-                }
-                case IfEntry -> {
-                    @source
-                    &source.token "TODO" error make Result<Maybe<Type>, InferenceError>.Error
-                }
-                case IfExit -> {
-                    @source
-                    &source.token "TODO" error make Result<Maybe<Type>, InferenceError>.Error
+                    case IfEntry -> {
+                        @source
+                        &source.token "TODO" error make Result<Maybe<Type>, InferenceError>.Error
+                    }
+                    case IfExit -> {
+                        @source
+                        &source.token "TODO" error make Result<Maybe<Type>, InferenceError>.Error
+                    }
                 }
             }
-        }
-        case Source.FromCast -> {
-            @source
-            $ctx $source.src match {
-                case None -> { &source.src-type.token "cast expected item" error make Result<Maybe<Type>, InferenceError>.Error break }
-                case Some -> {}
-            } infer match {
-                case Success -> {}
-                case _ -> { break }
-            } match {
-                case None -> {
-                    &source.src-type.token "infer FromCast TODO: could not infer src-type" error make Result<Maybe<Type>, InferenceError>.Error break
+            case Source.FromCast -> {
+                @source
+                $ctx $source.src match {
+                    case None -> { &source.src-type.token "cast expected item" error make Result<Maybe<Type>, InferenceError>.Error break }
+                    case Some -> {}
+                } infer match {
+                    case Success -> {}
+                    case _ -> { break }
+                } match {
+                    case None -> {
+                        &source.src-type.token "infer FromCast TODO: could not infer src-type" error make Result<Maybe<Type>, InferenceError>.Error break
+                    }
+                    case Some -> {}
+                } @src-type
+                $ctx $source.src-type &src-type fill-hole
+                $source.dst-type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
+            }
+            case Source.FromLoad -> {
+                @source
+                $ctx $source.type lookup-hole match {
+                    case Some -> { ~ make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success break }
+                    case None -> {}
                 }
-                case Some -> {}
-            } @src-type
-            $ctx $source.src-type &src-type fill-hole
-            $source.dst-type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
+                $ctx $source.src match {
+                    case Some -> {}
+                    case None -> {
+                        &source.token "infer FromLoad expected item" error make Result<Maybe<Type>, InferenceError>.Error break
+                    }
+                } infer match {
+                    case Success -> {}
+                    case _ -> { break }
+                } match {
+                    case Some -> {}
+                    case _ -> { make Result<Maybe<Type>, InferenceError>.Success break }
+                } match {
+                    case Ptr -> {}
+                    case _ -> {
+                        drop
+                        &source.token "infer FromLoad expected ptr" error make Result<Maybe<Type>, InferenceError>.Error break
+                    }
+                } @type
+                $ctx $source.type $type fill-hole
+                $type ~ make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
+            }
+            case _ -> {
+                2 Fmt:to-fd @fmt
+                &fmt flip Source:Source-format
+                0 !.Token "TODO" error make Result<Maybe<Type>, InferenceError>.Error
+            }
         }
-        case _ -> {
-            2 Fmt:to-fd @fmt
-            &fmt flip Source:Source-format
-            0 !.Token "TODO" error make Result<Maybe<Type>, InferenceError>.Error
+    } @res
+    &res match {
+        case Success -> {
+            @res
+            &fmt " = " Fmt:write
+            &fmt \Type:format $res Maybe:format<_>
         }
+        case _ -> { drop }
     }
-} }
+    &fmt "\n" Fmt:write
+    $res
+}
 
 fn fill-holes-scope(ctx: .Ctx, scope: .Unstacked:Scope) -> Checked:Scope {
     $scope.id
@@ -1079,6 +1235,16 @@ fn fill-holes-word(ctx: .Ctx, word: .Unstacked:Word) -> Checked:Word {
                 $ctx $word.field-type fill @target-type
             } make Checked:Word.SetLocal
         }
+        case Unstacked:Word.If -> {
+            @word
+            make Checked:If {
+                $word.token @token
+                $ctx &word.parameters fill-holes @parameters
+                $ctx &word.returns fill-holes make Maybe<Array<Type>>.Some @returns
+                $ctx &word.true-branch fill-holes-scope @true-branch
+                $ctx &word.false-branch fill-holes-scope @false-branch
+            } make Checked:Word.If
+        }
     }
 }
 
@@ -1109,11 +1275,23 @@ fn fill-holes-intrinsic(ctx: .Ctx, intrinsic: .Unstacked:Intrinsic) -> Checked:I
             $ctx $intrinsic.type fill
             make Checked:Intrinsic.Add make Checked:IntrinsicWord
         }
+        case Unstacked:Intrinsic.Sub -> {
+            @intrinsic
+            $intrinsic.token
+            $ctx $intrinsic.type fill
+            make Checked:Intrinsic.Sub make Checked:IntrinsicWord
+        }
         case Unstacked:Intrinsic.Eq -> {
             @intrinsic
             $intrinsic.token
             $ctx $intrinsic.type fill
             make Checked:Intrinsic.Eq make Checked:IntrinsicWord
+        }
+        case Unstacked:Intrinsic.NotEq -> {
+            @intrinsic
+            $intrinsic.token
+            $ctx $intrinsic.type fill
+            make Checked:Intrinsic.NotEq make Checked:IntrinsicWord
         }
         case Unstacked:Intrinsic.Uninit -> {
             @intrinsic

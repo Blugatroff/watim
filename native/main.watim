@@ -25,6 +25,7 @@ import "./resolving/resolver.watim" as Resolved
 import "./resolving/module.watim" as Resolved
 import "./resolving/top-items.watim" as Resolved
 import "./unstacking/unstacker.watim" as Unstacker
+import "./unstacking/graph.watim" as Graph
 import "./inference/inference.watim" as Inference (InferenceError-print)
 import "./monomorphization/monomizer.watim" as Monomizer (Monomized-format, monomize)
 import "./local-merging.watim" as LocalMerging (merge-locals)
@@ -38,6 +39,7 @@ fn print-usage-and-exit() {
     2 "  parse     [path]   Parse code and print the AST\n" IO:write-all IO:check
     2 "  resolve   [path]   resolve all identifiers\n" IO:write-all IO:check
     2 "  unstack   [path]   TODO\n" IO:write-all IO:check
+    2 "  graph     [path]   TODO\n" IO:write-all IO:check
     2 "  check     [path]   run type inference and type checking\n" IO:write-all IO:check
     2 "  monomize  [path]   monomorphize all generic functions\n" IO:write-all IO:check
     2 "  optimize  [path]   run optimization passes\n" IO:write-all IO:check
@@ -76,15 +78,16 @@ fn SingleFileCommand-path(cmd: .SingleFileCommand) -> .Maybe<ByteSlice> {
     }
 }
 
-struct InferenceTreeArgs {
+struct GraphArgs {
     file-path: Maybe<ByteSlice>
-    functions: Array<ByteSlice>
+    function: ByteSlice
 }
 
 variant ProjectWideCommand {
     case Resolve -> Maybe<ByteSlice>
     case Check -> Maybe<ByteSlice>
     case Unstack -> Maybe<ByteSlice>
+    case Graph -> GraphArgs
     case Infer -> Maybe<ByteSlice>
     case Monomize -> Maybe<ByteSlice>
     case Optimize -> Maybe<ByteSlice>
@@ -95,6 +98,7 @@ fn ProjectWideCommand-path(cmd: .ProjectWideCommand) -> .Maybe<ByteSlice> {
     $cmd match {
         case Resolve -> {}
         case Unstack -> {}
+        case Graph -> { .file-path }
         case Infer -> {}
         case Check -> {}
         case Monomize -> {}
@@ -142,6 +146,10 @@ fn parse-args(arena: .Arena) -> CliArgs {
         }
         $command ByteSlice:unpack "unstack" Bytes:eq if {
             $path make ProjectWideCommand.Unstack make CliCommand.ProjectWide break
+        }
+        $command ByteSlice:unpack "graph" Bytes:eq if {
+            $path &args 1 Array:remove<_> make GraphArgs
+            make ProjectWideCommand.Graph make CliCommand.ProjectWide break
         }
         $command ByteSlice:unpack "infer" Bytes:eq if {
             $path make ProjectWideCommand.Infer make CliCommand.ProjectWide break
@@ -379,6 +387,28 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
         }
         case _ -> { drop }
     }
+
+    $command match {
+        case Graph -> {
+            @args
+            &unstacked.values 0 Array:get<_> @module
+            &module.functions &args.function Map:get<_, _> Maybe:assert-some<_> match {
+                case Unstacker:FunctionOrExtern.Extern -> { drop }
+                case Unstacker:FunctionOrExtern.Function -> {
+                    @function
+                    1 Fmt:to-fd @fmt
+                    &fmt $function Graph:graph-function
+                }
+            }
+            &resolving-arena Arena:shred
+            &unstacking-arena Arena:shred
+            &arena Arena:shred
+            break
+        }
+        case _ -> { drop }
+    }
+
+
     "Inference" Arena:new @inference-arena
     &inference-arena &unstacked Inference:infer-modules match {
         case Success -> {}
@@ -408,20 +438,20 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     }
 
     &unstacking-arena Arena:shred
-    &inference-arena Arena:shred
+    // &inference-arena Arena:shred
 
-    "Checking" Arena:new @checking-arena
-    &checking-arena Arena:usage @start-usage
-    &checking-arena &resolved-modules check-modules match {
-        case Error -> {
-            2 flip &modules CheckError-print drop
-            2 IO:newline
-            1 Core:exit
-            Core:unreachable<Map<ByteSlice, Checked:Module>>
-        }
-        case Success -> {}
-    } @modules
-
+    // "Checking" Arena:new @checking-arena
+    // &checking-arena Arena:usage @start-usage
+    // &checking-arena &resolved-modules check-modules match {
+    //     case Error -> {
+    //         2 flip &modules CheckError-print drop
+    //         2 IO:newline
+    //         1 Core:exit
+    //         Core:unreachable<Map<ByteSlice, Checked:Module>>
+    //     }
+    //     case Success -> {}
+    // } @modules
+    //
     $inferred @modules
 
     // $command match {
@@ -454,7 +484,6 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
     &resolving-arena Arena:shred
     &unstacking-arena Arena:shred
     &inference-arena Arena:shred
-    &checking-arena Arena:shred
     $command match {
         case Monomize -> {
             drop

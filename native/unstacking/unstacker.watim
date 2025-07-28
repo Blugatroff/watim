@@ -6,7 +6,7 @@ import "../../std/map.watim" as Map (Map)
 import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
-import "../../std/util.watim" as Util (bool-format)
+import "../../std/util.watim" as Util (bool-format, i32-format)
 
 import "../lexer.watim" as Lexer (Token, Token-format)
 
@@ -144,12 +144,35 @@ fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt ")" Fmt:write
 }
 
+struct StackVoid {
+    source: Maybe<Source>
+    known: Maybe<Type>
+    type: Maybe<InferenceHole>
+}
+fn StackVoid-format(fmt: .Formatter, self: .StackVoid) {
+    $fmt "(StackVoid\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "source=" Fmt:write
+    $fmt \Source-format &self.source Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "known=" Fmt:write
+    $fmt \Type:format &self.known Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt \InferenceHole-format &self.type Maybe:format<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
 struct Function {
     name: Token
     export: Maybe<Token>
     signature: Signature
     locals: Map<LocalId, Local>
-    drops: Array<[Maybe<Source>, InferenceHole]>
+    voids: Array<StackVoid>
     holes: Holes
     nodes: Array<MultiReturnNode>
     body: Scope
@@ -175,8 +198,8 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt \LocalId-format \Local-format &self.locals Map:format-multi-line<_, _>
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
-    $fmt "drops=" Fmt:write
-    $fmt \IntoDrop-format &self.drops Array:format<_>
+    $fmt "voids=" Fmt:write
+    $fmt \StackVoid-format &self.voids Array:format-multi-line<_>
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "holes=" Fmt:write
@@ -195,21 +218,6 @@ fn Function-format(fmt: .Formatter, self: .Function) {
     $fmt \Source:Source-format &self.returns Array:format-multi-line<_>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
-}
-
-fn IntoDrop-format(fmt: .Formatter, self: .[Maybe<Source>, InferenceHole]) {
-    $self ~ [,] @hole @source
-    $fmt "(IntoDrop\n" Fmt:write
-    $fmt Fmt:indent
-    $fmt Fmt:write-indent
-    $fmt "source=" Fmt:write
-    $fmt \Source-format &source Maybe:format<_>
-    $fmt "\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "type=" Fmt:write
-    $fmt &hole InferenceHole-format
-    $fmt Fmt:dedent
-    $fmt ")" Fmt:write
 }
 
 struct Holes {
@@ -241,27 +249,53 @@ fn Holes-lookup(self: .Holes, hole: .InferenceHole) -> Maybe<.Type> {
     }
 }
 fn Holes-format(fmt: .Formatter, self: .Holes) {
-    $fmt "(Holes " Fmt:write
-    $fmt \MaybeType-format &self.holes Array:format-multi-line<_>
-    $fmt ")" Fmt:write
+    $self.holes.len 0 = if {
+        $fmt "(Holes)" Fmt:write
+    } else {
+        $fmt "(Holes\n" Fmt:write
+        $fmt Fmt:indent
+        0 loop {
+            @i $i $self.holes.len = if { break }
+            $fmt Fmt:write-indent
+            $fmt $i i32-format
+            $fmt "=" Fmt:write
+            $fmt \Type:format &self.holes $i Array:get<_> Maybe:format<_>
+            $fmt ",\n" Fmt:write
+            $i 1 +
+        }
+        $fmt Fmt:dedent
+        $fmt ")" Fmt:write
+    }
 }
-fn MaybeType-format(fmt: .Formatter, self: .Maybe<Type>) {
-    $fmt \Type:format $self Maybe:format<_>
+
+struct BreakStack {
+    token: Token
+    sources: Array<Source>
+    reachable: bool
 }
 
 struct Unstacker {
     arena: .Arena
     locals: .Map<LocalId, Local>
     modules: .Array<Resolved:Module>
-    drops: .Array<[Maybe<Source>, InferenceHole]>
-    holes: Holes
-    multi-return-nodes: Array<Source:MultiReturnNode>
-    next-inference-hole-index: i32
-    next-inference-field-hole-index: i32
+    voids: .Array<StackVoid>
+    holes: .Holes
+    multi-return-nodes: .Array<Source:MultiReturnNode>
+    next-inference-hole-index: .i32
+    next-inference-field-hole-index: .i32
+    brek-stacks: Maybe<.Array<BreakStack>>
+    blok-returns: Maybe<.Array<InferenceHole>>
 }
+fn with-break-stacks(unstacker: .Unstacker, brek-stacks: .Array<BreakStack>, blok-returns: Maybe<.Array<InferenceHole>>) -> Unstacker {
+    $unstacker ~ @new
+    $brek-stacks make Maybe<.Array<BreakStack>>.Some #new.brek-stacks
+    $blok-returns #new.blok-returns
+    $new
+}
+
 fn fresh-hole(unstacker: .Unstacker, token: Token) -> InferenceHole {
-    $token $unstacker.next-inference-hole-index make InferenceHole
-    $unstacker.next-inference-hole-index 1 + #unstacker.next-inference-hole-index
+    $token $unstacker.next-inference-hole-index ~ make InferenceHole
+    $unstacker.next-inference-hole-index ~ 1 + =>unstacker.next-inference-hole-index
 }
 fn fresh-holes(unstacker: .Unstacker, token: Token, n: i32) -> Array<InferenceHole> {
     $unstacker.arena $n Array:new-with-capacity<InferenceHole> @holes
@@ -272,8 +306,8 @@ fn fresh-holes(unstacker: .Unstacker, token: Token, n: i32) -> Array<InferenceHo
     $holes
 }
 fn fresh-field-hole(unstacker: .Unstacker) -> InferenceFieldHole {
-    $unstacker.next-inference-field-hole-index make InferenceFieldHole
-    $unstacker.next-inference-field-hole-index 1 + #unstacker.next-inference-field-hole-index
+    $unstacker.next-inference-field-hole-index ~ make InferenceFieldHole
+    $unstacker.next-inference-field-hole-index ~ 1 + =>unstacker.next-inference-field-hole-index
 }
 fn lookup-type-definition(unstacker: .Unstacker, handle: CustomTypeHandle) -> .Resolved:TypeDefinition {
     $unstacker.modules $handle.module.index Array:get<_> .type-definitions.values $handle.index Array:get<_>
@@ -284,16 +318,16 @@ fn lookup-signature(unstacker: .Unstacker, handle: Resolved:FunctionHandle) -> .
 }
 fn pre-add-node(unstacker: .Unstacker) -> i32 {
     $unstacker.multi-return-nodes.len
-    $unstacker.arena &unstacker.multi-return-nodes make Source:MultiReturnNode.PlaceHolder Array:push<_>
+    $unstacker.arena $unstacker.multi-return-nodes make Source:MultiReturnNode.PlaceHolder Array:push<_>
 }
 fn add-node(unstacker: .Unstacker, node: Source:MultiReturnNode) -> i32 {
     $unstacker.multi-return-nodes.len
-    $unstacker.arena &unstacker.multi-return-nodes $node Array:push<_>
+    $unstacker.arena $unstacker.multi-return-nodes $node Array:push<_>
 }
 fn fill-node(unstacker: .Unstacker, index: i32, node: Source:MultiReturnNode) {
-    &unstacker.multi-return-nodes $index Array:get<_> match {
+    $unstacker.multi-return-nodes $index Array:get<_> match {
         case Source:MultiReturnNode.PlaceHolder -> {
-            &unstacker.multi-return-nodes $index $node Array:set<_> drop
+            $unstacker.multi-return-nodes $index $node Array:set<_> drop
         }
         case _ -> { drop 0 0 / drop }
     }
@@ -304,8 +338,10 @@ fn unstack-function(arena: .Arena, modules: .Array<Resolved:Module>, function: .
     0 $stack.negative.len 0 = !i32 / drop
 
     $arena \Resolved:LocalId-eq $function.locals.values.len Map:new-with-capacity<LocalId, Local> @locals
-    Array:new<[Maybe<Source>, InferenceHole]> @drops
-    $arena &locals $modules &drops Holes-empty Array:new<MultiReturnNode> 0 0 make Unstacker @unstacker
+    Array:new<StackVoid> @voids
+    $arena &locals $modules &voids Holes-empty & Array:new<MultiReturnNode> & 0 & 0 &
+    make Maybe<.Array<BreakStack>>.None make Maybe<.Array<InferenceHole>>.None
+    make Unstacker @unstacker
     0 loop {
         @i $i $function.locals.values.len = if { break }
         &locals
@@ -327,10 +363,10 @@ fn unstack-function(arena: .Arena, modules: .Array<Resolved:Module>, function: .
         $function.name @name
         $function.export @export
         $locals @locals
-        $drops @drops
+        $voids @voids
         $function.signature @signature
-        $unstacker.holes @holes
-        $unstacker.multi-return-nodes @nodes
+        $unstacker.holes ~ @holes
+        $unstacker.multi-return-nodes ~ @nodes
         $body @body
         $stack.positive @returns
     }
@@ -417,31 +453,28 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
             @word
             $word.intrinsic match {
                 case Resolved:Intrinsic.Add -> {
-                    $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @addition
-                    $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @base
-
-                    $unstacker $word.token fresh-hole @type
-
-                    $base $addition $type make Source:FromAdd make Source:FromIntrinsic.Add make Source.FromIntrinsic
-                    $unstacker.arena flip $stack flip Stack:push
-
                     make Word:Add {
                         $word.token @token
-                        $type @type
+                        $unstacker $stack &word.token unstack-intrinsic-add/sub @type
                     } make Word:Intrinsic.Add make Word:Word.Intrinsic
                 }
-                case Resolved:Intrinsic.Eq -> {
-                    $unstacker $word.token fresh-hole @type
-                    $unstacker.arena $stack make Source:FromEq {
+                case Resolved:Intrinsic.Sub -> {
+                    make Word:Sub {
                         $word.token @token
-                        $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @a
-                        $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @b
-                        $type @type
-                    } make Source:FromIntrinsic.Eq make Source.FromIntrinsic Stack:push
+                        $unstacker $stack &word.token unstack-intrinsic-add/sub @type
+                    } make Word:Intrinsic.Sub make Word:Word.Intrinsic
+                }
+                case Resolved:Intrinsic.Eq -> {
                     make Word:Eq {
                         $word.token @token
-                        $type @type
+                        $unstacker $stack &word.token unstack-intrinsic-eq/noteq @type
                     } make Word:Intrinsic.Eq make Word:Word.Intrinsic
+                }
+                case Resolved:Intrinsic.NotEq -> {
+                    make Word:NotEq {
+                        $word.token @token
+                        $unstacker $stack &word.token unstack-intrinsic-eq/noteq @type
+                    } make Word:Intrinsic.NotEq make Word:Word.Intrinsic
                 }
                 case Resolved:Intrinsic.Uninit -> {
                     $unstacker &word.token &word.generic-arguments 1 unstack-generic-arguments @generic-arguments
@@ -458,7 +491,9 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
                 case Resolved:Intrinsic.Drop -> {
                     $unstacker $word.token fresh-hole @type
                     $unstacker.arena $stack Stack:pop @src
-                    $unstacker.arena $unstacker.drops $src $type [,2] Array:push<_>
+                    $unstacker.arena $unstacker.voids
+                    $src make Maybe<Type>.None $type make Maybe<InferenceHole>.Some make StackVoid
+                    Array:push<_>
                     make Word:Drop {
                         $word.token @token
                         $type @type
@@ -557,7 +592,7 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
             $unstacker $word.name $signature.generic-parameters.len fresh-holes @generic-arguments
 
             $unstacker
-            $word.function $generic-arguments $arguments make Source:FromCall make Source:MultiReturnNode.Call
+            $word.name $word.function $generic-arguments $arguments make Source:FromCall make Source:MultiReturnNode.Call
             add-node @node-index
 
             0 loop {
@@ -581,6 +616,7 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
 
             $unstacker.arena $stack 
             make Source:FromCast {
+                $word.token @token
                 $src-type @src-type
                 $word.dst @dst-type
                 $unstacker.arena $src Arena:push<_> @src
@@ -600,6 +636,7 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
 
             $unstacker.arena $stack
             make Source:FromLoad {
+                $word.token @token
                 $type @type
                 $unstacker.arena $src Arena:push<_> @src
             } make Source.FromLoad
@@ -612,7 +649,7 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
         }
         case Resolved:Word.String -> {
             @word
-            $unstacker.arena $stack make Source.FromString Stack:push
+            $unstacker.arena $stack $word.token make Source.FromString Stack:push
             $unstacker.arena $stack $word.token make Source.FromNumber Stack:push
             $word ~ make Word:Word.String
         }
@@ -624,7 +661,7 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
             $unstacker.arena $stack Stack:pop Maybe:assert-some<_> @condition
 
             $stack
-            $entry-node make Stack:ParentOfIf make Stack:ParentOf.If 
+            $entry-node make Stack:ParentOfIf make Stack:ParentOf.If
             Stack:child @true-stack
 
             $unstacker.arena $stack Stack:clone &
@@ -636,30 +673,43 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
 
             $true-stack.negative @arguments
 
+            $unstacker $word.token $arguments.len fresh-holes @parameters
+            $unstacker $word.token $true-stack.positive.len $false-stack.positive.len Core:max fresh-holes @return-types
+
             $unstacker $entry-node
-            $word.token $condition $arguments make Source:FromIfEntry
+            $word.token $condition $parameters $arguments make Source:FromIfEntry
             make Source:MultiReturnNode.IfEntry fill-node
 
-            $unstacker
-            make Source:FromIfExit {
-                $word.token @token
-                $condition @condition
-                $arguments @arguments
-                $true-stack.positive  @true-branch-returns
-                $false-stack.positive @false-branch-returns
-            } make Source:MultiReturnNode.IfExit add-node @exit-node
+            $arguments.len 0 = $true-stack.positive.len 0 = $false-stack.positive.len 0 = and and if {
+                $unstacker.arena $unstacker.voids
+                $condition make Maybe<Source>.Some
+                make Type.Bool make Maybe<Type>.Some
+                make Maybe<InferenceHole>.None
+                make StackVoid
+                Array:push<_>
+            } else {
+                $unstacker
+                make Source:FromIfExit {
+                    $word.token @token
+                    $condition @condition
+                    $arguments @arguments
+                    $return-types @return-types
+                    $true-stack.positive  @true-branch-returns
+                    $false-stack.positive @false-branch-returns
+                } make Source:MultiReturnNode.IfExit add-node @exit-node
 
-            0 loop {
-                @i $i $true-stack.positive.len = $i $false-stack.positive.len = or if {
-                    break
+                0 loop {
+                    @i $i $true-stack.positive.len = $i $false-stack.positive.len = or if {
+                        break
+                    }
+                    $unstacker.arena $stack
+                    $exit-node $i make Source:FromNode make Source:Source.FromNode
+                    Stack:push
+                    $i 1 +
                 }
-                $unstacker.arena $stack 
-                $exit-node $i make Source:FromNode make Source:Source.FromNode
-                Stack:push
-                $i 1 +
             }
 
-            $word.token make Word:Word.Number
+            $word.token $parameters $return-types $true-body $false-body make Word:If make Word:Word.If
         }
         case Resolved:Word.Loop -> {
             @word
@@ -672,6 +722,11 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
             // Core:unreachable<Word>
             $word.token make Word:Word.Number
         }
+        case Resolved:Word.Block -> {
+            @word
+
+            $word.token make Word:Word.Number
+        }
         case _ -> {
             @word
             2 Fmt:to-fd @fmt
@@ -680,6 +735,28 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word) -> W
             Core:unreachable<Word>
         }
     }
+}
+
+fn unstack-intrinsic-add/sub(unstacker: .Unstacker, stack: .Stack, token: .Token) -> InferenceHole {
+    $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @addition
+    $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @base
+
+    $unstacker $token ~ fresh-hole @type
+
+    $token ~ $base $addition $type make Source:FromAdd make Source:FromIntrinsic.Add make Source.FromIntrinsic
+    $unstacker.arena flip $stack flip Stack:push
+    $type
+}
+
+fn unstack-intrinsic-eq/noteq(unstacker: .Unstacker, stack: .Stack, token: .Token) -> InferenceHole {
+    $unstacker $token ~ fresh-hole @type
+    $unstacker.arena $stack make Source:FromEq {
+        $token ~ @token
+        $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @a
+        $unstacker.arena $unstacker.arena $stack Stack:pop Arena:push<_> @b
+        $type @type
+    } make Source:FromIntrinsic.Eq make Source.FromIntrinsic Stack:push
+    $type
 }
 
 fn unstack-generic-arguments(unstacker: .Unstacker, token: .Token, generic-arguments: .Array<Type>, expected-arguments: i32) -> Array<InferenceHole> {
@@ -694,7 +771,7 @@ fn unstack-generic-arguments(unstacker: .Unstacker, token: .Token, generic-argum
                 }
                 case _ -> {
                     $unstacker $token ~ fresh-hole @hole
-                    $unstacker.arena flip &unstacker.holes flip &hole flip ~ Holes-fill
+                    $unstacker.arena flip $unstacker.holes flip &hole flip ~ Holes-fill
                     $hole
                 }
             }
