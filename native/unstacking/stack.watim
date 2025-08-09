@@ -2,23 +2,14 @@ import "../../std/maybe.watim" as Maybe (Maybe(Some, None), assert-some)
 import "../../std/array.watim" as Array (Array)
 import "../../std/arena.watim" as Arena (Arena)
 
+import "../lexer.watim" as Lexer (Token)
+
 import "./source.watim" as Source (Source)
-
-struct ParentOfLoop {
-}
-
-struct ParentOfIf {
-    node: i32
-}
-
-variant ParentOf {
-    // case Loop -> ParentOfLoop
-    case If -> ParentOfIf
-}
 
 struct Parent {
     stack: .Stack
-    type: ParentOf
+    node: i32
+    token: Token
 }
 
 struct Stack {
@@ -29,8 +20,9 @@ struct Stack {
 fn root() -> Stack {
     make Maybe<Parent>.None Array:new<Source> Array:new<Source> make Stack
 }
-fn child(self: .Stack, parent: ParentOf) -> Stack {
-    $self $parent make Parent make Maybe<Parent>.Some Array:new<Source> Array:new<Source> make Stack
+fn child(self: .Stack, parent-node: i32, parent-token: Token) -> Stack {
+    $self $parent-node $parent-token make Parent
+    make Maybe<Parent>.Some Array:new<Source> Array:new<Source> make Stack
 }
 fn clone(arena: .Arena, self: .Stack) -> Stack {
     $self.parent match {
@@ -38,7 +30,7 @@ fn clone(arena: .Arena, self: .Stack) -> Stack {
         case Some -> {
             @parent
             $arena $parent.stack ~ Arena:push<Stack>
-            $parent.type make Parent make Maybe<Parent>.Some
+            $parent.node $parent.token make Parent make Maybe<Parent>.Some
         }
     }
     $arena &self.positive Array:clone<_>
@@ -66,14 +58,9 @@ fn pop(arena: .Arena, self: .Stack) -> Maybe<Source> {
                     case None -> { make Maybe<Source>.None }
                     case Some -> {
                         @source
-                        &parent.type match {
-                            case If -> {
-                                .node ~ $self.negative.len make Source:FromNode
-                                make Source.FromNode
-                            }
-                        } @source
+                        $parent.token $parent.node $self.negative.len make Source:FromNode
+                        make Source.FromNode make Maybe<Source>.Some
                         $arena &self.negative $source Array:push<_>
-                        $source make Maybe<Source>.Some
                     }
                 }
             }
@@ -95,6 +82,43 @@ fn pop-n(arena: .Arena, self: .Stack, n: i32) -> Array<Source> {
     }
     &popped Array:reverse<_>
     $popped
+}
+fn use(arena: .Arena, self: .Stack, n: i32) {
+    $arena Arena:temp @temp @save
+    $temp $n Array:new-with-capacity<Source> @popped
+    loop (->) {
+        $popped.len $n = if { break }
+        &popped $arena $self pop match {
+            case None -> { break }
+            case Some -> {}
+        } Array:push-assert-no-alloc<_>
+    }
+    loop {
+        $popped.len 0 = if { break }
+        $arena &self.positive
+        &popped Array:pop<_>
+        Array:push<_>
+    }
+    $temp $save Arena:restore
+}
+fn dump(arena: .Arena, self: .Stack) -> Array<Source> {
+    $arena $self $self size pop-n
+}
+fn to-array(arena: .Arena, self: .Stack) -> Array<Source> {
+    $arena $self size Array:new-with-capacity<Source> @array
+    $self &array to-array-helper
+    $array
+}
+fn to-array-helper(self: .Stack, array: .Array<Source>) {
+    &self.parent match {
+        case None -> {}
+        case Some -> { .stack ~ $array to-array-helper }
+    }
+    0 loop {
+        @i $i $self.positive.len = if { break }
+        $array &self.positive $i Array:get<_> ~ Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
 }
 fn size(self: .Stack) -> i32 {
     $self.positive.len

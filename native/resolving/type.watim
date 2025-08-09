@@ -128,6 +128,20 @@ fn find-hole(self: .Type) -> Maybe<.Token> {
 fn contains-hole(self: .Type) -> bool {
     $self find-hole @m &m Maybe:is-some<.Token>
 }
+fn clone(arena: .Arena, self: .Type) -> Type {
+    $self match {
+        case Bool -> { make Type.Bool }
+        case I8 -> { make Type.I8 }
+        case I32 -> { make Type.I32 }
+        case I64 -> { make Type.I64 }
+        case Ptr -> { ~ $arena flip clone $arena flip Arena:push<_> make Type.Ptr }
+        case Generic -> { ~ make Type.Generic }
+        case Hole -> { ~ make Type.Hole }
+        case Tuple -> { $arena flip TupleType-clone make Type.Tuple }
+        case Custom -> { $arena flip CustomTypeType-clone make Type.Custom }
+        case Fun -> { $arena flip FunType-clone make Type.Fun }
+    }
+}
 
 struct FunType {
     token: Token
@@ -149,6 +163,11 @@ fn FunType-eq(a: .FunType, b: .FunType) -> bool {
     } else {
         0 1 =
     }
+}
+fn FunType-clone(arena: .Arena, self: .FunType) -> FunType {
+    $self.token
+    $arena &self.parameters Array:clone<_>
+    $arena &self.returns Array:clone<_> make FunType
 }
 
 fn Types-format(fmt: .Formatter, self: .Array<Type>) {
@@ -172,6 +191,9 @@ fn TupleType-format(fmt: .Formatter, self: .TupleType) {
 fn TupleType-eq(a: .TupleType, b: .TupleType) -> bool {
     &a.items &b.items Types-eq
 }
+fn TupleType-clone(arena: .Arena, self: .TupleType) -> TupleType {
+    $self.token $arena &self.items Array:clone<_> make TupleType
+}
 
 struct CustomTypeType {
     type-definition: CustomTypeHandle
@@ -192,6 +214,9 @@ fn CustomTypeType-eq(a: .CustomTypeType, b: .CustomTypeType) -> bool {
     } else {
         0 1 =
     }
+}
+fn CustomTypeType-clone(arena: .Arena, self: .CustomTypeType) -> CustomTypeType {
+    $self.type-definition $arena &self.generic-arguments Array:clone<_> make CustomTypeType
 }
 
 struct CustomTypeHandle { module: ModuleId index: i32 }

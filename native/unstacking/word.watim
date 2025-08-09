@@ -1,4 +1,5 @@
 import "../../std/array.watim" as Array (Array)
+import "../../std/maybe.watim" as Maybe (Maybe)
 import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/util.watim" as Util (i32-format)
 
@@ -95,10 +96,27 @@ fn RefLocal-format(fmt: .Formatter, self: .RefLocal) {
     $fmt ")" Fmt:write
 }
 
+struct StoreLocal {
+    name: Token
+    var: LocalId
+    fields: Array<FieldAccess>
+    field-type: InferenceHole
+}
+fn StoreLocal-format(fmt: .Formatter, self: .StoreLocal) {
+    $fmt "(StoreLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var LocalId-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt " " Fmt:write
+    $fmt &self.field-type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
 struct SetLocal {
     name: Token
     local: LocalId
-    // local-type: InferenceHole
     fields: Array<FieldAccess>
     field-type: InferenceHole
 }
@@ -107,8 +125,6 @@ fn SetLocal-format(fmt: .Formatter, self: .SetLocal) {
     $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.local LocalId-format
-    // $fmt " " Fmt:write
-    // $fmt &self.local-type InferenceHole-format
     $fmt " " Fmt:write
     $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
     $fmt " " Fmt:write
@@ -146,12 +162,108 @@ fn Add-format(fmt: .Formatter, self: .Add) {
     $fmt ")" Fmt:write
 }
 
+struct Sub {
+    token: Token
+    type: InferenceHole
+}
+fn Sub-format(fmt: .Formatter, self: .Sub) {
+    $fmt "(Sub " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Mul {
+    token: Token
+    type: InferenceHole
+}
+fn Mul-format(fmt: .Formatter, self: .Mul) {
+    $fmt "(Mul " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Div {
+    token: Token
+    type: InferenceHole
+}
+fn Div-format(fmt: .Formatter, self: .Div) {
+    $fmt "(Div " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Mod {
+    token: Token
+    type: InferenceHole
+}
+fn Mod-format(fmt: .Formatter, self: .Mod) {
+    $fmt "(Mod " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Store {
+    token: Token
+    type: InferenceHole
+}
+fn Store-format(fmt: .Formatter, self: .Store) {
+    $fmt "(Store " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
 struct Eq {
     token: Token
     type: InferenceHole
 }
 fn Eq-format(fmt: .Formatter, self: .Eq) {
     $fmt "(Eq " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct NotEq {
+    token: Token
+    type: InferenceHole
+}
+fn NotEq-format(fmt: .Formatter, self: .NotEq) {
+    $fmt "(NotEq " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Le {
+    token: Token
+    type: InferenceHole
+}
+fn Le-format(fmt: .Formatter, self: .Le) {
+    $fmt "(Le " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
+struct Ge {
+    token: Token
+    type: InferenceHole
+}
+fn Ge-format(fmt: .Formatter, self: .Ge) {
+    $fmt "(Ge " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
     $fmt &self.type InferenceHole-format
@@ -182,18 +294,48 @@ fn Drop-format(fmt: .Formatter, self: .Drop) {
     $fmt ")" Fmt:write
 }
 
+struct And {
+    token: Token
+    type: InferenceHole
+}
+fn And-format(fmt: .Formatter, self: .And) {
+    $fmt "(And " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ")" Fmt:write
+}
+
 variant Intrinsic {
     case Add -> Add
+    case Sub -> Sub
     case Eq -> Eq
+    case NotEq -> NotEq
     case Uninit -> Uninit
     case Drop -> Drop
+    case Mod -> Mod
+    case Mul -> Mul
+    case Div -> Div
+    case Store -> Store
+    case Le -> Le
+    case Ge -> Ge
+    case And -> And
 }
 fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
     $fmt $self match {
         case Add -> { Add-format }
+        case Sub -> { Sub-format }
         case Eq -> { Eq-format }
+        case NotEq -> { NotEq-format }
         case Uninit -> { Uninit-format }
         case Drop -> { Drop-format }
+        case Mod -> { Mod-format }
+        case Mul -> { Mul-format }
+        case Div -> { Div-format }
+        case Store -> { Store-format }
+        case Le -> { Le-format }
+        case Ge -> { Ge-format }
+        case And -> { And-format }
     }
 }
 
@@ -262,11 +404,105 @@ fn Load-format(fmt: .Formatter, self: .Load) {
     $fmt ")" Fmt:write
 }
 
+struct If {
+    token: Token
+    parameters: Array<InferenceHole>
+    returns: Maybe<Array<InferenceHole>>
+    true-branch: Scope
+    false-branch: Scope
+}
+fn If-format(fmt: .Formatter, self: .If) {
+    $fmt "(If\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \InferenceHole-format &self.parameters Array:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt \ArrayInferenceHole-format &self.returns Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "true-branch=" Fmt:write
+    $fmt &self.true-branch Scope-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "false-branch=" Fmt:write
+    $fmt &self.false-branch Scope-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct Block {
+    token: Token
+    parameters: Array<InferenceHole>
+    returns: Array<InferenceHole>
+    body: Scope
+}
+fn Block-format(fmt: .Formatter, self: .Block) {
+    $fmt "(Block\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \InferenceHole-format &self.parameters Array:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt \InferenceHole-format &self.returns Array:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+struct Loop {
+    token: Token
+    parameters: Array<InferenceHole>
+    returns: Maybe<Array<InferenceHole>>
+    body: Scope
+}
+fn Loop-format(fmt: .Formatter, self: .Loop) {
+    $fmt "(Loop\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \InferenceHole-format &self.parameters Array:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt \ArrayInferenceHole-format &self.returns Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
+    $fmt &self.body Scope-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
+fn ArrayInferenceHole-format(fmt: .Formatter, self: .Array<InferenceHole>) {
+    $fmt \InferenceHole-format $self Array:format<_>
+}
+
 variant Word {
     case GetLocal -> GetLocal
     case RefLocal -> RefLocal
     case SetLocal -> SetLocal
     case SetGlobal -> SetGlobal
+    case StoreLocal -> StoreLocal
     case Number -> Token
     case Intrinsic -> Intrinsic
     case MakeStruct -> MakeStruct
@@ -275,6 +511,10 @@ variant Word {
     case Cast -> Cast
     case Load -> Load
     case String -> Resolved:StringWord
+    case If -> If
+    case Block -> Block
+    case Loop -> Loop
+    case Break -> Token
 }
 fn Word-format(fmt: .Formatter, self: .Word) {
     $fmt $self match {
@@ -282,6 +522,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case RefLocal -> { RefLocal-format }
         case SetLocal -> { SetLocal-format }
         case SetGlobal -> { SetGlobal-format }
+        case StoreLocal -> { StoreLocal-format }
         case Number -> { $fmt "(Number " Fmt:write Token-format $fmt ")" Fmt:write }
         case Intrinsic -> { Intrinsic-format }
         case MakeStruct -> { MakeStruct-format }
@@ -290,6 +531,10 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case Cast -> { Cast-format }
         case Load -> { Load-format }
         case String -> { Resolved:StringWord-format }
+        case If -> { If-format }
+        case Block -> { Block-format }
+        case Loop -> { Loop-format }
+        case Break -> { $fmt "(Break " Fmt:write Token-format $fmt ")" Fmt:write }
     }
 }
 fn Words-format(fmt: .Formatter, self: .Array<Word>) {

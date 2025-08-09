@@ -1,0 +1,456 @@
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/array.watim" as Array (Array)
+import "../../std/map.watim" as Map (Map)
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some))
+import "../../std/util.watim" as Util (i32-format)
+import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format-no-quotes)
+import "../../std/arena.watim" as Arena (Arena)
+
+import "../lexer.watim" as Lexer (Token, Token-lexeme, Token-format, Token-line, Token-column)
+
+import "../resolving/words.watim" as Resolved (LocalId)
+import "../resolving/top-items.watim" as Resolved (LocalName-unpack)
+
+import "./source.watim" as Source (Source, FromIntrinsic, MultiReturnNode)
+import "./unstacker.watim" as Unstacked (StackVoid, Function)
+
+struct Grapher {
+    arena: .Arena
+    fmt: .Formatter
+    function: .Function
+    graphed-locals: Map<LocalId, []>
+    graphed-nodes: Array<Array<i32>>
+}
+
+fn graph-function(fmt: .Formatter, function: .Function) {
+    0 !.Arena Arena:temp @temp @save
+    $temp $fmt $function \Resolved:LocalId-eq Map:new<LocalId, []> Array:new<Array<i32>> make Grapher @grapher
+    $fmt "digraph " Fmt:write
+    $fmt &function.name Token-lexeme Fmt:write
+    $fmt " {\n" Fmt:write
+
+    0 loop {
+        @i $i $function.returns.len = if { break }
+        $grapher.fmt "return -> " Fmt:write
+        &grapher &function.returns $i Array:get<_> graph-source
+        $i 1 +
+    }
+
+    0 loop {
+        @i $i $function.voids.len = if { break }
+        &function.voids $i Array:get<_> match {
+            case StackVoid.NonSpecific -> {
+                .source match {
+                    case None -> {}
+                    case Some -> {
+                        @source
+                        $grapher.fmt "void -> " Fmt:write
+                        &grapher $source graph-source
+                    }
+                }
+            }
+            case StackVoid.Store -> {
+                @source
+                $source.token @token
+                &source.dst match {
+                    case None -> {}
+                    case Some -> {
+                        @source
+                        $grapher.fmt "(StoreVoid " Fmt:write
+                        $grapher.fmt &token write-token
+                        $grapher.fmt ") -> " Fmt:write
+                        &grapher $source graph-source
+                    }
+                }
+                &source.src match {
+                    case None -> {}
+                    case Some -> {
+                        @source
+                        $grapher.fmt "(StoreVoid " Fmt:write
+                        $grapher.fmt &token write-token
+                        $grapher.fmt ") -> " Fmt:write
+                        &grapher $source graph-source
+                    }
+                }
+            }
+        }
+        $i 1 +
+    }
+
+    $fmt "}" Fmt:write
+    $temp $save Arena:restore
+}
+
+fn graph-source(grapher: .Grapher, source: .Source) {
+    $source match {
+        case Source.FromNumber -> {
+            $grapher flip graph-token
+            $grapher.fmt "\n" Fmt:write
+        }
+        case Source.FromIntrinsic -> {
+            match {
+                case FromIntrinsic.Add -> {
+                    @source
+                    $grapher &source.token graph-token $grapher.fmt "\n" Fmt:write
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.base Maybe:ref<_> Maybe:assert-some<_> graph-source
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.addition Maybe:ref<_> Maybe:assert-some<_> graph-source
+                }
+                case FromIntrinsic.Mul -> {
+                    @source
+                    $grapher &source.token graph-token $grapher.fmt "\n" Fmt:write
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.a Maybe:ref<_> Maybe:assert-some<_> graph-source
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.b Maybe:ref<_> Maybe:assert-some<_> graph-source
+                }
+                case FromIntrinsic.Uninit -> {
+                    @source
+                    $grapher &source.token graph-token $grapher.fmt "\n" Fmt:write
+                }
+                case FromIntrinsic.Eq -> {
+                    @source
+                    $grapher &source.token graph-token $grapher.fmt "\n" Fmt:write
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.a graph-maybe-source
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.b graph-maybe-source
+                }
+                case FromIntrinsic.Ge -> {
+                    @source
+                    $grapher &source.token graph-token $grapher.fmt "\n" Fmt:write
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.a Maybe:ref<_> Maybe:assert-some<_> graph-source
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.b Maybe:ref<_> Maybe:assert-some<_> graph-source
+                }
+                case FromIntrinsic.And -> {
+                    @source
+                    $grapher &source.token graph-token $grapher.fmt "\n" Fmt:write
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.a Maybe:ref<_> Maybe:assert-some<_> graph-source
+
+                    $grapher &source.token graph-token $grapher.fmt " -> " Fmt:write
+                    $grapher $source.b Maybe:ref<_> Maybe:assert-some<_> graph-source
+                }
+            }
+        }
+        case Source.FromNode -> {
+            @source
+            $grapher $source.index $source.ret graph-node
+        }
+        case Source.FromLocal -> {
+            @source
+            $grapher.fmt "\"($" Fmt:write
+            $grapher &source.var write-local-id
+            $grapher.fmt " " Fmt:write
+            $grapher.fmt &source.token Token-line i32-format
+            $grapher.fmt " " Fmt:write
+            $grapher.fmt &source.token Token-column i32-format
+            $grapher.fmt ")\" -> " Fmt:write
+            $grapher &source.var graph-local
+        }
+        case Source.FromCast -> {
+            @source
+            $grapher &source.token graph-token
+            $grapher.fmt " -> " Fmt:write
+            $grapher $source.src graph-maybe-source
+        }
+        case Source.FromLoad -> {
+            @source
+            $grapher &source.token graph-token
+            $grapher.fmt " -> " Fmt:write
+            $grapher $source.src graph-maybe-source
+        }
+        case Source.FromString -> {
+            $grapher flip graph-token
+            $grapher.fmt "\n" Fmt:write
+        }
+        case _ -> {
+            drop
+            $grapher.fmt "TODO\n" Fmt:write
+        }
+    }
+}
+fn graph-maybe-source(grapher: .Grapher, source: .Maybe<Source>) {
+    $grapher $source match {
+        case None -> { .fmt ~ "None\n" Fmt:write }
+        case Some -> { graph-source }
+    }
+}
+
+fn node-was-graphed(grapher: .Grapher, node-index: i32, return-index: i32) -> bool {
+    $grapher.graphed-nodes.len $node-index le if {
+        0 1 =
+    } else {
+        &grapher.graphed-nodes $node-index Array:get<_> .len ~ 0 /=
+    }
+}
+
+fn node-return-was-graphed(grapher: .Grapher, node-index: i32, return-index: i32) -> bool {
+    $grapher.graphed-nodes.len $node-index le if {
+        0 1 =
+    } else {
+        &grapher.graphed-nodes $node-index Array:get<_>
+        \i32-eq &return-index Array:contains<_>
+    }
+}
+
+fn insert-graphed-node(grapher: .Grapher, node-index: i32, return-index: i32) {
+    loop {
+        $grapher.graphed-nodes.len $node-index gt if { break }
+        $grapher.arena &grapher.graphed-nodes Array:new<i32> Array:push<_>
+    }
+
+    $grapher.arena
+    &grapher.graphed-nodes $node-index Array:get<_>
+    $return-index Array:push<_>
+}
+
+fn i32-eq(a: .i32, b: .i32) -> bool { $a ~ $b ~ = }
+
+fn graph-node(grapher: .Grapher, node-index: i32, return-index: i32) { block {
+    &grapher.function.nodes $node-index Array:get<_> @node
+    $grapher.fmt $node $return-index graph-node-name
+
+    $grapher $node-index $return-index node-was-graphed @node-at-least-partially-graphed
+
+    $grapher $node-index $return-index
+    $node match {
+        case MultiReturnNode.IfExit -> { drop node-return-was-graphed }
+        case MultiReturnNode.IfEntry -> { drop node-return-was-graphed }
+        case MultiReturnNode.LoopExit -> { drop node-return-was-graphed }
+        case MultiReturnNode.LoopEntry -> { drop node-return-was-graphed }
+        case _ -> { drop drop drop drop $node-at-least-partially-graphed }
+    } if {
+        break
+    }
+
+    $grapher $node-index $return-index insert-graphed-node
+
+    $node match {
+        case MultiReturnNode.Call -> {
+            @source
+
+            0 loop {
+                @i $i $source.arguments.len = if { break }
+
+                $grapher.fmt $node $return-index graph-node-name $grapher.fmt " -> " Fmt:write
+                $grapher &source.arguments $i Array:get<_> graph-source
+                $i 1 +
+            }
+        }
+        case MultiReturnNode.IfExit -> {
+            @source
+
+            &source.true-branch-returns match {
+                case None -> {}
+                case Some -> {
+                    $grapher.fmt $node $return-index graph-node-name $grapher.fmt " -> " Fmt:write
+                    $grapher flip $return-index Array:get<_> graph-source
+                }
+            }
+
+            $grapher.fmt $node $return-index graph-node-name $grapher.fmt " -> " Fmt:write
+            $grapher &source.false-branch-returns $return-index Array:get<_> graph-source
+        }
+        case MultiReturnNode.IfEntry -> {
+            @source
+            $grapher.fmt " -> \"Condition " Fmt:write
+            $grapher.fmt &source.token write-token
+            $grapher.fmt "\"" Fmt:write
+
+            $node-at-least-partially-graphed not if {
+                $grapher.fmt " -> " Fmt:write
+                $grapher &source.condition graph-source
+            } else { $grapher.fmt "\n" Fmt:write }
+
+            $grapher.fmt $node $return-index graph-node-name $grapher.fmt " -> " Fmt:write
+            $grapher &source.arguments $return-index Array:get<_> graph-source
+        }
+        case MultiReturnNode.BlockExit -> {
+            @source
+
+            $grapher.fmt " -> " Fmt:write
+            $grapher.fmt "\"Block return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\"\n" Fmt:write
+
+            &source.break-returns $return-index Array:get<_> @break-return
+            0 loop {
+                @i $i $break-return.sources.len = if { break }
+
+                $grapher.fmt "\"Block return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\" -> " Fmt:write
+                &break-return.sources $i Array:get<_> ~ [,] & @source & @token
+                $grapher $token graph-token
+                $grapher.fmt " -> " Fmt:write
+                $grapher $source graph-source
+
+                $i 1 +
+            }
+        }
+        case MultiReturnNode.BlockEntry -> {
+            @source
+            $grapher.fmt " -> " Fmt:write
+            $grapher &source.arguments $return-index Array:get<_> graph-source
+        }
+        case MultiReturnNode.LoopExit -> {
+            @source
+            $grapher.fmt " -> " Fmt:write
+            $grapher.fmt "\"Loop return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\"\n" Fmt:write
+
+            &source.break-returns $return-index Array:get<_> @break-return
+            0 loop {
+                @i $i $break-return.sources.len = if { break }
+
+                $grapher.fmt "\"Loop return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\" -> " Fmt:write
+                &break-return.sources $i Array:get<_> ~ [,] & @source & @token
+                $grapher $token graph-token
+                $grapher.fmt " -> " Fmt:write
+                $grapher $source graph-source
+
+                $i 1 +
+            }
+        }
+        case MultiReturnNode.LoopEntry -> {
+            @source
+            $grapher.fmt " -> " Fmt:write
+            $grapher &source.arguments $return-index Array:get<_> graph-source
+
+            $grapher.fmt $node $return-index graph-node-name
+            $grapher.fmt " -> " Fmt:write
+            $grapher &source.next-arguments $return-index Array:get<_> graph-source
+        }
+        case MultiReturnNode.PlaceHolder -> {
+            $grapher.fmt "PlaceHolder\n" Fmt:write
+        }
+    }
+} }
+
+fn graph-node-name(fmt: .Formatter, node: .MultiReturnNode, return-index: i32) {
+    $node match {
+        case MultiReturnNode.Call -> {
+            @source
+            $fmt "\"Call " Fmt:write $fmt &source.token Token-lexeme Fmt:write $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.IfExit -> {
+            @source
+            $fmt "\"IfExit " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.IfEntry -> {
+            @source
+            $fmt "\"IfEntry " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.BlockExit -> {
+            @source
+            $fmt "\"BlockExit " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.BlockEntry -> {
+            @source
+            $fmt "\"BlockEntry " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.LoopExit -> {
+            @source
+            $fmt "\"LoopExit " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.LoopEntry -> {
+            @source
+            $fmt "\"LoopEntry " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.PlaceHolder -> {
+            $fmt "PlaceHolder" Fmt:write
+        }
+    }
+}
+
+fn graph-local(grapher: .Grapher, local-id: .LocalId) {
+    &grapher.function.locals $local-id Map:get<_, _> Maybe:assert-some<_> @local
+
+    $grapher $local-id graph-local-id
+    $grapher.fmt "\n" Fmt:write
+
+    &grapher.graphed-locals $local-id Map:get<_, _> match {
+        case Some -> { drop }
+        case None -> {
+            $grapher.arena &grapher.graphed-locals $local-id ~ [,0] Map:insert<_, _> drop
+
+            0 $local.assignments.len = if {
+                $grapher $local-id graph-local-id
+                $grapher.fmt " -> Param\n" Fmt:write
+            }
+
+            0 loop {
+                @i $i $local.assignments.len = if { break }
+                &local.assignments $i Array:get<_> @assignment
+
+                $grapher $local-id graph-local-id
+                $grapher.fmt " -> " Fmt:write
+                $grapher &assignment.source graph-maybe-source
+                $i 1 +
+            }
+        }
+    }
+}
+
+fn graph-local-id(grapher: .Grapher, local-id: .LocalId) {
+    $grapher.fmt "\"Local " Fmt:write
+    $grapher $local-id write-local-id
+    $grapher.fmt "\"" Fmt:write
+}
+
+fn write-local-id(grapher: .Grapher, local-id: .LocalId) {
+    $grapher.fmt $local-id.name ByteSlice:unpack Fmt:write
+    $local-id.scope.raw 0 /= $local-id.shadow 0 /= or if {
+        $grapher.fmt ":" Fmt:write
+        $grapher.fmt $local-id.scope.raw i32-format
+        $grapher.fmt ":" Fmt:write
+        $grapher.fmt $local-id.shadow i32-format
+    }
+}
+
+fn graph-token(grapher: .Grapher, token: .Token) {
+    $grapher.fmt "\"(" Fmt:write
+    $grapher.fmt $token write-token
+    $grapher.fmt ")\"" Fmt:write
+}
+
+fn write-token(fmt: .Formatter, token: .Token) {
+    $fmt $token Token-lexeme make ByteSlice & ByteSlice-format-no-quotes
+    $fmt " " Fmt:write
+    $fmt $token Token-line i32-format
+    $fmt " " Fmt:write
+    $fmt $token Token-column i32-format
+}
