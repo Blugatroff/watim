@@ -226,7 +226,7 @@ fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
 struct Call {
     name: Token
     function: FunctionHandle
-    generic-arguments: Array<Type>
+    generic-arguments: Maybe<Array<Type>>
 }
 fn Call-format(fmt: .Formatter, self: .Call) {
     $fmt "(Call " Fmt:write
@@ -234,7 +234,7 @@ fn Call-format(fmt: .Formatter, self: .Call) {
     $fmt " " Fmt:write
     $fmt &self.function FunctionHandle-format
     $fmt " " Fmt:write
-    $fmt &self.generic-arguments Types-format
+    $fmt \Types-format &self.generic-arguments Maybe:format<_>
     $fmt ")" Fmt:write
 }
 

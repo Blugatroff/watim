@@ -16,7 +16,8 @@ import "./top-items.watim" as TopItem (
     TypeDefinition(Struct, Variant), Import, Global, FunctionOrExtern,
     ImportItem, StructImport, VariantImport, FunctionImport,
     Variant, Struct, VariantCase, TypeDefinition-name,
-    Function, FunctionOrExtern, Extern, Signature, Local, LocalName,
+    Function, FunctionOrExtern, Extern, Signature,
+    Local, LocalName, SyntheticName,
 )
 import "./type.watim" as Type (
     Type, ModuleId, NamedType, with-generics,
@@ -215,9 +216,14 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
                             &word.name Intrinsics:lookup match {
                                 case Some -> {
                                     $word.name flip
-                                    $ctx.type-resolver $ctx.arena &word.generic-arguments TypeResolver:resolve-types match {
-                                        case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
-                                        case Success -> {}
+                                    &word.generic-arguments match {
+                                        case None -> { Array:new<Type> }
+                                        case Some -> {
+                                            $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-types match {
+                                                case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+                                                case Success -> {}
+                                            }
+                                        }
                                     }
                                     make IntrinsicWord
                                     make Word.Intrinsic
@@ -357,9 +363,8 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
                     $i $struc-literal-env.remaining-fields.values.len = if { break }
                     &struc-literal-env.remaining-fields.values $i Array:get<_> ~ @field-index
                     &struc-literal-env.remaining-fields.keys   $i Array:get<_> @name
-                    $temp
                     &struc.fields $field-index Array:get<_> .type
-                    &type.generic-arguments with-generics @type
+                    $temp flip &type.generic-arguments with-generics @type
                     &fmt "\n\t" Fmt:write &fmt $name ~ ByteSlice:unpack Fmt:write
                     &fmt ": " Fmt:write
                     &fmt $ctx.type-lookup &type TypeLookup:pretty
@@ -407,7 +412,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
         case P:Word.Ref -> {
             ~ @token
             make Local {
-                "synth:ref" make ByteSlice make LocalName.Synthetic @name
+                $token "synth:ref" make ByteSlice make SyntheticName make LocalName.Synthetic @name
                 make Maybe<Type>.None @parameter
             } $ctx.arena flip $ctx.env flip Env:insert @local-id
             $ctx.arena 2 Array:new-with-capacity<Word> @words
@@ -489,25 +494,35 @@ fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveErro
     $call match {
         case P:Call.Local -> {
             @word
-            $ctx.type-resolver $ctx.arena &word.generic-arguments TypeResolver:resolve-types match {
-                case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
-                case Success -> {}
+            &word.generic-arguments match {
+                case None -> { make Maybe<Array<Type>>.None }
+                case Some -> {
+                    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-types match {
+                        case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
+                        case Success -> {}
+                    } make Maybe<Array<Type>>.Some
+                }
             } @generic-arguments
             $ctx.signatures &word.name Token-lexeme Map:get-bs-index<_> match {
-                case Some -> {
-                    $word.name flip
-                    $ctx.module-id flip make FunctionHandle
-                    $generic-arguments make Call make Maybe<Call>.Some
-                }
+                case Some -> { $ctx.module-id flip make FunctionHandle }
                 case None -> {
                     $ctx.imports &word.name find-function-in-imports match {
-                        case None -> { make Maybe<Call>.None }
-                        case Some -> {
-                            $word.name flip $generic-arguments make Call make Maybe<Call>.Some
-                        }
+                        case None -> { make Maybe<Call>.None make Result<Maybe<Call>, ResolveError>.Success break }
+                        case Some -> {}
+                    }
+                }
+            } @function-handle
+            &ctx.signatures.values $function-handle.index Array:get<_> @signature
+            &generic-arguments match {
+                case None -> {}
+                case Some -> {
+                    @generic-arguments
+                    $signature.generic-parameters.len $generic-arguments.len /= if {
+                        $ctx &word.name "wrong number of generic arguments provided" abort<Maybe<Call>> break
                     }
                 }
             }
+            $word.name $function-handle $generic-arguments make Call make Maybe<Call>.Some
         }
         case P:Call.Foreign -> {
             @word
@@ -515,9 +530,14 @@ fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveErro
                 case None -> { $ctx &word.module "module not found" abort<Maybe<Call>> break }
                 case Some -> {}
             } @imports
-            $ctx.type-resolver $ctx.arena &word.generic-arguments TypeResolver:resolve-types match {
-                case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
-                case Success -> {}
+            &word.generic-arguments match {
+                case None -> { make Maybe<Array<Type>>.None }
+                case Some -> {
+                    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-types match {
+                        case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
+                        case Success -> {}
+                    } make Maybe<Array<Type>>.Some
+                }
             } @generic-arguments
             0 @i
             loop {

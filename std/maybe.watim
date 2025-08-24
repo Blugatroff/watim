@@ -14,6 +14,13 @@ fn ref<T>(self: .Maybe<T>) -> Maybe<.T> {
     }
 }
 
+fn deref<T>(self: Maybe<.T>) -> Maybe<T> {
+    $self match {
+        case None -> { make Maybe<T>.None }
+        case Some -> { ~ make Maybe<T>.Some }
+    }
+}
+
 fn or-default<T>(o: Maybe<T>, default: T) -> T {
     $o match {
         case Some -> {}

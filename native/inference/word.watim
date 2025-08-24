@@ -1,0 +1,111 @@
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/array.watim" as Array (Array)
+import "../../std/util.watim" as Util (i32-format)
+
+import "../lexer.watim" as Lexer (Token, Token-format)
+import "../resolving/type.watim" as Type (Type, CustomTypeHandle, CustomTypeHandle-format)
+import "../resolving/words.watim" as Resolved (VarId, VarId-format)
+
+struct Add {
+    token: Token
+    type: Type
+}
+fn Add-format(fmt: .Formatter, self: .Add) {
+    $fmt "(Add " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type Type:format
+    $fmt ")" Fmt:write
+}
+
+variant Intrinsic {
+    case Add -> Add
+}
+fn Intrinsic-format(fmt: .Formatter, self: .Intrinsic) {
+    $fmt $self match {
+        case Add -> { Add-format }
+    }
+}
+
+struct MakeStruct {
+    token: Token
+    struc: CustomTypeHandle
+    type: Type
+}
+fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
+    $fmt "(MakeStruct\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "struc=" Fmt:write
+    $fmt &self.struc CustomTypeHandle-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type Type:format
+    $fmt ")" Fmt:write
+    $fmt Fmt:dedent
+}
+
+struct FieldAccess {
+    name: Token
+    source-type: Type
+    target-type: Type
+    field-index: i32
+}
+fn FieldAccess-format(fmt: .Formatter, self: .FieldAccess) {
+    $fmt "(FieldAccess " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.source-type Type:format
+    $fmt " " Fmt:write
+    $fmt &self.target-type Type:format
+    $fmt " " Fmt:write
+    $fmt $self.field-index i32-format
+    $fmt ")" Fmt:write
+}
+
+struct GetLocal {
+    name: Token
+    var: VarId
+    var-type: Type
+    fields: Array<FieldAccess>
+    result-type: Type
+}
+fn GetLocal-format(fmt: .Formatter, self: .GetLocal) {
+    $fmt "(GetLocal " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var VarId-format
+    $fmt " " Fmt:write
+    $fmt &self.var-type Type:format
+    $fmt " " Fmt:write
+    $fmt &self.result-type Type:format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format-multi-line<FieldAccess>
+    $fmt ")" Fmt:write
+}
+
+variant Word {
+    case GetLocal -> GetLocal
+    case Number -> Token
+    case Intrinsic -> Intrinsic
+    case MakeStruct -> MakeStruct
+    case InitLocal -> Resolved:InitLocal
+}
+
+fn Word-format(fmt: .Formatter, self: .Word) {
+    $fmt $self match {
+        case GetLocal -> { GetLocal-format }
+        case Number -> { $fmt "(Number " Fmt:write Token-format $fmt ")" Fmt:write }
+        case Intrinsic -> { Intrinsic-format }
+        case MakeStruct -> { MakeStruct-format }
+        case InitLocal -> { Resolved:InitLocal-format }
+    }
+}
+fn Words-format(fmt: .Formatter, self: .Array<Word>) {
+    $fmt \Word-format $self Array:format-multi-line<Word>
+}

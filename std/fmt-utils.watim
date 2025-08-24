@@ -83,6 +83,11 @@ fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
 
 fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
     $fmt "\"" Fmt:write
+    $fmt $self ByteSlice-format-no-quotes
+    $fmt "\"" Fmt:write
+}
+
+fn ByteSlice-format-no-quotes(fmt: .Formatter, self: .ByteSlice) {
     0 @escaped-char
     0 @i
     loop {
@@ -90,6 +95,5 @@ fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
         $fmt &escaped-char !.i8 $self.ptr $i + ~ &escaped-char !.i8 Core:escape Fmt:write
         $i 1 + #i
     }
-    $fmt "\"" Fmt:write
 }
 

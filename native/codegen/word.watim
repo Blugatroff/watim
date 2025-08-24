@@ -314,10 +314,10 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx.fmt " i32.add " Fmt:write
             block {
                 $type-size 4 le if {
-                    $ctx.fmt "i32.load " Fmt:write
+                    $ctx.fmt "i32.load " Fmt:write break
                 }
                 $type-size 8 le if {
-                    $ctx.fmt "i64.load " Fmt:write
+                    $ctx.fmt "i64.load " Fmt:write break
                 }
             }
             $ctx.fmt ";; make " Fmt:write
