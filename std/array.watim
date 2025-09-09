@@ -163,7 +163,7 @@ fn eq<T>(compare: (.T, .T -> bool), a: .Array<T>, b: .Array<T>) -> bool {
         0 @i
         loop {
             $i $a.len = if { 1 1 = break }
-            $a $i get<T> $b $i get<T> $compare -> not if {
+            $a $i get<T> $b $i get<T> $compare (.T, .T -> bool) not if {
                 0 1 = break
             }
             $i 1 + #i
@@ -210,13 +210,13 @@ fn format<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .
     0 @i
     loop {
         $i $self.len = if { break }
-        $formatter $self $i get<T> $format-element ->
+        $formatter $self $i get<T> $format-element (.Formatter, .T ->)
         $i 1 + #i
         $i $self.len /= if { $formatter ", " FMT:write }
     }
     $formatter "]" FMT:write
 }
-fn format-multi-line<T>(formatter: .Formatter, format-element: (.FMT:Formatter, .T ->), self: .Array<T>) { block {
+fn format-multi-line<T>(formatter: .Formatter, format-element: (.Formatter, .T ->), self: .Array<T>) { block {
     $self.len 0 = if {
         $formatter "[]" FMT:write
         break
@@ -227,7 +227,7 @@ fn format-multi-line<T>(formatter: .Formatter, format-element: (.FMT:Formatter, 
     loop {
         $i $self.len = if { break }
         $formatter FMT:write-indent
-        $formatter $self $i get<T> $format-element ->
+        $formatter $self $i get<T> $format-element (.Formatter, .T ->)
         $i 1 + #i
         $i $self.len /= if {
             $formatter ",\n" FMT:write
@@ -242,7 +242,7 @@ fn print<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>) -> i32 { 
     0 @i
     loop {
         $i $self.len = if { 0 break }
-        $fd $self $i get<T> $print-element -> #code
+        $fd $self $i get<T> $print-element (i32, .T -> i32) #code
         $code 0 /= if { $code break }
         $i 1 + #i
         $i $self.len /= if {
@@ -262,7 +262,7 @@ fn print-multi-line<T>(fd: i32, print-element: (i32, .T -> i32), self: .Array<T>
             $fd "\n" IO:write-all break
         }
         $fd "\n\t" IO:write-all CORE:dup<i32> 0 /= if { break } drop
-        $fd $self $i get<T> $print-element -> #code
+        $fd $self $i get<T> $print-element (i32, .T -> i32) #code
         $code 0 /= if { $code break }
         $i 1 + #i
         $i $self.len /= if {
@@ -276,7 +276,7 @@ fn contains<T>(self: .Array<T>, compare: (.T, .T -> bool), value: .T) -> bool {
     0 @i
     loop {
         $i $self.len = if { 0 1 = break }
-        $self $i get<T> $value $compare -> if {
+        $self $i get<T> $value $compare (.T, .T -> bool) if {
             1 1 = break
         }
         $i 1 + #i
@@ -286,7 +286,7 @@ fn any<T>(self: .Array<T>, pred: (.T -> bool)) -> bool {
     0 @i
     loop {
         $i $self.len = if { 0 1 = break }
-        $self $i get<T> $pred -> if {
+        $self $i get<T> $pred (.T -> bool) if {
             1 1 = break
         }
         $i 1 + #i
@@ -296,7 +296,7 @@ fn find<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> i32, bool 
     0 @i
     loop {
         $i $self.len = if { 0 0 1 = break }
-        $self $i get<T> $value $compare -> if {
+        $self $i get<T> $value $compare (.T, A -> bool) if {
             $i 1 1 = break
         }
         $i 1 + #i
@@ -309,11 +309,11 @@ fn find-ref<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> .T, bo
         drop 0 !.T 0 1 =
     }
 }
-fn findMap<T, O>(self: .Array<T>, pred: (.T -> Maybe<O>)) -> Maybe<O> {
+fn find-map<T, O>(self: .Array<T>, pred: (.T -> Maybe<O>)) -> Maybe<O> {
     0 @i
     loop {
         $i $self.len = if { make Maybe<O>.None break }
-        $self $i get<T> $pred -> match {
+        $self $i get<T> $pred (.T -> Maybe<O>) match {
             case None -> {}
             case Some -> { make Maybe<O>.Some break }
         }
@@ -346,12 +346,19 @@ fn reverse<T>(self: .Array<T>) { block {
         $i 1 + #i
     }
 } }
-fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> Maybe<[T, i32]> {
+struct ValueAtIndex<T> {
+    value: T
+    index: i32
+}
+fn ValueAtIndex-unpack<T>(self: ValueAtIndex<T>) -> T, i32 {
+    $self.value $self.index
+}
+fn find-remove<T, A>(self: .Array<T>, compare: (.T, A -> bool), value: A) -> Maybe<ValueAtIndex<T>> {
     $self $compare $value find<T, A> if {
         @i
-        $self $i remove<T> $i [,2] make Maybe<[T, i32]>.Some
+        $self $i remove<T> $i make ValueAtIndex<T> make Maybe<ValueAtIndex<T>>.Some
     } else {
-        drop make Maybe<[T, i32]>.None
+        drop make Maybe<ValueAtIndex<T>>.None
     }
 }
 fn join-with(arena: .A:Arena, self: .Array<ByteSlice>, del-ptr: .i8, del-len: i32) -> Array<i8> {
@@ -372,7 +379,7 @@ fn map<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> O)) -> Array<O> {
     0 @i
     loop {
         $i $self.len = if { break }
-        &new $self $i get<T> $f -> push-assert-no-alloc<O>
+        &new $self $i get<T> $f (.T -> O) push-assert-no-alloc<O>
         $i 1 + #i
     }
     $new
@@ -396,7 +403,7 @@ fn map-maybe<T, O>(arena: .A:Arena, self: .Array<T>, f: (.T -> Maybe<O>)) -> Arr
     loop {
         $i $self.len = if { $new break }
         $self $i get<T> @v
-        $v $f -> match {
+        $v $f (.T -> Maybe<O>) match {
             case None -> {}
             case Some -> { @v $arena &new $v push<O> }
         }
@@ -409,6 +416,21 @@ fn repeat-element<T>(arena: .A:Arena, n: i32, v: T) -> Array<T> {
         $arr.len $n = if { $arr break }
         &arr $v push-assert-no-alloc<T>
     }
+}
+fn max-by<T>(selector: (.T -> i32), self: .Array<T>) -> i32, .T {
+    $self 0 get<_> $selector (.T -> i32) @max
+    $self 0 get<_> @max-elem
+    1 loop {
+        @i $self.len $i = if { break }
+        $self $i get<T> @elem
+        $elem $selector (.T -> i32) @v
+        $v $max gt if {
+            $v #max
+            $elem #max-elem
+        }
+        $i 1 +
+    }
+    $max $max-elem
 }
 fn to-slice(self: .Array<i8>) -> ByteSlice {
     $self unpack<_> make ByteSlice

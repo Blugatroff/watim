@@ -132,3 +132,7 @@ fn clear(ptr: .i8, len: i32) {
     $ptr 0 !i8 $len mem-fill
 }
 
+struct Unit {}
+fn useless(a: Unit) {}
+fn unit() -> Unit { make Unit }
+

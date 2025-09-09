@@ -34,7 +34,7 @@ struct Buffer {
     parent: .Formatter
 }
 fn flush(self: .Buffer) {
-    $self.parent.user-data $self.ptr $self.len $self.parent.write ->
+    $self.parent.user-data $self.ptr $self.len $self.parent.write (i32, .i8, i32 ->)
     0 #self.len
 }
 fn write-buffered(user-data: i32, ptr: .i8, len: i32) {
@@ -43,7 +43,7 @@ fn write-buffered(user-data: i32, ptr: .i8, len: i32) {
         $buffer flush
     }
     $len $buffer.cap gt if {
-        $buffer.parent.user-data $ptr $len $buffer.parent.write ->
+        $buffer.parent.user-data $ptr $len $buffer.parent.write (i32, .i8, i32 ->)
     }
     $ptr $buffer.ptr $buffer.len + $len Core:copy-bytes
     $buffer.len $len + #buffer.len
@@ -78,11 +78,16 @@ fn stdout() -> Formatter {
 
 fn print-it<T>(fd: i32, fmt: (.Formatter, .T ->), item: .T) {
     $fd to-fd @formatter
-    &formatter $item $fmt ->
+    &formatter $item $fmt (.Formatter, .T ->)
 }
 
 fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
     $fmt "\"" Fmt:write
+    $fmt $self ByteSlice-format-no-quotes
+    $fmt "\"" Fmt:write
+}
+
+fn ByteSlice-format-no-quotes(fmt: .Formatter, self: .ByteSlice) {
     0 @escaped-char
     0 @i
     loop {
@@ -90,6 +95,5 @@ fn ByteSlice-format(fmt: .Formatter, self: .ByteSlice) {
         $fmt &escaped-char !.i8 $self.ptr $i + ~ &escaped-char !.i8 Core:escape Fmt:write
         $i 1 + #i
     }
-    $fmt "\"" Fmt:write
 }
 

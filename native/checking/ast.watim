@@ -11,7 +11,7 @@ import "../resolving/words.watim" as Resolved (
     LocalId, GlobalId, GlobalId-format, ScopeId, ScopeId-format,
     LocalId-format, FunctionHandle, FunctionHandle-format,
     VarId, VarId-format, StringWord, StringWord-format,
-    Call, Call-format, FunRef, FunRef-format)
+)
 import "../resolving/top-items.watim" as Resolved (
     Global, Global-format,
     TypeDefinition, TypeDefinition-format,
@@ -27,7 +27,7 @@ import "../resolving/type.watim" as Type (
 struct Local {
     name: LocalName
     type: Type
-    reffed: bool
+    // reffed: bool
     is-parameter: bool
 }
 fn Local-format(fmt: .Formatter, self: .Local) {
@@ -35,8 +35,8 @@ fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt &self.name LocalName-format
     $fmt " " Fmt:write
     $fmt &self.type Type:format
-    $fmt " " Fmt:write
-    $fmt $self.reffed bool-format
+    // $fmt " " Fmt:write
+    // $fmt $self.reffed bool-format
     $fmt " " Fmt:write
     $fmt $self.is-parameter bool-format
     $fmt ")" Fmt:write
@@ -247,15 +247,12 @@ fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
 
 struct FieldInit {
     name: Token
-    struc: CustomTypeHandle
     type: Type
     field-index: i32
 }
 fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
     $fmt "(FieldInit " Fmt:write
     $fmt &self.name Token-format
-    $fmt " " Fmt:write
-    $fmt &self.struc CustomTypeHandle-format
     $fmt " " Fmt:write
     $fmt &self.type Type:format
     $fmt " " Fmt:write
@@ -555,6 +552,30 @@ fn UnpackTuple-format(fmt: .Formatter, self: .UnpackTuple) {
     $fmt ")" Fmt:write
 }
 
+struct Call {
+    name: Token
+    function: FunctionHandle
+    generic-arguments: Array<Type>
+}
+fn Call-format(fmt: .Formatter, self: .Call) {
+    $fmt "(Call " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.function FunctionHandle-format
+    $fmt " " Fmt:write
+    $fmt &self.generic-arguments Types-format
+    $fmt ")" Fmt:write
+}
+
+struct FunRef {
+    call: Call
+}
+fn FunRef-format(fmt: .Formatter, self: .FunRef) {
+    $fmt "(FunRef " Fmt:write
+    $fmt &self.call Call-format
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Number -> Token
     case GetLocal -> GetLocal
@@ -671,9 +692,9 @@ fn Function-format(fmt: .Formatter, self: .Function) {
 
 struct Module {
     imports: Map<ByteSlice, Array<Import>>
-    type-definitions: Map<ByteSlice, TypeDefinition>
-    globals: Map<ByteSlice, Global>
-    functions: Map<ByteSlice, FunctionOrExtern>
+    type-definitions: Array<TypeDefinition>
+    globals: Array<Global>
+    functions: Array<FunctionOrExtern>
     static-data: ByteSlice
 }
 fn format-import-array(fmt: .Formatter, self: .Array<Import>) {
@@ -688,15 +709,15 @@ fn Module-format(fmt: .Formatter, self: .Module) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "type-definitions=" Fmt:write
-    $fmt \ByteSlice-format \TypeDefinition-format &self.type-definitions Map:format-multi-line<ByteSlice, TypeDefinition>
+    $fmt \TypeDefinition-format &self.type-definitions Array:format-multi-line<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "globals=" Fmt:write
-    $fmt \ByteSlice-format \Global-format &self.globals Map:format-multi-line<ByteSlice, Global>
+    $fmt \Global-format &self.globals Array:format-multi-line<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "functions=" Fmt:write
-    $fmt \ByteSlice-format \FunctionOrExtern-format &self.functions Map:format-multi-line<ByteSlice, FunctionOrExtern>
+    $fmt \FunctionOrExtern-format &self.functions Array:format-multi-line<_>
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }

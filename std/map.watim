@@ -1,7 +1,7 @@
 import "./maybe.watim" as Maybe (Maybe(Some, None))
 import "./io.watim" as IO
 import "./byte-slice.watim" as ByteSlice (ByteSlice)
-import "./array.watim" as Array (Array)
+import "./array.watim" as Array (Array, ValueAtIndex)
 import "./arena.watim" as Arena (Arena)
 import "./fmt.watim" as Fmt (Formatter)
 
@@ -41,7 +41,7 @@ fn insert<K, V>(arena: .Arena, self: .Map<K, V>, key: K, value: V) -> Maybe<V> {
             make Maybe<V>.None
             break
         }
-        $self $i get-key<K, V> &key $self.compare -> if {
+        $self $i get-key<K, V> &key $self.compare (.K, .K -> bool) if {
             &self.values $i $value Array:set<V>
             make Maybe<V>.Some
             break
@@ -58,7 +58,7 @@ fn insert-assert-no-alloc<K, V>(self: .Map<K, V>, key: K, value: V) -> Maybe<V> 
             make Maybe<V>.None
             break
         }
-        $self $i get-key<K, V> &key $self.compare -> if {
+        $self $i get-key<K, V> &key $self.compare (.K, .K -> bool) if {
             &self.values $i $value Array:set<V>
             make Maybe<V>.Some
             break
@@ -86,10 +86,19 @@ fn get-index<K, V>(self: .Map<K, V>, key: .K) -> Maybe<i32> {
     0 @i
     loop {
         $i $self size<K, V> = if { make Maybe<i32>.None break }
-        $self $i get-key<K, V> $key $self.compare -> if {
+        $self $i get-key<K, V> $key $self.compare (.K, .K -> bool) if {
             $i make Maybe<i32>.Some break
         }
         $i 1 + #i
+    }
+}
+fn get-or-insert-default<K, V>(arena: .Arena, self: .Map<K, V>, default: V, key: K) -> .V {
+    $self &key get<K, V> match {
+        case None -> {
+            $arena $self $key $default insert<K, V> drop
+            $self &key get<K, V> Maybe:assert-some<_>
+        }
+        case Some -> {}
     }
 }
 fn size<K, V>(self: .Map<K, V>) -> i32 {
@@ -112,9 +121,9 @@ fn format-multi-line<K, V>(fmt: .Formatter, format-key: (.Formatter, .K ->), for
     loop {
         $i $self.keys.len = if { break }
         $fmt Fmt:write-indent
-        $fmt &self.keys $i Array:get<K> $format-key ->
+        $fmt &self.keys $i Array:get<K> $format-key (.Formatter, .K ->)
         $fmt "=" Fmt:write
-        $fmt &self.values $i Array:get<V> $format-value ->
+        $fmt &self.values $i Array:get<V> $format-value (.Formatter, .V ->)
         $i 1 + #i
         $i $self.keys.len /= if {
             $fmt ",\n" Fmt:write
@@ -136,14 +145,14 @@ fn get-bs-index<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Mayb
     $key-ptr $key-len make ByteSlice @key
     $self &key get-index<ByteSlice, V>
 }
-fn get-bs-with-index<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Maybe<[.V, i32]> {
+fn get-bs-with-index<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Maybe<ValueAtIndex<.V>> {
     $key-ptr $key-len make ByteSlice @key
     $self &key get-index<ByteSlice, V> match {
-        case None -> { make Maybe<[.V, i32]>.None }
+        case None -> { make Maybe<ValueAtIndex<.V>>.None }
         case Some -> {
             @index
             &self.values $index Array:get<V> $index
-            [,2] make Maybe<[.V, i32]>.Some
+            make ValueAtIndex<.V> make Maybe<ValueAtIndex<.V>>.Some
         }
     }
 }
