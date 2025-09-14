@@ -67,7 +67,7 @@ fn Import-format(fmt: .Formatter, self: .Import) {
 struct ForeignCustomType {
     module: Token
     name: Token
-    generic-arguments: Array<Type>
+    generic-arguments: Maybe<Array<Type>>
 }
 fn ForeignCustomType-format(fmt: .Formatter, self: .ForeignCustomType) {
     $fmt "(ForeignCustomType " Fmt:write
@@ -75,19 +75,19 @@ fn ForeignCustomType-format(fmt: .Formatter, self: .ForeignCustomType) {
     $fmt " " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt \Type-format &self.generic-arguments Array:format<Type>
+    $fmt \Types-format &self.generic-arguments Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
 struct LocalCustomType {
     name: Token
-    generic-arguments: Array<Type>
+    generic-arguments: Maybe<Array<Type>>
 }
 fn LocalCustomType-format(fmt: .Formatter, self: .LocalCustomType) {
     $fmt "(LocalCustomType " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt \Type-format &self.generic-arguments Array:format<Type>
+    $fmt \Types-format &self.generic-arguments Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
@@ -99,6 +99,12 @@ fn CustomType-format(fmt: .Formatter, self: .CustomType) {
     $fmt $self match {
         case Local -> { LocalCustomType-format }
         case Foreign -> { ForeignCustomType-format }
+    }
+}
+fn CustomType-name(self: .CustomType) -> .Token {
+    $self match {
+        case Local -> { .name }
+        case Foreign -> { .name }
     }
 }
 
@@ -176,6 +182,23 @@ fn Type-format(fmt: .Formatter, self: .Type) { block {
     } @len @ptr
     $fmt $ptr $len Fmt:write
 } }
+fn Types-format(fmt: .Formatter, self: .Array<Type>) {
+    $fmt \Type-format $self Array:format-multi-line<_>
+}
+fn Type-token(self: .Type) -> .Token {
+    $self match {
+        case Bool -> {}
+        case I8 -> {}
+        case I32 -> {}
+        case I64 -> {}
+        case Ptr -> { .type ~ Type-token }
+        case Custom -> { CustomType-name }
+        case Fun -> { .token }
+        case Tuple -> { .token }
+        case Generic -> { .name }
+        case Hole -> {}
+    }
+}
 
 struct NamedType {
     name: Token
@@ -191,20 +214,20 @@ fn NamedType-format(fmt: .Formatter, self: .NamedType) {
 
 struct LocalCall {
     name: Token
-    generic-arguments: Array<Type>
+    generic-arguments: Maybe<Array<Type>>
 }
 fn LocalCall-format(fmt: .Formatter, self: .LocalCall) {
     $fmt "(LocalCall " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt \Type-format &self.generic-arguments Array:format-multi-line<Type>
+    $fmt \Types-format &self.generic-arguments Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
 struct ForeignCall {
     module: Token
     name: Token
-    generic-arguments: Array<Type>
+    generic-arguments: Maybe<Array<Type>>
 }
 fn ForeignCall-format(fmt: .Formatter, self: .ForeignCall) {
     $fmt "(ForeignCall " Fmt:write
@@ -212,7 +235,7 @@ fn ForeignCall-format(fmt: .Formatter, self: .ForeignCall) {
     $fmt " " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt \Type-format &self.generic-arguments Array:format-multi-line<Type>
+    $fmt \Types-format &self.generic-arguments Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
@@ -356,11 +379,14 @@ fn Cast-format(fmt: .Formatter, self: .Cast) {
 
 struct MakeStruct {
     token: Token
+    name: Token
     type: CustomType
 }
 fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
     $fmt "(MakeStruct " Fmt:write
     $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.type CustomType-format
     $fmt ")" Fmt:write
@@ -368,12 +394,15 @@ fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
 
 struct MakeStructNamed {
     token: Token
+    name: Token
     type: CustomType
     body: Words
 }
 fn MakeStructNamed-format(fmt: .Formatter, self: .MakeStructNamed) {
     $fmt "(MakeStructNamed " Fmt:write
     $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.name Token-format
     $fmt " " Fmt:write
     $fmt &self.type CustomType-format
     $fmt " " Fmt:write
@@ -534,6 +563,21 @@ fn StackAnnotation-format(fmt: .Formatter, self: .StackAnnotation) {
     $fmt ")" Fmt:write
 }
 
+struct IndirectCall {
+    token: Token
+    parameters: Array<Type>
+    returns: Array<Type>
+}
+fn IndirectCall-format(fmt: .Formatter, self: .IndirectCall) {
+    $fmt "(IndirectCall " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.parameters Array:format<Type>
+    $fmt " " Fmt:write
+    $fmt \Type-format &self.returns Array:format<Type>
+    $fmt ")" Fmt:write
+}
+
 variant Word {
     case Call -> Call
     case String -> StringWord
@@ -556,7 +600,7 @@ variant Word {
     case Match -> Match
     case GetField -> GetField
     case Sizeof -> Sizeof
-    case IndirectCall -> Token
+    case IndirectCall -> IndirectCall
     case Store -> Store
     case MakeTuple -> MakeTuple
     case UnpackTuple -> Token
@@ -586,7 +630,7 @@ fn Word-format(fmt: .Formatter, self: .Word) { block {
         case GetField -> { $fmt flip GetField-format break }
         case Sizeof -> { $fmt flip Sizeof-format break }
         case Store -> { $fmt flip Store-format break }
-        case IndirectCall -> { "IndirectCall" }
+        case IndirectCall -> { $fmt flip IndirectCall-format break }
         case MakeTuple -> { $fmt flip MakeTuple-format break }
         case UnpackTuple -> { "UnpackTuple" }
         case StackAnnotation -> { $fmt flip StackAnnotation-format break }
@@ -877,6 +921,9 @@ fn parse(arena: .Arena, tokens: Array<Token>) -> Result<Module, ParseError> {
             case TopItem.Struct   -> { $arena flip &module.type-definitions flip make TypeDefinition.Struct     Array:push<_> }
             case TopItem.Variant  -> { $arena flip &module.type-definitions flip make TypeDefinition.Variant    Array:push<_> }
             case TopItem.Global   -> { $arena flip &module.globals          flip                                Array:push<_> }
+            case _ -> {
+                drop
+            }
         }
     }
 }
@@ -943,7 +990,7 @@ fn top-item(parser: .Parser, token: .Token) -> Result<TopItem, ParseError> { blo
             }
             Array:new<ImportItem> @items
             $parser advance drop // drop the `(`
-            loop {
+            loop (-> Result<Array<ImportItem>, ParseError>) {
                 $parser advance match {
                     case None -> { $parser "expected `)` or an identifier" abort<Array<ImportItem>> break }
                     case Some -> {}
@@ -1332,16 +1379,28 @@ fn word(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
         case TOKEN_MATCH -> { $parser $token matsh break }
         case TOKEN_DOT -> { $parser $token get-field break }
         case TOKEN_SIZEOF -> { $parser $token sizof break }
-        case TOKEN_ARROW -> { $token ~ make Word.IndirectCall }
+        case TOKEN_ARROW -> { $token ~ Array:new<Type> Array:new<Type> make IndirectCall make Word.IndirectCall }
         case TOKEN_DOUBLE_ARROW -> { $parser $token stor break }
         case TOKEN_LEFT_BRACKET -> { $parser $token tuple break }
         case TOKEN_COLON -> { $parser $token stack-annotation break }
+        case TOKEN_LEFT_PAREN -> { $parser $token indirect-call break }
         case _ -> {
             drop
             $parser "expected a word" abort<Word> break
         }
     } make Result<Word, ParseError>.Success
 } }
+
+fn indirect-call(parser: .Parser, token: .Token) -> Result<Word, ParseError> {
+    $parser $token fun-type match {
+        case Success -> {
+            @type
+            $type.token $type.parameters $type.returns make IndirectCall make Word.IndirectCall
+            make Result<Word, ParseError>.Success
+        }
+        case Error -> { make Result<Word, ParseError>.Error }
+    }
+}
 
 fn string(parser: .Parser, token: .Token) -> Result<Word, ParseError> {
     $token ~
@@ -1548,9 +1607,12 @@ fn mayk(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block (-> 
                 $parser "can only `make` struct types" abort<Word> break
             }
         } }
-    }
+    } @type
     $parser peek match {
-        case None -> { make MakeStruct make Word.MakeStruct make Result<Word, ParseError>.Success break }
+        case None -> {
+            &type CustomType-name ~ $type make MakeStruct make Word.MakeStruct
+            make Result<Word, ParseError>.Success break
+        }
         case Some -> {}
     } Token-ty match {
         case TOKEN_DOT -> {
@@ -1561,12 +1623,16 @@ fn mayk(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block (-> 
             $parser $brace words match {
                 case Error -> { make Result<Word, ParseError>.Error break }
                 case Success -> {
-                    make MakeStructNamed make Word.MakeStructNamed make Result<Word, ParseError>.Success break
+                    &type CustomType-name ~ flip $type flip make MakeStructNamed make Word.MakeStructNamed make Result<Word, ParseError>.Success break
                 }
             }
         }
-        case _ -> { drop make MakeStruct make Word.MakeStruct make Result<Word, ParseError>.Success break }
+        case _ -> {
+            drop
+            &type CustomType-name ~ $type make MakeStruct make Word.MakeStruct
+            make Result<Word, ParseError>.Success break }
     }
+    $type
     $parser make TokenTy.TOKEN_IDENT expect-token match {
         case Error -> { make Result<Word, ParseError>.Error break }
         case Success -> {}
@@ -1787,7 +1853,7 @@ fn fun-ref(parser: .Parser, token: .Token) -> Result<Word, ParseError> { block {
 
 fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
     $parser peek-immediate match {
-        case None -> { $token ~ Array:new<Type> make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
+        case None -> { $token ~ make Maybe<Array<Type>>.None make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
         case Some -> {}
     } @colon
     $colon Token-ty match {
@@ -1797,11 +1863,11 @@ fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
             $parser generic-arguments match {
                 case Error -> { make Result<Call, ParseError>.Error break }
                 case Success -> {
-                    $token ~ flip make LocalCall make Call.Local make Result<Call, ParseError>.Success break
+                    $token ~ flip make Maybe<Array<Type>>.Some make LocalCall make Call.Local make Result<Call, ParseError>.Success break
                 }
             }
         }
-        case _ -> { drop $token ~ Array:new<Type> make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
+        case _ -> { drop $token ~ make Maybe<Array<Type>>.None make LocalCall make Call.Local make Result<Call, ParseError>.Success break }
     }
     $parser advance match {
         case Some -> {}
@@ -1812,7 +1878,7 @@ fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
         case _ -> { drop $parser "expected an identifier" abort<Call> break }
     }
     $parser peek match {
-        case None -> { Array:new<Type> }
+        case None -> { make Maybe<Array<Type>>.None }
         case Some -> {
             Token-ty match {
                 case TOKEN_LEFT_TRIANGLE -> {
@@ -1820,9 +1886,9 @@ fn call(parser: .Parser, token: .Token) -> Result<Call, ParseError> { block {
                     $parser generic-arguments match {
                         case Error -> { make Result<Call, ParseError>.Error break }
                         case Success -> {}
-                    }
+                    } make Maybe<Array<Type>>.Some
                 }
-                case _ -> { drop Array:new<Type> }
+                case _ -> { drop make Maybe<Array<Type>>.None }
             }
         }
     } @generic-arguments
@@ -1858,21 +1924,21 @@ fn generic-arguments(parser: .Parser) -> Result<Array<Type>, ParseError> {
     }
 }
 
-fn optional-generic-arguments(parser: .Parser) -> Result<Array<Type>, ParseError> { block {
+fn optional-generic-arguments(parser: .Parser) -> Result<Maybe<Array<Type>>, ParseError> { block {
     $parser peek match {
-        case None -> { Array:new<Type> }
+        case None -> { make Maybe<Array<Type>>.None }
         case Some -> { Token-ty match {
             case TOKEN_LEFT_TRIANGLE -> {
                 $parser advance assert-some<.Token> drop
                 $parser generic-arguments match {
-                    case Error -> { make Result<Array<Type>, ParseError>.Error break }
+                    case Error -> { make Result<Maybe<Array<Type>>, ParseError>.Error break }
                     case Success -> {}
-                }
+                } make Maybe<Array<Type>>.Some
             }
-            case _ -> { drop Array:new<Type> }
+            case _ -> { drop make Maybe<Array<Type>>.None }
         } }
     }
-    make Result<Array<Type>, ParseError>.Success
+    make Result<Maybe<Array<Type>>, ParseError>.Success
 } }
 
 fn fields(parser: .Parser) -> Result<Array<Token>, ParseError> {
@@ -2147,7 +2213,7 @@ fn signature(parser: .Parser, token: .Token) -> Result<Signature, ParseError> { 
 fn custom-type(parser: .Parser, token: .Token) -> Result<Type, ParseError> {
     block (-> Result<Type, ParseError>) {
         $parser peek match {
-            case None -> { $token ~ Array:new<Type> make LocalCustomType make CustomType.Local make Type.Custom }
+            case None -> { $token ~ make Maybe<Array<Type>>.None make LocalCustomType make CustomType.Local make Type.Custom }
             case Some -> {
                 Token-ty match {
                     case TOKEN_COLON -> {

@@ -2,7 +2,7 @@ import "../../std/core.watim" as Core
 import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../../std/maybe.watim" as Maybe (Maybe(Some, None))
 import "../../std/map.watim" as Map (Map)
-import "../../std/array.watim" as Array (Array)
+import "../../std/array.watim" as Array (Array, ValueAtIndex-unpack)
 import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/fmt-utils.watim" as Fmt (ByteSlice-format)
 import "../../std/io.watim" as IO
@@ -60,7 +60,7 @@ fn lookup(self: .Module, name: .Token) -> Maybe<TopItemHandle> { block {
     }
     &self.globals $name Token-lexeme Map:get-bs-with-index<Global> match {
         case Some -> {
-            [,] @index @globl
+            ValueAtIndex-unpack<.Global> @index @globl
             $globl.name $self.id $index make GlobalId
             make TopItemHandle.Global make Maybe<TopItemHandle>.Some break
         }

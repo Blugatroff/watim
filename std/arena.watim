@@ -47,14 +47,14 @@ fn free-page(page: .Page) { block {
 } }
 fn visit-page-mem(page: .Page, f: (.i8, i32 ->)) { block {
     $page.type SINGLE_PAGE = if {
-        $page sizeof(Page) + !.i8 PA:page-size sizeof(Page) - $f ->
+        $page sizeof(Page) + !.i8 PA:page-size sizeof(Page) - $f (_, _ ->)
         break
     }
     $page.type MULTIPLE_PAGE = if {
         $page.num-pages @n
         loop {
             $n 0 = if { break }
-            $page $n PA:page-size * + sizeof(Page) + !.i8 PA:page-size sizeof(Page) - $f ->
+            $page $n PA:page-size * + sizeof(Page) + !.i8 PA:page-size sizeof(Page) - $f (.i8, i32 ->)
             $n 1 - #n
         }
     }
@@ -85,7 +85,7 @@ fn new(name-ptr: .i8, name-len: i32) -> Arena {
         $name-len @name-len
         0 @size
     } @self
-    $ON_NEW 0 !(.Arena ->) /= if { &self $ON_NEW -> }
+    $ON_NEW 0 !(.Arena ->) /= if { &self $ON_NEW (.Arena ->) }
     $self
 }
 fn clear(self: .Arena) {
@@ -98,7 +98,7 @@ fn clear(self: .Arena) {
     0 !.Page #self.used-pages
     $self.size @bytes-cleared
     0 #self.size
-    $ON_CLEAR 0 !(.Arena, i32 ->) /= if { $self $bytes-cleared $ON_CLEAR -> }
+    $ON_CLEAR 0 !(.Arena, i32 ->) /= if { $self $bytes-cleared $ON_CLEAR (.Arena, i32 ->) }
 }
 fn visit-mem(self: .Arena, f: (.i8, i32 ->)) {
     $self.used-pages @cursor
@@ -114,7 +114,7 @@ fn shred(self: .Arena) {
     $self clear
 }
 fn alloc-bytes(self: .Arena, size: i32) -> .i8 { block {
-    $ON_ALLOC 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC -> }
+    $ON_ALLOC 0!(.Arena, i32 ->) /= if { $self $size $ON_ALLOC (.Arena, i32 ->) }
     $size 0 = if {
         $self.used-pages 0 !.Page = if {
             // Cannot request the current cursor when no page has been allocated yet.
@@ -210,7 +210,7 @@ fn restore(self: .Arena, point: ArenaRestorePoint) {
         }
         $point.size #self.size
     }
-    $ON_RESTORE 0 !(.Arena, i32 ->) /= if { $self $bytes-restored $ON_RESTORE -> }
+    $ON_RESTORE 0 !(.Arena, i32 ->) /= if { $self $bytes-restored $ON_RESTORE (.Arena, i32 ->) }
 }
 fn usage-since-save(self: .Arena, point: ArenaRestorePoint) -> i32 {
     $self.size $point.size -

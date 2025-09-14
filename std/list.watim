@@ -60,7 +60,7 @@ fn all<T>(pred: (.T -> bool), list: .List<T>) -> bool {
             case Empty -> { 1 1 = break }
             case Cons -> {
                 @cons
-                &cons.elem $pred -> not if {
+                &cons.elem $pred (.T -> bool) not if {
                     0 1 = break
                 }
                 $cons.next #list
@@ -86,7 +86,7 @@ fn contains<T>(eq: (.T, .T -> bool), list: .List<T>, elem: .T) -> bool { block {
             case Empty -> { 0 1 = break }
             case Cons -> {}
         } @cons
-        &cons.elem $elem $eq -> if { 1 1 = break }
+        &cons.elem $elem $eq (.T, .T -> bool) if { 1 1 = break }
         $cons.next #list
     }
 } }
@@ -121,7 +121,7 @@ fn eq<T>(eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) -> bool {
             case Empty -> { 0 1 = break }
             case Cons -> {}
         } @bcons
-        &acons.elem &bcons.elem $eq -> if {
+        &acons.elem &bcons.elem $eq (.T, .T -> bool) if {
             $acons.next #a $bcons.next #b
         } else {
             0 1 = break
@@ -170,7 +170,7 @@ fn merge<T>(less-eq: (.T, .T -> bool), a: .List<T>, b: .List<T>) {
             case Empty -> { break }
             case Cons -> {}
         } @bcons
-        &acons.elem &bcons.elem $less-eq -> if {
+        &acons.elem &bcons.elem $less-eq (.T, .T -> bool) if {
             $b #a
             $acons.next $b #acons.next #b
         } else {
@@ -228,7 +228,7 @@ fn format<T>(formatter: .Formatter, fmt-elem: (.Formatter, .T ->), self: .List<T
             case Empty -> { break }
             case Cons -> {}
         } @cons
-        $formatter &cons.elem $fmt-elem ->
+        $formatter &cons.elem $fmt-elem (.Formatter, .T ->)
         $cons.next match {
             case Empty -> { break }
             case _ -> {}
@@ -253,7 +253,7 @@ fn format-multi-line<T>(formatter: .Formatter, fmt-elem: (.Formatter, .T ->), se
             case Cons -> {}
         } @cons
         $formatter Fmt:write-indent
-        $formatter &cons.elem $fmt-elem ->
+        $formatter &cons.elem $fmt-elem (.Formatter, .T ->)
         $cons.next match {
             case Empty -> { break }
             case _ -> {}

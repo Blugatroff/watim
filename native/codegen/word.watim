@@ -314,10 +314,10 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             $ctx.fmt " i32.add " Fmt:write
             block {
                 $type-size 4 le if {
-                    $ctx.fmt "i32.load " Fmt:write
+                    $ctx.fmt "i32.load " Fmt:write break
                 }
                 $type-size 8 le if {
-                    $ctx.fmt "i64.load " Fmt:write
+                    $ctx.fmt "i64.load " Fmt:write break
                 }
             }
             $ctx.fmt ";; make " Fmt:write
@@ -1019,9 +1019,14 @@ variant BitShift {
     case I8InI64 -> i32
 }
 
+struct TypeAtOffset {
+    type: TypeId
+    offset: i32
+}
+
 variant Load {
     case Offset -> i32
-    case OffsetLoad -> [TypeId, i32]
+    case OffsetLoad -> TypeAtOffset
     case BitShift -> BitShift
 }
 fn Load-is-bitshift(load: .Load) -> bool {
@@ -1038,11 +1043,11 @@ fn Load-format(fmt: .Formatter, self: .Load) {
             $fmt ")" Fmt:write
         }
         case OffsetLoad -> {
-            ~ [,] @offset @type
+            @load
             $fmt "(OffsetLoad " Fmt:write
-            $fmt &type TypeId-format
+            $fmt &load.type TypeId-format
             $fmt " " Fmt:write
-            $fmt $offset i32-format
+            $fmt $load.offset i32-format
             $fmt ")" Fmt:write
         }
         case BitShift -> {
@@ -1070,7 +1075,7 @@ fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block (-> List<
     } @rest @second @first
     $first match {
         case OffsetLoad -> {
-            [,] @first-offset @type
+            @load
             $second match {
                 case BitShift -> {
                     match {
@@ -1079,7 +1084,7 @@ fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block (-> List<
                         case I16InI32 -> {}
                         case I8InI64 -> {}
                     } @extra-offset
-                    I32-id $first-offset $extra-offset + [,2] make Load.OffsetLoad
+                    I32-id $load.offset $extra-offset + make TypeAtOffset make Load.OffsetLoad
                     $rest List:cons<Load>
                 }
                 case _ -> { drop $loads }
@@ -1094,8 +1099,8 @@ fn merge-loads(arena: .Arena, loads: List<Load>) -> List<Load> { block (-> List<
                     $rest List:cons<Load>
                 }
                 case OffsetLoad -> {
-                    [,] @second-offset @type
-                    $type $first $second-offset + [,2] make Load.OffsetLoad
+                    @load
+                    $load.type $first $load.offset + make TypeAtOffset make Load.OffsetLoad
                     $rest List:cons<Load>
                 }
                 case _ -> { drop $loads }
@@ -1152,7 +1157,7 @@ fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, just-r
                                 }
                                 $offset make Load.Offset
                             } else {
-                                $field.target-type $offset [,2] make Load.OffsetLoad
+                                $field.target-type $offset make TypeAtOffset make Load.OffsetLoad
                             } @load
                             1 1 = #base-in-mem
                             $arena $ctx &tail $just-ref $base-in-mem determine-loads @rest
@@ -1230,7 +1235,7 @@ fn determine-loads(arena: .Arena, ctx: .Ctx, fields: .Array<FieldAccess>, just-r
                     $arena $load &rest List:cons<Load> merge-loads
                 }
             } else {
-                $field.target-type $offset [,2] make Load.OffsetLoad @load
+                $field.target-type $offset make TypeAtOffset make Load.OffsetLoad @load
                 $arena $ctx &tail $just-ref $base-in-mem determine-loads @rest
                 $arena $load &rest List:cons<Load> merge-loads
             }
@@ -1466,8 +1471,8 @@ fn generate-load(ctx: .Ctx, load: .Load) {
             $ctx.fmt " i32.add" Fmt:write
         }
         case OffsetLoad -> {
-            ~ [,] @offset @type
-            &ctx.program.sizes $type type-size @size
+            @load
+            &ctx.program.sizes $load.type type-size @size
             block {
                 $size 8 le if {
                     $ctx.fmt block {
@@ -1475,20 +1480,20 @@ fn generate-load(ctx: .Ctx, load: .Load) {
                         $size 4 le if { "i32.load" break }
                         "i64.load"
                     } Fmt:write
-                    $offset 0 /= if {
+                    $load.offset 0 /= if {
                         $ctx.fmt " offset=" Fmt:write
-                        $ctx.fmt $offset i32-format
+                        $ctx.fmt $load.offset i32-format
                     }
                     break
                 }
-                $offset 0 = if {
+                $load.offset 0 = if {
                     $ctx.fmt "i32.const " Fmt:write
                     $ctx.fmt $size i32-format
                     $ctx.fmt " memory.copy" Fmt:write
                     break
                 }
                 $ctx.fmt "i32.const " Fmt:write
-                $ctx.fmt $offset i32-format
+                $ctx.fmt $load.offset i32-format
                 $ctx.fmt " i32.add i32.const " Fmt:write
                 $ctx.fmt $size i32-format
                 $ctx.fmt " memory.copy" Fmt:write

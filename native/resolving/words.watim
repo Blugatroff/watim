@@ -226,7 +226,7 @@ fn IntrinsicWord-format(fmt: .Formatter, self: .IntrinsicWord) {
 struct Call {
     name: Token
     function: FunctionHandle
-    generic-arguments: Array<Type>
+    generic-arguments: Maybe<Array<Type>>
 }
 fn Call-format(fmt: .Formatter, self: .Call) {
     $fmt "(Call " Fmt:write
@@ -234,7 +234,7 @@ fn Call-format(fmt: .Formatter, self: .Call) {
     $fmt " " Fmt:write
     $fmt &self.function FunctionHandle-format
     $fmt " " Fmt:write
-    $fmt &self.generic-arguments Types-format
+    $fmt \Types-format &self.generic-arguments Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
@@ -264,6 +264,7 @@ fn FieldInit-format(fmt: .Formatter, self: .FieldInit) {
 
 struct MakeStructNamed {
     token: Token
+    name: Token
     type: CustomTypeType
     body: Scope
 }
@@ -273,6 +274,10 @@ fn MakeStructNamed-format(fmt: .Formatter, self: .MakeStructNamed) {
     $fmt Fmt:write-indent
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
@@ -287,6 +292,7 @@ fn MakeStructNamed-format(fmt: .Formatter, self: .MakeStructNamed) {
 
 struct MakeStruct {
     token: Token
+    name: Token
     type: CustomTypeType
 }
 fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
@@ -295,6 +301,10 @@ fn MakeStruct-format(fmt: .Formatter, self: .MakeStruct) {
     $fmt Fmt:write-indent
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
+    $fmt &self.name Token-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
@@ -386,10 +396,16 @@ fn Block-format(fmt: .Formatter, self: .Block) {
 
 struct IndirectCall {
     token: Token
+    parameters: Array<Type>
+    returns: Array<Type>
 }
 fn IndirectCall-format(fmt: .Formatter, self: .IndirectCall) {
     $fmt "(IndirectCall " Fmt:write
     $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.parameters Array:format<_>
+    $fmt " " Fmt:write
+    $fmt \Type:format &self.returns Array:format<_>
     $fmt ")" Fmt:write
 }
 

@@ -1,4 +1,4 @@
-import "../../std/core.watim" as Core
+import "../../std/core.watim" as Core (Unit, unit, useless)
 import "../../std/bytes.watim" as Bytes
 import "../../std/result.watim" as Result (Result(Error, Success))
 import "../../std/maybe.watim" as Maybe (Maybe(None, Some), assert-some, assert-none)
@@ -29,21 +29,21 @@ fn resolve-modules(arena: .Arena, modules: .Map<ByteSlice, P:Module>)
     -> Result<Map<ByteSlice, Module>, ResolveError> {
     \ByteSlice:eq-by-ref Map:new<ByteSlice, Module> @resolved-modules
     0 @i
-    loop (-> Result<[], ResolveError>) {
-        $i $modules.values.len = if { [,0] make Result<[], ResolveError>.Success break }
+    loop (-> Result<Unit, ResolveError>) {
+        $i $modules.values.len = if { unit make Result<Unit, ResolveError>.Success break }
         &modules.values $i Array:get<P:Module> @module
         $arena &resolved-modules
         &modules.keys $i Array:get<ByteSlice> Core:dup<_> @module-path ~
         $arena &resolved-modules $module $i make ModuleId $module-path resolve-module match {
             case Success -> {}
-            case Error -> { make Result<[], ResolveError>.Error break }
+            case Error -> { make Result<Unit, ResolveError>.Error break }
         }
         Map:insert<_, _> drop
         $i 1 + #i
     } match {
         case Error -> { make Result<Map<ByteSlice, Module>, ResolveError>.Error }
-        case Success -> { 
-            [,] $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success
+        case Success -> {
+            useless $resolved-modules make Result<Map<ByteSlice, Module>, ResolveError>.Success
         }
     }
 }
@@ -58,8 +58,8 @@ fn resolve-module(
     $arena \ByteSlice:eq-by-ref $module.imports.len Map:new-with-capacity<ByteSlice, Array<Import>> @imports
 
     0 @i
-    loop (-> Result<[], ResolveError>) {
-        $i $module.imports.len = if { [,0] make Result<[], ResolveError>.Success break }
+    loop (-> Result<Unit, ResolveError>) {
+        $i $module.imports.len = if { unit make Result<Unit, ResolveError>.Success break }
         &module.imports $i Array:get<_> @imp
         $arena
         &imports &imp.qualifier Token-lexeme Map:get-bs<_> match {
@@ -72,14 +72,14 @@ fn resolve-module(
             case Some -> {}
         }
         $arena $modules $module-path $id $imp resolve-imprt match {
-            case Error -> { make Result<[], ResolveError>.Error break }
+            case Error -> { make Result<Unit, ResolveError>.Error break }
             case Success -> {}
         }
         Array:push<Import>
         $i 1 + #i
     } match {
         case Error -> { make Result<Module, ResolveError>.Error break }
-        case Success -> { [,] }
+        case Success -> { useless }
     }
 
     $id
@@ -264,16 +264,16 @@ fn resolve-varint-constructors(arena: .Arena, module: ModuleId, varint: .Variant
         loop {
             $tag $varint.cases.len = if {
                 $module $constructor Token-location "constructor not found" Array:init-no-copy<i8> make ResolveError
-                make Result<[], ResolveError>.Error break
+                make Result<Unit, ResolveError>.Error break
             }
             &varint.cases $tag Array:get<VariantCase> .name Token-lexeme $constructor Token-lexeme Bytes:eq if {
                 &resolved $tag Array:push-assert-no-alloc<_>
-                [,0] make Result<[], ResolveError>.Success break
+                unit make Result<Unit, ResolveError>.Success break
             }
             $tag 1 + #tag
         } match {
             case Error -> { make Result<Array<i32>, ResolveError>.Error break }
-            case Success -> { [,] }
+            case Success -> { useless }
         }
         $i 1 + #i
     }

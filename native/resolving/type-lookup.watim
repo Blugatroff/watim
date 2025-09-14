@@ -2,6 +2,7 @@ import "../../std/array.watim" as Array (Array)
 import "../../std/map.watim" as Map (Map)
 import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some))
 
 import "../lexer.watim" as L (Token-lexeme)
 import "../parser.watim" as P

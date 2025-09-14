@@ -14,6 +14,13 @@ fn ref<T>(self: .Maybe<T>) -> Maybe<.T> {
     }
 }
 
+fn deref<T>(self: Maybe<.T>) -> Maybe<T> {
+    $self match {
+        case None -> { make Maybe<T>.None }
+        case Some -> { ~ make Maybe<T>.Some }
+    }
+}
+
 fn or-default<T>(o: Maybe<T>, default: T) -> T {
     $o match {
         case Some -> {}
@@ -54,7 +61,7 @@ fn format<T>(fmt: .Formatter, format-inner: (.Formatter, .T ->), self: .Maybe<T>
         case None -> { $fmt "None" Fmt:write }
         case Some -> {
             $fmt "(Some " Fmt:write
-            $fmt flip $format-inner ->
+            $fmt flip $format-inner (.Formatter, .T ->)
             $fmt ")" Fmt:write
         }
     }
@@ -65,7 +72,7 @@ fn print<T>(fd: i32, print-inner: (i32, .T -> i32), self: .Maybe<T>) -> i32 { bl
         case None -> { $fd "None" IO:write-all }
         case Some -> {
             $fd "(Some " IO:write-all Core:dup<i32> 0 /= if { break } drop
-            $fd flip $print-inner -> Core:dup<i32> 0 /= if { break } drop
+            $fd flip $print-inner (i32, .T -> i32) Core:dup<i32> 0 /= if { break } drop
             $fd ")" IO:write-all
         }
     }

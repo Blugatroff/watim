@@ -114,19 +114,33 @@ fn find-hole(self: .Type) -> Maybe<.Token> {
         case Ptr -> { ~ find-hole }
         case Generic -> { drop make Maybe<.Token>.None }
         case Hole -> { make Maybe<.Token>.Some }
-        case Tuple -> { .items \find-hole Array:findMap<Type, .Token> }
+        case Tuple -> { .items \find-hole Array:find-map<Type, .Token> }
         case Fun -> {
             @fun
-            &fun.parameters \find-hole Array:findMap<Type, .Token> match {
-                case None -> { &fun.returns \find-hole Array:findMap<Type, .Token> }
+            &fun.parameters \find-hole Array:find-map<Type, .Token> match {
+                case None -> { &fun.returns \find-hole Array:find-map<Type, .Token> }
                 case _ -> {}
             }
         }
-        case Custom -> { .generic-arguments \find-hole Array:findMap<Type, .Token> }
+        case Custom -> { .generic-arguments \find-hole Array:find-map<Type, .Token> }
     }
 }
 fn contains-hole(self: .Type) -> bool {
     $self find-hole @m &m Maybe:is-some<.Token>
+}
+fn clone(arena: .Arena, self: .Type) -> Type {
+    $self match {
+        case Bool -> { make Type.Bool }
+        case I8 -> { make Type.I8 }
+        case I32 -> { make Type.I32 }
+        case I64 -> { make Type.I64 }
+        case Ptr -> { ~ $arena flip clone $arena flip Arena:push<_> make Type.Ptr }
+        case Generic -> { ~ make Type.Generic }
+        case Hole -> { ~ make Type.Hole }
+        case Tuple -> { $arena flip TupleType-clone make Type.Tuple }
+        case Custom -> { $arena flip CustomTypeType-clone make Type.Custom }
+        case Fun -> { $arena flip FunType-clone make Type.Fun }
+    }
 }
 
 struct FunType {
@@ -150,6 +164,11 @@ fn FunType-eq(a: .FunType, b: .FunType) -> bool {
         0 1 =
     }
 }
+fn FunType-clone(arena: .Arena, self: .FunType) -> FunType {
+    $self.token
+    $arena &self.parameters Array:clone<_>
+    $arena &self.returns Array:clone<_> make FunType
+}
 
 fn Types-format(fmt: .Formatter, self: .Array<Type>) {
     $fmt \format $self Array:format<Type>
@@ -172,6 +191,9 @@ fn TupleType-format(fmt: .Formatter, self: .TupleType) {
 fn TupleType-eq(a: .TupleType, b: .TupleType) -> bool {
     &a.items &b.items Types-eq
 }
+fn TupleType-clone(arena: .Arena, self: .TupleType) -> TupleType {
+    $self.token $arena &self.items Array:clone<_> make TupleType
+}
 
 struct CustomTypeType {
     type-definition: CustomTypeHandle
@@ -193,6 +215,9 @@ fn CustomTypeType-eq(a: .CustomTypeType, b: .CustomTypeType) -> bool {
         0 1 =
     }
 }
+fn CustomTypeType-clone(arena: .Arena, self: .CustomTypeType) -> CustomTypeType {
+    $self.type-definition $arena &self.generic-arguments Array:clone<_> make CustomTypeType
+}
 
 struct CustomTypeHandle { module: ModuleId index: i32 }
 fn CustomTypeHandle-format(fmt: .Formatter, self: .CustomTypeHandle) {
@@ -204,6 +229,25 @@ fn CustomTypeHandle-format(fmt: .Formatter, self: .CustomTypeHandle) {
 }
 fn CustomTypeHandle-eq(a: .CustomTypeHandle, b: .CustomTypeHandle) -> bool {
     $a.module.index $b.module.index = $a.index $b.index = and
+}
+
+fn contains-generic(type: .Type) -> bool {
+    $type match {
+        case I8 -> { 0 1 = }
+        case I32 -> { 0 1 = }
+        case I64 -> { 0 1 = }
+        case Bool -> { 0 1 = }
+        case Ptr -> { ~ contains-generic }
+        case Hole -> { drop 0 1 = }
+        case Fun -> {
+            @fun
+            &fun.parameters \contains-generic Array:any<_>
+            &fun.returns \contains-generic Array:any<_> or
+        }
+        case Custom -> { .generic-arguments \contains-generic Array:any<_> }
+        case Tuple -> { .items \contains-generic Array:any<_> }
+        case Generic -> { drop 1 1 = }
+    }
 }
 
 fn with-generics(arena: .Arena, type: .Type, generics: .Array<Type>) -> Type {

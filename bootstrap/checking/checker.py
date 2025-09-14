@@ -2,9 +2,10 @@ from typing import List, Dict, Tuple, NoReturn, Sequence, assert_never
 from dataclasses import dataclass
 import os
 import copy
+import sys
 
 from util import seq_eq
-from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_dict, unnamed_record, format_optional
+from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_dict, unnamed_record, format_optional, format
 from indexed_dict import IndexedDict
 from lexer import Token
 from parsing.types import I8, I32, I64, Bool
@@ -96,10 +97,15 @@ def determine_compilation_order(modules: Dict[str, parser.Module]) -> IndexedDic
     return ordered
 
 @dataclass
-class BreakStack:
+class BreakStack(Formattable):
     token: Token
     types: Tuple[Type, ...]
     reachable: bool
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("BreakStack", [
+            ("token", self.token),
+            ("types", format_seq(self.types, True)),
+            ("reachable", self.reachable)])
 
 @dataclass
 class BlockAnnotation:
@@ -326,6 +332,8 @@ class WordCtx:
 
     def check_init_local(self, stack: Stack, word: resolved.words.InitWord) -> Tuple[List[Word], bool]:
         taip = stack.pop()
+        if taip is None:
+            print(word.token, file=sys.stderr)
         assert(taip is not None)
         self.env[word.local_id] = Local(LocalName(word.local_id.name), taip, False, False)
         return ([InitWord(word.token, word.local_id, taip)], False)
@@ -779,9 +787,12 @@ class WordCtx:
                     first_non_diverging_case = case_stack
                 elif not first_non_diverging_case.compatible_with(case_stack):
                     msg = "arms of match case have different types:"
-                    for case_stack, case_token, _ in case_stacks:
+                    for case_stack, case_token, case_diverges in case_stacks:
                         msg += f"\n\t{self.type_lookup.types_pretty_bracketed(case_stack.negative)}"
-                        msg += f" -> {self.type_lookup.types_pretty_bracketed(case_stack.stack)}"
+                        if case_diverges:
+                            msg += f" -> <diverges>"
+                        else:
+                            msg += f" -> {self.type_lookup.types_pretty_bracketed(case_stack.stack)}"
                         msg += f" in case {case_token.lexeme}"
                     self.abort(word.token, msg)
 

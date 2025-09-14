@@ -495,6 +495,9 @@ class Parser:
                     return StackAnnotation(token, tuple(types))
                 if next.ty != TokenType.COMMA:
                     self.abort("Expected `,` or `)`")
+        if token.ty == TokenType.LEFT_PAREN:
+            fun_type = self.parse_fun_type(generic_parameters, token)
+            return IndirectCallWord(token)
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: Tuple[Token, ...], token: Token) -> CallWord | ForeignCallWord:
@@ -656,35 +659,7 @@ class Parser:
                     return GenericType(token, generic_index)
             return self.parse_struct_type(token, generic_parameters)
         if token.ty == TokenType.LEFT_PAREN:
-            args = []
-            while True:
-                next = self.peek(skip_ws=True)
-                if next is not None and next.ty == TokenType.ARROW:
-                    self.advance(skip_ws=True) # skip `=>`
-                    break
-                args.append(self.parse_type(generic_parameters))
-                next = self.peek(skip_ws=True)
-                if next is not None and next.ty == TokenType.ARROW:
-                    self.advance(skip_ws=True) # skip `=>`
-                    break
-                comma = self.advance(skip_ws=True)
-                if comma is None or comma.ty != TokenType.COMMA:
-                    self.abort("Expected `,` in argument list of function type.")
-            rets = []
-            while True:
-                next = self.peek(skip_ws=True)
-                if next is not None and next.ty == TokenType.RIGHT_PAREN:
-                    self.advance(skip_ws=True) # skip `)`
-                    break
-                rets.append(self.parse_type(generic_parameters))
-                next = self.peek(skip_ws=True)
-                if next is not None and next.ty == TokenType.RIGHT_PAREN:
-                    self.advance(skip_ws=True) # skip `)`
-                    break
-                comma = self.advance(skip_ws=True)
-                if comma is None or comma.ty != TokenType.COMMA:
-                    self.abort("Expected `,` in return list of function type.")
-            return FunctionType(token, tuple(args), tuple(rets))
+            return self.parse_fun_type(generic_parameters, token)
         if token.ty == TokenType.LEFT_BRACKET:
             items = []
             while True:
@@ -701,3 +676,34 @@ class Parser:
                     self.abort("Expected `,` in tuple type.")
             return TupleType(token, tuple(items))
         self.abort("Expected type")
+
+    def parse_fun_type(self, generic_parameters: Tuple[Token, ...], token: Token) -> FunctionType:
+        args = []
+        while True:
+            next = self.peek(skip_ws=True)
+            if next is not None and next.ty == TokenType.ARROW:
+                self.advance(skip_ws=True) # skip `=>`
+                break
+            args.append(self.parse_type(generic_parameters))
+            next = self.peek(skip_ws=True)
+            if next is not None and next.ty == TokenType.ARROW:
+                self.advance(skip_ws=True) # skip `=>`
+                break
+            comma = self.advance(skip_ws=True)
+            if comma is None or comma.ty != TokenType.COMMA:
+                self.abort("Expected `,` in argument list of function type.")
+        rets = []
+        while True:
+            next = self.peek(skip_ws=True)
+            if next is not None and next.ty == TokenType.RIGHT_PAREN:
+                self.advance(skip_ws=True) # skip `)`
+                break
+            rets.append(self.parse_type(generic_parameters))
+            next = self.peek(skip_ws=True)
+            if next is not None and next.ty == TokenType.RIGHT_PAREN:
+                self.advance(skip_ws=True) # skip `)`
+                break
+            comma = self.advance(skip_ws=True)
+            if comma is None or comma.ty != TokenType.COMMA:
+                self.abort("Expected `,` in return list of function type.")
+        return FunctionType(token, tuple(args), tuple(rets))

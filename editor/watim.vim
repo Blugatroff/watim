@@ -4,13 +4,15 @@
 " Language: Watim
 
 " Usage Instructions
-" Put this file in .vim/syntax/watim.vim
+" Put this file in ~/.config/nvim/syntax/watim.vim
 " and add in your .vimrc file the next line:
 " autocmd BufRead,BufNewFile *.watim set filetype=watim
 
 if exists("b:current_syntax")
   finish
 endif
+
+set iskeyword=a-z,A-Z,48-57,-,%,=,+,/,?
 
 syntax keyword watimTodos TODO FIXME NOTE
 

@@ -24,6 +24,9 @@ import "./checking/checker.watim" as Checker (check-modules, CheckError-print)
 import "./resolving/resolver.watim" as Resolved
 import "./resolving/module.watim" as Resolved
 import "./resolving/top-items.watim" as Resolved
+import "./unstacking/unstacker.watim" as Unstacker
+import "./unstacking/graph.watim" as Graph
+import "./inference/inference.watim" as Inference (InferenceError-print)
 import "./monomorphization/monomizer.watim" as Monomizer (Monomized-format, monomize)
 import "./local-merging.watim" as LocalMerging (merge-locals)
 import "./codegen/generator.watim" as Generator
@@ -35,6 +38,8 @@ fn print-usage-and-exit() {
     2 "  lex       [path]   Lex code and print the Tokens.\n" IO:write-all IO:check
     2 "  parse     [path]   Parse code and print the AST\n" IO:write-all IO:check
     2 "  resolve   [path]   resolve all identifiers\n" IO:write-all IO:check
+    2 "  unstack   [path]   TODO\n" IO:write-all IO:check
+    2 "  graph     [path]   TODO\n" IO:write-all IO:check
     2 "  check     [path]   run type inference and type checking\n" IO:write-all IO:check
     2 "  monomize  [path]   monomorphize all generic functions\n" IO:write-all IO:check
     2 "  optimize  [path]   run optimization passes\n" IO:write-all IO:check
@@ -73,14 +78,27 @@ fn SingleFileCommand-path(cmd: .SingleFileCommand) -> .Maybe<ByteSlice> {
     }
 }
 
-struct InferenceTreeArgs {
+struct GraphArgs {
     file-path: Maybe<ByteSlice>
-    functions: Array<ByteSlice>
+    function: ByteSlice
+}
+
+struct UnstackArgs {
+    file-path: Maybe<ByteSlice>
+    function: ByteSlice
+}
+
+struct InferArgs {
+    file-path: Maybe<ByteSlice>
+    function: ByteSlice
 }
 
 variant ProjectWideCommand {
     case Resolve -> Maybe<ByteSlice>
     case Check -> Maybe<ByteSlice>
+    case Unstack -> UnstackArgs
+    case Graph -> GraphArgs
+    case Infer -> InferArgs
     case Monomize -> Maybe<ByteSlice>
     case Optimize -> Maybe<ByteSlice>
     case Compile -> CompilationArgs
@@ -89,6 +107,9 @@ variant ProjectWideCommand {
 fn ProjectWideCommand-path(cmd: .ProjectWideCommand) -> .Maybe<ByteSlice> {
     $cmd match {
         case Resolve -> {}
+        case Unstack -> { .file-path }
+        case Graph -> { .file-path }
+        case Infer -> { .file-path }
         case Check -> {}
         case Monomize -> {}
         case Optimize -> {}
@@ -132,6 +153,18 @@ fn parse-args(arena: .Arena) -> CliArgs {
         }
         $command ByteSlice:unpack "resolve" Bytes:eq if {
             $path make ProjectWideCommand.Resolve make CliCommand.ProjectWide break
+        }
+        $command ByteSlice:unpack "unstack" Bytes:eq if {
+            $path &args 1 Array:remove<_> make UnstackArgs
+            make ProjectWideCommand.Unstack make CliCommand.ProjectWide break
+        }
+        $command ByteSlice:unpack "graph" Bytes:eq if {
+            $path &args 1 Array:remove<_> make GraphArgs
+            make ProjectWideCommand.Graph make CliCommand.ProjectWide break
+        }
+        $command ByteSlice:unpack "infer" Bytes:eq if {
+            $path &args 1 Array:remove<_> make InferArgs
+            make ProjectWideCommand.Infer make CliCommand.ProjectWide break
         }
         $command ByteSlice:unpack "check" Bytes:eq if {
             $path make ProjectWideCommand.Check make CliCommand.ProjectWide break
@@ -348,47 +381,149 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
         case _ -> { drop }
     }
 
-    "Checking" Arena:new @checking-arena
-    &checking-arena Arena:usage @start-usage
-    &checking-arena &resolved-modules check-modules match {
-        case Error -> {
-            2 flip &modules CheckError-print drop
-            2 IO:newline
-            1 Core:exit
-            Core:unreachable<Map<ByteSlice, Checked:Module>>
-        }
-        case Success -> {}
-    } @modules
+    "Unstacking" Arena:new @unstacking-arena
+    &unstacking-arena &resolved-modules Unstacker:unstack @unstacked
 
     $command match {
-        case Check -> {
-            drop
-            Logging:enabled if {
-                &checking-arena Arena:usage @end-usage
-                $end-usage $start-usage - @usage
-                2 "checking used: " IO:write-all IO:check
-                2 $usage IO:print IO:check
-                2 " bytes (" IO:write-all IO:check
-                2 $usage print-byte-count IO:check
-                2 ")\n" IO:write-all IO:check
+        case Unstack -> {
+            @args
+
+            &unstacked.values Array:last<_> @module
+            &module.functions &args.function Map:get<_, _> Maybe:assert-some<_> match {
+                case Unstacker:FunctionOrExtern.Extern -> { drop }
+                case Unstacker:FunctionOrExtern.Function -> {
+                    @function
+                    1 Fmt:to-fd @fmt
+                    &arena &fmt 1024 Fmt:buffered @buf @fmt
+                    &fmt $function Unstacker:Function-format
+                    &fmt "\n" Fmt:write
+                    $buf Fmt:flush
+                }
             }
-            1 Fmt:to-fd @fmt
-            &arena &fmt 1024 Fmt:buffered @buf @fmt
-            &fmt \ByteSlice-format \Checked:Module-format &modules Map:format-multi-line<ByteSlice, Checked:Module>
-            &fmt "\n" Fmt:write
-            $buf Fmt:flush
+
             &resolving-arena Arena:shred
-            &checking-arena Arena:shred
+            &unstacking-arena Arena:shred
             &arena Arena:shred
             break
         }
         case _ -> { drop }
     }
 
+    $command match {
+        case Graph -> {
+            @args
+            &unstacked.values Array:last<_> @module
+            &module.functions &args.function Map:get<_, _> Maybe:assert-some<_> match {
+                case Unstacker:FunctionOrExtern.Extern -> { drop }
+                case Unstacker:FunctionOrExtern.Function -> {
+                    @function
+                    1 Fmt:to-fd @fmt
+                    &fmt $function Graph:graph-function
+                }
+            }
+            &resolving-arena Arena:shred
+            &unstacking-arena Arena:shred
+            &arena Arena:shred
+            break
+        }
+        case _ -> { drop }
+    }
+
+    "Inference" Arena:new @inference-arena
+    $command match {
+        case Infer -> {
+            @args
+            1 Fmt:to-fd @fmt
+            &arena &fmt 1024 Fmt:buffered @buf @fmt
+
+            &unstacked.values Array:last<_> @module
+
+            &module.functions &args.function Map:get<_, _> Maybe:assert-some<_> match {
+                case Unstacker:FunctionOrExtern.Extern -> { drop }
+                case Unstacker:FunctionOrExtern.Function -> {
+                    @function
+                    &inference-arena &unstacked.values &module.globals $function Inference:infer-function match {
+                        case Success -> {}
+                        case Error -> {
+                            2 flip & InferenceError-print drop
+                            2 IO:newline
+                            1 Core:exit
+                            Core:unreachable<Checked:Function>
+                        }
+                    } @function
+
+                    &fmt &function Checked:Function-format
+                    &fmt "\n" Fmt:write
+                    $buf Fmt:flush
+                }
+            }
+
+            &resolving-arena Arena:shred
+            &unstacking-arena Arena:shred
+            &inference-arena Arena:shred
+            &arena Arena:shred
+            break
+        }
+        case _ -> { drop }
+    }
+
+    &inference-arena &unstacked Inference:infer-modules match {
+        case Success -> {}
+        case Error -> {
+            2 flip & InferenceError-print drop
+            2 IO:newline
+            1 Core:exit
+            Core:unreachable<Map<ByteSlice, Checked:Module>>
+        }
+    } @inferred
+
+    &unstacking-arena Arena:shred
+    // &inference-arena Arena:shred
+
+    // "Checking" Arena:new @checking-arena
+    // &checking-arena Arena:usage @start-usage
+    // &checking-arena &resolved-modules check-modules match {
+    //     case Error -> {
+    //         2 flip &modules CheckError-print drop
+    //         2 IO:newline
+    //         1 Core:exit
+    //         Core:unreachable<Map<ByteSlice, Checked:Module>>
+    //     }
+    //     case Success -> {}
+    // } @modules
+    //
+    $inferred @modules
+
+    // $command match {
+    //     case Check -> {
+    //         drop
+    //         Logging:enabled if {
+    //             &checking-arena Arena:usage @end-usage
+    //             $end-usage $start-usage - @usage
+    //             2 "checking used: " IO:write-all IO:check
+    //             2 $usage IO:print IO:check
+    //             2 " bytes (" IO:write-all IO:check
+    //             2 $usage print-byte-count IO:check
+    //             2 ")\n" IO:write-all IO:check
+    //         }
+    //         1 Fmt:to-fd @fmt
+    //         &arena &fmt 1024 Fmt:buffered @buf @fmt
+    //         &fmt \ByteSlice-format \Checked:Module-format &modules Map:format-multi-line<ByteSlice, Checked:Module>
+    //         &fmt "\n" Fmt:write
+    //         $buf Fmt:flush
+    //         &resolving-arena Arena:shred
+    //         &checking-arena Arena:shred
+    //         &arena Arena:shred
+    //         break
+    //     }
+    //     case _ -> { drop }
+    // }
+
     "Monomizing" Arena:new @monomizing-arena
     &monomizing-arena &modules monomize @monomized
     &resolving-arena Arena:shred
-    &checking-arena Arena:shred
+    &unstacking-arena Arena:shred
+    &inference-arena Arena:shred
     $command match {
         case Monomize -> {
             drop

@@ -182,10 +182,6 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
         $type match {
             case Parsed:CustomType.Foreign -> {
                 @type
-                $self $arena &type.generic-arguments resolve-types match {
-                    case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
-                    case Success -> {}
-                } @generic-arguments
                 $self.imports &type.module Token-lexeme Map:get-bs<Array<Import>> match {
                     case None -> {
                         $self.module-id &type.module Token-location
@@ -213,6 +209,18 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
 
                             $type-definition TypeDefinition-generic-parameters @generic-parameters
 
+                            &type.generic-arguments match {
+                                case None -> {
+                                    $arena $generic-parameters.len $type.module make Type.Hole Array:repeat-element<Type>
+                                }
+                                case Some -> {
+                                    $self flip $arena flip resolve-types match {
+                                        case Error -> { make Result<Maybe<CustomTypeType>, ResolveError>.Error break }
+                                        case Success -> {}
+                                    }
+                                }
+                            } @generic-arguments
+
                             $generic-arguments.len $generic-parameters.len /= if {
                                 $self.module-id $arena &type.name
                                 $generic-parameters.len $generic-arguments.len
@@ -237,9 +245,14 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
             }
             case Parsed:CustomType.Local -> {
                 @type
-                $self $arena &type.generic-arguments resolve-types match {
-                    case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
-                    case Success -> {}
+                &type.generic-arguments match {
+                    case None -> { make Maybe<Array<Type>>.None }
+                    case Some -> {
+                        $self flip $arena flip resolve-types match {
+                            case Error -> { make Result<CustomTypeType, ResolveError>.Error break }
+                            case Success -> {}
+                        } make Maybe<Array<Type>>.Some
+                    }
                 } @generic-arguments
                 $self $arena &type.name resolve-custom-type-name match {
                     case None -> {
@@ -258,12 +271,21 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
                             $handle.index Array:get<_> TypeDefinition-generic-parameters .len ~
                         } @generic-parameters
 
-                        $generic-parameters $generic-arguments.len /= if {
-                            $self.module-id $arena &type.name $generic-parameters $generic-arguments.len generic-arguments-mismatch-error
-                            make Result<CustomTypeType, ResolveError>.Error break
+                        &generic-arguments match {
+                            case None -> {
+                                $arena $generic-parameters $type.name make Type.Hole Array:repeat-element<_>
+                            }
+                            case Some -> {
+                                @generic-arguments
+                                $generic-parameters $generic-arguments.len /= if {
+                                    $self.module-id $arena &type.name $generic-parameters $generic-arguments.len generic-arguments-mismatch-error
+                                    make Result<CustomTypeType, ResolveError>.Error break
+                                }
+                                $generic-arguments ~
+                            }
                         }
 
-                        $handle $generic-arguments make CustomTypeType
+                        $handle flip make CustomTypeType
                         make Result<CustomTypeType, ResolveError>.Success break
                     }
                 }

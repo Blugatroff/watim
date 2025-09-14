@@ -28,7 +28,7 @@ fn use-indentation(fmt: Formatter, indentation-ptr: .i8, indentation-len: i32) -
     }
 }
 fn write(self: .Formatter, ptr: .i8, len: i32) {
-    $self.user-data $ptr $len $self.write ->
+    $self.user-data $ptr $len $self.write (i32, .i8, i32 ->)
 }
 fn write-indent(self: .Formatter) {
     0 @i

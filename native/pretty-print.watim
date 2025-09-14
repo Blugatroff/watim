@@ -4,7 +4,7 @@ import "../std/maybe.watim" as Maybe (Maybe(None, Some))
 import "../std/array.watim" as Array (Array)
 import "../std/arena.watim" as Arena (Arena)
 import "../std/list.watim" as List (List)
-import "./parser.watim" as Parser (Module, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation, ImportItem, FunctionOrExtern, TypeDefinition, TopItem, TopItem-start-token)
+import "./parser.watim" as Parser (Module, Import, Function, Signature, Words, Word, NamedType, Type, LocalCustomType, ForeignCustomType, Call, LocalCall, ForeignCall, If, Block, Loop, GetLocal, RefLocal, SetLocal, FunRef, InitLocal, Struct, Cast, MakeStruct, CustomType, MakeStructNamed, Variant, VariantCase, MakeVariant, Match, MatchCase, GetField, BlockAnnotation, Sizeof, FunType, Extern, Global, Store, MakeTuple, TupleType, StackAnnotation, ImportItem, FunctionOrExtern, TypeDefinition, TopItem, TopItem-start-token, IndirectCall)
 import "./lexer.watim" as Lexer (Token, Token-lexeme, Token-location, Token-print, Token-line, Token-column)
 
 struct PrettyPrinter {
@@ -18,7 +18,7 @@ fn PrettyPrinter-new(write: (.i8, i32 -> i32)) -> PrettyPrinter {
 }
 
 fn write(pp: .PrettyPrinter, ptr: .i8, len: i32) -> i32 {
-    $ptr $len $pp.write -> @code
+    $ptr $len $pp.write (.i8, i32 -> i32) @code
     loop {
         $len 0 = if { break }
         $pp.column 1 + #pp.column
@@ -60,7 +60,7 @@ fn List-pretty<T>(self: .List<T>, pretty: (.T, .PrettyPrinter -> i32), pp: .Pret
             case List.Cons -> {}
         }
         @cons
-        &cons.elem $pp $pretty -> Core:dup<i32> 0 /= if { break } else { drop }
+        &cons.elem $pp $pretty (.T, .PrettyPrinter -> i32) Core:dup<i32> 0 /= if { break } else { drop }
         $cons.next
     }
 }
@@ -282,13 +282,17 @@ fn Word-pretty(self: .Word, pp: .PrettyPrinter) -> i32 { block {
         case Word.Match -> { $pp Match-pretty }
         case Word.GetField -> { $pp GetField-pretty }
         case Word.Sizeof -> { $pp Sizeof-pretty }
-        case Word.IndirectCall -> { $pp flip write-token }
+        case Word.IndirectCall -> { $pp IndirectCall-pretty }
         case Word.Store -> { $pp Store-pretty }
         case Word.UnpackTuple -> { $pp UnpackTuple-pretty }
         case Word.MakeTuple -> { $pp MakeTuple-pretty }
         case Word.StackAnnotation -> { $pp StackAnnotation-pretty }
     }
 } }
+
+fn IndirectCall-pretty(self: .IndirectCall, pp: .PrettyPrinter) -> i32 {
+    $self.token $self.parameters $self.returns make FunType & $pp FunType-pretty
+}
 
 fn UnpackTuple-pretty(self: .Token, pp: .PrettyPrinter) -> i32 { block {
     $pp $self write-token Core:dup<i32> 0 /= if { break } drop
@@ -481,18 +485,20 @@ fn Call-pretty(self: .Call, pp: .PrettyPrinter) -> i32 {
 
 fn LocalCall-pretty(self: .LocalCall, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.name write-token Core:dup<i32> 0 /= if { break } drop
-    $self.generic-arguments.len 0 /= if {
-        &self.generic-arguments $pp GenericArguments-pretty
-    } else { 0 }
+    &self.generic-arguments match {
+        case None -> { 0 }
+        case Some -> { $pp GenericArguments-pretty }
+    }
 } }
 
 fn ForeignCall-pretty(self: .ForeignCall, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.module write-token Core:dup<i32> 0 /= if { break } drop
     $pp ":" write Core:dup<i32> 0 /= if { break } drop
     $pp &self.name write-token Core:dup<i32> 0 /= if { break } drop
-    $self.generic-arguments.len 0 /= if {
-        &self.generic-arguments $pp GenericArguments-pretty
-    } else { 0 }
+    &self.generic-arguments match {
+        case None -> { 0 }
+        case Some -> { $pp GenericArguments-pretty }
+    }
 } }
 
 fn Signature-pretty(self: .Signature, pp: .PrettyPrinter) -> i32 { block {
@@ -607,18 +613,20 @@ fn CustomType-pretty(self: .CustomType, pp: .PrettyPrinter) -> i32 {
 
 fn LocalCustomType-pretty(self: .LocalCustomType, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.name write-token Core:dup<i32> 0 /= if { break } drop
-    $self.generic-arguments.len 0 /= if {
-        &self.generic-arguments $pp GenericArguments-pretty
-    } else { 0 }
+    &self.generic-arguments match {
+        case None -> { 0 }
+        case Some -> { $pp GenericArguments-pretty }
+    }
 } }
 
 fn ForeignCustomType-pretty(self: .ForeignCustomType, pp: .PrettyPrinter) -> i32 { block {
     $pp &self.module Token-lexeme write Core:dup<i32> 0 /= if { break } drop
     $pp ":" write Core:dup<i32> 0 /= if { break } drop
     $pp &self.name write-token Core:dup<i32> 0 /= if { break } drop
-    $self.generic-arguments.len 0 /= if {
-        &self.generic-arguments $pp GenericArguments-pretty
-    } else { 0 }
+    &self.generic-arguments match {
+        case None -> { 0 }
+        case Some -> { $pp GenericArguments-pretty }
+    }
 } }
 
 fn GenericArguments-pretty(self: .Array<Type>, pp: .PrettyPrinter) -> i32 { block {

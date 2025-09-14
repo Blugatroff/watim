@@ -1,4 +1,4 @@
-import "../../std/core.watim" as Core
+import "../../std/core.watim" as Core (Unit, unit, useless)
 import "../../std/result.watim" as Result (Result(Error, Success))
 import "../../std/bytes.watim" as Bytes
 import "../../std/io.watim" as IO
@@ -24,13 +24,13 @@ import "../resolving/module.watim" as Resolved
 import "../resolving/top-items.watim" as Resolved (
     Struct, Variant, VariantCase,
     TypeDefinition(Struct, Variant), TypeDefinition-name,
-    VariantCase-name, LocalName, LocalName-format, Global,
-    Import, Extern, Signature)
+    VariantCase-name, LocalName, LocalName-format, SyntheticName,
+    Global, Import, Extern, Signature)
 import "../resolving/resolver.watim" as Resolved
 import "../resolving/words.watim" as Resolved (
     ScopeId, ScopeId-format, LocalId, LocalId-format, LocalId-eq,
     FunctionHandle, VarId, VarId-format, GlobalId, GlobalId-format,
-    StringWord, FunRef, Call,
+    StringWord,
 )
 import "../resolving/intrinsics.watim" as Resolved
 import "../resolving/type.watim" as Type (
@@ -51,7 +51,7 @@ import "./ast.watim" as Ast (
     IndirectCall, VariantWord, UnpackTuple, MakeTuple, StructWord,
     StructWordNamed, Cast, Load, Intrinsic, IntrinsicWord,
     Flip, FieldInit, InitLocal, GetField, GetLocal,
-    SetLocal, StoreLocal, RefLocal)
+    SetLocal, StoreLocal, RefLocal, Call, FunRef)
 import "./intrinsics.watim" as Intrinsics
 
 struct CheckError {
@@ -154,8 +154,8 @@ fn check-modules(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Re
         make Module {
             $module-path @module-path
             $module.imports @imports
-            $module.type-definitions @type-definitions
-            $module.globals @globals
+            $module.type-definitions.values @type-definitions
+            $module.globals.values @globals
             $functions @functions
             $module.static-data @static-data
         } Map:insert-assert-no-alloc<ByteSlice, Module> Maybe:assert-none<_>
@@ -227,14 +227,13 @@ fn is-directly-recursive(ctx: .Ctx, type-lookup: .TypeLookup, handle: .CustomTyp
     }
 } }
 
-fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckError> {
+fn check-functions(ctx: .Ctx) -> Result<Array<FunctionOrExtern>, CheckError> {
     $ctx resolved-module @resolved-module
-    $ctx.persistent \ByteSlice:eq-by-ref $resolved-module.functions.values.len
-    Map:new-with-capacity<ByteSlice, FunctionOrExtern> @functions
+    $ctx.persistent $resolved-module.functions.values.len Array:new-with-capacity<FunctionOrExtern> @functions
     0 @i
-    loop (-> Result<Map<ByteSlice, FunctionOrExtern>, CheckError>) {
+    loop (-> Result<Array<FunctionOrExtern>, CheckError>) {
         $resolved-module.functions.values.len $i = if {
-            $functions make Result<Map<ByteSlice, FunctionOrExtern>, CheckError>.Success break
+            $functions make Result<Array<FunctionOrExtern>, CheckError>.Success break
         }
         &resolved-module.functions.values $i Array:get<Resolved:FunctionOrExtern> match {
             case Resolved:FunctionOrExtern.Function -> {
@@ -265,9 +264,9 @@ fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckE
 
                 $ctx.temp $ctx &locals $ctx.type-lookup $ctx.signatures $ctx.globals WordCtx-new @word-ctx
                 &word-ctx &stack &fun.body.words check-words match {
-                    case Error -> { make Result<Map<ByteSlice, FunctionOrExtern>, CheckError>.Error break }
+                    case Error -> { make Result<Array<FunctionOrExtern>, CheckError>.Error break }
                     case Success -> {}
-                } [,] @diverges @words
+                } WordsAndDiverging-unpack @diverges @words
                 $diverges not if {
                     &stack.positive &fun.signature.returns Types-eq not if {
                         $ctx.temp Fmt:into-new-string @msg @fmt
@@ -275,7 +274,7 @@ fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckE
                         &fmt $ctx.type-lookup &fun.signature.returns Types-pretty-bracketed
                         &fmt "\n\tactual:   " Fmt:write
                         &fmt $ctx.type-lookup &stack.positive Types-pretty-bracketed
-                        $ctx &fun.name $msg Array:unpack<_> abort<Map<ByteSlice, FunctionOrExtern>> break
+                        $ctx &fun.name $msg Array:unpack<_> abort<Array<FunctionOrExtern>> break
                     }
                 }
 
@@ -283,15 +282,13 @@ fn check-functions(ctx: .Ctx) -> Result<Map<ByteSlice, FunctionOrExtern>, CheckE
                 $fun.body.id $words make Scope
                 make Function make FunctionOrExtern.Function
                 &functions flip
-                &fun.name Token-lexeme make ByteSlice flip
-                Map:insert-assert-no-alloc<ByteSlice, FunctionOrExtern> drop
+                Array:push-assert-no-alloc<_>
             }
             case Resolved:FunctionOrExtern.Extern -> {
                 @extrn
                 &functions
-                &extrn.name Token-lexeme make ByteSlice
                 $extrn ~ make FunctionOrExtern.Extern
-                Map:insert-assert-no-alloc<ByteSlice, FunctionOrExtern> drop
+                Array:push-assert-no-alloc<_>
             }
         }
         $i 1 + #i
@@ -365,23 +362,36 @@ fn lookup-signature(ctx: .WordCtx, function: .FunctionHandle) -> .Signature {
         $ctx.signatures $function.index Array:get<Signature>
     } else {
         $ctx.ctx.checked-modules $function.module.index Array:get<Module> @module
-        &module.functions.values $function.index Array:get<FunctionOrExtern> FunctionOrExtern-signature
+        &module.functions $function.index Array:get<FunctionOrExtern> FunctionOrExtern-signature
     }
 }
 
-fn check-words(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word>) -> Result<[Array<Word>, bool], CheckError> {
+struct WordsAndDiverging {
+    words: Array<Word>
+    diverging: bool
+}
+fn WordsAndDiverging-unpack(self: WordsAndDiverging) -> Array<Word>, bool {
+    $self.words $self.diverging
+}
+
+fn check-words(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word>) -> Result<WordsAndDiverging, CheckError> {
     0 1 = @diverges
     $ctx.persistent $remaining-words.len Array:new-with-capacity<Word> @resolved
-    loop (-> Result<[Array<Word>, bool], CheckError>) {
-        $remaining-words.len 0 = if { $resolved $diverges [,2] make Result<[Array<Word>, bool], CheckError>.Success break }
+    loop (-> Result<WordsAndDiverging, CheckError>) {
+        $remaining-words.len 0 = if { $resolved $diverges make WordsAndDiverging make Result<WordsAndDiverging, CheckError>.Success break }
         $remaining-words Array:pop-front<Resolved:Word> @parsed-word
         $ctx $stack $remaining-words &resolved &parsed-word check-word match {
-            case Error -> { make Result<[Array<Word>, bool], CheckError>.Error break }
+            case Error -> { make Result<WordsAndDiverging, CheckError>.Error break }
             case Success -> {}
         }
         $diverges or #diverges
         $diverges not #ctx.reachable
     }
+}
+
+struct WordAndDiverging {
+    word: Word
+    diverging: bool
 }
 
 fn check-word(
@@ -394,12 +404,12 @@ fn check-word(
     $word match {
         case Resolved:Word.Number -> {
             $ctx $stack make Type.I32 push
-            ~ make Word.Number 0 1 = [,2] make Result<[Word, bool], CheckError>.Success
+            ~ make Word.Number 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
         }
         case Resolved:Word.String -> {
             $ctx $stack $ctx.ptr-I8 ~ push
             $ctx $stack make Type.I32 push
-            ~ make Word.String 0 1 = [,2] make Result<[Word, bool], CheckError>.Success
+            ~ make Word.String 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
         }
         case Resolved:Word.GetLocal -> { $ctx flip $stack flip check-get-local }
         case Resolved:Word.RefLocal -> { $ctx flip $stack flip check-ref-local }
@@ -408,7 +418,7 @@ fn check-word(
         case Resolved:Word.Cast -> { $ctx flip $stack flip check-cast }
         case Resolved:Word.Sizeof -> {
             $ctx $stack make Type.I32 push
-            ~ make Word.Sizeof 0 1 = [,2] make Result<[Word, bool], CheckError>.Success
+            ~ make Word.Sizeof 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
         }
         case Resolved:Word.MakeStruct -> { $ctx flip $stack flip check-mk-struc }
         case Resolved:Word.MakeStructNamed -> { $ctx flip $stack flip check-mk-struc-named }
@@ -433,9 +443,9 @@ fn check-word(
     } match {
         case Error -> { make Result<bool, CheckError>.Error }
         case Success -> {
-            [,]
-            flip $ctx.persistent flip $checked-words flip Array:push<Word>
-            make Result<bool, CheckError>.Success
+            @word
+            $ctx.persistent $checked-words $word.word Array:push<Word>
+            $word.diverging make Result<bool, CheckError>.Success
         }
     }
 } }
@@ -1140,7 +1150,7 @@ fn check-intrinsic(
     stack: .Stack,
     word: .Resolved:IntrinsicWord,
     intrinsic: .IntrinsicGroupDescription
-) -> Result<[Word, bool], CheckError> { block (-> Result<[Word, bool], CheckError>) {
+) -> Result<WordAndDiverging, CheckError> { block (-> Result<WordAndDiverging, CheckError>) {
     $ctx.temp $intrinsic.parameter-count Array:new-with-capacity<Type> @arguments
     loop (-> Maybe<CheckError>) {
         $arguments.len $intrinsic.parameter-count = if {
@@ -1152,7 +1162,7 @@ fn check-intrinsic(
         } &arguments flip Array:push-assert-no-alloc<_>
     } match {
         case None -> {}
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
     }
     &arguments Array:reverse<_>
 
@@ -1173,38 +1183,34 @@ fn check-intrinsic(
             }
             &fmt "\nbut got:\n  " Fmt:write
             &fmt $ctx.type-lookup &arguments TypeLookup:Types-pretty-bracketed
-            $ctx.ctx &word.token $msg Array:unpack<_> abort<[Word, bool]> break
-            $ctx.ctx &word.token
-            $ctx.ctx &word.token "TODO: check-intrinsic" abort<[Word, bool]> break
-            break
+            $ctx.ctx &word.token $msg Array:unpack<_> abort<WordAndDiverging> break
         }
         &intrinsic.overloadings $i Array:get<_> @overload
         &meta-vars &overload.parameters &arguments Intrinsics:Types-compare-to-actual if {
             $ctx $stack
             &overload.returns match {
                 case Constant -> { $ctx.persistent flip &meta-vars flip Intrinsics:Types-fill }
-                case Dynamic -> { ~ $ctx.persistent flip &word.generic-arguments flip &arguments flip -> }
+                case Dynamic -> { ~ $ctx.persistent flip &word.generic-arguments flip &arguments flip (.Arena, .Array<Type>, .Array<Type> -> Array<Type>) }
             } & push-many
 
-            $word.token &word.generic-arguments &arguments $overload.construct-intrinsic -> make IntrinsicWord
-            make Word.Intrinsic 0 1 = [,2]
-            make Result<[Word, bool], CheckError>.Success break
+            $word.token &word.generic-arguments &arguments $overload.construct-intrinsic (.Array<Type>, .Array<Type> -> Intrinsic) make IntrinsicWord
+            make Word.Intrinsic 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success break
         }
         $i 1 + #i
     }
 } }
 
-fn check-intrinsics(ctx: .WordCtx, stack: .Stack, word: .Resolved:IntrinsicWord) -> Result<[Word, bool], CheckError> {
+fn check-intrinsics(ctx: .WordCtx, stack: .Stack, word: .Resolved:IntrinsicWord) -> Result<WordAndDiverging, CheckError> {
     &ctx.intrinsics
     &word.intrinsic
     Map:get<_, _> Maybe:assert-some<_>
     $ctx flip $stack flip $word flip check-intrinsic
 }
 
-fn maybeify(r: Result<[Word, bool], CheckError>) -> Result<Maybe<[Word, bool]>, CheckError> {
+fn maybeify(r: Result<WordAndDiverging, CheckError>) -> Result<Maybe<WordAndDiverging>, CheckError> {
     $r match {
-        case Success -> { make Maybe<[Word, bool]>.Some make Result<Maybe<[Word, bool]>, CheckError>.Success }
-        case Error -> { make Result<Maybe<[Word, bool]>, CheckError>.Error }
+        case Success -> { make Maybe<WordAndDiverging>.Some make Result<Maybe<WordAndDiverging>, CheckError>.Success }
+        case Error -> { make Result<Maybe<WordAndDiverging>, CheckError>.Error }
     }
 }
 
@@ -1362,22 +1368,22 @@ fn check-stack-annotation(ctx: .WordCtx, stack: .Stack, word: .Resolved:StackAnn
     }
 } }
 
-fn check-field-init(ctx: .WordCtx, stack: .Stack, word: .Resolved:FieldInit) -> Result<[Word, bool], CheckError> { block {
+fn check-field-init(ctx: .WordCtx, stack: .Stack, word: .Resolved:FieldInit) -> Result<WordAndDiverging, CheckError> { block {
     $ctx.struc-lit-ctx Maybe:assert-some<_> @struc-lit-ctx
 
     $struc-lit-ctx $word.field-index Array:get<_> @type
     $ctx $stack &word.name $type "TODO" expect1 match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
 
-    $word.name $word.struc $type ~ $word.field-index make FieldInit make Word.FieldInit
-    0 1 = [,2] make Result<[Word, bool], CheckError>.Success
+    $word.name $type ~ $word.field-index make FieldInit make Word.FieldInit
+    0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-matsh-void(ctx: .WordCtx, stack: .Stack, word: .Token) -> Result<[Word, bool], CheckError> { block (-> Result<[Word, bool], CheckError>) {
+fn check-matsh-void(ctx: .WordCtx, stack: .Stack, word: .Token) -> Result<WordAndDiverging, CheckError> { block (-> Result<WordAndDiverging, CheckError>) {
     $ctx $stack $word "expected a value to match on" pop1 match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } & match {
         case Ptr -> { ~ }
@@ -1387,23 +1393,28 @@ fn check-matsh-void(ctx: .WordCtx, stack: .Stack, word: .Token) -> Result<[Word,
             @type
             $ctx.type-lookup &type.type-definition TypeLookup:lookup match {
                 case Variant -> {}
-                case _ -> { $ctx.ctx $word "can only match on variants" abort<[Word, bool]> break }
+                case _ -> { $ctx.ctx $word "can only match on variants" abort<WordAndDiverging> break }
             }
         }
-        case _ -> { drop $ctx.ctx $word "can only match on variants" abort<[Word, bool]> break }
+        case _ -> { drop $ctx.ctx $word "can only match on variants" abort<WordAndDiverging> break }
     } @varint
     $varint.cases.len 0 /= if {
-        $ctx.ctx $word "expected variant with zero cases" abort<[Word, bool]> break
+        $ctx.ctx $word "expected variant with zero cases" abort<WordAndDiverging> break
     }
-    $word ~ make Word.MatchVoid 1 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    $word ~ make Word.MatchVoid 1 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[Word, bool], CheckError> { block (-> Result<[Word, bool], CheckError>) {
+struct CaseStack {
+    stack: Stack
+    token: Token
+    diverges: bool
+}
+
+fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<WordAndDiverging, CheckError> { block (-> Result<WordAndDiverging, CheckError>) {
     $ctx.persistent $word.cases.len 1 + Array:new-with-capacity<MatchCase> @cases
     1 1 = @match-diverges
     $ctx $stack &word.token "expected a value to match on" pop1 match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } @arg-item &arg-item match {
         case Ptr -> { ~ 1 1 = }
@@ -1416,12 +1427,12 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
             $ctx.type-lookup &type.type-definition TypeLookup:lookup match {
                 case Variant -> {}
                 case _ -> {
-                    $ctx.ctx &word.token "can only match on variants" abort<[Word, bool]> break
+                    $ctx.ctx &word.token "can only match on variants" abort<WordAndDiverging> break
                 }
             } $type.generic-arguments
         }
         case _ -> {
-            drop $ctx.ctx &word.token "can only match on variants" abort<[Word, bool]> break
+            drop $ctx.ctx &word.token "can only match on variants" abort<WordAndDiverging> break
         }
     } @generic-arguments @varint ~ @varint-type
 
@@ -1434,7 +1445,7 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         } .name &fmt flip Token-lexeme Fmt:write
         &fmt "\nbut got:\n\t" Fmt:write
         &fmt &varint.name Token-lexeme Fmt:write
-        $ctx.ctx &word.token $buf Array:unpack<_> abort<[Word, bool]> break
+        $ctx.ctx &word.token $buf Array:unpack<_> abort<WordAndDiverging> break
     }
 
     $ctx.temp $varint.cases.len Array:new-with-capacity<bool> @visited-tags
@@ -1443,7 +1454,7 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         &visited-tags 0 1 = Array:push-assert-no-alloc<_>
     }
 
-    $ctx.temp $varint.cases.len 1 + Array:new-with-capacity<[Stack, .Token, bool]> @case-stacks
+    $ctx.temp $varint.cases.len 1 + Array:new-with-capacity<CaseStack> @case-stacks
     0 @i
     loop {
         $i $word.cases.len = if { make Maybe<CheckError>.None break }
@@ -1462,7 +1473,7 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         $ctx &case-stack &resolved-case.body.words check-words match {
             case Error -> { make Maybe<CheckError>.Some break }
             case Success -> {}
-        } [,] @case-diverges @words
+        } WordsAndDiverging-unpack @case-diverges @words
         $case-diverges $match-diverges and #match-diverges
         &cases
         $case-type
@@ -1499,10 +1510,10 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         1 1 = =>visited
 
         &resolved-case.name Token-lexeme make ByteSlice @name
-        &case-stacks $case-stack &resolved-case.name $case-diverges [,3] Array:push-assert-no-alloc<[Stack, .Token, bool]>
+        &case-stacks $case-stack $resolved-case.name $case-diverges make CaseStack Array:push-assert-no-alloc<CaseStack>
         $i 1 + #i
     } match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     &word.default match {
@@ -1523,7 +1534,7 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
                 $tag 1 + #tag
             }
             $found-missing if {
-                $ctx.ctx &word.token $buf Array:unpack<_> abort<[Word, bool]> break
+                $ctx.ctx &word.token $buf Array:unpack<_> abort<WordAndDiverging> break
             }
             make Maybe<Scope>.None
         }
@@ -1532,14 +1543,14 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
             $ctx $stack child @def-stack
             $ctx &def-stack $arg-item push
             $ctx &def-stack &default.body.words check-words match {
-                case Error -> { make Result<[Word, bool], CheckError>.Error break }
+                case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
                 case Success -> {}
-            } [,] @default-diverges $default.body.id flip make Scope make Maybe<Scope>.Some
+            } WordsAndDiverging-unpack @default-diverges $default.body.id flip make Scope make Maybe<Scope>.Some
             $match-diverges $default-diverges and #match-diverges
 
-            &case-stacks $def-stack
-            &default.underscore
-            $default-diverges [,3] Array:push-assert-no-alloc<[Stack, .Token, bool]>
+            &case-stacks
+            $def-stack $default.underscore $default-diverges make CaseStack
+            Array:push-assert-no-alloc<CaseStack>
         }
     } @default
 
@@ -1547,28 +1558,28 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
     make Maybe<Stack>.None @first-non-diverging-case
     loop {
         $case-stacks.len $i = if { make Maybe<CheckError>.None break }
-        &case-stacks $i Array:get<[Stack, .Token, bool]> ~ [,] @case-diverges @case-token @case-stack
+        &case-stacks $i Array:get<CaseStack> @case-stack
         $i 1 + #i
-        $case-diverges not if {
+        $case-stack.diverges not if {
             &first-non-diverging-case match {
                 case None -> {
-                    $case-stack make Maybe<Stack>.Some #first-non-diverging-case
+                    $case-stack.stack make Maybe<Stack>.Some #first-non-diverging-case
                 }
                 case Some -> {
                     @first
-                    $ctx $first &case-stack maek-stacks-compatible not if {
+                    $ctx $first &case-stack.stack maek-stacks-compatible not if {
                         $ctx.temp Fmt:into-new-string @buf @fmt
                         &fmt "arms of match case have different types:" Fmt:write
                         0 @j
                         loop {
                             $j $case-stacks.len = if { break }
                             &fmt "\n\t" Fmt:write
-                            &case-stacks $j Array:get<[Stack, .Token, bool]> ~ [,] drop @case-token @case-stack
-                            &fmt $ctx.type-lookup &case-stack.negative Types-pretty-bracketed
+                            &case-stacks $j Array:get<_> @case-stack
+                            &fmt $ctx.type-lookup &case-stack.stack.negative Types-pretty-bracketed
                             &fmt " -> " Fmt:write
-                            &fmt $ctx.type-lookup &case-stack.positive Types-pretty-bracketed
+                            &fmt $ctx.type-lookup &case-stack.stack.positive Types-pretty-bracketed
                             &fmt " in case " Fmt:write
-                            &fmt $case-token Token-lexeme Fmt:write
+                            &fmt &case-stack.token Token-lexeme Fmt:write
                             $j 1 + #j
                         }
                         $ctx.ctx &word.token $buf Array:unpack<_> abort-m break
@@ -1577,18 +1588,18 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
             }
         }
     } match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
 
     $case-stacks.len 0 = if {
         Array:new<Type> Array:new<Type>
     } else {
-        &case-stacks 0 Array:get<[Stack, .Token, bool]> ~ [,] drop drop @most-params
+        &case-stacks 0 Array:get<_> .stack @most-params
         1 @i
         loop {
             $i $case-stacks.len = if { break }
-            &case-stacks $i Array:get<[Stack, .Token, bool]> ~ [,] drop drop @case-stack
+            &case-stacks $i Array:get<_> .stack @case-stack
             $case-stack.negative.len
             $most-params.negative.len gt if {
                 $case-stack #most-params
@@ -1608,15 +1619,15 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         0 @i
         loop {
             $i $case-stacks.len = if { break }
-            &case-stacks $i Array:get<[Stack, .Token, bool]> ~ [,] @case-diverges drop @case-stack
+            &case-stacks $i Array:get<_> @case-stack
 
-            $case-diverges not if {
+            $case-stack.diverges not if {
                 // Since the returns start out being set to the parameters,
                 // any actual parameter of the case, will pop one item from the returns.
-                &returns $returns.len $case-stack.negative.len - Array:truncate<Type>
+                &returns $returns.len $case-stack.stack.negative.len - Array:truncate<Type>
 
                 // Any values produced by the case are return values of the match.
-                $ctx.persistent &returns &case-stack.positive Array:append<Type>
+                $ctx.persistent &returns &case-stack.stack.positive Array:append<Type>
                 break
             }
             $i 1 + #i
@@ -1626,7 +1637,7 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
 
     } @returns @parameters
     $ctx $stack &word.token &parameters expect match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     $ctx $stack &returns push-many
@@ -1639,8 +1650,7 @@ fn check-matsh(ctx: .WordCtx, stack: .Stack, word: .Resolved:Match) -> Result<[W
         $parameters @parameters
         $match-diverges if { make Maybe<Array<Type>>.None } else { $returns make Maybe<Array<Type>>.Some } @returns
     }
-    make Word.Match $match-diverges [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.Match $match-diverges make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
 fn ifel-stack-mismatch-error(ctx: .WordCtx, word: .Resolved:If, true-stack: .Stack, false-stack: .Stack) -> CheckError {
@@ -1652,18 +1662,18 @@ fn ifel-stack-mismatch-error(ctx: .WordCtx, word: .Resolved:If, true-stack: .Sta
     $ctx.ctx &word.token $msg Array:unpack<_> error
 }
 
-fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word>, word: .Resolved:If) -> Result<[Word, bool], CheckError> { block {
+fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word>, word: .Resolved:If) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack &word.token $ctx.Bool "expected a bool for `if`" expect1 match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     $ctx $stack child @true-stack
     $ctx $stack child @false-stack
 
     $ctx &true-stack &word.true-branch.words check-words match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
-    } [,] @true-words-diverge @true-words
+    } WordsAndDiverging-unpack @true-words-diverge @true-words
 
     &true-stack.negative @true-parameters
 
@@ -1676,9 +1686,9 @@ fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word
         $ctx &remaining-stack $true-parameters.len use drop
 
         $ctx &remaining-stack $remaining-words check-words match {
-            case Error -> { make Result<[Word, bool], CheckError>.Error break }
+            case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
             case Success -> {}
-        } [,] @remaining-words-diverge @remaining-words
+        } WordsAndDiverging-unpack @remaining-words-diverge @remaining-words
 
         // This drop-n will always pop enough values from the parent stack
         // even for the true-branch, since the call to `use` above makes sure,
@@ -1705,18 +1715,18 @@ fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word
             } @returns
             $word.true-branch.id  $true-words      make Scope @true-branch
             $word.false-branch.id $remaining-words make Scope @false-branch
-        } make Word.If $diverges [,2] make Result<[Word, bool], CheckError>.Success break
+        } make Word.If $diverges make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success break
     }
 
     $ctx &false-stack &word.false-branch.words check-words match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
-    } [,] @false-words-diverge @false-words
+    } WordsAndDiverging-unpack @false-words-diverge @false-words
 
     $true-words-diverge not $false-words-diverge not and if {
         $ctx &true-stack &false-stack maek-stacks-compatible not if {
             $ctx $word &true-stack &false-stack ifel-stack-mismatch-error
-            make Result<[Word, bool], CheckError>.Error break
+            make Result<WordAndDiverging, CheckError>.Error break
         }
         // Because of `maek-stacks-compatible`, the stacks of both branches
         //  must have the same parameters, so always picking the true-stack here is fine.
@@ -1728,18 +1738,18 @@ fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word
         loop {
             $i  $true-stack.negative.len =
             $i $false-stack.negative.len =
-            or if { [,0] make Result<[], CheckError>.Success break }
+            or if { unit make Result<Unit, CheckError>.Success break }
             &true-stack.negative  $i Array:get<Type>
             &false-stack.negative $i Array:get<Type>
             Type:eq not if {
                 $ctx $word &true-stack &false-stack ifel-stack-mismatch-error
-                make Result<[], CheckError>.Error break
+                make Result<Unit, CheckError>.Error break
             }
             $i 1 + #i
         } match {
-            case Success -> {}
-            case Error -> { make Result<[Word, bool], CheckError>.Error break }
-        } drop
+            case Success -> { useless }
+            case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
+        }
 
         $ctx.persistent $true-stack.negative.len $false-stack.negative.len gt if {
             &true-stack.negative
@@ -1760,7 +1770,7 @@ fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word
         $ctx $stack $param-count drop-n
     } else {
         $ctx $stack &word.token &parameters expect match {
-            case Some -> { make Result<[Word, bool], CheckError>.Error break }
+            case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
             case None -> {}
         }
         &returns match {
@@ -1776,10 +1786,10 @@ fn check-iff(ctx: .WordCtx, stack: .Stack, remaining-words: .Array<Resolved:Word
         $returns @returns
         $word.true-branch.id  $true-words  make Scope @true-branch
         $word.false-branch.id $false-words make Scope @false-branch
-    } make Word.If $diverges [,2] make Result<[Word, bool], CheckError>.Success
+    } make Word.If $diverges make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-lop(ctx: .WordCtx, stack: .Stack, word: .Resolved:Loop) -> Result<[Word, bool], CheckError> { block {
+fn check-lop(ctx: .WordCtx, stack: .Stack, word: .Resolved:Loop) -> Result<WordAndDiverging, CheckError> { block {
     Array:new<BreakStack> @loop-break-stacks
 
     $ctx $stack child @loop-stack
@@ -1789,9 +1799,9 @@ fn check-lop(ctx: .WordCtx, stack: .Stack, word: .Resolved:Loop) -> Result<[Word
     } with-brek-stacks @loop-ctx
 
     &loop-ctx &loop-stack &word.body.words check-words match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
-    } [,] drop @words
+    } .words @words
     $loop-break-stacks.len 0 = @diverges
 
     $ctx.persistent &word.annotation match {
@@ -1828,14 +1838,14 @@ fn check-lop(ctx: .WordCtx, stack: .Stack, word: .Resolved:Loop) -> Result<[Word
             }
         } match {
             case None -> {}
-            case Some -> { make Result<[Word, bool], CheckError>.Error break }
+            case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         }
     }
 
     // The parameters of the loop must match the values remaining on the
     // stack, at the end of the loop, to supply the next iteration.
     &parameters &loop-stack.positive Types-eq not if {
-        $ctx.ctx &word.token "unexpected values remaining on stack at the end of loop" abort<[Word, bool]> break
+        $ctx.ctx &word.token "unexpected values remaining on stack at the end of loop" abort<WordAndDiverging> break
     }
 
     &word.annotation match {
@@ -1851,7 +1861,7 @@ fn check-lop(ctx: .WordCtx, stack: .Stack, word: .Resolved:Loop) -> Result<[Word
     } @returns
 
     $ctx $stack &word.token &parameters expect match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     $ctx $stack &returns push-many
@@ -1861,11 +1871,10 @@ fn check-lop(ctx: .WordCtx, stack: .Stack, word: .Resolved:Loop) -> Result<[Word
         $diverges if { make Maybe<Array<Type>>.None } else { $returns make Maybe<Array<Type>>.Some } @returns
         $word.body.id $words make Scope @body
     }
-    make Word.Loop $diverges [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.Loop $diverges make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bool], CheckError> { block (-> Result<[Word, bool], CheckError>) {
+fn check-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<WordAndDiverging, CheckError> { block (-> Result<WordAndDiverging, CheckError>) {
     $ctx.persistent $ctx.blok-returns match {
         case None -> { $ctx $stack dump }
         case Some -> { .len ~ $ctx flip $stack flip pop-n }
@@ -1873,7 +1882,7 @@ fn check-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bool
     $ctx.persistent
     $ctx.brek-stacks match {
         case None -> {
-            $ctx.ctx $token "`break` can only be used inside of blocks and loops" abort<[Word, bool]> break
+            $ctx.ctx $token "`break` can only be used inside of blocks and loops" abort<WordAndDiverging> break
         }
         case Some -> {}
     }
@@ -1883,8 +1892,7 @@ fn check-brek(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bool
         $ctx.reachable @reachable
     }
     Array:push<BreakStack>
-    $token ~ make Word.Break 1 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    $token ~ make Word.Break 1 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
 fn brek-stack-mismatch-error(ctx: .WordCtx, token: .Token, brek-stacks: .Array<BreakStack>) -> CheckError {
@@ -1905,7 +1913,7 @@ fn brek-stack-mismatch-error(ctx: .WordCtx, token: .Token, brek-stacks: .Array<B
     $ctx.ctx $token $msg Array:unpack<_> error
 }
 
-fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<[Word, bool], CheckError> { block {
+fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<WordAndDiverging, CheckError> { block {
     Array:new<BreakStack> @block-break-stacks
 
     $ctx $stack child @block-stack
@@ -1915,9 +1923,9 @@ fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<[Wo
     } with-brek-stacks @block-ctx
 
     &block-ctx &block-stack &word.body.words check-words match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
-    } [,] @diverges @words
+    } WordsAndDiverging-unpack @diverges @words
     $diverges not @block-end-is-reached
 
     $ctx.persistent &word.annotation match {
@@ -1949,7 +1957,7 @@ fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<[Wo
             }
         } match {
             case None -> {}
-            case Some -> { make Result<[Word, bool], CheckError>.Error break }
+            case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         }
         $block-end-is-reached if {
             &block-stack.positive &first.types Types-eq not if {
@@ -1957,7 +1965,7 @@ fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<[Wo
                 $word.end $block-stack.positive $diverges make BreakStack
                 Array:push<BreakStack>
                 $ctx &word.token &block-break-stacks brek-stack-mismatch-error
-                make Result<[Word, bool], CheckError>.Error break
+                make Result<WordAndDiverging, CheckError>.Error break
             }
         }
     }
@@ -1973,7 +1981,7 @@ fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<[Wo
         }
     } Array:clone<Type> @returns
     $ctx $stack &word.token &parameters expect match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     $ctx $stack &returns push-many
@@ -1983,22 +1991,36 @@ fn check-blok(ctx: .WordCtx, stack: .Stack, word: .Resolved:Block) -> Result<[Wo
         $returns @returns
         $word.body.id $words make Scope @body
     }
-    make Word.Block $diverges [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.Block $diverges make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-fun-ref(ctx: .WordCtx, stack: .Stack, word: .Resolved:FunRef) -> Result<[Word, bool], CheckError> { block {
+fn check-fun-ref(ctx: .WordCtx, stack: .Stack, word: .Resolved:FunRef) -> Result<WordAndDiverging, CheckError> { block {
     $ctx &word.call.function lookup-signature @signature
     $ctx.persistent &signature.parameters \NamedType-type Array:map<NamedType, Type> @parameters
     $ctx $stack $word.call.name $parameters $signature.returns make FunType make Type.Fun push
-    $word.call make FunRef
-    make Word.FunRef 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+
+
+    &word.call.generic-arguments match {
+        case None -> {}
+        case Some -> {
+            @generic-arguments
+            $signature.generic-parameters.len $generic-arguments.len /= if {
+                $ctx.ctx &word.call.name $signature.generic-parameters.len $generic-arguments.len generic-arguments-mismatch-error
+                make Result<WordAndDiverging, CheckError>.Error break
+            }
+        }
+    }
+
+    $word.call.generic-arguments Maybe:assert-some<_> @generic-arguments
+
+    $word.call.name $word.call.function $generic-arguments make Call
+    make FunRef
+    make Word.FunRef 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-indirect-call(ctx: .WordCtx, stack: .Stack, word: .Resolved:IndirectCall) -> Result<[Word, bool], CheckError> { block {
+fn check-indirect-call(ctx: .WordCtx, stack: .Stack, word: .Resolved:IndirectCall) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack pop match {
-        case None -> { $ctx.ctx &word.token "`->` expected a function on the stack, got: []" abort<[Word, bool]> break }
+        case None -> { $ctx.ctx &word.token "`->` expected a function on the stack, got: []" abort<WordAndDiverging> break }
         case Some -> {}
     } @fun-type
     $fun-type match {
@@ -2009,18 +2031,17 @@ fn check-indirect-call(ctx: .WordCtx, stack: .Stack, word: .Resolved:IndirectCal
             &fmt "`->` expected a function on the stack, got: [" Fmt:write
             &fmt &fun-type Type:format
             &fmt "]" Fmt:write
-            $ctx.ctx &word.token $msg Array:unpack<_> abort<[Word, bool]> break
+            $ctx.ctx &word.token $msg Array:unpack<_> abort<WordAndDiverging> break
         }
     } @fun-type
     $ctx $stack &word.token &fun-type.parameters expect match {
         case None -> {
             $ctx $stack &fun-type.returns 0 !.Array<Type> push-returns
         }
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
     }
     $word.token $fun-type make IndirectCall
-    make Word.IndirectCall 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.IndirectCall 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
 fn push-returns(ctx: .WordCtx, stack: .Stack, returns: .Array<Type>, generic-arguments: .Array<Type>) {
@@ -2038,7 +2059,7 @@ fn push-returns(ctx: .WordCtx, stack: .Stack, returns: .Array<Type>, generic-arg
     }
 }
 
-fn check-mk-varint(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeVariant) -> Result<[Word, bool], CheckError> { block {
+fn check-mk-varint(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeVariant) -> Result<WordAndDiverging, CheckError> { block {
     $ctx.type-lookup &word.type.type-definition TypeLookup:lookup match {
         case Variant -> {}
         case Struct -> { drop Core:unreachable<.Variant> }
@@ -2057,7 +2078,7 @@ fn check-mk-varint(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeVariant) ->
                     &fmt "expected: " Fmt:write
                     &fmt $ctx.type-lookup &expected TypeLookup:pretty
                     &fmt " but stack is empty\n" Fmt:write
-                    $ctx.ctx &word.token $msg Array:unpack<_> abort<[Word, bool]> break
+                    $ctx.ctx &word.token $msg Array:unpack<_> abort<WordAndDiverging> break
                 }
                 case Some -> {
                     @actual
@@ -2069,7 +2090,7 @@ fn check-mk-varint(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeVariant) ->
                         &fmt $ctx.type-lookup &expected TypeLookup:pretty
                         &fmt "\nbut got:\n  " Fmt:write
                         &fmt $ctx.type-lookup &actual TypeLookup:pretty
-                        $ctx.ctx &word.token $msg Array:unpack<_> abort<[Word, bool]> break
+                        $ctx.ctx &word.token $msg Array:unpack<_> abort<WordAndDiverging> break
                     }
                 }
             }
@@ -2077,25 +2098,24 @@ fn check-mk-varint(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeVariant) ->
     }
     $ctx $stack $word.type make Type.Custom push
     $word.token $word.tag $word.type make VariantWord
-    make Word.VariantWord 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.VariantWord 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-unpack-tuple(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<[Word, bool], CheckError> { block {
+fn check-unpack-tuple(ctx: .WordCtx, stack: .Stack, token: .Token) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack pop match {
-        case None -> { $ctx.ctx $token "expected a tuple on the stack" abort<[Word, bool]> break }
+        case None -> { $ctx.ctx $token "expected a tuple on the stack" abort<WordAndDiverging> break }
         case Some -> {}
     } @type
     $type match {
         case Tuple -> {}
-        case _ -> { drop $ctx.ctx $token "expected a tuple on the stack" abort<[Word, bool]> break }
+        case _ -> { drop $ctx.ctx $token "expected a tuple on the stack" abort<WordAndDiverging> break }
     } @tuple
     $ctx $stack &tuple.items push-many
     $token ~ $type
-    make UnpackTuple make Word.UnpackTuple 0 1 = [,2] make Result<[Word, bool], CheckError>.Success
+    make UnpackTuple make Word.UnpackTuple 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-mk-tuple(ctx: .WordCtx, stack: .Stack, word: .P:MakeTuple) -> Result<[Word, bool], CheckError> { block {
+fn check-mk-tuple(ctx: .WordCtx, stack: .Stack, word: .P:MakeTuple) -> Result<WordAndDiverging, CheckError> { block {
     &word.items Token-lexeme Util:parse @num-items
     $ctx.persistent $num-items Array:new-with-capacity<Type> @items
     loop {
@@ -2105,18 +2125,17 @@ fn check-mk-tuple(ctx: .WordCtx, stack: .Stack, word: .P:MakeTuple) -> Result<[W
             case Some -> {}
         } $ctx.persistent flip &items flip Array:push<Type>
     } match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     &items Array:reverse<Type>
     $word.token $items make TupleType make Type.Tuple @type
     $ctx $stack $type push
     $word.token $type make MakeTuple
-    make Word.MakeTuple 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.MakeTuple 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-mk-struc(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeStruct) -> Result<[Word, bool], CheckError> { block {
+fn check-mk-struc(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeStruct) -> Result<WordAndDiverging, CheckError> { block {
     $ctx.type-lookup &word.type.type-definition TypeLookup:lookup match {
         case Struct -> {}
         case Variant -> { drop Core:unreachable<.Struct> }
@@ -2125,14 +2144,14 @@ fn check-mk-struc(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeStruct) -> R
     $ctx $stack $struc.fields.len pop-n @arguments
     $ctx &word.token &arguments &struc.fields &word.type.generic-arguments infer-generic-arguments-from-args match {
         case None -> {}
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
     }
     $ctx $stack $word.type make Type.Custom push
-    $word.token $word.type make StructWord make Word.StructWord 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    $word.token $word.type make StructWord make Word.StructWord 0 1 =
+    make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeStructNamed) -> Result<[Word, bool], CheckError> { block {
+fn check-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeStructNamed) -> Result<WordAndDiverging, CheckError> { block {
     $ctx.type-lookup &word.type.type-definition TypeLookup:lookup match {
         case Struct -> {}
         case Variant -> { drop Core:unreachable<.Struct> }
@@ -2147,33 +2166,31 @@ fn check-mk-struc-named(ctx: .WordCtx, stack: .Stack, word: .Resolved:MakeStruct
     }
     $ctx &fields with-struc-lit-ctx @child-ctx
     &child-ctx $stack &word.body.words check-words match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
-    } [,] @diverges @body
+    } WordsAndDiverging-unpack @diverges @body
     $ctx $stack $word.type make Type.Custom push
 
     $word.token $word.type $word.body.id $body make Scope
     make StructWordNamed make Word.StructWordNamed
-    $diverges [,2]
-    make Result<[Word, bool], CheckError>.Success
+    $diverges make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-cast(ctx: .WordCtx, stack: .Stack, cast: .Resolved:Cast) -> Result<[Word, bool], CheckError> { block {
+fn check-cast(ctx: .WordCtx, stack: .Stack, cast: .Resolved:Cast) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack pop match {
-        case None -> { $ctx.ctx &cast.token "cast expected an item" abort<[Word, bool]> break }
+        case None -> { $ctx.ctx &cast.token "cast expected an item" abort<WordAndDiverging> break }
         case Some -> {}
     }
     $ctx $stack $cast.dst push
     $cast.token flip
     $cast.dst
     make Cast
-    make Word.Cast 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.Cast 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-load(ctx: .WordCtx, stack: .Stack, word: .Resolved:Load) -> Result<[Word, bool], CheckError> { block {
+fn check-load(ctx: .WordCtx, stack: .Stack, word: .Resolved:Load) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack pop match {
-        case None -> { $ctx.ctx &word.token "`~` expected a ptr, got: []" abort<[Word, bool]> break }
+        case None -> { $ctx.ctx &word.token "`~` expected a ptr, got: []" abort<WordAndDiverging> break }
         case Some -> {}
     } match {
         case Ptr -> {}
@@ -2183,33 +2200,40 @@ fn check-load(ctx: .WordCtx, stack: .Stack, word: .Resolved:Load) -> Result<[Wor
             &fmt "~` expected a ptr, got: [" Fmt:write
             &fmt $ctx.type-lookup &actual TypeLookup:pretty
             &fmt "]" Fmt:write
-            $ctx.ctx &word.token $msg Array:unpack<_> abort<[Word, bool]> break
+            $ctx.ctx &word.token $msg Array:unpack<_> abort<WordAndDiverging> break
         }
     } @type
     $ctx $stack $type ~ push
     $word.token $type ~ make Load
-    make Word.Load 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.Load 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-call(ctx: .WordCtx, stack: .Stack, word: .Resolved:Call) -> Result<[Word, bool], CheckError> { block {
+fn check-call(ctx: .WordCtx, stack: .Stack, word: .Resolved:Call) -> Result<WordAndDiverging, CheckError> { block {
     $ctx &word.function lookup-signature @signature
 
-    $signature.generic-parameters.len $word.generic-arguments.len /= if {
-        $ctx.ctx &word.name $signature.generic-parameters.len $word.generic-arguments.len generic-arguments-mismatch-error
-        make Result<[Word, bool], CheckError>.Error break
+    &word.generic-arguments match {
+        case None -> {}
+        case Some -> {
+            @generic-arguments
+            $signature.generic-parameters.len $generic-arguments.len /= if {
+                $ctx.ctx &word.name $signature.generic-parameters.len $generic-arguments.len generic-arguments-mismatch-error
+                make Result<WordAndDiverging, CheckError>.Error break
+            }
+        }
     }
+
+    $word.generic-arguments Maybe:assert-some<_> @generic-arguments
 
     $ctx $stack $signature.parameters.len pop-n @args
 
-    $ctx &word.name &args &signature.parameters &word.generic-arguments infer-generic-arguments-from-args match {
+    $ctx &word.name &args &signature.parameters &generic-arguments infer-generic-arguments-from-args match {
         case None -> {}
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
     }
-    $ctx $stack &signature.returns &word.generic-arguments push-returns
+    $ctx $stack &signature.returns &generic-arguments push-returns
 
-    $word ~ make Word.Call 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success break
+    $word.name $word.function $generic-arguments make Call make Word.Call 0 1 =
+    make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
 fn parameter-argument-mismatch-error(ctx: .WordCtx, token: .Token, arguments: .Array<Type>, parameters: .Array<NamedType>, generic-arguments: .Array<Type>) -> Maybe<CheckError> {
@@ -2264,7 +2288,7 @@ fn infer-generic-arguments-from-args(
     }
 
 
-    $generic-arguments \Type:find-hole Array:findMap<Type, .Token> match {
+    $generic-arguments \Type:find-hole Array:find-map<Type, .Token> match {
         case None -> { make Maybe<CheckError>.None }
         case Some -> {
             $ctx.ctx flip "failed to infer type for hole" abort-m
@@ -2521,13 +2545,30 @@ fn pop1(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
     } make Result<Type, CheckError>.Success
 } }
 
-fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<[Type, Type], CheckError> { block {
+struct Type2 {
+    a: Type
+    b: Type
+}
+fn Type2-unpack(self: Type2) -> Type, Type {
+    $self.a $self.b
+}
+
+struct Type3 {
+    a: Type
+    b: Type
+    c: Type
+}
+fn Type3-unpack(self: Type3) -> Type, Type, Type {
+    $self.a $self.b $self.c
+}
+
+fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<Type2, CheckError> { block {
     $ctx $stack pop match {
         case None -> {
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt $expected-ptr $expected-len Fmt:write
             &fmt ", got: []" Fmt:write
-            $ctx.ctx $token $msg Array:unpack<_> abort<[Type, Type]> break
+            $ctx.ctx $token $msg Array:unpack<_> abort<Type2> break
         }
         case Some -> {}
     } @b
@@ -2538,19 +2579,19 @@ fn pop2(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
             &fmt ", got: [" Fmt:write
             &fmt $ctx.type-lookup &b TypeLookup:pretty
             &fmt "]" Fmt:write
-            $ctx.ctx $token $msg Array:unpack<_> abort<[Type, Type]> break
+            $ctx.ctx $token $msg Array:unpack<_> abort<Type2> break
         }
         case Some -> {}
-    } $b [,2] make Result<[Type, Type], CheckError>.Success
+    } $b make Type2 make Result<Type2, CheckError>.Success
 } }
 
-fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<[Type, Type, Type], CheckError> { block {
+fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected-len: i32) -> Result<Type3, CheckError> { block {
     $ctx $stack pop match {
         case None -> {
             $ctx.temp Fmt:into-new-string @msg @fmt
             &fmt $expected-ptr $expected-len Fmt:write
             &fmt ", got: []" Fmt:write
-            $ctx.ctx $token $msg Array:unpack<_> abort<[Type, Type, Type]> break
+            $ctx.ctx $token $msg Array:unpack<_> abort<Type3> break
         }
         case Some -> {}
     } @c
@@ -2561,7 +2602,7 @@ fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
             &fmt ", got: [" Fmt:write
             &fmt $ctx.type-lookup &c TypeLookup:pretty
             &fmt "]" Fmt:write
-            $ctx.ctx $token $msg Array:unpack<_> abort<[Type, Type, Type]> break
+            $ctx.ctx $token $msg Array:unpack<_> abort<Type3> break
         }
         case Some -> {}
     } @b
@@ -2574,10 +2615,10 @@ fn pop3(ctx: .WordCtx, stack: .Stack, token: .Token, expected-ptr: .i8, expected
             &fmt ", " Fmt:write
             &fmt $ctx.type-lookup &c TypeLookup:pretty
             &fmt "]" Fmt:write
-            $ctx.ctx $token $msg Array:unpack<_> abort<[Type, Type, Type]> break
+            $ctx.ctx $token $msg Array:unpack<_> abort<Type3> break
         }
         case Some -> {}
-    } $b $c [,3] make Result<[Type, Type, Type], CheckError>.Success
+    } $b $c make Type3 make Result<Type3, CheckError>.Success
 } }
 
 fn type-mismatch-error(ctx: .WordCtx, token: .Token, expected: .Array<Type>, actual: .Array<Type>) -> Maybe<CheckError> {
@@ -2655,7 +2696,7 @@ fn expect2(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, expe
     $ctx $stack $token $expected-ptr $expected-len pop2 match {
         case Error -> { make Maybe<CheckError>.Some break }
         case Success -> {}
-    } [,] @actual-b @actual-a
+    } Type2-unpack @actual-b @actual-a
     block {
         &actual-b $b Type:eq not if { 1 1 = break }
         &actual-a $a Type:eq not if { 1 1 = break }
@@ -2675,7 +2716,7 @@ fn expect3(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, c: .
     $ctx $stack $token $expected-ptr $expected-len pop3 match {
         case Error -> { make Maybe<CheckError>.Some break }
         case Success -> {}
-    } [,] @actual-c @actual-b @actual-a
+    } Type3-unpack @actual-c @actual-b @actual-a
     block {
         &actual-c $c Type:eq not if { 1 1 = break }
         &actual-b $b Type:eq not if { 1 1 = break }
@@ -2694,33 +2735,32 @@ fn expect3(ctx: .WordCtx, stack: .Stack, token: .Token, a: .Type, b: .Type, c: .
     }
 } }
 
-fn check-init-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:InitLocal) -> Result<[Word, bool], CheckError> { block {
+fn check-init-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:InitLocal) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack pop match {
-        case None -> { $ctx.ctx &word.name "local init expected item on stack" abort<[Word, bool]> break }
+        case None -> { $ctx.ctx &word.name "local init expected item on stack" abort<WordAndDiverging> break }
         case Some -> {}
     } @type
 
     $ctx.persistent $ctx.env $word.local
     make Local {
         // TODO: why does this say Synthetic?
-        $word.local.name make LocalName.Synthetic @name
+        $word.name $word.local.name make SyntheticName make LocalName.Synthetic @name
         $type @type
         0 1 = @reffed
         0 1 = @is-parameter
     } Map:insert<LocalId, Local> Maybe:assert-none<_>
 
     $word.name $type $word.local make InitLocal
-    make Word.InitLocal 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.InitLocal 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-get-field(ctx: .WordCtx, stack: .Stack, word: .P:GetField) -> Result<[Word, bool], CheckError> { block {
+fn check-get-field(ctx: .WordCtx, stack: .Stack, word: .P:GetField) -> Result<WordAndDiverging, CheckError> { block {
     $ctx $stack pop match {
-        case None -> { $ctx.ctx &word.token "expected a value on the stack" abort<[Word, bool]> break }
+        case None -> { $ctx.ctx &word.token "expected a value on the stack" abort<WordAndDiverging> break }
         case Some -> {}
     } @type
     $ctx $type &word.fields resolve-field-accesses match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } @fields
     $type match {
@@ -2731,11 +2771,10 @@ fn check-get-field(ctx: .WordCtx, stack: .Stack, word: .P:GetField) -> Result<[W
     $on-ptr if { $type make Type.Ptr } else { $type ~ } @type
     $ctx $stack $type push
     $word.token $fields $on-ptr $type make GetField
-    make Word.GetField 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.GetField 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-get-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:GetLocal) -> Result<[Word, bool], CheckError> { block {
+fn check-get-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:GetLocal) -> Result<WordAndDiverging, CheckError> { block {
     &word.var match {
         case VarId.Global -> {
             @global-id
@@ -2746,7 +2785,7 @@ fn check-get-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:GetLocal) -> Re
         }
     } @var-type
     $ctx $var-type ~ &word.fields resolve-field-accesses match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } @fields
     $fields.len 0 = if {
@@ -2756,11 +2795,10 @@ fn check-get-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:GetLocal) -> Re
     } @type
     $ctx $stack $type push
     $word.name $word.var $var-type ~ $fields $type make GetLocal
-    make Word.GetLocal 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.GetLocal 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-set-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:SetLocal) -> Result<[Word, bool], CheckError> { block {
+fn check-set-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:SetLocal) -> Result<WordAndDiverging, CheckError> { block {
     &word.var match {
         case VarId.Global -> {
             @global-id
@@ -2772,7 +2810,7 @@ fn check-set-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:SetLocal) -> Re
         }
     } @type
     $ctx $type ~ &word.fields resolve-field-accesses match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } @fields
     $fields.len 0 = if {
@@ -2781,15 +2819,14 @@ fn check-set-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:SetLocal) -> Re
         &fields $fields.len 1 - Array:get<FieldAccess> .target-type
     } @type
     $ctx $stack &word.name $type "TODO" expect1 match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     $word.name $word.var $fields $type ~ make SetLocal
-    make Word.SetLocal 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.SetLocal 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn check-store(ctx: .WordCtx, stack: .Stack, word: .Resolved:StoreLocal) -> Result<[Word, bool], CheckError> { block {
+fn check-store(ctx: .WordCtx, stack: .Stack, word: .Resolved:StoreLocal) -> Result<WordAndDiverging, CheckError> { block {
     &word.var match {
         case VarId.Global -> {
             @global-id
@@ -2801,7 +2838,7 @@ fn check-store(ctx: .WordCtx, stack: .Stack, word: .Resolved:StoreLocal) -> Resu
         }
     } @type
     $ctx $type ~ &word.fields resolve-field-accesses match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } @fields
     $fields.len 0 = if {
@@ -2810,61 +2847,33 @@ fn check-store(ctx: .WordCtx, stack: .Stack, word: .Resolved:StoreLocal) -> Resu
         &fields $fields.len 1 - Array:get<FieldAccess> .target-type
     } match {
         case Ptr -> { ~ }
-        case _ -> { drop $ctx.ctx &word.name "`=>` can only store into ptr types" abort<[Word, bool]> break }
+        case _ -> { drop $ctx.ctx &word.name "`=>` can only store into ptr types" abort<WordAndDiverging> break }
     } @expected-type
     $ctx $stack &word.name $expected-type "TODO" expect1 match {
-        case Some -> { make Result<[Word, bool], CheckError>.Error break }
+        case Some -> { make Result<WordAndDiverging, CheckError>.Error break }
         case None -> {}
     }
     $word.name $word.var $expected-type ~ $fields make StoreLocal
-    make Word.StoreLocal 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.StoreLocal 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
-fn fields-go-through-ptr(fields: .Array<FieldAccess>) -> bool {
-    0 @i
-    loop {
-        $i $fields.len = if {
-            // No field access went through a pointer,
-            0 1 = break
-        }
-        $fields $i Array:get<FieldAccess> .source-type match {
-            case Ptr -> {
-                drop
-                // At least one field access goes through a pointer,
-                1 1 = break
-            }
-            case _ -> { drop }
-        }
-        $i 1 + #i
-    }
-}
-
-fn check-ref-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:RefLocal) -> Result<[Word, bool], CheckError> { block {
+fn check-ref-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:RefLocal) -> Result<WordAndDiverging, CheckError> { block {
     &word.var match {
         case VarId.Global -> {
             @global-id
             &ctx.globals.values $global-id.index Array:get<_> @globl
-            &globl.reffed
             $globl.type
         }
         case VarId.Local -> {
             @local-id
             $ctx.env $local-id Map:get<_, _> Maybe:assert-some<_> @local
-            &local.reffed
             $local.type
         }
-    } @type @reffed-slot
+    } @type
     $ctx $type &word.fields resolve-field-accesses match {
-        case Error -> { make Result<[Word, bool], CheckError>.Error break }
+        case Error -> { make Result<WordAndDiverging, CheckError>.Error break }
         case Success -> {}
     } @fields
-
-    &fields fields-go-through-ptr not if {
-        // No field access went through a pointer,
-        // therefore this local really was reffed.
-        1 1 = =>reffed-slot
-    }
 
     $fields.len 0 = if {
         &type
@@ -2873,8 +2882,7 @@ fn check-ref-local(ctx: .WordCtx, stack: .Stack, word: .Resolved:RefLocal) -> Re
     } $ctx.persistent flip Arena:copy<Type> @result-type
     $ctx $stack $result-type make Type.Ptr push
     $word.name $word.var $fields make RefLocal
-    make Word.RefLocal 0 1 = [,2]
-    make Result<[Word, bool], CheckError>.Success
+    make Word.RefLocal 0 1 = make WordAndDiverging make Result<WordAndDiverging, CheckError>.Success
 } }
 
 fn resolve-field-accesses(ctx: .WordCtx, type: Type, fields: .Array<Token>) -> Result<Array<FieldAccess>, CheckError> { block {
