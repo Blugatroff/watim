@@ -23,7 +23,7 @@ import "../resolving/words.watim" as Resolved (
     VarId, VarId-format, StringWord, StringWord-format,
 )
 import "../resolving/top-items.watim" as Resolved (LocalName, LocalName-format)
-import "../checking/ast.watim" as Checked
+import "../inference/ast.watim" as Checked
 
 import "./type.watim" as Type (
     Type(Ptr, Bool, I8, I32, I64, Tuple, Fun, Custom), Type-format, Type-eq,

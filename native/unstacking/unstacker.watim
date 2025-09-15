@@ -22,52 +22,6 @@ import "./stack.watim" as Stack (Stack)
 import "./source.watim" as Source (Source, Source-format, MultiReturnNode)
 import "./word.watim" as Word (InferenceHole, InferenceHole-format, InferenceFieldHole, Word, Scope, Scope-format)
 
-struct Module {
-    imports: Map<ByteSlice, Array<Resolved:Import>>
-    functions: Map<ByteSlice, FunctionOrExtern>
-    globals: Array<Resolved:Global>
-    type-definitions: Array<Resolved:TypeDefinition>
-    static-data: ByteSlice
-}
-fn Module-format(fmt: .Formatter, self: .Module) {
-    $fmt "(Module\n" Fmt:write
-    $fmt Fmt:indent
-    $fmt Fmt:write-indent
-    $fmt "imports=" Fmt:write
-    $fmt \ByteSlice-format \Resolved:format-imprt-array &self.imports Map:format-multi-line<ByteSlice, Array<Resolved:Import>>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "type-definitions=" Fmt:write
-    $fmt \Resolved:TypeDefinition-format &self.type-definitions Array:format-multi-line<_>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "globals=" Fmt:write
-    $fmt \Resolved:Global-format &self.globals Array:format-multi-line<Resolved:Global>
-    $fmt ",\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "functions=" Fmt:write
-    $fmt \ByteSlice-format \FunctionOrExtern-format &self.functions Map:format-multi-line<ByteSlice, FunctionOrExtern>
-    $fmt ")" Fmt:write
-    $fmt Fmt:dedent
-}
-fn unstack(arena: .Arena, modules: .Map<ByteSlice, Resolved:Module>) -> Map<ByteSlice, Module> {
-    $arena \ByteSlice:eq-by-ref $modules.values.len Map:new-with-capacity<ByteSlice, Module> @unstacked
-    0 loop {
-        @i
-        $i $modules.values.len = if { break }
-        &unstacked
-        &modules.keys $i Array:get<_> ~
-
-        2 "unstack-module: " IO:write-all IO:check
-        2 &modules.keys $i Array:get<_> ~ ByteSlice:unpack IO:write-all IO:check
-        2 "\n" IO:write-all IO:check
-
-        $arena &modules.values &modules.values $i Array:get<_> unstack-module Map:insert-assert-no-alloc<_, _> drop
-        $i 1 +
-    }
-    $unstacked
-}
-
 variant FunctionOrExtern {
     case Extern -> Resolved:Extern
     case Function -> Function
@@ -82,32 +36,6 @@ fn FunctionOrExtern-signature(self: .FunctionOrExtern) -> .Signature {
     $self match {
         case Extern -> { .signature }
         case Function -> { .signature }
-    }
-}
-
-fn unstack-module(arena: .Arena, modules: .Array<Resolved:Module>, module: .Resolved:Module) -> Module {
-    $arena \ByteSlice:eq-by-ref $module.functions.values.len Map:new-with-capacity<ByteSlice, FunctionOrExtern> @unstacked-functions
-    0 loop {
-        @i
-        $i $module.functions.values.len = if { break }
-        &unstacked-functions
-        &module.functions.keys $i Array:get<_> ~
-        &module.functions.values $i Array:get<_> match {
-            case Resolved:FunctionOrExtern.Extern -> {
-                ~ make FunctionOrExtern.Extern
-            }
-            case Resolved:FunctionOrExtern.Function -> {
-                $arena flip $modules flip unstack-function make FunctionOrExtern.Function
-            }
-        } Map:insert-assert-no-alloc<_, _> drop
-        $i 1 +
-    }
-    make Module {
-        $module.imports @imports
-        $module.type-definitions.values @type-definitions
-        $unstacked-functions @functions
-        $module.globals.values @globals
-        $module.static-data @static-data
     }
 }
 
@@ -1662,24 +1590,24 @@ fn unstack-intrinsic(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Intri
             $word.token make Word:Intrinsic.MemGrow
         }
         case Resolved:Intrinsic.Flip -> {
-            $unstacker.arena $stack Stack:pop @a
             $unstacker.arena $stack Stack:pop @b
+            $unstacker.arena $stack Stack:pop @a
 
             $unstacker $word.token fresh-hole @lower
             $unstacker $word.token fresh-hole @upper
 
-            $a match {
-                case Some -> {
-                    $unstacker.arena flip Arena:push<_>
-                    $lower make Source:FromProxied make Source.FromProxied
-                    $unstacker.arena flip $stack flip Stack:push
-                }
-                case None -> {}
-            }
             $b match {
                 case Some -> {
                     $unstacker.arena flip Arena:push<_>
                     $upper make Source:FromProxied make Source.FromProxied
+                    $unstacker.arena flip $stack flip Stack:push
+                }
+                case None -> {}
+            }
+            $a match {
+                case Some -> {
+                    $unstacker.arena flip Arena:push<_>
+                    $lower make Source:FromProxied make Source.FromProxied
                     $unstacker.arena flip $stack flip Stack:push
                 }
                 case None -> {}

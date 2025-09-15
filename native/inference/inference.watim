@@ -18,6 +18,7 @@ import "../parser.watim" as Parser
 import "../resolving/type.watim" as Type (Type(I8, I32, I64, Ptr), CustomTypeHandle, NamedType, NamedType-type, CustomTypeHandle-eq)
 import "../resolving/words.watim" as Resolved (LocalId, LocalId-eq, LocalId-format, FunctionHandle, VarId)
 import "../resolving/top-items.watim" as Resolved (TypeDefinition, Signature, LocalName)
+import "../resolving/module.watim" as Resolved
 
 import "../unstacking/source.watim" as Source (
     Source(FromIntrinsic), Source-token, Source-format,
@@ -30,10 +31,9 @@ import "../unstacking/source.watim" as Source (
 )
 import "../unstacking/word.watim" as Unstacked (InferenceHole, InferenceFieldHole)
 import "../unstacking/unstacker.watim" as Unstacked (Holes, Holes-lookup, Holes-fill, StackVoid, Local)
-
-import "../checking/ast.watim" as Checked (Module, FunctionOrExtern, Function)
-
 import "../unstacking/graph.watim" as Graph
+
+import "./ast.watim" as Checked (Module, FunctionOrExtern, Function)
 
 struct InferenceError {
     token: .Token
@@ -53,55 +53,9 @@ fn error(token: .Token, msg-ptr: .i8, msg-len: i32) -> InferenceError {
     $token $msg-ptr $msg-len make InferenceError
 }
 
-fn infer-modules(arena: .Arena, unstacked: .Map<ByteSlice, Unstacked:Module>) -> Result<Map<ByteSlice, Module>, InferenceError> {
-    $arena \ByteSlice:eq-by-ref $unstacked.values.len Map:new-with-capacity<ByteSlice, Module> @inferred
-    0 loop (i32 -> Result<Map<ByteSlice, Module>, InferenceError>) {
-        @i $i $unstacked.values.len = if { $inferred make Result<Map<ByteSlice, Module>, InferenceError>.Success break }
-        &inferred
-        &unstacked.keys $i Array:get<_> ~
-        $arena &unstacked.values &unstacked.values $i Array:get<_> infer-module match {
-            case Error -> { make Result<Map<ByteSlice, Module>, InferenceError>.Error break }
-            case Success -> {}
-        }
-        Map:insert-assert-no-alloc<_, _> drop
-        $i 1 +
-    }
-}
-
-fn infer-module(arena: .Arena, modules: .Array<Unstacked:Module>, module: .Unstacked:Module) -> Result<Module, InferenceError> { block {
-    $arena $module.functions.values.len Array:new-with-capacity<FunctionOrExtern> @functions
-    0 loop (i32 -> Result<Array<FunctionOrExtern>, InferenceError>) {
-        @i $i $module.functions.values.len = if { $functions make Result<Array<FunctionOrExtern>, InferenceError>.Success break }
-        &module.functions.values $i Array:get<_> match {
-            case Unstacked:FunctionOrExtern.Extern -> {
-                ~ make FunctionOrExtern.Extern &functions flip Array:push-assert-no-alloc<_>
-            }
-            case Unstacked:FunctionOrExtern.Function -> {
-                $arena flip $modules flip &module.globals flip infer-function match {
-                    case Error -> { make Result<Array<FunctionOrExtern>, InferenceError>.Error break }
-                    case Success -> {}
-                } make FunctionOrExtern.Function
-                &functions flip Array:push-assert-no-alloc<_>
-            }
-        }
-        $i 1 +
-    } match {
-        case Error -> { make Result<Module, InferenceError>.Error break }
-        case Success -> {}
-    } @functions
-    make Module {
-        $module.imports @imports
-        $module.type-definitions @type-definitions
-        $module.globals @globals
-        $module.static-data @static-data
-        $functions @functions
-    }
-    make Result<Module, InferenceError>.Success
-} }
-
 fn infer-function(
     arena: .Arena,
-    modules: .Array<Unstacked:Module>,
+    modules: .Array<Resolved:Module>,
     globals: .Array<Resolved:Global>,
     function: .Unstacked:Function,
 ) -> Result<Function, InferenceError> { block {
@@ -111,6 +65,7 @@ fn infer-function(
 
     make Ctx {
         $arena @arena
+        0 1 = @debug
         $arena 2 Fmt:to-fd "    " Fmt:use-indentation Arena:push<_> @fmt
         $modules @modules
         &function.locals @locals
@@ -126,10 +81,12 @@ fn infer-function(
         \CustomTypeHandle-eq Map:new<CustomTypeHandle, Signature> @struct-signatures
     } @ctx
 
-    $ctx.fmt "infer-function: " Fmt:write
-    $ctx.fmt &function.name Token-format
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:indent
+    $ctx.debug if {
+        $ctx.fmt "infer-function: " Fmt:write
+        $ctx.fmt &function.name Token-format
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:indent
+    }
 
 block {
 
@@ -167,11 +124,13 @@ block {
         @i $i $function.voids.len = if { make Maybe<InferenceError>.None break }
         &function.voids $i Array:get<_> @void
 
-        $ctx.fmt Fmt:write-indent
-        $ctx.fmt "> infer void: " Fmt:write
-        $ctx.fmt $void Unstacked:StackVoid-format
-        $ctx.fmt "\n" Fmt:write
-        $ctx.fmt Fmt:indent
+        $ctx.debug if {
+            $ctx.fmt Fmt:write-indent
+            $ctx.fmt "> infer void: " Fmt:write
+            $ctx.fmt $void Unstacked:StackVoid-format
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:indent
+        }
 
         $void match {
             case StackVoid.NonSpecific -> {
@@ -391,7 +350,7 @@ block {
                 }
             }
         }
-        $ctx.fmt Fmt:dedent
+        $ctx.debug if { $ctx.fmt Fmt:dedent }
         $i 1 +
     } match {
         case None -> {}
@@ -480,7 +439,7 @@ block {
     }
     make Result<Function, InferenceError>.Success
 }
-$ctx.fmt Fmt:dedent
+$ctx.debug if { $ctx.fmt Fmt:dedent }
 } }
 
 variant InferenceState {
@@ -501,8 +460,9 @@ fn SourcePtr-eq(a: ..Source, b: ..Source) -> bool { $a ~ $b ~ = }
 
 struct Ctx {
     arena: .Arena
+    debug: bool
     fmt: .Formatter
-    modules: .Array<Unstacked:Module>
+    modules: .Array<Resolved:Module>
     locals: .Map<LocalId, Unstacked:Local>
     states: Map<.Source, InferenceState>
     globals: .Array<Resolved:Global>
@@ -524,7 +484,7 @@ fn Struct-signature(ctx: .Ctx, handle: CustomTypeHandle) -> .Signature { block {
         case None -> {}
     }
     $ctx.modules $handle.module.index Array:get<_> @module
-    &module.type-definitions $handle.index Array:get<_> match {
+    &module.type-definitions.values $handle.index Array:get<_> match {
         case TypeDefinition.Struct -> {}
         case TypeDefinition.Variant -> { drop Core:unreachable<.Resolved:Struct> }
     } @struc
@@ -552,12 +512,14 @@ fn get-node(ctx: .Ctx, index: i32) -> .MultiReturnNode {
 }
 
 fn fill-hole(ctx: .Ctx, hole: InferenceHole, known: .Type) {
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "fill-hole: " Fmt:write
-    $ctx.fmt &hole Unstacked:InferenceHole-format
-    $ctx.fmt ", " Fmt:write
-    $ctx.fmt $known Type:format
-    $ctx.fmt "\n" Fmt:write
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "fill-hole: " Fmt:write
+        $ctx.fmt &hole Unstacked:InferenceHole-format
+        $ctx.fmt ", " Fmt:write
+        $ctx.fmt $known Type:format
+        $ctx.fmt "\n" Fmt:write
+    }
     $ctx.arena &ctx.holes &hole $ctx.arena $known Type:clone Holes-fill
 }
 
@@ -575,13 +537,13 @@ fn fill-field-hole(ctx: .Ctx, hole: InferenceFieldHole, field: i32) {
 }
 
 fn lookup-type-definition(ctx: .Ctx, handle: .CustomTypeHandle) -> .TypeDefinition {
-    $ctx.modules $handle.module.index Array:get<_> .type-definitions $handle.index Array:get<_>
+    $ctx.modules $handle.module.index Array:get<_> .type-definitions.values $handle.index Array:get<_>
 }
 
 fn lookup-signature(ctx: .Ctx, function: FunctionHandle) -> .Resolved:Signature {
     $ctx.modules      $function.module.index Array:get<_>
     .functions.values $function.index        Array:get<_>
-    Unstacked:FunctionOrExtern-signature
+    Resolved:FunctionOrExtern-signature
 }
 
 struct TypeAtFieldIndex {
@@ -593,15 +555,17 @@ fn TypeAtFieldIndex-unpack(self: TypeAtFieldIndex) -> Type, i32 {
 }
 
 fn traverse-fields(ctx: .Ctx, local-type: .Type, fields: .Array<Unstacked:FieldAccess>) -> Result<Type, InferenceError> {
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "traverse-fields:\n" Fmt:write
-    $ctx.fmt Fmt:indent
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt $local-type Type:format
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt \Unstacked:FieldAccess-format $fields Array:format-multi-line<_>
-    $ctx.fmt "\n" Fmt:write
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "traverse-fields:\n" Fmt:write
+        $ctx.fmt Fmt:indent
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt $local-type Type:format
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt \Unstacked:FieldAccess-format $fields Array:format-multi-line<_>
+        $ctx.fmt "\n" Fmt:write
+    }
     $local-type ~ @type
     0 loop {
         @i $i $fields.len = if { $type make Result<Type, InferenceError>.Success break }
@@ -650,11 +614,13 @@ fn traverse-fields(ctx: .Ctx, local-type: .Type, fields: .Array<Unstacked:FieldA
         // } else { ~ } #type
         $i 1 +
     }
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "= " Fmt:write
-    $ctx.fmt &type Type:format
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:dedent
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "= " Fmt:write
+        $ctx.fmt &type Type:format
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:dedent
+    }
 }
 
 fn SourcePtr-format(fmt: .Formatter, self: ..Source) {
@@ -662,32 +628,30 @@ fn SourcePtr-format(fmt: .Formatter, self: ..Source) {
 }
 
 fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { block {
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "> check: " Fmt:write
-    $ctx.fmt $known Type:format
-    $ctx.fmt " = " Fmt:write
-    $ctx.fmt $source Source:Source-format
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:indent
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "> check: " Fmt:write
+        $ctx.fmt $known Type:format
+        $ctx.fmt " = " Fmt:write
+        $ctx.fmt $source Source:Source-format
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:indent
+    }
     &ctx.states &source Map:get<_, _> match {
         case None -> {}
         case Some -> {
             @state
-            $ctx.fmt Fmt:write-indent
-            $ctx.fmt "< cycle detected: " Fmt:write
-            $ctx.fmt $state InferenceState-format
-            $ctx.fmt "\n" Fmt:write
-            $ctx.fmt Fmt:dedent
+            $ctx.debug if {
+                $ctx.fmt Fmt:write-indent
+                $ctx.fmt "< cycle detected: " Fmt:write
+                $ctx.fmt $state InferenceState-format
+                $ctx.fmt "\n" Fmt:write
+                $ctx.fmt Fmt:dedent
+            }
             $state match {
                 case Known -> {
                     @previous
                     $previous $known Type:eq not if {
-                        $ctx.fmt $source Source-format
-                        $ctx.fmt ":\n" Fmt:write
-                        $ctx.fmt $previous Type:format
-                        $ctx.fmt "\nvs\n" Fmt:write
-                        $ctx.fmt $known Type:format
-                        $ctx.fmt "\n" Fmt:write
                         $source Source-token "check expected different" error make Maybe<InferenceError>.Some
                     } else {
                         make Maybe<InferenceError>.None
@@ -1247,11 +1211,6 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
                     case _ -> { drop ~ }
                 } @case-type
                 &case-type $known Type:eq not if {
-                    $ctx.fmt "\n" Fmt:write
-                    $ctx.fmt &case-type Type:format
-                    $ctx.fmt "\n" Fmt:write
-                    $ctx.fmt $known Type:format
-                    $ctx.fmt "\n" Fmt:write
                     &source.token "check: FromCase expected different" error make Maybe<InferenceError>.Some break
                 }
             }
@@ -1324,19 +1283,21 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
     $ctx.arena &ctx.states $source
     $ctx.arena $known Type:clone
     make InferenceState.Known Map:insert<_, _> drop
-    $ctx.fmt Fmt:dedent
+    $ctx.debug if { $ctx.fmt Fmt:dedent }
 } }
 
 fn check-from-node(ctx: .Ctx, source: .Source:FromNode, known: .Type) -> Maybe<InferenceError> { block {
     $source.ret @return-index
     $ctx $source.index get-node @node
 
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "check: " Fmt:write
-    $ctx.fmt $known Type:format
-    $ctx.fmt " = " Fmt:write
-    $ctx.fmt $node $return-index Graph:graph-node-name
-    $ctx.fmt "\n" Fmt:write
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "check: " Fmt:write
+        $ctx.fmt $known Type:format
+        $ctx.fmt " = " Fmt:write
+        $ctx.fmt $node $return-index Graph:graph-node-name
+        $ctx.fmt "\n" Fmt:write
+    }
 
     $node match {
         case PlaceHolder -> { 0 !.Token "check FromNode encountered PlaceHolder" error make Maybe<InferenceError>.Some break }
@@ -1737,26 +1698,28 @@ fn try-all-with-generics(ctx: .Ctx, types: .Array<Type>, generic-arguments: .Arr
 }
 
 fn fit-to-types(ctx: .Ctx, types: .Array<Type>, generic-arguments: .Array<InferenceHole>, index: i32, known: .Type) -> Maybe<InferenceError> {
-    $ctx.fmt Fmt:write-indent $ctx.fmt "fit-to-types:\n" Fmt:write
-    $ctx.fmt Fmt:indent
-    $ctx.fmt Fmt:write-indent $ctx.fmt "types: " Fmt:write
-    $ctx.fmt \Type:format $types Array:format<_>
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:write-indent $ctx.fmt "generic-arguments: " Fmt:write
-    $ctx.fmt \Unstacked:InferenceHole-format $generic-arguments Array:format<_>
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:write-indent $ctx.fmt "index: " Fmt:write
-    $ctx.fmt $index i32-format
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:write-indent $ctx.fmt "known: " Fmt:write
-    $ctx.fmt $known Type:format
-    $ctx.fmt "\n" Fmt:write
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent $ctx.fmt "fit-to-types:\n" Fmt:write
+        $ctx.fmt Fmt:indent
+        $ctx.fmt Fmt:write-indent $ctx.fmt "types: " Fmt:write
+        $ctx.fmt \Type:format $types Array:format<_>
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:write-indent $ctx.fmt "generic-arguments: " Fmt:write
+        $ctx.fmt \Unstacked:InferenceHole-format $generic-arguments Array:format<_>
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:write-indent $ctx.fmt "index: " Fmt:write
+        $ctx.fmt $index i32-format
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:write-indent $ctx.fmt "known: " Fmt:write
+        $ctx.fmt $known Type:format
+        $ctx.fmt "\n" Fmt:write
+    }
 
     $ctx
     $generic-arguments
     $types $index Array:get<_>
     $known unify-types
-    $ctx.fmt Fmt:dedent
+    $ctx.debug if { $ctx.fmt Fmt:dedent }
 }
 fn fit-to-types-named(ctx: .Ctx, types: .Array<NamedType>, generic-arguments: .Array<InferenceHole>, index: i32, known: .Type) -> Maybe<InferenceError> {
     $ctx.arena Arena:temp @temp @save
@@ -1766,15 +1729,17 @@ fn fit-to-types-named(ctx: .Ctx, types: .Array<NamedType>, generic-arguments: .A
 }
 
 fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type, known: .Type) -> Maybe<InferenceError> {
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "unify-types(generic-arguments: " Fmt:write
-    $ctx.fmt \Unstacked:InferenceHole-format $generic-arguments Array:format<_>
-    $ctx.fmt ", holey: " Fmt:write
-    $ctx.fmt $holey Type:format
-    $ctx.fmt ", known: " Fmt:write
-    $ctx.fmt $known Type:format
-    $ctx.fmt "):\n" Fmt:write
-    $ctx.fmt Fmt:indent
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "unify-types(generic-arguments: " Fmt:write
+        $ctx.fmt \Unstacked:InferenceHole-format $generic-arguments Array:format<_>
+        $ctx.fmt ", holey: " Fmt:write
+        $ctx.fmt $holey Type:format
+        $ctx.fmt ", known: " Fmt:write
+        $ctx.fmt $known Type:format
+        $ctx.fmt "):\n" Fmt:write
+        $ctx.fmt Fmt:indent
+    }
     block {
         $holey match {
             case Type.Generic -> {
@@ -1784,9 +1749,6 @@ fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type
                     case Some -> {
                         @ty
                         $known $ty Type:eq not if {
-                            $ctx.fmt $known Type:format
-                            $ctx.fmt $ty Type:format
-                            $ctx.fmt "\n" Fmt:write
                             &hole.token "unify-types: failed to unify" error make Maybe<InferenceError>.Some break
                         }
                     }
@@ -1836,7 +1798,7 @@ fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type
             }
         }
     }
-    $ctx.fmt Fmt:dedent
+    $ctx.debug if { $ctx.fmt Fmt:dedent }
 }
 fn unify-types-all(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Array<Type>, known: .Array<Type>) -> Maybe<InferenceError> {
     0 loop {
@@ -1854,11 +1816,13 @@ fn unify-types-all(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .
 
 fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
     $source @entire-source
-    $ctx.fmt Fmt:write-indent
-    $ctx.fmt "> infer: " Fmt:write
-    $ctx.fmt $source Source:Source-format
-    $ctx.fmt "\n" Fmt:write
-    $ctx.fmt Fmt:indent
+    $ctx.debug if {
+        $ctx.fmt Fmt:write-indent
+        $ctx.fmt "> infer: " Fmt:write
+        $ctx.fmt $source Source:Source-format
+        $ctx.fmt "\n" Fmt:write
+        $ctx.fmt Fmt:indent
+    }
     block {
         &ctx.states &source Map:get<_, _> match {
             case None -> {
@@ -1866,19 +1830,21 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
             }
             case Some -> {
                 @state
-                $ctx.fmt Fmt:write-indent
-                $ctx.fmt "< cycle detected: " Fmt:write
-                $ctx.fmt $state InferenceState-format
-                $ctx.fmt "\n" Fmt:write
+                $ctx.debug if {
+                    $ctx.fmt Fmt:write-indent
+                    $ctx.fmt "< cycle detected: " Fmt:write
+                    $ctx.fmt $state InferenceState-format
+                    $ctx.fmt "\n" Fmt:write
+                }
                 $state match {
                     case Known -> {
                         ~ make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
-                        $ctx.fmt Fmt:dedent
+                        $ctx.debug if { $ctx.fmt Fmt:dedent }
                         break
                     }
                     case BeingInferred -> {}
                     case BeingChecked -> {
-                        $ctx.fmt Fmt:dedent
+                        $ctx.debug if { $ctx.fmt Fmt:dedent }
                         make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success break
                     }
                 }
@@ -2380,10 +2346,12 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                     $source.index @node-index
                     $source.ret @return-index
                     $ctx $node-index get-node @node
-                    $ctx.fmt Fmt:write-indent
-                    $ctx.fmt "> infer: " Fmt:write
-                    $ctx.fmt $node $return-index Graph:graph-node-name
-                    $ctx.fmt "\n" Fmt:write
+                    $ctx.debug if {
+                        $ctx.fmt Fmt:write-indent
+                        $ctx.fmt "> infer: " Fmt:write
+                        $ctx.fmt $node $return-index Graph:graph-node-name
+                        $ctx.fmt "\n" Fmt:write
+                    }
                     $node match {
                         case PlaceHolder -> { Core:unreachable<Result<Maybe<Type>, InferenceError>> }
                         case Call -> {
@@ -2957,7 +2925,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                 }
                 case _ -> {
                     @source
-                    $ctx.fmt $source Source:Source-format
+                    $ctx.debug if { $ctx.fmt $source Source:Source-format }
                     $source Source:Source-token "infer TODO" error make Result<Maybe<Type>, InferenceError>.Error
                 }
             }
@@ -2965,10 +2933,12 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
         &res match {
             case Success -> {
                 @inferred
-                $ctx.fmt Fmt:write-indent
-                $ctx.fmt "= " Fmt:write
-                $ctx.fmt \Type:format $inferred Maybe:format<_>
-                $ctx.fmt "\n" Fmt:write
+                $ctx.debug if {
+                    $ctx.fmt Fmt:write-indent
+                    $ctx.fmt "= " Fmt:write
+                    $ctx.fmt \Type:format $inferred Maybe:format<_>
+                    $ctx.fmt "\n" Fmt:write
+                }
 
                 $inferred match {
                     case None -> {
@@ -2997,7 +2967,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
             }
             case _ -> { drop }
         }
-        $ctx.fmt Fmt:dedent
+        $ctx.debug if { $ctx.fmt Fmt:dedent }
         $res
     }
 }
