@@ -496,7 +496,7 @@ class Parser:
                 if next.ty != TokenType.COMMA:
                     self.abort("Expected `,` or `)`")
         if token.ty == TokenType.LEFT_PAREN:
-            fun_type = self.parse_fun_type(generic_parameters, token)
+            self.parse_fun_type(generic_parameters, token)
             return IndirectCallWord(token)
         self.abort("Expected word")
 

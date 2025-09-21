@@ -791,7 +791,7 @@ class WordCtx:
                     for case_stack, case_token, case_diverges in case_stacks:
                         msg += f"\n\t{self.type_lookup.types_pretty_bracketed(case_stack.negative)}"
                         if case_diverges:
-                            msg += f" -> <diverges>"
+                            msg += " -> <diverges>"
                         else:
                             msg += f" -> {self.type_lookup.types_pretty_bracketed(case_stack.stack)}"
                         msg += f" in case {case_token.lexeme}"
