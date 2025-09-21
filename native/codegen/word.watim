@@ -217,7 +217,10 @@ fn generate-word(ctx: .Ctx, module: i32, locals: .Map<LocalId, Local>, word: .Wo
             @word
             $ctx.fmt "(block $block" Fmt:write
             $ctx &word.parameters generate-parameters-unnamed
-            $ctx &word.returns generate-returns
+            $ctx &word.returns match {
+                case None -> { drop }
+                case Some -> { generate-returns }
+            }
             $ctx.fmt "\n" Fmt:write
             $ctx.fmt Fmt:indent
             $ctx $module $locals &word.body.words generate-words

@@ -973,7 +973,10 @@ class WatGenerator:
                 if isinstance(function, GenericFunction):
                     assert(handle.instance is not None)
                     function = function.instances[handle.instance]
-                    name = f"${handle.module}:{function.name.lexeme}:{handle.instance}"
+                    if handle.instance == 0:
+                        name = f"${handle.module}:{function.name.lexeme}"
+                    else:
+                        name = f"${handle.module}:{function.name.lexeme}:{handle.instance}"
                 else:
                     name = f"${handle.module}:{function.name.lexeme}"
             else:

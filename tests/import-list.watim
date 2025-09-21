@@ -10,18 +10,18 @@ check
 (Map
   "./struct.watim"=(Module
     imports=(Map),
-    type-definitions=(Map
-      "Struct"=(Struct
+    type-definitions=[
+      (Struct
         name=(IDENT Struct 1 8),
         generic-parameters=[],
         fields=[
-          (NamedType (IDENT a 2 5) I32)])),
-    globals=(Map),
-    functions=(Map)),
+          (NamedType (IDENT a 2 5) I32)])],
+    globals=[],
+    functions=[]),
   "-"=(Module
     imports=(Map
       "S"=[(Import (IMPORT import 1 1) 0 "./struct.watim" (IDENT S 1 28) [
         (StructImport (IDENT Struct 1 31) (CustomTypeHandle 0 0))])]),
-    type-definitions=(Map),
-    globals=(Map),
-    functions=(Map)))
+    type-definitions=[],
+    globals=[],
+    functions=[]))

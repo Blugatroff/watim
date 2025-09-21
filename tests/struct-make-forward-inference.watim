@@ -14,16 +14,16 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    type-definitions=(Map
-      "Two"=(Struct
+    type-definitions=[
+      (Struct
         name=(IDENT Two 1 8),
         generic-parameters=[(IDENT T 1 12)],
         fields=[
           (NamedType (IDENT a 1 17) (GenericType (IDENT T 1 20) 0)),
-          (NamedType (IDENT b 1 22) (GenericType (IDENT T 1 25) 0))])),
-    globals=(Map),
-    functions=(Map
-      "foo"=(Function
+          (NamedType (IDENT b 1 22) (GenericType (IDENT T 1 25) 0))])],
+    globals=[],
+    functions=[
+      (Function
         name=(IDENT foo 3 4),
         export=None,
         signature=(Signature
@@ -37,4 +37,4 @@ check
           (StructWord
             token=(MAKE make 4 9),
             type=(CustomType 0 0 [I32])),
-          (Intrinsic (IDENT drop 4 21) (Drop (CustomType 0 0 [I32])))])))))
+          (Intrinsic (IDENT drop 4 21) (Drop (CustomType 0 0 [I32])))]))]))

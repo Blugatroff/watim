@@ -1197,7 +1197,7 @@ fn Loop-format(fmt: .Formatter, self: .Loop) {
 struct Block {
     token: Token
     parameters: Array<TypeId>
-    returns: Array<TypeId>
+    returns: Maybe<Array<TypeId>>
     body: Scope
 }
 fn Block-format(fmt: .Formatter, self: .Block) {
@@ -1213,7 +1213,7 @@ fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt &self.returns TypeIds-format
+    $fmt \TypeIds-format &self.returns Maybe:format<Array<TypeId>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "body=" Fmt:write
@@ -1688,7 +1688,10 @@ fn monomize-lop(ctx: .WordCtx, word: .Checked:Loop, generic-arguments: .Array<Ty
 fn monomize-blok(ctx: .WordCtx, word: .Checked:Block, generic-arguments: .Array<TypeId>) -> Word {
     $word.token
     $ctx.ctx &word.parameters $generic-arguments monomize-types
-    $ctx.ctx &word.returns $generic-arguments monomize-types
+    &word.returns match {
+        case None -> { make Maybe<Array<TypeId>>.None }
+        case Some -> { $ctx.ctx flip $generic-arguments monomize-types make Maybe<Array<TypeId>>.Some }
+    }
     $ctx &word.body $generic-arguments monomize-scope
     make Block make Word.Block
 }

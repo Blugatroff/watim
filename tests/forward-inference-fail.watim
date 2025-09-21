@@ -13,4 +13,4 @@ check
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
--:6:9 failed to infer type for hole
+-:6:12 failed to infer type of void

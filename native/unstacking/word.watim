@@ -654,6 +654,10 @@ fn Match-format(fmt: .Formatter, self: .Match) {
     $fmt &self.token Token-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
     $fmt "parameters=" Fmt:write
     $fmt \InferenceHole-format &self.parameters Array:format<_>
     $fmt ",\n" Fmt:write
@@ -675,7 +679,7 @@ fn Match-format(fmt: .Formatter, self: .Match) {
 struct Block {
     token: Token
     parameters: Array<InferenceHole>
-    returns: Array<InferenceHole>
+    returns: Maybe<Array<InferenceHole>>
     body: Scope
 }
 fn Block-format(fmt: .Formatter, self: .Block) {
@@ -691,7 +695,7 @@ fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt \InferenceHole-format &self.returns Array:format<_>
+    $fmt \ArrayInferenceHole-format &self.returns Maybe:format<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "body=" Fmt:write
@@ -857,6 +861,7 @@ variant Word {
     case FieldInit -> FieldInit
     case FunRef -> FunRef
     case GetField -> GetField
+    case MatchVoid -> Token
 }
 fn Word-format(fmt: .Formatter, self: .Word) {
     $fmt $self match {
@@ -885,6 +890,7 @@ fn Word-format(fmt: .Formatter, self: .Word) {
         case FieldInit -> { FieldInit-format }
         case FunRef -> { FunRef-format }
         case GetField -> { GetField-format }
+        case MatchVoid -> { $fmt "(MatchVoid " Fmt:write Token-format $fmt ")" Fmt:write }
     }
 }
 fn Words-format(fmt: .Formatter, self: .Array<Word>) {

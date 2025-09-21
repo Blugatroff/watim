@@ -8,12 +8,15 @@ The native Watim compiler
 
 Usage: watim <command> <watim-source-file> [options]
 Commands:
-  lex       [path]   Lex code and print the Tokens.
-  parse     [path]   Parse code and print the AST
-  resolve   [path]   resolve all identifiers
-  check     [path]   run type inference and type checking
-  monomize  [path]   monomorphize all generic functions
-  optimize  [path]   run optimization passes
-  compile   [path]   compile to webassembly text format
+  lex       [path]            Lex code and print the Tokens.
+  parse     [path]            Parse code and print the AST
+  resolve   [path]            resolve all identifiers
+  unstack   [path] [function] run unstacker for a function
+  graph     [path] [function] generate graph from unstacked function
+  infer     [path] [function] run type inference for function
+  check     [path]            unstack and infer everything
+  monomize  [path]            monomorphize all generic functions
+  optimize  [path]            run optimization passes
+  compile   [path]            compile to webassembly text format
 Options:
   -q, --quiet  Don't print any logs to stderr

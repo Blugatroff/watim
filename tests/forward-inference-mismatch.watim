@@ -13,7 +13,8 @@ check
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
--:6:23 expected:
-	[i32, Array<_>, i32]
-got:
+-:6:23 call to `bar` expected the following arguments:
+	[i32, Array<T>, i32]
+	T = unknown
+but got:
 	[Array<i32>, i32]

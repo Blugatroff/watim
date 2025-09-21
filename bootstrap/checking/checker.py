@@ -5,7 +5,7 @@ import copy
 import sys
 
 from util import seq_eq
-from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_dict, unnamed_record, format_optional, format
+from format import Formattable, FormatInstr, named_record, format_seq, format_str, format_dict, unnamed_record, format_optional
 from indexed_dict import IndexedDict
 from lexer import Token
 from parsing.types import I8, I32, I64, Bool
@@ -27,7 +27,7 @@ class Local(Formattable):
     is_parameter: bool
     was_reffed: bool = False
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Local", [self.name, self.taip, self.was_reffed, self.is_parameter])
+        return unnamed_record("Local", [self.name, self.taip, self.is_parameter])
 
 @dataclass
 class Function(Formattable):
@@ -69,9 +69,9 @@ class Module(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Module", [
             ("imports", format_dict(self.imports, format_str, format_seq)),
-            ("type-definitions", self.type_definitions.format_instrs(format_str)),
-            ("globals", self.globals.format_instrs(format_str)),
-            ("functions", self.functions.format_instrs(format_str))])
+            ("type-definitions", format_seq(list(self.type_definitions.values()), multi_line=True)),
+            ("globals", format_seq(list(self.globals.values()), multi_line=True)),
+            ("functions", format_seq(list(self.functions.values()), multi_line=True))])
 
 def determine_compilation_order(modules: Dict[str, parser.Module]) -> IndexedDict[str, parser.Module]:
     unprocessed: IndexedDict[str, parser.Module] = IndexedDict.from_items(modules.items())
@@ -485,8 +485,9 @@ class WordCtx:
     def check_fun_ref(self, stack: Stack, word: resolved.words.FunRefWord) -> Tuple[List[Word], bool]:
         call = self.check_call_word(word.call)
         signature = self.lookup_signature(call.function)
-        parameters = tuple(parameter.taip for parameter in signature.parameters)
-        stack.push(FunctionType(call.name, parameters, signature.returns))
+        parameters = tuple(with_generics(param.taip, word.call.generic_arguments) for param in signature.parameters)
+        returns = tuple(with_generics(ret, word.call.generic_arguments) for ret in signature.returns)
+        stack.push(FunctionType(call.name, parameters, returns))
         return ([FunRefWord(call)], False)
 
     def check_if(self, stack: Stack, remaining_words: List[resolved.words.Word], word: resolved.words.IfWord) -> Tuple[List[Word], bool]:
@@ -700,7 +701,7 @@ class WordCtx:
             self.abort(word.token, "expected a value to match on")
         arg = arg_item.child if isinstance(arg_item, PtrType) else arg_item
         if not isinstance(arg, CustomTypeType):
-            self.abort(word.token, "can only match n variants")
+            self.abort(word.token, "can only match on variants")
         variant = self.type_lookup.lookup(arg.type_definition)
         if not isinstance(variant, Variant):
             self.abort(word.token, "can only match on variants")

@@ -31,11 +31,17 @@ fn graph-function(fmt: .Formatter, function: .Function) {
     $fmt &function.name Token-lexeme Fmt:write
     $fmt "\" {\n" Fmt:write
 
-    0 loop {
-        @i $i $function.returns.len = if { break }
-        $grapher.fmt "return -> " Fmt:write
-        &grapher &function.returns $i Array:get<_> graph-source
-        $i 1 +
+    &function.returns match {
+        case None -> {}
+        case Some -> {
+            @returns
+            0 loop {
+                @i $i $returns.len = if { break }
+                $grapher.fmt "return -> " Fmt:write
+                &grapher $returns $i Array:get<_> graph-source
+                $i 1 +
+            }
+        }
     }
 
     0 loop {
@@ -113,6 +119,19 @@ fn graph-function(fmt: .Formatter, function: .Function) {
                     $grapher.fmt ")\" -> " Fmt:write
                     &grapher &void.arguments $i Array:get<_> graph-source
                     $i 1 +
+                }
+            }
+            case StackVoid.ImpossibleMatch -> {
+                @void
+                &void.source match {
+                    case None -> {}
+                    case Some -> {
+                        @source
+                        $grapher.fmt "\"(ImpossibleMatchVoid " Fmt:write
+                        $grapher.fmt &void.token write-token
+                        $grapher.fmt ")\" -> " Fmt:write
+                        &grapher $source graph-source
+                    }
                 }
             }
         }
@@ -354,7 +373,6 @@ fn graph-node(grapher: .Grapher, node-index: i32, return-index: i32) { block {
     $node match {
         case MultiReturnNode.IfExit -> { drop node-return-was-graphed }
         case MultiReturnNode.IfEntry -> { drop node-return-was-graphed }
-        case MultiReturnNode.LoopExit -> { drop node-return-was-graphed }
         case MultiReturnNode.LoopEntry -> { drop node-return-was-graphed }
         case MultiReturnNode.MatchEntry -> { drop node-return-was-graphed }
         case MultiReturnNode.MatchExit -> { drop node-return-was-graphed }
@@ -436,13 +454,16 @@ fn graph-node(grapher: .Grapher, node-index: i32, return-index: i32) { block {
             &source.break-returns $return-index Array:get<_> @break-return
             0 loop {
                 @i $i $break-return.sources.len = if { break }
-
-                $grapher.fmt "\"Block return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\" -> " Fmt:write
                 &break-return.sources $i Array:get<_> @source
-                $grapher &source.token graph-token
-                $grapher.fmt " -> " Fmt:write
-                $grapher &source.source graph-source
-
+                &source.source match {
+                    case None -> {}
+                    case Some -> {
+                        $grapher.fmt "\"Block return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\" -> " Fmt:write
+                        $grapher &source.token graph-token
+                        $grapher.fmt " -> " Fmt:write
+                        $grapher flip graph-source
+                    }
+                }
                 $i 1 +
             }
         }
@@ -466,9 +487,9 @@ fn graph-node(grapher: .Grapher, node-index: i32, return-index: i32) { block {
 
             &source.returns $source.returns.len $return-index - 1 - Array:get<_> @returns
             0 loop {
-                @i $i $returns.len = if { break }
+                @i $i $returns.returns.len = if { break }
                 $grapher.fmt $node $return-index graph-node-name $grapher.fmt " -> " Fmt:write
-                $grapher $returns $i Array:get<_> graph-source
+                $grapher &returns.returns $i Array:get<_> graph-source
                 $i 1 +
             }
         }
@@ -476,24 +497,6 @@ fn graph-node(grapher: .Grapher, node-index: i32, return-index: i32) { block {
             @source
             $grapher.fmt " -> " Fmt:write
             $grapher &source.arguments $return-index Array:get<_> graph-source
-        }
-        case MultiReturnNode.LoopExit -> {
-            @source
-            $grapher.fmt " -> " Fmt:write
-            $grapher.fmt "\"Loop return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\"\n" Fmt:write
-
-            &source.break-returns $return-index Array:get<_> @break-return
-            0 loop {
-                @i $i $break-return.sources.len = if { break }
-
-                $grapher.fmt "\"Loop return " Fmt:write $grapher.fmt $return-index i32-format $grapher.fmt "\" -> " Fmt:write
-                &break-return.sources $i Array:get<_> @source
-                $grapher &source.token graph-token
-                $grapher.fmt " -> " Fmt:write
-                $grapher &source.source graph-source
-
-                $i 1 +
-            }
         }
         case MultiReturnNode.LoopEntry -> {
             @source
@@ -530,6 +533,11 @@ fn graph-node(grapher: .Grapher, node-index: i32, return-index: i32) { block {
         }
         case MultiReturnNode.PlaceHolder -> {
             $grapher.fmt "PlaceHolder\n" Fmt:write
+        }
+        case MultiReturnNode.StackAnnotation -> {
+            @source
+            $grapher.fmt " -> " Fmt:write
+            $grapher &source.arguments $return-index Array:get<_> graph-source
         }
     }
 } }
@@ -572,14 +580,6 @@ fn graph-node-name(fmt: .Formatter, node: .MultiReturnNode, return-index: i32) {
             $fmt &source.token write-token
             $fmt "\"" Fmt:write
         }
-        case MultiReturnNode.LoopExit -> {
-            @source
-            $fmt "\"LoopExit " Fmt:write
-            $fmt $return-index i32-format
-            $fmt " " Fmt:write
-            $fmt &source.token write-token
-            $fmt "\"" Fmt:write
-        }
         case MultiReturnNode.LoopEntry -> {
             @source
             $fmt "\"LoopEntry " Fmt:write
@@ -610,6 +610,14 @@ fn graph-node-name(fmt: .Formatter, node: .MultiReturnNode, return-index: i32) {
         case MultiReturnNode.IndirectCall -> {
             @source
             $fmt "\"IndirectCall " Fmt:write
+            $fmt $return-index i32-format
+            $fmt " " Fmt:write
+            $fmt &source.token write-token
+            $fmt "\"" Fmt:write
+        }
+        case MultiReturnNode.StackAnnotation -> {
+            @source
+            $fmt "\"StackAnnotation " Fmt:write
             $fmt $return-index i32-format
             $fmt " " Fmt:write
             $fmt &source.token write-token

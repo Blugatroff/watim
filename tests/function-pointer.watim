@@ -4,7 +4,7 @@ extern "wasi_snapshot_preview1" "proc_exit" fn proc_exit(code: i32)
 fn mul2(a: i32) -> i32 { $a $a + }
 
 fn apply(f: (i32 -> i32), a: i32) -> i32 {
-	$a $f ->
+	$a $f (i32 -> i32)
 }
 
 fn main "_start" () {

@@ -135,7 +135,7 @@ fn format-multi-line<K, V>(fmt: .Formatter, format-key: (.Formatter, .K ->), for
 
 fn get-ba<V>(self: .Map<Array<i8>, V>, key-ptr: .i8, key-len: i32) -> Maybe<.V> {
     $key-ptr $key-len Array:init-no-copy<_> @key
-    $self &key get<Array<_>, V>
+    $self &key get<Array<i8>, V>
 }
 fn get-bs<V>(self: .Map<ByteSlice, V>, key-ptr: .i8, key-len: i32) -> Maybe<.V> {
     $key-ptr $key-len make ByteSlice @key

@@ -87,6 +87,7 @@ fn resolve-module(
     &imports
     $module
     $modules
+    0 1 =
     make TypeResolver @type-resolver
 
     $arena
@@ -115,6 +116,8 @@ fn resolve-module(
     } @signatures
 
     $id &type-definitions.values $modules make TypeLookup @type-lookup
+
+    1 1 = #type-resolver.allow-holes
 
     &ctx &globals &signatures &type-lookup &module.functions resolve-functions match {
         case Error -> { make Result<Module, ResolveError>.Error break }
@@ -450,18 +453,60 @@ fn resolve-signatures(ctx: .ModuleCtx, functions: .Array<P:FunctionOrExtern>) ->
 }
 
 fn resolve-signature(ctx: .ModuleCtx, signature: .P:Signature) -> Result<Signature, ResolveError> { block (-> Result<Signature, ResolveError>) {
-    $signature.generic-parameters
     $ctx.type-resolver $ctx.arena &signature.parameters TypeResolver:resolve-named-types match {
         case Error -> { make Result<Signature, ResolveError>.Error break }
         case Success -> {}
-    }
+    } @parameters
     $ctx.type-resolver $ctx.arena &signature.returns TypeResolver:resolve-types match {
         case Error -> { make Result<Signature, ResolveError>.Error break }
         case Success -> {}
+    } @returns
+
+    $ctx &parameters named-types-forbid-holes match {
+        case Some -> { make Result<Signature, ResolveError>.Error break }
+        case None -> {}
     }
-    make Signature
+    $ctx &returns types-forbid-holes match {
+        case Some -> { make Result<Signature, ResolveError>.Error break }
+        case None -> {}
+    }
+
+    $signature.generic-parameters $parameters $returns make Signature
     make Result<Signature, ResolveError>.Success
 } }
+
+fn named-types-forbid-holes(ctx: .ModuleCtx, types: .Array<NamedType>) -> Maybe<ResolveError> {
+    0 loop {
+        @i $i $types.len = if { make Maybe<ResolveError>.None break }
+        $ctx $types $i Array:get<_> .type forbid-holes match {
+            case None -> {}
+            case _ -> { break }
+        }
+        $i 1 +
+    }
+}
+
+fn types-forbid-holes(ctx: .ModuleCtx, types: .Array<Type>) -> Maybe<ResolveError> {
+    0 loop {
+        @i $i $types.len = if { make Maybe<ResolveError>.None break }
+        $ctx $types $i Array:get<_> forbid-holes match {
+            case None -> {}
+            case _ -> { break }
+        }
+        $i 1 +
+    }
+}
+
+fn forbid-holes(ctx: .ModuleCtx, type: .Type) -> Maybe<ResolveError> {
+    $type Type:find-hole match {
+        case None -> { make Maybe<ResolveError>.None }
+        case Some -> {
+            @hole
+            $ctx.id $hole Token-location "hole not allowed here" Array:init-no-copy<_> make ResolveError
+            make Maybe<ResolveError>.Some
+        }
+    }
+}
 
 fn resolve-function(
     ctx: .ModuleCtx,
@@ -485,7 +530,7 @@ fn resolve-function(
     }
 
     $ctx.arena $ctx.id $ctx.path $ctx.imports $globals $signatures $ctx.type-resolver $ctx.modules &ctx.static-data
-    $type-lookup &env make Maybe<.WordResolver:StructLiteralEnv>.None make WordResolver:WordCtx @word-ctx
+    $type-lookup &env make Maybe<.WordResolver:StructLiteralEnv>.None 0 1 = make WordResolver:WordCtx @word-ctx
 
     $function.name
     $function.export
@@ -500,45 +545,3 @@ fn resolve-function(
     make Result<Function, ResolveError>.Success
 } }
 
-
-
-
-
-
-
-
-
-
-// fn resolve-module(arena: .Arena, modules: .Map<ByteSlice, Module>, module: .P:Module, id: i32) -> Result<Module, ResolveError> { block {
-//     (@imports (
-//         Map:new-with-capacity<ByteSlice, Array<Import>>
-//             $arena \ByteSlice:eq-by-ref $module.imports.len))
-//
-//     (@i 0)
-//     (match (loop (-> Result<[], ResolveError>) {
-//         (if (= $i $module.imports.len) { (break (make Result<[], ResolveError>.Success [,0]) })
-//         (Array:get<_> &module.imports $i) @imp
-//         (Array:push<Import>
-//             $arena
-//             (match (Map:get-bs<_> &imports (Token-lexeme &imp.qualifier)) {
-//                 case None -> {
-//                     (assert-none<_>
-//                         (Map:insert<ByteSlice, Array<Import>>
-//                             $arena
-//                             $imports
-//                             (make ByteSlice (Token-lexeme &imp.qualifier))
-//                             (Array:new<Import>)))
-//                     (assert-some<_> (Map:get-bs<_> &imports (Token-lexeme &imp.qualifier)))
-//                 }
-//                 case Some -> {}
-//             })
-//             (match (resolve-imprt $arena $modules (Array:get<_> &modules.keys $id) $imp) {
-//                     case Error -> { make Result<[], ResolveError>.Error break }
-//                     case Success -> {}
-//             }))
-//         (#i (+ $i 1))
-//     }) {
-//         case Error -> { make Result<Module, ResolveError>.Error break }
-//         case Success -> { [,] }
-//     })
-// } }

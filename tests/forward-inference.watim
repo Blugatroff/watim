@@ -4,8 +4,8 @@ struct Array<T> {}
 fn get<T>(arr: Array<T>) {}
 
 fn twice<I, O>(f: (I -> O), input: I) -> O, O {
-    $input $f ->
-    $input $f ->
+    $input $f (I -> O)
+    $input $f (I -> O)
 }
 
 fn is-zero(n: i32) -> bool { $n 0 = }
@@ -26,14 +26,14 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    type-definitions=(Map
-      "Array"=(Struct
+    type-definitions=[
+      (Struct
         name=(IDENT Array 1 8),
         generic-parameters=[(IDENT T 1 14)],
-        fields=[])),
-    globals=(Map),
-    functions=(Map
-      "get"=(Function
+        fields=[])],
+    globals=[],
+    functions=[
+      (Function
         name=(IDENT get 3 4),
         export=None,
         signature=(Signature
@@ -41,9 +41,9 @@ check
           parameters=[(NamedType (IDENT arr 3 11) (CustomType 0 0 [(GenericType (IDENT T 3 22) 0)]))],
           returns=[]),
         locals=(Map
-          (LocalId "arr" 0 0)=(Local (IDENT arr 3 11) (CustomType 0 0 [(GenericType (IDENT T 3 22) 0)]) False True)),
+          (LocalId "arr" 0 0)=(Local (IDENT arr 3 11) (CustomType 0 0 [(GenericType (IDENT T 3 22) 0)]) True)),
         body=(Scope 0 [])),
-      "twice"=(Function
+      (Function
         name=(IDENT twice 5 4),
         export=None,
         signature=(Signature
@@ -51,16 +51,16 @@ check
           parameters=[(NamedType (IDENT f 5 16) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)])), (NamedType (IDENT input 5 29) (GenericType (IDENT I 5 36) 0))],
           returns=[(GenericType (IDENT O 5 42) 1), (GenericType (IDENT O 5 45) 1)]),
         locals=(Map
-          (LocalId "f" 0 0)=(Local (IDENT f 5 16) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]) False True),
-          (LocalId "input" 0 0)=(Local (IDENT input 5 29) (GenericType (IDENT I 5 36) 0) False True)),
+          (LocalId "f" 0 0)=(Local (IDENT f 5 16) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]) True),
+          (LocalId "input" 0 0)=(Local (IDENT input 5 29) (GenericType (IDENT I 5 36) 0) True)),
         body=(Scope 0 [
           (GetLocal (IDENT input 6 6) (LocalId "input" 0 0) (GenericType (IDENT I 5 36) 0) (GenericType (IDENT I 5 36) 0) []),
           (GetLocal (IDENT f 6 13) (LocalId "f" 0 0) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]) []),
-          (IndirectCall (ARROW -> 6 15) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)])),
+          (IndirectCall (LEFT_PAREN ( 6 15) (FunType (LEFT_PAREN ( 6 15) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)])),
           (GetLocal (IDENT input 7 6) (LocalId "input" 0 0) (GenericType (IDENT I 5 36) 0) (GenericType (IDENT I 5 36) 0) []),
           (GetLocal (IDENT f 7 13) (LocalId "f" 0 0) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]) []),
-          (IndirectCall (ARROW -> 7 15) (FunType (LEFT_PAREN ( 5 19) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]))])),
-      "is-zero"=(Function
+          (IndirectCall (LEFT_PAREN ( 7 15) (FunType (LEFT_PAREN ( 7 15) [(GenericType (IDENT I 5 20) 0)] [(GenericType (IDENT O 5 25) 1)]))])),
+      (Function
         name=(IDENT is-zero 10 4),
         export=None,
         signature=(Signature
@@ -68,12 +68,12 @@ check
           parameters=[(NamedType (IDENT n 10 12) I32)],
           returns=[Bool]),
         locals=(Map
-          (LocalId "n" 0 0)=(Local (IDENT n 10 12) I32 False True)),
+          (LocalId "n" 0 0)=(Local (IDENT n 10 12) I32 True)),
         body=(Scope 0 [
           (GetLocal (IDENT n 10 31) (LocalId "n" 0 0) I32 I32 []),
           (Number (NUMBER 0 10 33)),
           (Intrinsic (IDENT = 10 35) (Eq I32))])),
-      "foo"=(Function
+      (Function
         name=(IDENT foo 12 4),
         export=None,
         signature=(Signature
@@ -91,4 +91,4 @@ check
           (Number (NUMBER 2 16 14)),
           (Call (IDENT twice 16 16) (FunctionHandle 0 1) [I32, Bool]),
           (Intrinsic (IDENT drop 16 28) (Drop Bool)),
-          (Intrinsic (IDENT drop 16 33) (Drop Bool))])))))
+          (Intrinsic (IDENT drop 16 33) (Drop Bool))]))]))

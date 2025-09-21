@@ -2,13 +2,12 @@
 struct Foo { }
 fn foo(a: i32, b: Foo, c: bool) { }
 fn bar(b: Foo) {
-	43 $b 3 2 1 = foo
+	$b 3 2 1 = foo
 }
 [== Status Compiler ==]
 1
 [== Stderr Compiler ==]
--:4:16 expected:
+-:4:13 call to `foo` expected the following arguments:
 	[i32, Foo, bool]
-got:
+but got:
 	[Foo, i32, bool]
-

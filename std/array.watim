@@ -131,6 +131,13 @@ fn get<T>(self: .Array<T>, index: i32) -> .T {
     }
     $self.ptr $index sizeof(T) * +
 }
+fn safe-get<T>(self: .Array<T>, index: i32) -> Maybe<.T> {
+    $self.len $index le if {
+        make Maybe<.T>.None
+    } else {
+        $self $index get<T> make Maybe<.T>.Some
+    }
+}
 fn last<T>(self: .Array<T>) -> .T {
     $self $self.len 1 - get<T>
 }

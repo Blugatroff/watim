@@ -27,7 +27,6 @@ import "../resolving/type.watim" as Type (
 struct Local {
     name: LocalName
     type: Type
-    // reffed: bool
     is-parameter: bool
 }
 fn Local-format(fmt: .Formatter, self: .Local) {
@@ -35,8 +34,6 @@ fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt &self.name LocalName-format
     $fmt " " Fmt:write
     $fmt &self.type Type:format
-    // $fmt " " Fmt:write
-    // $fmt $self.reffed bool-format
     $fmt " " Fmt:write
     $fmt $self.is-parameter bool-format
     $fmt ")" Fmt:write
@@ -381,7 +378,7 @@ fn Loop-format(fmt: .Formatter, self: .Loop) {
 struct Block {
     token: Token
     parameters: Array<Type>
-    returns: Array<Type>
+    returns: Maybe<Array<Type>>
     body: Scope
 }
 fn Block-format(fmt: .Formatter, self: .Block) {
@@ -397,7 +394,7 @@ fn Block-format(fmt: .Formatter, self: .Block) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt &self.returns Types-format
+    $fmt \Types-format &self.returns Maybe:format<Array<Type>>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "body=" Fmt:write

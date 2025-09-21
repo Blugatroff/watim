@@ -1,7 +1,7 @@
 import "../../std/fmt.watim" as Fmt (Formatter)
 import "../../std/maybe.watim" as Maybe (Maybe)
 import "../../std/array.watim" as Array (Array)
-import "../../std/util.watim" as Util (i32-format, bool-format)
+import "../../std/util.watim" as Util (i32-format, i32-format-ref, bool-format)
 
 import "../lexer.watim" as Lexer (Token, Token-format)
 
@@ -605,14 +605,13 @@ fn BreakReturns-format(fmt: .Formatter, self: .BreakReturns) {
 
 struct BreakReturnSource {
     token: Token
-    source: Source
+    source: Maybe<Source>
 }
 fn BreakReturnSource-format(fmt: .Formatter, self: .BreakReturnSource) {
     $fmt "(BreakReturnSource " Fmt:write
-    $fmt " " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.source Source-format
+    $fmt \Source-format &self.source Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
@@ -667,35 +666,25 @@ fn FromLoopEntry-format(fmt: .Formatter, self: .FromLoopEntry) {
     $fmt ")" Fmt:write
 }
 
-struct FromLoopExit {
-    token: Token
-    return-types: Array<InferenceHole>
-    break-returns: Array<BreakReturns>
+struct ReturnsOfCase {
+    tag: Maybe<i32>
+    returns: Array<Source>
 }
-fn FromLoopExit-format(fmt: .Formatter, self: .FromLoopExit) {
-    $fmt "(FromLoopExit\n" Fmt:write
-    $fmt Fmt:indent
-    $fmt Fmt:write-indent
-    $fmt "token=" Fmt:write
-    $fmt &self.token Token-format
-    $fmt "\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "return-types=" Fmt:write
-    $fmt \InferenceHole-format &self.return-types Array:format-multi-line<_>
-    $fmt "\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "break-returns=" Fmt:write
-    $fmt \BreakReturns-format &self.break-returns Array:format-multi-line<_>
-    $fmt Fmt:dedent
+fn ReturnsOfCase-format(fmt: .Formatter, self: .ReturnsOfCase) {
+    $fmt "(ReturnsOfCase " Fmt:write
+    $fmt \i32-format-ref &self.tag Maybe:format<_>
+    $fmt " " Fmt:write
+    $fmt \Source-format &self.returns Array:format-multi-line<_>
     $fmt ")" Fmt:write
 }
 
 struct FromMatchExit {
     token: Token
+    varint: CustomTypeHandle
     return-types: Array<InferenceHole>
     scrutinee-type: InferenceHole
     scrutinee: Maybe<Source>
-    returns: Array<Array<Source>>
+    returns: Array<ReturnsOfCase>
 }
 fn FromMatchExit-format(fmt: .Formatter, self: .FromMatchExit) {
     $fmt "(FromMatchExit\n" Fmt:write
@@ -703,6 +692,10 @@ fn FromMatchExit-format(fmt: .Formatter, self: .FromMatchExit) {
     $fmt Fmt:write-indent
     $fmt "token=" Fmt:write
     $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "varint=" Fmt:write
+    $fmt &self.varint CustomTypeHandle-format
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "return-types=" Fmt:write
@@ -718,7 +711,7 @@ fn FromMatchExit-format(fmt: .Formatter, self: .FromMatchExit) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt \ArraySource-format &self.returns Array:format-multi-line<_>
+    $fmt \ReturnsOfCase-format &self.returns Array:format-multi-line<_>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -756,6 +749,29 @@ fn FromIndirectCall-format(fmt: .Formatter, self: .FromIndirectCall) {
     $fmt ")" Fmt:write
 }
 
+struct FromStackAnnotation {
+    token: Token
+    types: Array<Type>
+    arguments: Array<Source>
+}
+fn FromStackAnnotation-format(fmt: .Formatter, self: .FromStackAnnotation) {
+    $fmt "(FromStackAnnotation\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "types=" Fmt:write
+    $fmt \Type:format &self.types Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "arguments=" Fmt:write
+    $fmt \Source-format &self.arguments Array:format-multi-line<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
 variant MultiReturnNode {
     case PlaceHolder
     case Call -> FromCall
@@ -764,10 +780,10 @@ variant MultiReturnNode {
     case BlockEntry -> FromBlockEntry
     case BlockExit -> FromBlockExit
     case LoopEntry -> FromLoopEntry
-    case LoopExit -> FromLoopExit
     case MatchExit -> FromMatchExit
     case MatchEntry -> FromMatchEntry
     case IndirectCall -> FromIndirectCall
+    case StackAnnotation -> FromStackAnnotation
 }
 fn MultiReturnNode-format(fmt: .Formatter, self: .MultiReturnNode) {
     $fmt $self match {
@@ -778,10 +794,10 @@ fn MultiReturnNode-format(fmt: .Formatter, self: .MultiReturnNode) {
         case BlockEntry -> { FromBlockEntry-format }
         case BlockExit -> { FromBlockExit-format }
         case LoopEntry -> { FromLoopEntry-format }
-        case LoopExit -> { FromLoopExit-format }
         case MatchEntry -> { FromMatchEntry-format }
         case MatchExit -> { FromMatchExit-format }
         case IndirectCall -> { FromIndirectCall-format }
+        case StackAnnotation -> { FromStackAnnotation-format }
     }
 }
 

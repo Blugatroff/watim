@@ -4,6 +4,7 @@ variant Bar { case Baz }
 
 fn foo() {
 	make Bar.Baz match {
+		case A -> { 1 }
 		case B -> { 0 }
 	} drop
 }

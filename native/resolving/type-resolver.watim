@@ -25,6 +25,7 @@ struct TypeResolver {
     imports: .Map<ByteSlice, Array<Import>>
     module: .Parsed:Module
     modules: .Map<ByteSlice, Module>
+    allow-holes: bool
 }
 
 fn resolve-named-types(self: .TypeResolver, arena: .Arena, types: .Array<Parsed:NamedType>) -> Result<Array<NamedType>, ResolveError> {
@@ -211,7 +212,11 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
 
                             &type.generic-arguments match {
                                 case None -> {
-                                    $arena $generic-parameters.len $type.module make Type.Hole Array:repeat-element<Type>
+                                    $self.allow-holes if {
+                                        $arena $generic-parameters.len $type.module make Type.Hole Array:repeat-element<Type>
+                                    } else {
+                                        Array:new<Type>
+                                    }
                                 }
                                 case Some -> {
                                     $self flip $arena flip resolve-types match {
@@ -273,7 +278,11 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
 
                         &generic-arguments match {
                             case None -> {
-                                $arena $generic-parameters $type.name make Type.Hole Array:repeat-element<_>
+                                $self.allow-holes if {
+                                    $arena $generic-parameters $type.name make Type.Hole Array:repeat-element<_>
+                                } else {
+                                    Array:new<Type>
+                                }
                             }
                             case Some -> {
                                 @generic-arguments
@@ -283,9 +292,16 @@ fn resolve-custom-type(self: .TypeResolver, arena: .Arena, type: .Parsed:CustomT
                                 }
                                 $generic-arguments ~
                             }
+                        } @generic-arguments
+
+                        $generic-arguments.len $generic-parameters /= if {
+                            $self.module-id $arena &type.name
+                            $generic-parameters $generic-arguments.len
+                            generic-arguments-mismatch-error
+                            make Result<CustomTypeType, ResolveError>.Error break
                         }
 
-                        $handle flip make CustomTypeType
+                        $handle $generic-arguments make CustomTypeType
                         make Result<CustomTypeType, ResolveError>.Success break
                     }
                 }

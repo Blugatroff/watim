@@ -10,7 +10,7 @@ check
 (Map
   "-"=(Module
     imports=(Map),
-    type-definitions=(Map),
-    globals=(Map
-      "FOO"=(Global (IDENT FOO 1 8) I32 False)),
-    functions=(Map)))
+    type-definitions=[],
+    globals=[
+      (Global (IDENT FOO 1 8) I32 False)],
+    functions=[]))

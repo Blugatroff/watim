@@ -8,6 +8,7 @@ import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
 import "../../std/array.watim" as Array (Array, ValueAtIndex-unpack)
 import "../../std/fmt.watim" as Fmt
 import "../../std/fmt-utils.watim" as Fmt
+import "../../std/util.watim" as Util (i32-format)
 
 import "../../std/io.watim" as IO
 
@@ -74,6 +75,7 @@ struct WordCtx {
     type-lookup: .TypeLookup
     env: .Env
     struc-literal-env: Maybe<.StructLiteralEnv>
+    is-in-block: bool
 }
 
 fn with-env(ctx: .WordCtx, env: .Env) -> WordCtx {
@@ -89,6 +91,11 @@ fn with-struc-literal-env(ctx: .WordCtx, env: .StructLiteralEnv) -> WordCtx {
 fn without-struc-literal-env(ctx: .WordCtx) -> WordCtx {
     $ctx ~ @new
     make Maybe<.StructLiteralEnv>.None #new.struc-literal-env
+    $new
+}
+fn with-in-block(ctx: .WordCtx) -> WordCtx {
+    $ctx ~ @new
+    1 1 = #new.is-in-block
     $new
 }
 
@@ -270,6 +277,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
         }
         case P:Word.Loop -> {
             @word
+            $ctx with-in-block & @ctx
             $word.token
             $ctx &word.words.words resolve-scope match {
                 case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
@@ -284,6 +292,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
         }
         case P:Word.Block -> {
             @word
+            $ctx with-in-block & @ctx
             $word.token
             $word.words.end
             $ctx &word.words.words resolve-scope match {
@@ -297,7 +306,13 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
             make Block
             make Word.Block
         }
-        case P:Word.Break -> { ~ make Word.Break }
+        case P:Word.Break -> {
+            @token
+            $ctx.is-in-block not if {
+                $ctx $token "`break` can only be used inside of blocks and loops" abort<OneOrMany<Word>> break
+            }
+            $token ~ make Word.Break
+        }
         case P:Word.If -> {
             @word
             $word.token
@@ -512,19 +527,37 @@ fn resolve-blok-annotation(ctx: .WordCtx, annotation: .Maybe<P:BlockAnnotation>)
     make BlockAnnotation make Maybe<BlockAnnotation>.Some make Result<Maybe<BlockAnnotation>, ResolveError>.Success
 } }
 
+fn resolve-generic-arguments(ctx: .WordCtx, token: .Token, generic-arguments: .Maybe<Array<P:Type>>, expected: i32) -> Result<Maybe<Array<Type>>, ResolveError> { block {
+    $generic-arguments match {
+        case None -> { make Maybe<Array<Type>>.None }
+        case Some -> {
+            $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-types match {
+                case Error -> { make Result<Maybe<Array<Type>>, ResolveError>.Error break }
+                case Success -> {}
+            } make Maybe<Array<Type>>.Some
+        }
+    } @generic-arguments
+    &generic-arguments match {
+        case None -> {}
+        case Some -> {
+            @generic-arguments
+            $expected $generic-arguments.len /= if {
+                $ctx.arena Fmt:into-new-string @msg @fmt
+                &fmt "expected " Fmt:write
+                &fmt $expected i32-format
+                &fmt " generic arguments, not " Fmt:write
+                &fmt $generic-arguments.len i32-format
+                $ctx $token $msg Array:unpack<_> abort<Maybe<Array<Type>>> break
+            }
+        }
+    }
+    $generic-arguments make Result<Maybe<Array<Type>>, ResolveError>.Success
+} }
+
 fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveError> { block (-> Result<Maybe<Call>, ResolveError>) {
     $call match {
         case P:Call.Local -> {
             @word
-            &word.generic-arguments match {
-                case None -> { make Maybe<Array<Type>>.None }
-                case Some -> {
-                    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-types match {
-                        case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
-                        case Success -> {}
-                    } make Maybe<Array<Type>>.Some
-                }
-            } @generic-arguments
             $ctx.signatures &word.name Token-lexeme Map:get-bs-index<_> match {
                 case Some -> { $ctx.module-id flip make FunctionHandle }
                 case None -> {
@@ -535,15 +568,10 @@ fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveErro
                 }
             } @function-handle
             $ctx &function-handle lookup-signature @signature
-            &generic-arguments match {
-                case None -> {}
-                case Some -> {
-                    @generic-arguments
-                    $signature.generic-parameters.len $generic-arguments.len /= if {
-                        $ctx &word.name "wrong number of generic arguments provided" abort<Maybe<Call>> break
-                    }
-                }
-            }
+            $ctx &word.name &word.generic-arguments $signature.generic-parameters.len resolve-generic-arguments match {
+                case Success -> {}
+                case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
+            } @generic-arguments
             $word.name $function-handle $generic-arguments make Call make Maybe<Call>.Some
         }
         case P:Call.Foreign -> {
@@ -552,15 +580,6 @@ fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveErro
                 case None -> { $ctx &word.module "module not found" abort<Maybe<Call>> break }
                 case Some -> {}
             } @imports
-            &word.generic-arguments match {
-                case None -> { make Maybe<Array<Type>>.None }
-                case Some -> {
-                    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-types match {
-                        case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
-                        case Success -> {}
-                    } make Maybe<Array<Type>>.Some
-                }
-            } @generic-arguments
             0 @i
             loop {
                 $i $imports.len = if {
@@ -571,9 +590,13 @@ fn resolve-call(ctx: .WordCtx, call: .P:Call) -> Result<Maybe<Call>, ResolveErro
                 &module.functions &word.name Token-lexeme Map:get-bs-index<_> match {
                     case None -> {}
                     case Some -> {
-                        $imp.module flip make FunctionHandle
-                        $word.name flip
-                        $generic-arguments make Call make Maybe<Call>.Some
+                        $imp.module flip make FunctionHandle @function-handle
+                        $ctx &function-handle lookup-signature @signature
+                        $ctx &word.name &word.generic-arguments $signature.generic-parameters.len resolve-generic-arguments match {
+                            case Success -> {}
+                            case Error -> { make Result<Maybe<Call>, ResolveError>.Error break }
+                        } @generic-arguments
+                        $word.name $function-handle $generic-arguments make Call make Maybe<Call>.Some
                         make Result<Maybe<Call>, ResolveError>.Success break
                     }
                 }
@@ -636,6 +659,13 @@ fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<OneOrMany<Word>, Reso
         }
     } @default
 
+    &matsh.default Maybe:is-none<_> if {
+        $ctx $varint $matsh &cases error-on-missing-cases match {
+            case None -> {}
+            case Some -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
+        }
+    }
+
     $matsh.token
     $matsh-type
     $cases
@@ -644,6 +674,60 @@ fn resolve-matsh(ctx: .WordCtx, matsh: .P:Match) -> Result<OneOrMany<Word>, Reso
     make Word.Match
     make OneOrMany<Word>.One
     make Result<OneOrMany<Word>, ResolveError>.Success
+} }
+
+fn error-on-missing-cases(ctx: .WordCtx, varint: .Variant, matsh: .P:Match, cases: .Array<MatchCase>) -> Maybe<ResolveError> { block {
+    $ctx.arena Arena:save @save
+    $ctx.arena $varint.cases.len 0 1 = Array:repeat-element<bool> @cases-matched
+    &matsh.default Maybe:is-none<_> if {
+        0 loop {
+            @i $i $cases.len = if { make Maybe<ResolveError>.None break }
+            $cases $i Array:get<_> @cays
+            &cases-matched $cays.tag 1 1 = Array:set<_> if {
+                $ctx.arena Fmt:into-new-string @string @fmt
+                &fmt "duplicate case in match:" Fmt:write
+                0 loop {
+                    @i $i $cases.len = if { break }
+                    $cases $i Array:get<_> @other-case
+                    $other-case.tag $cays.tag = if {
+                        &fmt "\n\t" Fmt:write
+                        &fmt &other-case.name L:Token-line i32-format
+                        &fmt ":" Fmt:write
+                        &fmt &other-case.name L:Token-column i32-format
+                        &fmt " " Fmt:write
+                        &fmt &other-case.name Token-lexeme Fmt:write
+                    }
+                    $i 1 +
+                }
+                $ctx.module-id &matsh.token Token-location $string ~ make ResolveError make Maybe<ResolveError>.Some break
+            }
+            $i 1 +
+        } match {
+            case None -> {}
+            case _ -> { break }
+        }
+    }
+    0 loop {
+        @i $i $cases-matched.len = if { 0 1 = break }
+        &cases-matched $i Array:get<_> ~ not if { 1 1 = break }
+        $i 1 +
+    } if {
+        $ctx.arena Fmt:into-new-string @string @fmt
+        &fmt "missing case in match:" Fmt:write
+        0 loop {
+            @tag $tag $cases-matched.len = if { break }
+            &cases-matched $tag Array:get<_> ~ not if {
+                &fmt "\n\t" Fmt:write
+                &fmt &varint.cases $tag Array:get<_> .name Token-lexeme Fmt:write
+            }
+            $tag 1 +
+        }
+        $ctx.module-id &matsh.token Token-location $string ~ make ResolveError
+        make Maybe<ResolveError>.Some
+    } else {
+        $ctx.arena $save Arena:restore
+        make Maybe<ResolveError>.None
+    }
 } }
 
 fn resolve-matsh-cays(ctx: .WordCtx, varint: .Variant, cays: .P:MatchCase) -> Result<MatchCase, ResolveError> { block {
