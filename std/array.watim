@@ -397,7 +397,7 @@ fn filter<T>(arena: .A:Arena, self: .Array<T>, f: (.T -> bool)) -> Array<T> {
     loop {
         $i $self.len = if { break }
         $self $i get<T> @v
-        $v $f -> if {
+        $v $f (.T -> bool) if {
             $arena &new $v ~ push<T>
         }
         $i 1 + #i

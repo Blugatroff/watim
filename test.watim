@@ -293,7 +293,7 @@ fn parse-test-file(arena: .Arena, file: ByteSlice) -> Test {
         }
 
         $section-header ~ @section-header
-        &headers \ByteSlice:eq-by-ref &section-header Array:find-remove<_, ._> drop
+        &headers \ByteSlice:eq-by-ref &section-header Array:find-remove<_, _> drop
 
         $file $section-header.len ByteSlice:drop #file
         $file @value

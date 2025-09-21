@@ -85,7 +85,7 @@ fn find-slice(self: ByteSlice, slice: ByteSlice) -> i32, bool {
 fn trim-start-with(self: ByteSlice, f: (i8 -> bool)) -> ByteSlice {
     loop {
         $self.len 0 = if { break }
-        $self.ptr ~ $f -> not if { break }
+        $self.ptr ~ $f (i8 -> bool) not if { break }
         $self.len 1 - #self.len
         $self.ptr 1 + #self.ptr
     }
@@ -94,7 +94,7 @@ fn trim-start-with(self: ByteSlice, f: (i8 -> bool)) -> ByteSlice {
 fn trim-end-with(self: ByteSlice, f: (i8 -> bool)) -> ByteSlice {
     loop {
         $self.len 0 = if { break }
-        $self.ptr $self.len 1 - + ~ $f -> not if { break }
+        $self.ptr $self.len 1 - + ~ $f (i8 -> bool) not if { break }
         $self.len 1 - #self.len
     }
     $self
