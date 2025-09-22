@@ -88,7 +88,7 @@ class CustomTypeType(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("LocalCustomType", [
             self.name,
-            format_seq(self.generic_arguments)])
+            format_seq(self.generic_arguments, multi_line=True)])
 
 @dataclass(frozen=True, eq=True)
 class FunctionType(Formattable):
@@ -98,8 +98,8 @@ class FunctionType(Formattable):
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("FunType", [
             self.token,
-            format_seq(self.parameters),
-            format_seq(self.returns)])
+            format_seq(self.parameters, multi_line=True),
+            format_seq(self.returns, multi_line=True)])
 
 @dataclass
 class HoleType(Formattable):

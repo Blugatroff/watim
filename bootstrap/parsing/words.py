@@ -170,8 +170,13 @@ class GetFieldWord(Formattable):
 @dataclass
 class IndirectCallWord(Formattable):
     token: Token
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("IndirectCall", [self.token])
+        return named_record("IndirectCall", [
+            ("token", self.token),
+            ("parameters", format_seq(self.parameters, multi_line=True)),
+            ("returns", format_seq(self.returns, multi_line=True))])
 
 @dataclass
 class StructWordNamed(Formattable):

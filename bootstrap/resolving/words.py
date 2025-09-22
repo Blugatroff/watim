@@ -11,7 +11,6 @@ from parsing.words import (
     NumberWord as NumberWord,
     StringWord as StringWord,
     LoadWord as LoadWord,
-    IndirectCallWord as IndirectCallWord,
     MakeTupleWord as MakeTupleWord,
     GetFieldWord as GetFieldWord,
     TupleUnpackWord as TupleUnpackWord,
@@ -169,7 +168,6 @@ class LoopWord(Formattable):
             ("body", self.body),
             ("annotation", format_optional(self.annotation))])
 
-
 @dataclass
 class BlockWord(Formattable):
     token: Token
@@ -257,6 +255,17 @@ class MatchVoidWord(Formattable):
     token: Token
     def format_instrs(self) -> List[FormatInstr]:
         return unnamed_record("MatchVoid", [self.token])
+
+@dataclass
+class IndirectCallWord(Formattable):
+    token: Token
+    parameters: Tuple[Type, ...]
+    returns: Tuple[Type, ...]
+    def format_instrs(self) -> List[FormatInstr]:
+        return named_record("IndirectCallWord", [
+            ("token", self.token),
+            ("parameters", format_seq(self.parameters, multi_line=True)),
+            ("returns", format_seq(self.returns, multi_line=True))])
 
 @dataclass
 class StackAnnotation(Formattable):

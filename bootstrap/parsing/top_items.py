@@ -41,10 +41,10 @@ class FunctionSignature(Formattable):
     parameters: Tuple[NamedType, ...]
     returns: Tuple[Type, ...]
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Signature", [
-            format_seq(self.generic_parameters),
-            format_seq(self.parameters),
-            format_seq(self.returns)])
+        return named_record("Signature", [
+            ("generic-parameters", format_seq(self.generic_parameters)),
+            ("parameters", format_seq(self.parameters, multi_line=True)),
+            ("returns", format_seq(self.returns, multi_line=True))])
 
 @dataclass
 class Extern(Formattable):
@@ -53,12 +53,13 @@ class Extern(Formattable):
     name: Token
     signature: FunctionSignature
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Extern", [
-            self.token,
-            self.module,
-            self.name,
-            self.signature.name,
-            self.signature])
+        return named_record("Extern", [
+            ("token", self.token),
+            ("module", self.module),
+            ("name", self.name),
+            # TODO: Why name and signature.name? What is the difference?
+            ("signature.name", self.signature.name),
+            ("signature", self.signature)])
 
 @dataclass
 class Global(Formattable):
@@ -72,12 +73,12 @@ class Function(Formattable):
     signature: FunctionSignature
     body: Tuple[Word, ...]
     def format_instrs(self) -> List[FormatInstr]:
-        return unnamed_record("Function", [
-            self.token,
-            self.signature.name,
-            format_optional(self.signature.export_name),
-            self.signature,
-            format_seq(self.body, multi_line=True)])
+        return named_record("Function", [
+            ("token", self.token),
+            ("signature.name", self.signature.name),
+            ("export-name", format_optional(self.signature.export_name)),
+            ("signature", self.signature),
+            ("body", format_seq(self.body, multi_line=True))])
 
 @dataclass
 class Struct(Formattable):

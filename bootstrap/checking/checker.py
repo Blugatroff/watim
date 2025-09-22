@@ -668,6 +668,7 @@ class WordCtx:
             self.abort(word.token, "TODO")
         self.expect(stack, word.token, fun_type.parameters)
         self.push_returns(stack, fun_type.returns, None)
+        fun_type = FunctionType(word.token, fun_type.parameters, fun_type.returns)
         return ([IndirectCallWord(word.token, fun_type)], False)
 
     def check_store(self, stack: Stack, word: resolved.words.StoreWord) -> Tuple[List[Word], bool]:

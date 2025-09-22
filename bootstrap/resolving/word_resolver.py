@@ -101,7 +101,10 @@ class WordResolver:
             case parsing.VariantWord():
                 return self.resolve_make_variant(word),
             case parsing.IndirectCallWord():
-                return word,
+                return resolved.IndirectCallWord(
+                    word.token,
+                    self.type_resolver.resolve_types(word.parameters),
+                    self.type_resolver.resolve_types(word.returns)),
             case parsing.FunRefWord():
                 call = self.resolve_call(word.call)
                 if call is None:

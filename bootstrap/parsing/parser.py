@@ -399,8 +399,6 @@ class Parser:
         if token.ty == TokenType.DOT:
             self.retreat()
             return GetFieldWord(token, self.parse_field_accesses())
-        if token.ty == TokenType.ARROW:
-            return IndirectCallWord(token)
         if token.ty == TokenType.MAKE:
             struct_name_token = self.advance(skip_ws=True)
             taip = self.parse_struct_type(struct_name_token, generic_parameters)
@@ -496,8 +494,8 @@ class Parser:
                 if next.ty != TokenType.COMMA:
                     self.abort("Expected `,` or `)`")
         if token.ty == TokenType.LEFT_PAREN:
-            self.parse_fun_type(generic_parameters, token)
-            return IndirectCallWord(token)
+            fun_type = self.parse_fun_type(generic_parameters, token)
+            return IndirectCallWord(token, fun_type.parameters, fun_type.returns)
         self.abort("Expected word")
 
     def parse_call_word(self, generic_parameters: Tuple[Token, ...], token: Token) -> CallWord | ForeignCallWord:

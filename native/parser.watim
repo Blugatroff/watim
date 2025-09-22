@@ -122,9 +122,9 @@ fn FunType-format(fmt: .Formatter, self: .FunType) {
     $fmt "(FunType " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt \Type-format &self.parameters Array:format<Type>
+    $fmt \Type-format &self.parameters Array:format-multi-line<Type>
     $fmt " " Fmt:write
-    $fmt \Type-format &self.returns Array:format<Type>
+    $fmt \Type-format &self.returns Array:format-multi-line<Type>
     $fmt ")" Fmt:write
 }
 
@@ -651,9 +651,9 @@ fn Signature-format(fmt: .Formatter, self: .Signature) {
     $fmt "(Signature " Fmt:write
     $fmt \Token-format &self.generic-parameters Array:format<Token>
     $fmt " " Fmt:write
-    $fmt \NamedType-format &self.parameters Array:format<NamedType>
+    $fmt \NamedType-format &self.parameters Array:format-multi-line<NamedType>
     $fmt " " Fmt:write
-    $fmt \Type-format &self.returns Array:format<Type>
+    $fmt \Type-format &self.returns Array:format-multi-line<Type>
     $fmt ")" Fmt:write
 }
 
