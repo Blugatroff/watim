@@ -17,10 +17,18 @@ parse
   type-definitions=[],
   globals=[],
   functions=[
-    (Function (FN fn 1 1) (IDENT foo 1 4) None (Signature [] [] []) [
-      (Match
-        token=(MATCH match 2 5),
-        cases=[
-          (MatchCase (CASE case 3 9) None (Some (IDENT Bar 3 14)) (IDENT Baz 3 18) []),
-          (MatchCase (CASE case 4 9) (Some (IDENT V 4 14)) (Some (IDENT Maybe 4 16)) (IDENT None 4 22) [])],
-        default=(Some (MatchCase (CASE case 5 9) None None (UNDERSCORE _ 5 14) [])))])])
+    (Function
+      start=(FN fn 1 1),
+      name=(IDENT foo 1 4),
+      export-name=None,
+      signature=(Signature
+        generic-parameters=[],
+        parameters=[],
+        returns=[]),
+      body=[
+        (Match
+          token=(MATCH match 2 5),
+          cases=[
+            (MatchCase (CASE case 3 9) None (Some (IDENT Bar 3 14)) (IDENT Baz 3 18) []),
+            (MatchCase (CASE case 4 9) (Some (IDENT V 4 14)) (Some (IDENT Maybe 4 16)) (IDENT None 4 22) [])],
+          default=(Some (MatchCase (CASE case 5 9) None None (UNDERSCORE _ 5 14) [])))])])

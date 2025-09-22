@@ -48,17 +48,16 @@ class FunctionSignature(Formattable):
 
 @dataclass
 class Extern(Formattable):
-    token: Token
+    start: Token
     module: Token
     name: Token
     signature: FunctionSignature
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Extern", [
-            ("token", self.token),
-            ("module", self.module),
-            ("name", self.name),
-            # TODO: Why name and signature.name? What is the difference?
-            ("signature.name", self.signature.name),
+            ("start", self.start),
+            ("export-module", self.module),
+            ("export-name", self.name),
+            ("name", self.signature.name),
             ("signature", self.signature)])
 
 @dataclass
@@ -69,13 +68,13 @@ class Global(Formattable):
 
 @dataclass
 class Function(Formattable):
-    token: Token
+    start: Token
     signature: FunctionSignature
     body: Tuple[Word, ...]
     def format_instrs(self) -> List[FormatInstr]:
         return named_record("Function", [
-            ("token", self.token),
-            ("signature.name", self.signature.name),
+            ("start", self.start),
+            ("name", self.signature.name),
             ("export-name", format_optional(self.signature.export_name)),
             ("signature", self.signature),
             ("body", format_seq(self.body, multi_line=True))])

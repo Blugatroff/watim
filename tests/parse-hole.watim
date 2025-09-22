@@ -14,9 +14,17 @@ parse
   type-definitions=[],
   globals=[],
   functions=[
-    (Function (FN fn 1 1) (IDENT foo 1 4) None (Signature [] [] []) [
-      (Number (NUMBER 0 2 5)),
-      (LocalCall (IDENT dup 2 7) (Some [
-        Hole])),
-      (LocalCall (IDENT drop 2 14) None),
-      (LocalCall (IDENT drop 2 19) None)])])
+    (Function
+      start=(FN fn 1 1),
+      name=(IDENT foo 1 4),
+      export-name=None,
+      signature=(Signature
+        generic-parameters=[],
+        parameters=[],
+        returns=[]),
+      body=[
+        (Number (NUMBER 0 2 5)),
+        (LocalCall (IDENT dup 2 7) (Some [
+          Hole])),
+        (LocalCall (IDENT drop 2 14) None),
+        (LocalCall (IDENT drop 2 19) None)])])

@@ -13,7 +13,15 @@ parse
   type-definitions=[],
   globals=[],
   functions=[
-    (Function (FN fn 1 1) (IDENT foo 1 4) None (Signature [] [] []) [
-      (Number (NUMBER 0 2 5)),
-      (Number (NUMBER 1 2 7)),
-      (StackAnnotation (COLON : 2 9) [I32, I32])])])
+    (Function
+      start=(FN fn 1 1),
+      name=(IDENT foo 1 4),
+      export-name=None,
+      signature=(Signature
+        generic-parameters=[],
+        parameters=[],
+        returns=[]),
+      body=[
+        (Number (NUMBER 0 2 5)),
+        (Number (NUMBER 1 2 7)),
+        (StackAnnotation (COLON : 2 9) [I32, I32])])])

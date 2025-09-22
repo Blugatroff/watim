@@ -648,12 +648,20 @@ struct Signature {
     returns: Array<Type>
 }
 fn Signature-format(fmt: .Formatter, self: .Signature) {
-    $fmt "(Signature " Fmt:write
+    $fmt "(Signature\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "generic-parameters=" Fmt:write
     $fmt \Token-format &self.generic-parameters Array:format<Token>
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
     $fmt \NamedType-format &self.parameters Array:format-multi-line<NamedType>
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
     $fmt \Type-format &self.returns Array:format-multi-line<Type>
+    $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
 
@@ -665,16 +673,28 @@ struct Function {
     body: Words
 }
 fn Function-format(fmt: .Formatter, self: .Function) {
-    $fmt "(Function " Fmt:write
+    $fmt "(Function\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "start=" Fmt:write
     $fmt &self.start Token-format
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "name=" Fmt:write
     $fmt &self.name Token-format
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "export-name=" Fmt:write
     $fmt \Token-format &self.export Maybe:format<_>
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "signature=" Fmt:write
     $fmt &self.signature Signature-format
-    $fmt " " Fmt:write
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "body=" Fmt:write
     $fmt \Word-format &self.body.words Array:format-multi-line<Word>
+    $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
 
