@@ -58,7 +58,7 @@ fn infer-function(
 ) -> Result<Function, InferenceError> { block {
     make Ctx {
         $arena @arena
-        0 1 = @debug
+        make LogLevel.NoLogs @log-level
         $arena 2 Fmt:to-fd "    " Fmt:use-indentation Arena:push<_> @fmt
         $modules @modules
         &function.locals @locals
@@ -72,11 +72,15 @@ fn infer-function(
         \CustomTypeHandle-eq Map:new<CustomTypeHandle, Signature> @struct-signatures
     } @ctx
 
-    $ctx.debug if {
-        $ctx.fmt "infer-function: " Fmt:write
-        $ctx.fmt &function.name Token-format
-        $ctx.fmt "\n" Fmt:write
-        $ctx.fmt Fmt:indent
+    $ctx.log-level match {
+        case NoLogs -> {}
+        case _ -> {
+            drop
+            $ctx.fmt "infer-function: " Fmt:write
+            $ctx.fmt &function.name Token-format
+            $ctx.fmt "\n" Fmt:write
+            $ctx.fmt Fmt:indent
+        }
     }
 
 block {
@@ -157,10 +161,14 @@ block {
         @i $i $function.voids.len = if { make Maybe<InferenceError>.None break }
         &function.voids $i Array:get<_> @void
 
-        $ctx.debug if {
+        &ctx logging if {
             $ctx.fmt Fmt:write-indent
             $ctx.fmt "> infer void: " Fmt:write
-            $ctx.fmt $void Unstacked:StackVoid-format
+            $ctx.fmt $void &ctx full-sources if {
+                Unstacked:StackVoid-format
+            } else {
+                Unstacked:StackVoid-format-shallow
+            }
             $ctx.fmt "\n" Fmt:write
             $ctx.fmt Fmt:indent
         }
@@ -425,7 +433,7 @@ block {
                 }
             }
         }
-        $ctx.debug if { $ctx.fmt Fmt:dedent }
+        &ctx logging if { $ctx.fmt Fmt:dedent }
         $i 1 +
     } match {
         case None -> {}
@@ -455,49 +463,11 @@ block {
             }
         } @local-type
 
-        0 loop {
-            @i $i $local.assignments.len = if { make Maybe<InferenceError>.None break }
-            &local.assignments $i Array:get<_> @assignment
-
-            $assignment.is-store if {
-                &assignment.source match {
-                    case None -> {
-                        &assignment.token "src missing" error make Maybe<InferenceError>.Some break
-                    }
-                    case Some -> {}
-                } @src
-
-                &ctx $src infer match {
-                    case Error -> { make Maybe<InferenceError>.Some break }
-                    case Success -> {}
-                } match {
-                    case None -> {
-                        &assignment.token "failed to infer type of void" error make Maybe<InferenceError>.Some break
-                    }
-                    case Some -> {}
-                } & &ctx flip $assignment.type flip fill-hole
-            } else {
-                &ctx &local-type &assignment.fields traverse-fields match {
-                    case Success -> {}
-                    case Error -> { make Maybe<InferenceError>.Some break }
-                } @field-type
-
-                &assignment.source match {
-                    case None -> { &assignment.token "set local expected item" error make Maybe<InferenceError>.Some break }
-                    case Some -> {}
-                } @source
-
-                &ctx $assignment.type &field-type fill-hole
-                &ctx $source &field-type check match {
-                    case None -> {}
-                    case _ -> { break }
-                }
-            }
-            $i 1 +
-        } match {
+        &ctx $local &local-type check-local-assignments match {
             case None -> {}
             case _ -> { break }
         }
+
         $i 1 +
     } match {
         case None -> {}
@@ -514,7 +484,7 @@ block {
     }
     make Result<Function, InferenceError>.Success
 }
-$ctx.debug if { $ctx.fmt Fmt:dedent }
+&ctx logging if { $ctx.fmt Fmt:dedent }
 } }
 
 fn call-argument-mismatch-error(
@@ -573,9 +543,15 @@ fn InferenceState-format(fmt: .Formatter, self: .InferenceState) {
 
 fn ptr-eq<T>(a: ..T, b: ..T) -> bool { $a ~ $b ~ = }
 
+variant LogLevel {
+    case NoLogs
+    case OnlyStructure
+    case FullSources
+}
+
 struct Ctx {
     arena: .Arena
-    debug: bool
+    log-level: LogLevel
     fmt: .Formatter
     modules: .Array<Resolved:Module>
     locals: .Map<LocalId, Unstacked:Local>
@@ -587,6 +563,12 @@ struct Ctx {
     type-bool: .Type
     type-i32: .Type
     struct-signatures: Map<CustomTypeHandle, Signature>
+}
+fn logging(self: .Ctx) -> bool {
+    $self.log-level make LogLevel.NoLogs /=
+}
+fn full-sources(self: .Ctx) -> bool {
+    $self.log-level make LogLevel.FullSources =
 }
 
 fn lookup-hole(ctx: .Ctx, hole: InferenceHole) -> Maybe<.Type> {
@@ -627,7 +609,7 @@ fn get-node(ctx: .Ctx, index: i32) -> .MultiReturnNode {
 }
 
 fn fill-hole(ctx: .Ctx, hole: InferenceHole, known: .Type) {
-    $ctx.debug if {
+    $ctx full-sources if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "fill-hole: " Fmt:write
         $ctx.fmt &hole Unstacked:InferenceHole-format
@@ -670,7 +652,7 @@ fn TypeAtFieldIndex-unpack(self: TypeAtFieldIndex) -> Type, i32 {
 }
 
 fn traverse-fields(ctx: .Ctx, local-type: .Type, fields: .Array<Unstacked:FieldAccess>) -> Result<Type, InferenceError> {
-    $ctx.debug if {
+    $ctx full-sources if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "traverse-fields:\n" Fmt:write
         $ctx.fmt Fmt:indent
@@ -729,7 +711,7 @@ fn traverse-fields(ctx: .Ctx, local-type: .Type, fields: .Array<Unstacked:FieldA
         // } else { ~ } #type
         $i 1 +
     }
-    $ctx.debug if {
+    $ctx full-sources if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "= " Fmt:write
         $ctx.fmt &type Type:format
@@ -743,12 +725,16 @@ fn SourcePtr-format(fmt: .Formatter, self: ..Source) {
 }
 
 fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { block {
-    $ctx.debug if {
+    $ctx logging if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "> check: " Fmt:write
         $ctx.fmt $known Type:format
         $ctx.fmt " = " Fmt:write
-        $ctx.fmt $source Source:Source-format
+        $ctx.fmt $source $ctx full-sources if {
+            Source:Source-format
+        } else {
+            Source:Source-format-shallow
+        }
         $ctx.fmt "\n" Fmt:write
         $ctx.fmt Fmt:indent
     }
@@ -756,7 +742,7 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
         case None -> {}
         case Some -> {
             @state
-            $ctx.debug if {
+            $ctx logging if {
                 $ctx.fmt Fmt:write-indent
                 $ctx.fmt "< cycle detected: " Fmt:write
                 $ctx.fmt $state InferenceState-format
@@ -1400,7 +1386,7 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
     $ctx.arena &ctx.states $source
     $ctx.arena $known Type:clone
     make InferenceState.Known Map:insert<_, _> drop
-    $ctx.debug if { $ctx.fmt Fmt:dedent }
+    $ctx logging if { $ctx.fmt Fmt:dedent }
 } }
 
 fn check-match-scrutinee-variant(ctx: .Ctx, source: .Source:FromMatchExit, scrutinee-type: .Type) -> Maybe<InferenceError> {
@@ -1435,7 +1421,7 @@ fn check-from-node(ctx: .Ctx, source: .Source:FromNode, known: .Type) -> Maybe<I
     $source.ret @return-depth
     $ctx $source.index get-node @node
 
-    $ctx.debug if {
+    $ctx logging if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "check: " Fmt:write
         $ctx.fmt $known Type:format
@@ -1812,7 +1798,11 @@ fn stack-annotation-mismatch-error(ctx: .Ctx, source: .Source:FromStackAnnotatio
     &source.token $msg Array:unpack<_> error
 } }
 
-fn check-local-assignments(ctx: .Ctx, local: .Local, expected-local-type: .Type) -> Maybe<InferenceError> {
+fn check-local-assignments(ctx: .Ctx, local: .Local, expected-local-type: .Type) -> Maybe<InferenceError> { block {
+    $local.assignments-checked if {
+        make Maybe<InferenceError>.None break
+    }
+    1 1 = #local.assignments-checked
     0 loop (i32 -> Maybe<InferenceError>) {
         @i $i $local.assignments.len = if { make Maybe<InferenceError>.None break }
         &local.assignments $i Array:get<_> @assignment
@@ -1844,7 +1834,7 @@ fn check-local-assignments(ctx: .Ctx, local: .Local, expected-local-type: .Type)
         }
         $i 1 +
     }
-}
+} }
 
 fn try-with-generics(ctx: .Ctx, type: .Type, generic-arguments: .Array<InferenceHole>) -> Maybe<Type> { block (-> Maybe<Type>) {
     $type match {
@@ -1915,7 +1905,7 @@ fn try-all-with-generics(ctx: .Ctx, types: .Array<Type>, generic-arguments: .Arr
 }
 
 fn fit-to-types(ctx: .Ctx, types: .Array<Type>, generic-arguments: .Array<InferenceHole>, index: i32, known: .Type) -> UnificationResult {
-    $ctx.debug if {
+    $ctx full-sources if {
         $ctx.fmt Fmt:write-indent $ctx.fmt "fit-to-types:\n" Fmt:write
         $ctx.fmt Fmt:indent
         $ctx.fmt Fmt:write-indent $ctx.fmt "types: " Fmt:write
@@ -1936,7 +1926,7 @@ fn fit-to-types(ctx: .Ctx, types: .Array<Type>, generic-arguments: .Array<Infere
     $generic-arguments
     $types $index Array:get<_>
     $known unify-types
-    $ctx.debug if { $ctx.fmt Fmt:dedent }
+    $ctx full-sources if { $ctx.fmt Fmt:dedent }
 }
 fn fit-to-types-named(ctx: .Ctx, types: .Array<NamedType>, generic-arguments: .Array<InferenceHole>, index: i32, known: .Type) -> UnificationResult {
     $ctx.arena Arena:temp @temp @save
@@ -1964,7 +1954,7 @@ fn UnificationResult-merge(a: UnificationResult, b: UnificationResult) -> Unific
 }
 
 fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type, known: .Type) -> UnificationResult {
-    $ctx.debug if {
+    $ctx full-sources if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "unify-types(generic-arguments: " Fmt:write
         $ctx.fmt \Unstacked:InferenceHole-format $generic-arguments Array:format<_>
@@ -2036,7 +2026,7 @@ fn unify-types(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Type
             }
         }
     }
-    $ctx.debug if { $ctx.fmt Fmt:dedent }
+    $ctx full-sources if { $ctx.fmt Fmt:dedent }
 }
 fn unify-types-all(ctx: .Ctx, generic-arguments: .Array<InferenceHole>, holey: .Array<Type>, known: .Array<Type>) -> UnificationResult {
     0 loop {
@@ -2096,10 +2086,14 @@ fn infer-all-case-returns(ctx: .Ctx, returns: .Array<Source:ReturnsOfCase>, retu
 
 fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
     $source @entire-source
-    $ctx.debug if {
+    $ctx logging if {
         $ctx.fmt Fmt:write-indent
         $ctx.fmt "> infer: " Fmt:write
-        $ctx.fmt $source Source:Source-format
+        $ctx.fmt $source $ctx full-sources if {
+            Source:Source-format
+        } else {
+            Source:Source-format-shallow
+        }
         $ctx.fmt "\n" Fmt:write
         $ctx.fmt Fmt:indent
     }
@@ -2110,7 +2104,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
             }
             case Some -> {
                 @state
-                $ctx.debug if {
+                $ctx logging if {
                     $ctx.fmt Fmt:write-indent
                     $ctx.fmt "< cycle detected: " Fmt:write
                     $ctx.fmt $state InferenceState-format
@@ -2119,12 +2113,12 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                 $state match {
                     case Known -> {
                         ~ make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
-                        $ctx.debug if { $ctx.fmt Fmt:dedent }
+                        $ctx logging if { $ctx.fmt Fmt:dedent }
                         break
                     }
                     case BeingInferred -> {}
                     case BeingChecked -> {
-                        $ctx.debug if { $ctx.fmt Fmt:dedent }
+                        $ctx logging if { $ctx.fmt Fmt:dedent }
                         make Maybe<Type>.None make Result<Maybe<Type>, InferenceError>.Success break
                     }
                 }
@@ -2304,41 +2298,17 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
 
                     $ctx.arena &ctx.states $whole-source $type make InferenceState.Known Map:insert<_, _> drop
 
-                    0 loop (i32 -> Maybe<InferenceError>) {
-                        @i $i $local.assignments.len = if { make Maybe<InferenceError>.None break }
-                        &local.assignments $i Array:get<_> @assignment
-                        $ctx &inferred &assignment.fields traverse-fields match {
-                            case Error -> { make Maybe<InferenceError>.Some break }
-                            case Success -> {}
-                        } @field-type
-                        $assignment.is-store if {
-                            $field-type match {
-                                case Ptr -> { ~ }
-                                case _ -> { drop &assignment.token "TODO" error make Maybe<InferenceError>.Some break }
-                            }
-                        } else { $field-type } @source-type
-                        $ctx $assignment.type &source-type fill-hole
-                        $ctx &assignment.source match {
-                            case None -> {
-                                &assignment.token "assignment expected item" error make Maybe<InferenceError>.Some break
-                            }
-                            case Some -> {}
-                        } &source-type check match {
-                            case None -> {}
-                            case _ -> { break }
-                        }
-                        $i 1 +
-                    } match {
+                    $ctx $local &inferred check-local-assignments match {
                         case None -> {}
                         case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
                     }
 
                     $ctx $source.result-type &type fill-hole
 
-                    $ctx $whole-source &type check match {
-                        case None -> {}
-                        case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                    }
+                    // $ctx $whole-source &type check match {
+                    //     case None -> {}
+                    //     case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
+                    // }
                     $type make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
                 }
                 case Source.FromIntrinsic -> {
@@ -2625,7 +2595,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                     $source.index @node-index
                     $source.ret @return-depth
                     $ctx $node-index get-node @node
-                    $ctx.debug if {
+                    $ctx logging if {
                         $ctx.fmt Fmt:write-indent
                         $ctx.fmt "> infer: " Fmt:write
                         $ctx.fmt $node $return-depth Graph:graph-node-name
@@ -3068,7 +3038,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                 }
                 case _ -> {
                     @source
-                    $ctx.debug if { $ctx.fmt $source Source:Source-format }
+                    $ctx logging if { $ctx.fmt $source Source:Source-format }
                     $source Source:Source-token "infer TODO" error make Result<Maybe<Type>, InferenceError>.Error
                 }
             }
@@ -3076,7 +3046,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
         &res match {
             case Success -> {
                 @inferred
-                $ctx.debug if {
+                $ctx logging if {
                     $ctx.fmt Fmt:write-indent
                     $ctx.fmt "= " Fmt:write
                     $ctx.fmt \Type:format $inferred Maybe:format<_>
@@ -3110,7 +3080,7 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
             }
             case _ -> { drop }
         }
-        $ctx.debug if { $ctx.fmt Fmt:dedent }
+        $ctx logging if { $ctx.fmt Fmt:dedent }
         $res
     }
 }

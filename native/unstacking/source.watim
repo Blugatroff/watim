@@ -54,6 +54,15 @@ fn FromLocal-format(fmt: .Formatter, self: .FromLocal) {
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
+fn FromLocal-format-shallow(fmt: .Formatter, self: .FromLocal) {
+    $fmt "(FromLocal " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.var LocalId-format
+    $fmt " " Fmt:write
+    $fmt \FieldAccess-format &self.fields Array:format<_>
+    $fmt ")" Fmt:write
+}
 
 struct FromGlobal {
     token: Token
@@ -950,6 +959,17 @@ fn Source-format(fmt: .Formatter, self: .Source) {
         case FromCase -> { FromCase-format }
         case FromFunRef -> { FromFunRef-format }
         case FromGetField -> { FromGetField-format }
+    }
+}
+fn Source-format-shallow(fmt: .Formatter, self: .Source) {
+    $self match {
+        case FromNode -> { $fmt flip FromNode-format }
+        case FromLocal -> { $fmt flip FromLocal-format-shallow }
+        case _ -> {
+            $fmt "(Source " Fmt:write
+            $fmt flip Source-token Token-format
+            $fmt ")" Fmt:write
+        }
     }
 }
 fn Source-token(self: .Source) -> .Token {

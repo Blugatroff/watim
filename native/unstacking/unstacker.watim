@@ -19,7 +19,7 @@ import "../resolving/top-items.watim" as Resolved (Signature, Signature-format, 
 import "../resolving/module.watim" as Resolved
 
 import "./stack.watim" as Stack (Stack)
-import "./source.watim" as Source (Source, Source-format, MultiReturnNode)
+import "./source.watim" as Source (Source, Source-format, Source-format-shallow, MultiReturnNode)
 import "./word.watim" as Word (InferenceHole, InferenceHole-format, InferenceFieldHole, Word, Scope, Scope-format)
 
 variant FunctionOrExtern {
@@ -79,6 +79,7 @@ struct Local {
     parameter: Maybe<Type>
     assignments: Array<Assignment>
     reffed: bool
+    assignments-checked: bool
 }
 fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt "(Local\n" Fmt:write
@@ -102,6 +103,11 @@ fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt Fmt:write-indent
     $fmt "assignments=" Fmt:write
     $fmt \Assignment-format &self.assignments Array:format-multi-line<_>
+    $fmt $self.reffed bool-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "assignments-checked=" Fmt:write
+    $fmt $self.assignments-checked bool-format
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -130,6 +136,27 @@ fn IndirectCallVoid-format(fmt: .Formatter, self: .IndirectCallVoid) {
     $fmt Fmt:write-indent
     $fmt "function=" Fmt:write
     $fmt \Source-format &self.function Maybe:format<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+fn IndirectCallVoid-format-shallow(fmt: .Formatter, self: .IndirectCallVoid) {
+    $fmt "(IndirectCallVoid\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "parameters=" Fmt:write
+    $fmt \InferenceHole-format &self.parameters Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "returns=" Fmt:write
+    $fmt \InferenceHole-format &self.returns Array:format-multi-line<_>
+    $fmt "\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "function=" Fmt:write
+    $fmt \Source-format-shallow &self.function Maybe:format<_>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
@@ -167,6 +194,32 @@ fn SetGlobalVoid-format(fmt: .Formatter, self: .SetGlobalVoid) {
     $fmt ")" Fmt:write
 }
 
+fn SetGlobalVoid-format-shallow(fmt: .Formatter, self: .SetGlobalVoid) {
+    $fmt "(SetGlobalVoid\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "global-type=" Fmt:write
+    $fmt &self.global-type Type:format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "fields=" Fmt:write
+    $fmt \Word:FieldAccess-format &self.fields Array:format-multi-line<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "source=" Fmt:write
+    $fmt \Source-format-shallow &self.source Maybe:format<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+
 struct CallVoid {
     token: Token
     function: Resolved:FunctionHandle
@@ -194,6 +247,27 @@ fn CallVoid-format(fmt: .Formatter, self: .CallVoid) {
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
+fn CallVoid-format-shallow(fmt: .Formatter, self: .CallVoid) {
+    $fmt "(CallVoid\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "function=" Fmt:write
+    $fmt &self.function Resolved:FunctionHandle-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "arguments=" Fmt:write
+    $fmt \Source-format-shallow &self.arguments Array:format-multi-line<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "generic-arguments=" Fmt:write
+    $fmt \InferenceHole-format &self.generic-arguments Array:format-multi-line<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
 
 struct ImpossibleMatchVoid {
     token: Token
@@ -204,6 +278,13 @@ fn ImpossibleMatchVoid-format(fmt: .Formatter, self: .ImpossibleMatchVoid) {
     $fmt &self.token Token-format
     $fmt " " Fmt:write
     $fmt \Source-format &self.source Maybe:format<_>
+    $fmt ")" Fmt:write
+}
+fn ImpossibleMatchVoid-format-shallow(fmt: .Formatter, self: .ImpossibleMatchVoid) {
+    $fmt "(ImpossibleMatchVoid " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt \Source-format-shallow &self.source Maybe:format<_>
     $fmt ")" Fmt:write
 }
 
@@ -223,6 +304,16 @@ fn StackVoid-format(fmt: .Formatter, self: .StackVoid) {
         case SetGlobal -> { SetGlobalVoid-format }
         case Call -> { CallVoid-format }
         case ImpossibleMatch -> { ImpossibleMatchVoid-format }
+    }
+}
+fn StackVoid-format-shallow(fmt: .Formatter, self: .StackVoid) {
+    $fmt $self match {
+        case Store -> { StoreVoid-format-shallow }
+        case NonSpecific -> { NonSpecificVoid-format-shallow }
+        case IndirectCall -> { IndirectCallVoid-format-shallow }
+        case SetGlobal -> { SetGlobalVoid-format-shallow }
+        case Call -> { CallVoid-format-shallow }
+        case ImpossibleMatch -> { ImpossibleMatchVoid-format-shallow }
     }
 }
 
@@ -252,7 +343,27 @@ fn StoreVoid-format(fmt: .Formatter, self: .StoreVoid) {
     $fmt &self.type InferenceHole-format
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
-
+}
+fn StoreVoid-format-shallow(fmt: .Formatter, self: .StoreVoid) {
+    $fmt "(StoreVoid\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "dst=" Fmt:write
+    $fmt \Source-format-shallow &self.dst Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "src=" Fmt:write
+    $fmt \Source-format-shallow &self.src Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt &self.type InferenceHole-format
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
 }
 
 struct NonSpecificVoid {
@@ -271,6 +382,27 @@ fn NonSpecificVoid-format(fmt: .Formatter, self: .NonSpecificVoid) {
     $fmt Fmt:write-indent
     $fmt "source=" Fmt:write
     $fmt \Source-format &self.source Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "known=" Fmt:write
+    $fmt \Type:format &self.known Maybe:format<_>
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "type=" Fmt:write
+    $fmt \InferenceHole-format &self.type Maybe:format<_>
+    $fmt Fmt:dedent
+    $fmt ")" Fmt:write
+}
+fn NonSpecificVoid-format-shallow(fmt: .Formatter, self: .NonSpecificVoid) {
+    $fmt "(NonSpecificVoid\n" Fmt:write
+    $fmt Fmt:indent
+    $fmt Fmt:write-indent
+    $fmt "token=" Fmt:write
+    $fmt &self.token Token-format
+    $fmt ",\n" Fmt:write
+    $fmt Fmt:write-indent
+    $fmt "source=" Fmt:write
+    $fmt \Source-format-shallow &self.source Maybe:format<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "known=" Fmt:write
@@ -511,6 +643,7 @@ fn unstack-function(arena: .Arena, modules: .Array<Resolved:Module>, function: .
             &unstacker &local.name LocalName-token ~ fresh-hole @type
             Array:new<Assignment> @assignments
             0 1 = @reffed
+            0 1 = @assignments-checked
         } Map:insert-assert-no-alloc<_, _> drop
         $i 1 +
     }

@@ -534,6 +534,8 @@ class WordCtx:
             # TODO: Check, that the parameters of both branches are compatible
             parameters = true_stack.negative if len(true_stack.negative) > len(false_stack.negative) else false_stack.negative
 
+        parameters.reverse()
+
         if not true_words_diverge:
             returns = true_stack.stack
         elif not false_words_diverge:
