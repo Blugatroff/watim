@@ -819,7 +819,6 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
                     }
                 }
                 $ctx.locals &source.var Map:get<_, _> Maybe:assert-some<_> @local
-                1 1 = #local.read
                 $ctx $local.type lookup-hole match {
                     case None -> {
                         $source.fields.len 0 = if {
@@ -2278,7 +2277,6 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                         case None -> {}
                     }
                     $ctx.locals &source.var Map:get<_, _> Maybe:assert-some<_> @local
-                    1 1 = #local.read
 
                     $ctx $local.type lookup-hole match {
                         case Some -> { ~ }

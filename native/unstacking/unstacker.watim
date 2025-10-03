@@ -78,7 +78,6 @@ struct Local {
     // if this local is a parameter, then this will be non-None
     parameter: Maybe<Type>
     assignments: Array<Assignment>
-    read: bool
     reffed: bool
 }
 fn Local-format(fmt: .Formatter, self: .Local) {
@@ -95,10 +94,6 @@ fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt Fmt:write-indent
     $fmt "parameter=" Fmt:write
     $fmt \Type:format &self.parameter Maybe:format<_>
-    $fmt "\n" Fmt:write
-    $fmt Fmt:write-indent
-    $fmt "read=" Fmt:write
-    $fmt $self.read bool-format
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "reffed=" Fmt:write
@@ -516,7 +511,6 @@ fn unstack-function(arena: .Arena, modules: .Array<Resolved:Module>, function: .
             &unstacker &local.name LocalName-token ~ fresh-hole @type
             Array:new<Assignment> @assignments
             0 1 = @reffed
-            0 1 = @read
         } Map:insert-assert-no-alloc<_, _> drop
         $i 1 +
     }
