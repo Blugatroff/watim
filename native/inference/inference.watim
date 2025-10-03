@@ -1142,20 +1142,7 @@ fn check(ctx: .Ctx, source: .Source, known: .Type) -> Maybe<InferenceError> { bl
 
                 $ctx $source.type $known ~ make Type.Custom & fill-hole
 
-                0 loop {
-                    @i $i $struc.fields.len = if { make Maybe<InferenceError>.None break }
-                    &struc.fields $i Array:get<_> @field
-                    $ctx.arena &field.type &known.generic-arguments Type:with-generics @field-type
-                    &source.arguments $i Array:get<_> @field-source
-                    $ctx $field-source &field-type check match {
-                        case None -> {}
-                        case _ -> { break }
-                    }
-                    $i 1 +
-                } match {
-                    case None -> {}
-                    case _ -> { break }
-                }
+                $ctx $struc &source.arguments $known check-make-struct-fields break
             }
             case Source.FromMakeVariant -> {
                 @source
@@ -2143,21 +2130,6 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
                         &source.token "`make struct` expected more arguments" error make Result<Maybe<Type>, InferenceError>.Error break
                     }
 
-                    $ctx.arena $struc.fields.len Array:new-with-capacity<Maybe<Type>> @field-types
-                    0 loop {
-                        @i $i $source.arguments.len = if { make Maybe<InferenceError>.None break }
-                        &struc.fields $i Array:get<_> @field
-                        &source.arguments $i Array:get<_> @field-source
-                        $ctx $field-source infer match {
-                            case Error -> { make Maybe<InferenceError>.Some break }
-                            case Success -> {}
-                        } &field-types flip Array:push-assert-no-alloc<_>
-                        $i 1 +
-                    } match {
-                        case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
-                        case None -> {}
-                    }
-
                     $ctx $source.type-definition Struct-signature @signature
                     $ctx &source.token &source.generic-arguments &source.arguments $signature 0 infer-signature-application match {
                         case Success -> {}
@@ -2169,10 +2141,14 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
 
                     $ctx $source.type &inferred fill-hole
 
-                    $ctx $entire-source &inferred check match {
+                    $ctx $struc &source.arguments &inferred match {
+                        case Type.Custom -> {}
+                        case _ -> { drop Core:unreachable<.Type:CustomTypeType> }
+                    } check-make-struct-fields match {
                         case None -> {}
                         case Some -> { make Result<Maybe<Type>, InferenceError>.Error break }
                     }
+
                     $inferred make Maybe<Type>.Some make Result<Maybe<Type>, InferenceError>.Success
                 }
                 case Source.FromMakeVariant -> {
@@ -3082,6 +3058,20 @@ fn infer(ctx: .Ctx, source: .Source) -> Result<Maybe<Type>, InferenceError> {
         }
         $ctx logging if { $ctx.fmt Fmt:dedent }
         $res
+    }
+}
+
+fn check-make-struct-fields(ctx: .Ctx, struc: .Resolved:Struct, arguments: .Array<Source>, known: .Type:CustomTypeType) -> Maybe<InferenceError> {
+    0 loop {
+        @i $i $struc.fields.len = if { make Maybe<InferenceError>.None break }
+        &struc.fields $i Array:get<_> @field
+        $ctx.arena &field.type &known.generic-arguments Type:with-generics @field-type
+        $arguments $i Array:get<_> @field-source
+        $ctx $field-source &field-type check match {
+            case None -> {}
+            case _ -> { break }
+        }
+        $i 1 +
     }
 }
 
