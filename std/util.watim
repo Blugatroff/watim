@@ -27,8 +27,15 @@ fn parse(pt: .i8, len: i32) -> i32 {
     }
 }
 
+struct Just32Bytes {
+    a: i64
+    b: i64
+    c: i64
+    d: i64
+}
+
 fn i32-format(formatter: .Formatter, self: i32) {
-    uninit<[i64, i64, i64, i64]> @buf &buf !.i8 @buf
+    uninit<Just32Bytes> @buf &buf !.i8 @buf
     $formatter $buf $self $buf IO:print-i32-into FMT:write
 }
 

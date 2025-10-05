@@ -1,0 +1,330 @@
+import "../../std/core.watim" as Core
+import "../../std/maybe.watim" as Maybe (Maybe(None, Some))
+import "../../std/result.watim" as Result (Result(Success, Error))
+import "../../std/array.watim" as Array (Array)
+import "../../std/arena.watim" as Arena (Arena)
+import "../../std/byte-slice.watim" as ByteSlice (ByteSlice)
+import "../../std/util.watim" as Util (i32-format)
+import "../../std/fmt.watim" as Fmt (Formatter)
+import "../../std/io.watim" as IO
+
+import "../../std/fmt-utils.watim" as Fmt
+
+import "../lexer.watim" as Lexer (Token, Token-format, Token-lexeme)
+import "../parser.watim" as P
+
+import "../resolving/type.watim" as WithHoles (CustomTypeHandle, CustomTypeHandle-eq)
+
+fn with-holes(arena: .Arena, type: .Type) -> WithHoles:Type {
+    $type match {
+        case Bool -> { make WithHoles:Type.Bool }
+        case I8 -> { make WithHoles:Type.I8 }
+        case I32 -> { make WithHoles:Type.I32 }
+        case I64 -> { make WithHoles:Type.I64 }
+        case Ptr -> { $arena flip ~ with-holes $arena flip Arena:push<_> make WithHoles:Type.Ptr }
+        case Custom -> { $arena flip CustomTypeType-with-holes make WithHoles:Type.Custom }
+        case Fun -> { $arena flip FunType-with-holes make WithHoles:Type.Fun }
+        case Generic -> { ~ make WithHoles:Type.Generic }
+    }
+}
+
+fn CustomTypeType-with-holes(arena: .Arena, type: .CustomTypeType) -> WithHoles:CustomTypeType {
+    $type.type-definition
+    $arena &type.generic-arguments Types-with-holes
+    make WithHoles:CustomTypeType
+}
+
+fn FunType-with-holes(arena: .Arena, type: .FunType) -> WithHoles:FunType {
+    $type.token
+    $arena &type.parameters Types-with-holes
+    $arena &type.returns Types-with-holes
+    make WithHoles:FunType
+}
+
+fn Types-with-holes(arena: .Arena, types: .Array<Type>) -> Array<WithHoles:Type> {
+    $arena $types.len Array:new-with-capacity<WithHoles:Type> @with-holes
+    0 loop {
+        @i $i $types.len = if { break }
+        $types $i Array:get<_> $arena flip with-holes
+        &with-holes flip Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
+    $with-holes
+}
+
+fn without-holes(arena: .Arena, type: .WithHoles:Type) -> Result<Type, Token> { block (-> Result<Type, Token>) {
+    $type match {
+        case WithHoles:Type.Bool -> { make Type.Bool }
+        case WithHoles:Type.I8 -> { make Type.I8 }
+        case WithHoles:Type.I32 -> { make Type.I32 }
+        case WithHoles:Type.I64 -> { make Type.I64 }
+        case WithHoles:Type.Ptr -> {
+            $arena flip ~ without-holes match {
+                case Success -> { $arena flip Arena:push<_> make Type.Ptr }
+                case _ -> { break }
+            }
+        }
+        case WithHoles:Type.Custom -> {
+            @type
+            $type.type-definition
+            $arena &type.generic-arguments Types-without-holes match {
+                case Success -> {}
+                case Error -> { make Result<Type, Token>.Error break }
+            } make CustomTypeType make Type.Custom
+        }
+        case WithHoles:Type.Fun -> {
+            @type
+            $type.token
+            $arena &type.parameters Types-without-holes match {
+                case Success -> {}
+                case Error -> { make Result<Type, Token>.Error break }
+            }
+            $arena &type.returns Types-without-holes match {
+                case Success -> {}
+                case Error -> { make Result<Type, Token>.Error break }
+            } make FunType make Type.Fun
+        }
+        case WithHoles:Type.Generic -> { ~ make Type.Generic }
+        case WithHoles:Type.Tuple -> {
+            2 Fmt:to-fd @fmt
+            &fmt flip WithHoles:TupleType-format
+            &fmt "\n" Fmt:write
+            Core:unreachable<Type>
+        }
+        case WithHoles:Type.Hole -> { ~ make Result<Type, Token>.Error break }
+    } make Result<Type, Token>.Success
+} }
+
+fn Types-without-holes(arena: .Arena, types: .Array<WithHoles:Type>) -> Result<Array<Type>, Token> {
+    $arena $types.len Array:new-with-capacity<Type> @without-holes
+    0 loop (i32 -> Result<Array<Type>, Token>) {
+        @i $i $types.len = if { $without-holes make Result<Array<Type>, Token>.Success break }
+        &without-holes
+        $arena $types $i Array:get<_> without-holes match {
+            case Success -> {}
+            case Error -> { make Result<Array<Type>, Token>.Error break }
+        }
+        Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
+}
+
+fn NamedTypes-without-holes(arena: .Arena, types: .Array<WithHoles:NamedType>) -> Result<Array<NamedType>, Token> {
+    $arena $types.len Array:new-with-capacity<NamedType> @without-holes
+    0 loop (i32 -> Result<Array<NamedType>, Token>) {
+        @i $i $types.len = if { $without-holes make Result<Array<NamedType>, Token>.Success break }
+        &without-holes
+        $arena $types $i Array:get<_> NamedType-without-holes match {
+            case Success -> {}
+            case Error -> { make Result<Array<NamedType>, Token>.Error break }
+        }
+        Array:push-assert-no-alloc<_>
+        $i 1 +
+    }
+}
+
+fn NamedType-without-holes(arena: .Arena, type: .WithHoles:NamedType) -> Result<NamedType, Token> {
+    $arena &type.type without-holes match {
+        case Error -> { make Result<NamedType, Token>.Error }
+        case Success -> { $type.name flip make NamedType make Result<NamedType, Token>.Success }
+    }
+}
+
+struct NamedType {
+    name: Token
+    type: Type
+}
+fn NamedType-format(fmt: .Formatter, self: .NamedType) {
+    $fmt "(NamedType " Fmt:write
+    $fmt &self.name Token-format
+    $fmt " " Fmt:write
+    $fmt &self.type format
+    $fmt ")" Fmt:write
+}
+fn NamedType-type(self: .NamedType) -> Type { $self.type }
+
+variant Type {
+    case Bool
+    case I8
+    case I32
+    case I64
+    case Ptr -> .Type
+    case Custom -> CustomTypeType
+    case Fun -> FunType
+    case Generic -> P:GenericType
+}
+fn format(fmt: .Formatter, self: .Type) { block {
+    $fmt $self match {
+        case Bool -> { "Bool" }
+        case I8 -> { "I8" }
+        case I32 -> { "I32" }
+        case I64 -> { "I64" }
+        case Ptr -> {
+            $fmt "(Ptr " Fmt:write
+            ~ format
+            $fmt ")" Fmt:write
+            break
+        }
+        case Custom -> { CustomTypeType-format break }
+        case Fun -> { FunType-format break }
+        case Generic -> { P:GenericType-format break }
+    } Fmt:write
+} }
+fn eq(a: .Type, b: .Type) -> bool {
+    $a match {
+        case Bool -> { $b match { case Bool -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I8 -> { $b match { case I8 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I32 -> { $b match { case I32 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case I64 -> { $b match { case I64 -> { 1 1 = } case _ -> { drop 0 1 = } } }
+        case Ptr -> {
+            ~ $b match {
+                case Ptr -> { ~ eq }
+                case _ -> { drop drop 0 1 = }
+            }
+        }
+        case Custom -> {
+            $b match {
+                case Custom -> { CustomTypeType-eq }
+                case _ -> { drop drop 0 1 = }
+            }
+        }
+        case Fun -> {
+            $b match {
+                case Fun -> { FunType-eq }
+                case _ -> { drop drop 0 1 = }
+            }
+        }
+        case Generic -> {
+            .index ~ $b match {
+                case Generic -> { .index ~ = }
+                case _ -> { drop drop 0 1 = }
+            }
+        }
+    }
+}
+fn clone(arena: .Arena, self: .Type) -> Type {
+    $self match {
+        case Bool -> { make Type.Bool }
+        case I8 -> { make Type.I8 }
+        case I32 -> { make Type.I32 }
+        case I64 -> { make Type.I64 }
+        case Ptr -> { ~ $arena flip clone $arena flip Arena:push<_> make Type.Ptr }
+        case Generic -> { ~ make Type.Generic }
+        case Custom -> { $arena flip CustomTypeType-clone make Type.Custom }
+        case Fun -> { $arena flip FunType-clone make Type.Fun }
+    }
+}
+
+struct FunType {
+    token: Token
+    parameters: Array<Type>
+    returns: Array<Type>
+}
+fn FunType-format(fmt: .Formatter, self: .FunType) {
+    $fmt "(FunType " Fmt:write
+    $fmt &self.token Token-format
+    $fmt " " Fmt:write
+    $fmt &self.parameters Types-format
+    $fmt " " Fmt:write
+    $fmt &self.returns Types-format
+    $fmt ")" Fmt:write
+}
+fn FunType-eq(a: .FunType, b: .FunType) -> bool {
+    &a.parameters &b.parameters Types-eq if {
+        &a.returns &b.returns Types-eq
+    } else {
+        0 1 =
+    }
+}
+fn FunType-clone(arena: .Arena, self: .FunType) -> FunType {
+    $self.token
+    $arena \clone &self.parameters Array:clone-deep<_>
+    $arena \clone &self.returns Array:clone-deep<_> make FunType
+}
+
+fn Types-format(fmt: .Formatter, self: .Array<Type>) {
+    $fmt \format $self Array:format<Type>
+}
+fn Types-eq(a: .Array<Type>, b: .Array<Type>) -> bool {
+    \eq $a $b Array:eq<Type>
+}
+
+struct CustomTypeType {
+    type-definition: CustomTypeHandle
+    generic-arguments: Array<Type>
+}
+fn CustomTypeType-format(fmt: .Formatter, self: .CustomTypeType) {
+    $fmt "(CustomType " Fmt:write
+    $fmt $self.type-definition.module.index i32-format
+    $fmt " " Fmt:write
+    $fmt $self.type-definition.index i32-format
+    $fmt " " Fmt:write
+    $fmt &self.generic-arguments Types-format
+    $fmt ")" Fmt:write
+}
+fn CustomTypeType-eq(a: .CustomTypeType, b: .CustomTypeType) -> bool {
+    &a.type-definition &b.type-definition CustomTypeHandle-eq if {
+        &a.generic-arguments &b.generic-arguments Types-eq
+    } else {
+        0 1 =
+    }
+}
+fn CustomTypeType-clone(arena: .Arena, self: .CustomTypeType) -> CustomTypeType {
+    $self.type-definition $arena \clone &self.generic-arguments Array:clone-deep<_> make CustomTypeType
+}
+
+fn contains-generic(type: .Type) -> bool {
+    $type match {
+        case I8 -> { 0 1 = }
+        case I32 -> { 0 1 = }
+        case I64 -> { 0 1 = }
+        case Bool -> { 0 1 = }
+        case Ptr -> { ~ contains-generic }
+        case Fun -> {
+            @fun
+            &fun.parameters \contains-generic Array:any<_>
+            &fun.returns \contains-generic Array:any<_> or
+        }
+        case Custom -> { .generic-arguments \contains-generic Array:any<_> }
+        case Generic -> { drop 1 1 = }
+    }
+}
+
+fn with-generics(arena: .Arena, type: .Type, generics: .Array<Type>) -> Type {
+    $type match {
+        case Ptr -> {
+            $arena flip ~ $generics with-generics
+            $arena flip Arena:push<_> make Type.Ptr
+        }
+        case Generic -> {
+            .index $generics flip ~ Array:get<_> ~
+        }
+        case Fun -> {
+            @fun
+            $fun.token
+            $arena &fun.parameters $generics all-with-generics
+            $arena &fun.returns $generics all-with-generics
+            make FunType
+            make Type.Fun
+        }
+        case Custom -> {
+            @custom
+            $custom.type-definition
+            $arena &custom.generic-arguments $generics all-with-generics
+            make CustomTypeType
+            make Type.Custom
+        }
+        case _ -> { ~ }
+    }
+}
+
+fn all-with-generics(arena: .Arena, types: .Array<Type>, generics: .Array<Type>) -> Array<Type> {
+    $arena $types.len Array:new-with-capacity<Type> @filled
+    loop {
+        $filled.len $types.len = if { $filled break }
+        &filled
+        $arena $types $filled.len Array:get<_> $generics with-generics
+        Array:push-assert-no-alloc<_>
+    }
+}
+

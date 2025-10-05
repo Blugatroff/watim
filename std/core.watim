@@ -79,9 +79,14 @@ fn i32-to-str-hex(buf: .i8, n: i32) -> i32 {
     $l
 }
 
+struct Just16Bytes {
+    a: i64
+    b: i64
+}
+
 fn i64-to-str-hex(buf: .i8, n: i64) -> i32 {
     "0123456789ABCDEF" drop !.i8 @alphabet
-    uninit<[i64, i64]> @buf-reversed &buf-reversed !.i8 @buf-reversed
+    uninit<Just16Bytes> @buf-reversed &buf-reversed !.i8 @buf-reversed
     0 @l
     $n 0 !i64 = if {
         1 #l

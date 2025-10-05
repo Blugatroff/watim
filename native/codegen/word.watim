@@ -1322,7 +1322,7 @@ fn generate-set(
             $ctx &cons.elem generate-load
             $cons.next #l
         }
-        uninit<[i64, i64]> @buf &buf !.i8 @buf
+        uninit<Core:Just16Bytes> @buf &buf !.i8 @buf
         $ctx.fmt $last-load match {
             case BitShift -> { match {
                 case I32InI64 -> {

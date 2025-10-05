@@ -1,3 +1,4 @@
+import "../../std/core.watim" as Core
 import "../../std/maybe.watim" as Maybe (Maybe(Some, None))
 import "../../std/array.watim" as Array (Array)
 import "../../std/fmt.watim" as Fmt (Formatter)
@@ -133,7 +134,7 @@ fn CustomType-name(self: .CustomType) -> .Token {
 struct Struct {
     name: Token
     fields: Array<NamedTypeId>
-    sizes-used-for-offset-cache: .[]
+    sizes-used-for-offset-cache: .Core:Unit
     field-offsets: Array<i32>
 }
 fn Struct-eq(a: .Struct, b: .Struct) -> bool {

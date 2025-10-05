@@ -158,6 +158,15 @@ fn truncate<T>(self: .Array<T>, len: i32) {
 fn clone<T>(arena: .A:Arena, self: .Array<T>) -> Array<T> {
     $arena $self.ptr $self.len init<T>
 }
+fn clone-deep<T>(arena: .A:Arena, clone-elem: (.A:Arena, .T -> T), self: .Array<T>) -> Array<T> {
+    $arena $self.len new-with-capacity<T> @new
+    0 loop {
+        @i $i $self.len = if { $new break }
+        $arena $self $i get<T> $clone-elem (.A:Arena, .T -> T)
+        &new flip push-assert-no-alloc<T>
+        $i 1 +
+    }
+}
 fn singleton<T>(arena: .A:Arena, item: T) -> Array<T> {
     $arena 1 new-with-capacity<T> @self
     &self $item push-assert-no-alloc<T>

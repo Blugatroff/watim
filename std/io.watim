@@ -119,12 +119,20 @@ fn read-all(file: i32, buf-addr: .i8, buf-size: i32) -> i32, i32 {
 fn print-ref(fd: i32, n: .i32) -> i32 {
     $fd $n ~ print
 }
+
+struct Just32Bytes {
+    a: i64
+    b: i64
+    c: i64
+    d: i64
+}
+
 fn print(fd: i32, n: i32) -> i32 {
-    uninit<[i64, i64, i64, i64]> @buf-reversed &buf-reversed !.i8 @buf-reversed
+    uninit<Just32Bytes> @buf-reversed &buf-reversed !.i8 @buf-reversed
     $fd $buf-reversed $n $buf-reversed print-i32-into write-all
 }
 fn print-i32-into(n: i32, buf-reversed: .i8) -> i32 {
-    uninit<[i64, i64, i64, i64]> @buf &buf !.i8 @buf
+    uninit<Just32Bytes> @buf &buf !.i8 @buf
     0 @l
     $n 0 = if {
         1 #l // length = 1

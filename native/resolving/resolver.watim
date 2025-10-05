@@ -18,6 +18,7 @@ import "./top-items.watim" as TopItem (
     Variant, Struct, VariantCase, TypeDefinition-name,
     Function, FunctionOrExtern, Extern, Signature, Local, LocalName)
 import "./type.watim" as Type (Type, ModuleId, NamedType)
+import "./type-without-holes.watim" as WithoutHoles
 import "./type-resolver.watim" as TypeResolver (TypeResolver)
 import "./type-lookup.watim" as TypeLookup (TypeLookup)
 import "./module.watim" as Module (Module, ResolveError)
@@ -322,15 +323,21 @@ fn resolve-type-definition(ctx: .ModuleCtx, type-definition: .P:TypeDefinition) 
     }
 }
 
-fn resolve-struc(ctx: .ModuleCtx, struc: .P:Struct) -> Result<Struct, ResolveError> {
+fn resolve-struc(ctx: .ModuleCtx, struc: .P:Struct) -> Result<Struct, ResolveError> { block (-> Result<Struct, ResolveError>) {
     $struc.name
     $struc.generic-parameters
     &struc.fields
-    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-named-types match {
-        case Error -> { flip drop flip drop make Result<Struct, ResolveError>.Error }
-        case Success -> { make Struct make Result<Struct, ResolveError>.Success }
+    $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-named-types
+    match {
+        case Error -> { make Result<Struct, ResolveError>.Error break }
+        case Success -> {}
     }
-}
+    $ctx flip & named-types-forbid-holes match {
+        case Error -> { make Result<Struct, ResolveError>.Error break }
+        case Success -> {}
+    }
+    make Struct make Result<Struct, ResolveError>.Success 
+} }
 
 fn resolve-varint(ctx: .ModuleCtx, varint: .P:Variant) -> Result<Variant, ResolveError> {
     $varint.name
@@ -357,12 +364,15 @@ fn resolve-varint-cases(ctx: .ModuleCtx, cases: .Array<P:VariantCase>) -> Result
 fn resolve-varint-cays(ctx: .ModuleCtx, cays: .P:VariantCase) -> Result<VariantCase, ResolveError> { block (-> Result<VariantCase, ResolveError>) {
     $cays.name
     &cays.type match {
-        case None -> { make Maybe<Type>.None }
+        case None -> { make Maybe<WithoutHoles:Type>.None }
         case Some -> {
             $ctx.type-resolver flip $ctx.arena flip TypeResolver:resolve-type match {
                 case Error -> { make Result<VariantCase, ResolveError>.Error break }
                 case Success -> {}
-            } make Maybe<Type>.Some
+            } $ctx flip & forbid-holes match {
+                case Error -> { make Result<VariantCase, ResolveError>.Error break }
+                case Success -> {}
+            } make Maybe<WithoutHoles:Type>.Some
         }
     }
     make VariantCase
@@ -388,6 +398,9 @@ fn resolve-globals(ctx: .ModuleCtx, globals: .Array<P:Global>) -> Result<Map<Byt
 fn resolve-globl(ctx: .ModuleCtx, globl: .P:Global) -> Result<Global, ResolveError> { block (-> Result<Global, ResolveError>) {
     $globl.name
     $ctx.type-resolver $ctx.arena &globl.type TypeResolver:resolve-type match {
+        case Error -> { make Result<Global, ResolveError>.Error break }
+        case Success -> {}
+    } $ctx flip & forbid-holes match {
         case Error -> { make Result<Global, ResolveError>.Error break }
         case Success -> {}
     }
@@ -456,54 +469,49 @@ fn resolve-signature(ctx: .ModuleCtx, signature: .P:Signature) -> Result<Signatu
     $ctx.type-resolver $ctx.arena &signature.parameters TypeResolver:resolve-named-types match {
         case Error -> { make Result<Signature, ResolveError>.Error break }
         case Success -> {}
+    } $ctx flip & named-types-forbid-holes match {
+        case Error -> { make Result<Signature, ResolveError>.Error break }
+        case Success -> {}
     } @parameters
+
     $ctx.type-resolver $ctx.arena &signature.returns TypeResolver:resolve-types match {
         case Error -> { make Result<Signature, ResolveError>.Error break }
         case Success -> {}
+    } $ctx flip & types-forbid-holes match {
+        case Error -> { make Result<Signature, ResolveError>.Error break }
+        case Success -> {}
     } @returns
-
-    $ctx &parameters named-types-forbid-holes match {
-        case Some -> { make Result<Signature, ResolveError>.Error break }
-        case None -> {}
-    }
-    $ctx &returns types-forbid-holes match {
-        case Some -> { make Result<Signature, ResolveError>.Error break }
-        case None -> {}
-    }
 
     $signature.generic-parameters $parameters $returns make Signature
     make Result<Signature, ResolveError>.Success
 } }
 
-fn named-types-forbid-holes(ctx: .ModuleCtx, types: .Array<NamedType>) -> Maybe<ResolveError> {
-    0 loop {
-        @i $i $types.len = if { make Maybe<ResolveError>.None break }
-        $ctx $types $i Array:get<_> .type forbid-holes match {
-            case None -> {}
-            case _ -> { break }
+fn named-types-forbid-holes(ctx: .ModuleCtx, types: .Array<NamedType>) -> Result<Array<WithoutHoles:NamedType>, ResolveError> {
+    $ctx.arena $types WithoutHoles:NamedTypes-without-holes match {
+        case Success -> { make Result<Array<WithoutHoles:NamedType>, ResolveError>.Success }
+        case Error -> {
+            $ctx.id flip & Token-location "hole not allowed here" Array:init-no-copy<_> make ResolveError
+            make Result<Array<WithoutHoles:NamedType>, ResolveError>.Error
         }
-        $i 1 +
     }
 }
 
-fn types-forbid-holes(ctx: .ModuleCtx, types: .Array<Type>) -> Maybe<ResolveError> {
-    0 loop {
-        @i $i $types.len = if { make Maybe<ResolveError>.None break }
-        $ctx $types $i Array:get<_> forbid-holes match {
-            case None -> {}
-            case _ -> { break }
+fn types-forbid-holes(ctx: .ModuleCtx, types: .Array<Type>) -> Result<Array<WithoutHoles:Type>, ResolveError> {
+    $ctx.arena $types WithoutHoles:Types-without-holes match {
+        case Success -> { make Result<Array<WithoutHoles:Type>, ResolveError>.Success }
+        case Error -> {
+            $ctx.id flip & Token-location "hole not allowed here" Array:init-no-copy<_> make ResolveError
+            make Result<Array<WithoutHoles:Type>, ResolveError>.Error
         }
-        $i 1 +
     }
 }
 
-fn forbid-holes(ctx: .ModuleCtx, type: .Type) -> Maybe<ResolveError> {
-    $type Type:find-hole match {
-        case None -> { make Maybe<ResolveError>.None }
-        case Some -> {
-            @hole
-            $ctx.id $hole Token-location "hole not allowed here" Array:init-no-copy<_> make ResolveError
-            make Maybe<ResolveError>.Some
+fn forbid-holes(ctx: .ModuleCtx, type: .Type) -> Result<WithoutHoles:Type, ResolveError> {
+    $ctx.arena $type WithoutHoles:without-holes match {
+        case Success -> { make Result<WithoutHoles:Type, ResolveError>.Success }
+        case Error -> {
+            $ctx.id flip & Token-location "hole not allowed here" Array:init-no-copy<_> make ResolveError
+            make Result<WithoutHoles:Type, ResolveError>.Error
         }
     }
 }
@@ -522,9 +530,9 @@ fn resolve-function(
     0 @i
     loop (->) {
         $i $signature.parameters.len = if { break }
-        &signature.parameters $i Array:get<NamedType> @param
+        &signature.parameters $i Array:get<_> @param
         $ctx.arena &env
-        $param.name make LocalName.FromSource $param.type make Maybe<Type>.Some make Local
+        $param.name make LocalName.FromSource $param.type make Maybe<WithoutHoles:Type>.Some make Local
         Env:insert drop
         $i 1 + #i
     }

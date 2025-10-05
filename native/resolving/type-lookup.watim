@@ -12,6 +12,7 @@ import "./type.watim" as Type (
     Type(Bool, I8, I32, I64, Ptr, Custom, Tuple, Fun, Generic, Hole),
     ModuleId, CustomTypeHandle, FunType, TupleType, CustomTypeType,
 )
+import "./type-without-holes.watim" as WithoutHoles
 import "./top-items.watim" as TopItems (TypeDefinition(Struct, Variant))
 import "./words.watim" as Words
 import "./module.watim" as Module (Module)
@@ -42,7 +43,7 @@ fn is-directly-recursive'(lookup: .TypeLookup, handle: .CustomTypeHandle, stack:
             0 loop {
                 @i $i $struc.fields.len = if { 0 1 = break }
                 &struc.fields $i Array:get<_> .type match {
-                    case Type.Custom -> {
+                    case WithoutHoles:Type.Custom -> {
                         @custom-type
                         $handle ~ $stack List:cons<CustomTypeHandle> @stack
                         $lookup &custom-type.type-definition &stack is-directly-recursive' if {
@@ -62,7 +63,7 @@ fn is-directly-recursive'(lookup: .TypeLookup, handle: .CustomTypeHandle, stack:
                     case None -> {}
                     case Some -> {
                         match {
-                            case Type.Custom -> {
+                            case WithoutHoles:Type.Custom -> {
                                 @custom-type
                                 $handle ~ $stack List:cons<CustomTypeHandle> @stack
                                 $lookup &custom-type.type-definition &stack is-directly-recursive' if {

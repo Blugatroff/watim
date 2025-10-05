@@ -1,5 +1,6 @@
 import "../../std/core.watim" as Core
 import "../../std/maybe.watim" as Maybe (Maybe(Some, None))
+import "../../std/result.watim" as Result (Result(Success, Error))
 import "../../std/arena.watim" as Arena (Arena)
 import "../../std/array.watim" as Array (Array)
 import "../../std/map.watim" as Map (Map)
@@ -12,7 +13,8 @@ import "../../std/io.watim" as IO
 
 import "../lexer.watim" as Lexer (Token, Token-format)
 
-import "../resolving/type.watim" as Type (Type, CustomTypeHandle)
+import "../resolving/type.watim" as WithHoles (CustomTypeHandle)
+import "../resolving/type-without-holes.watim" as Type (Type)
 import "../resolving/words.watim" as Resolved (VarId, LocalId, LocalId-format)
 import "../resolving/intrinsics.watim" as Resolved
 import "../resolving/top-items.watim" as Resolved (Signature, Signature-format, LocalName, LocalName-token)
@@ -163,7 +165,7 @@ fn IndirectCallVoid-format-shallow(fmt: .Formatter, self: .IndirectCallVoid) {
 
 struct SetGlobalVoid {
     token: Token
-    global-type: Type
+    global-type: Type:Type
     fields: Array<Word:FieldAccess>
     type: InferenceHole
     source: Maybe<Source>
@@ -369,7 +371,7 @@ fn StoreVoid-format-shallow(fmt: .Formatter, self: .StoreVoid) {
 struct NonSpecificVoid {
     token: Token
     source: Maybe<Source>
-    known: Maybe<Type>
+    known: Maybe<Type:Type>
     type: Maybe<InferenceHole>
 }
 fn NonSpecificVoid-format(fmt: .Formatter, self: .NonSpecificVoid) {
@@ -473,29 +475,35 @@ fn ArraySource-format(fmt: .Formatter, sources: .Array<Source>) {
 }
 
 struct Holes {
-    holes: Array<Maybe<Type>>
+    holes: Array<Maybe<Type:Type>>
 }
 fn Holes-empty() -> Holes {
-    Array:new<Maybe<Type>> make Holes
+    Array:new<Maybe<Type:Type>> make Holes
+}
+fn MaybeType-clone(arena: .Arena, self: .Maybe<Type:Type>) -> Maybe<Type:Type> {
+    $self match {
+        case Some -> { $arena flip Type:clone make Maybe<Type:Type>.Some }
+        case None -> { make Maybe<Type:Type>.None }
+    }
 }
 fn Holes-clone(arena: .Arena, self: .Holes) -> Holes {
-    $arena &self.holes Array:clone<_> make Holes
+    $arena \MaybeType-clone &self.holes Array:clone-deep<_> make Holes
 }
-fn Holes-fill(arena: .Arena, self: .Holes, hole: .InferenceHole, known: Type) {
+fn Holes-fill(arena: .Arena, self: .Holes, hole: .InferenceHole, known: Type:Type) {
     loop {
         $self.holes.len $hole.index gt if { break }
-        $arena &self.holes make Maybe<Type>.None Array:push<_>
+        $arena &self.holes make Maybe<Type:Type>.None Array:push<_>
     }
-    &self.holes $hole.index $known make Maybe<Type>.Some Array:set<_> match {
+    &self.holes $hole.index $known make Maybe<Type:Type>.Some Array:set<_> match {
         case None -> {}
         case Some -> {
             & &known Type:eq not if { 0 0 / drop }
         }
     }
 }
-fn Holes-lookup(self: .Holes, hole: .InferenceHole) -> Maybe<.Type> {
+fn Holes-lookup(self: .Holes, hole: .InferenceHole) -> Maybe<.Type:Type> {
     $self.holes.len $hole.index le if {
-        make Maybe<.Type>.None
+        make Maybe<.Type:Type>.None
     } else {
         &self.holes $hole.index Array:get<_> Maybe:ref<_>
     }
@@ -708,13 +716,14 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word, rema
 
             0 loop {
                 @i $i $word.type.generic-arguments.len = if { break }
-                &word.type.generic-arguments $i Array:get<_> match {
-                    case Type.Hole -> { drop }
-                    case _ -> {
-                        $unstacker.arena flip 
+                &word.type.generic-arguments $i Array:get<_>
+                $unstacker.arena flip Type:without-holes match {
+                    case Error -> { drop }
+                    case Success -> {
+                        $unstacker.arena flip
                         $unstacker.holes flip
                         &generic-arguments $i Array:get<_> flip
-                        ~ Holes-fill
+                        Holes-fill
                     }
                 }
                 $i 1 +
@@ -836,10 +845,14 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word, rema
             0 loop {
                 @i $i $word.type.generic-arguments.len = if { break }
                 &word.type.generic-arguments $i Array:get<_> @generic-argument
-                $generic-argument Type:contains-hole not if {
-                    $unstacker.arena $unstacker.holes
-                    &generic-arguments $i Array:get<_>
-                    $generic-argument ~ Holes-fill
+                $unstacker.arena $generic-argument Type:without-holes match {
+                    case Error -> { drop }
+                    case Success -> {
+                        $unstacker.arena flip
+                        $unstacker.holes flip
+                        &generic-arguments $i Array:get<_> flip
+                        Holes-fill
+                    }
                 }
                 $i 1 +
             }
@@ -886,10 +899,9 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word, rema
                         $word.token @token
                         $argument ~ make Maybe<Source>.Some @source
                         &word.parameters $i Array:get<_> @parameter
-                        $parameter Type:contains-hole if {
-                            make Maybe<Type>.None
-                        } else {
-                            $parameter ~ make Maybe<Type>.Some
+                        $unstacker.arena $parameter Type:without-holes match {
+                            case Error -> { drop make Maybe<Type:Type>.None }
+                            case Success -> { make Maybe<Type:Type>.Some }
                         } @known
                         &parameters $i Array:get<_> ~ make Maybe<InferenceHole>.Some @type
                     } make StackVoid.NonSpecific
@@ -921,12 +933,26 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word, rema
 
             0 loop {
                 @i $i $word.type.generic-arguments.len = if { break }
-                $unstacker.arena $unstacker.holes
-
-                // TODO: should we do this, when the generic argument is (or contains) a hole?
-                &generic-arguments $i Array:get<_>
-                &word.type.generic-arguments $i Array:get<_> ~
-                Holes-fill
+                &word.type.generic-arguments $i Array:get<_>
+                $unstacker.arena flip Type:without-holes match {
+                    case Error -> {
+                        // TODO: Provided generic arguments shouldn't be discarded just because they contain a hole.
+                        // For example:
+                        //   make Maybe<Result<_, bool>>.None match {
+                        //       case None -> {}
+                        //       case Some -> { match {
+                        //           case Success -> { 1 + drop }
+                        //           case Error -> { drop } } }
+                        // should compile, the hole could be filled by associating it with the `+`.
+                        // This can only work though, if InferenceHoles aren't all or nothing, but can be partial.
+                        drop
+                    }
+                    case Success -> {
+                        $unstacker.arena flip $unstacker.holes flip
+                        &generic-arguments $i Array:get<_> flip
+                        Holes-fill
+                    }
+                }
 
                 $i 1 +
             }
@@ -984,8 +1010,12 @@ fn unstack-word(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Word, rema
                     0 loop {
                         @i $i $given-generic-arguments.len = if { break }
                         $given-generic-arguments $i Array:get<_> @generic-argument
-                        $generic-argument Type:contains-hole not if {
-                            $unstacker.arena $unstacker.holes &generic-arguments $i Array:get<_> $generic-argument ~ Holes-fill
+                        $unstacker.arena $generic-argument Type:without-holes match {
+                            case Error -> { drop }
+                            case Success -> {
+                                $unstacker.arena flip $unstacker.holes flip &generic-arguments $i Array:get<_> flip
+                                Holes-fill
+                            }
                         }
                         $i 1 +
                     }
@@ -1208,7 +1238,7 @@ fn unstack-match(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Match) ->
 
                 // TODO: if the variant being matched has no generic parameters,
                 // then the type actually is known.
-                make Maybe<Type>.None @known
+                make Maybe<Type:Type>.None @known
                 // For example the following should be inferrable:
                 //   variant Foo { case A }
                 //   fn foo() {
@@ -1365,7 +1395,7 @@ fn unstack-loop(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Loop) -> W
                 make NonSpecificVoid {
                     $word.token @token
                     $word.token $entry-node $return-depth make Source:FromNode make Source.FromNode make Maybe<Source>.Some @source
-                    make Maybe<Type>.None @known
+                    make Maybe<Type:Type>.None @known
                     $parameter ~ make Maybe<InferenceHole>.Some @type
                 } make StackVoid.NonSpecific
                 Array:push<_>
@@ -1388,7 +1418,7 @@ fn unstack-loop(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Loop) -> W
             make NonSpecificVoid {
                 $word.token @token
                 $word.token $entry-node $return-depth make Source:FromNode make Source.FromNode make Maybe<Source>.Some @source
-                make Maybe<Type>.None @known
+                make Maybe<Type:Type>.None @known
                 $parameter ~ make Maybe<InferenceHole>.Some @type
             } make StackVoid.NonSpecific
             Array:push<_>
@@ -1481,7 +1511,7 @@ fn unstack-if(unstacker: .Unstacker, stack: .Stack, remaining: .Array<Resolved:W
                 make NonSpecificVoid {
                     $word.token @token
                     $word.token $entry-node $return-depth make Source:FromNode make Source.FromNode make Maybe<Source>.Some @source
-                    make Maybe<Type>.None @known
+                    make Maybe<Type:Type>.None @known
                     $parameter ~ make Maybe<InferenceHole>.Some @type
                 } make StackVoid.NonSpecific
                 Array:push<_>
@@ -1491,7 +1521,7 @@ fn unstack-if(unstacker: .Unstacker, stack: .Stack, remaining: .Array<Resolved:W
             make NonSpecificVoid {
                 $word.token @token
                 $condition make Maybe<Source>.Some @source
-                make Type.Bool make Maybe<Type>.Some @known
+                make Type:Type.Bool make Maybe<Type:Type>.Some @known
                 make Maybe<InferenceHole>.None @type
             } make StackVoid.NonSpecific Array:push<_>
         }
@@ -1518,7 +1548,7 @@ fn unstack-if(unstacker: .Unstacker, stack: .Stack, remaining: .Array<Resolved:W
             $unstacker.arena $unstacker.voids
             $word.token
             $condition make Maybe<Source>.Some
-            make Type.Bool make Maybe<Type>.Some
+            make Type:Type.Bool make Maybe<Type:Type>.Some
             make Maybe<InferenceHole>.None
             make NonSpecificVoid
             make StackVoid.NonSpecific
@@ -1589,15 +1619,13 @@ fn unstack-call(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Call) -> W
             @annotated-generic-arguments
             0 loop {
                 @i $i $annotated-generic-arguments.len = if { break }
-                $annotated-generic-arguments $i Array:get<_> match {
-                    case Type.Hole -> {
-                        &generic-arguments $i Array:get<_> .token flip ~ store
-                    }
-                    case _ -> {
+                $unstacker.arena $annotated-generic-arguments $i Array:get<_> Type:without-holes match {
+                    case Error -> { drop }
+                    case Success -> {
                         $unstacker.arena flip
                         $unstacker.holes flip
                         &generic-arguments $i Array:get<_> flip
-                        ~ Holes-fill
+                        Holes-fill
                     }
                 }
                 $i 1 +
@@ -1725,7 +1753,7 @@ fn unstack-intrinsic(unstacker: .Unstacker, stack: .Stack, word: .Resolved:Intri
             $unstacker $word.token fresh-hole @type
             $unstacker.arena $stack Stack:pop @src
             $unstacker.arena $unstacker.voids
-            $word.token $src make Maybe<Type>.None $type make Maybe<InferenceHole>.Some make NonSpecificVoid make StackVoid.NonSpecific
+            $word.token $src make Maybe<Type:Type>.None $type make Maybe<InferenceHole>.Some make NonSpecificVoid make StackVoid.NonSpecific
             Array:push<_>
             make Word:Drop {
                 $word.token @token
@@ -2072,7 +2100,7 @@ fn unstack-break(unstacker: .Unstacker, stack: .Stack, token: .Token) -> Token {
 
                 $token ~
                 $stack $size 1 - Stack:index ~ make Maybe<Source>.Some
-                make Maybe<Type>.None
+                make Maybe<Type:Type>.None
                 make Maybe<InferenceHole>.None
                 make NonSpecificVoid make StackVoid.NonSpecific
                 $unstacker.arena flip $unstacker.voids flip Array:push<_>
@@ -2224,26 +2252,26 @@ fn unstack-intrinsic-store(unstacker: .Unstacker, stack: .Stack, token: .Token) 
 }
 
 fn unstack-intrinsic-mem-copy(unstacker: .Unstacker, stack: .Stack, token: .Token) {
-    $unstacker.arena make Type.I8 Arena:push<_> make Type.Ptr @ptr-i8
+    $unstacker.arena make Type:Type.I8 Arena:push<_> make Type:Type.Ptr @ptr-i8
 
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        make Type.I32 make Maybe<Type>.Some @known
+        make Type:Type.I32 make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        $ptr-i8 make Maybe<Type>.Some @known
+        $ptr-i8 make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        $ptr-i8 make Maybe<Type>.Some @known
+        $ptr-i8 make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 }
@@ -2252,21 +2280,21 @@ fn unstack-intrinsic-mem-fill(unstacker: .Unstacker, stack: .Stack, token: .Toke
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        make Type.I32 make Maybe<Type>.Some @known
+        make Type:Type.I32 make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        make Type.I8 make Maybe<Type>.Some @known
+        make Type:Type.I8 make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        $unstacker.arena make Type.I8 Arena:push<_> make Type.Ptr make Maybe<Type>.Some @known
+        $unstacker.arena make Type:Type.I8 Arena:push<_> make Type:Type.Ptr make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 }
@@ -2283,27 +2311,28 @@ fn unstack-intrinsic-set-stack-size(unstacker: .Unstacker, stack: .Stack, token:
     $unstacker.arena $unstacker.voids make NonSpecificVoid {
         $token ~ @token
         $unstacker.arena $stack Stack:pop @source
-        make Type.I32 make Maybe<Type>.Some @known
+        make Type:Type.I32 make Maybe<Type:Type>.Some @known
         make Maybe<InferenceHole>.None @type
     } make StackVoid.NonSpecific Array:push<_>
 }
 
-fn unstack-generic-arguments(unstacker: .Unstacker, token: .Token, generic-arguments: .Array<Type>, expected-arguments: i32) -> Array<InferenceHole> {
+fn unstack-generic-arguments(unstacker: .Unstacker, token: .Token, generic-arguments: .Array<WithHoles:Type>, expected-arguments: i32) -> Array<InferenceHole> {
     $unstacker.arena $generic-arguments.len $expected-arguments Core:max Array:new-with-capacity<InferenceHole> @holes
     0 loop {
         @i $i $expected-arguments = if { $holes break }
         $i $generic-arguments.len lt if {
             $generic-arguments $i Array:get<_> @generic-argument
             $generic-argument match {
-                case Type.Hole -> {
-                    $unstacker flip ~ fresh-hole
-                }
-                case _ -> {
-                    $unstacker $token ~ fresh-hole @hole
-                    $unstacker.arena flip $unstacker.holes flip &hole flip ~ Holes-fill
-                    $hole
+                case WithHoles:Type.Hole -> { $unstacker flip ~ fresh-hole }
+                case _ -> { drop $unstacker $token ~ fresh-hole }
+            } @hole
+            $unstacker.arena $generic-argument Type:without-holes match {
+                case Error -> { drop }
+                case Success -> {
+                    $unstacker.arena flip $unstacker.holes flip &hole flip Holes-fill
                 }
             }
+            $hole
         } else {
             $unstacker $token ~ fresh-hole
         }

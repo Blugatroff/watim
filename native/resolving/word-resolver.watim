@@ -27,6 +27,7 @@ import "./type.watim" as Type (
     Type, ModuleId, NamedType, with-generics,
     CustomTypeType, CustomTypeHandle, CustomTypeHandle-eq,
 )
+import "./type-without-holes.watim" as WithoutHoles
 import "./type-resolver.watim" as TypeResolver (TypeResolver)
 import "./type-lookup.watim" as TypeLookup (TypeLookup)
 import "./module.watim" as Module (Module, ResolveError)
@@ -187,7 +188,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
                 $ctx.arena $ctx.env
                 make Local {
                     $word.ident make LocalName.FromSource @name
-                    make Maybe<Type>.None @parameter
+                    make Maybe<WithoutHoles:Type>.None @parameter
                 }
                 Env:insert @local
             } make Word.InitLocal
@@ -401,6 +402,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
                     &struc-literal-env.remaining-fields.values $i Array:get<_> ~ @field-index
                     &struc-literal-env.remaining-fields.keys   $i Array:get<_> @name
                     &struc.fields $field-index Array:get<_> .type
+                    $temp flip WithoutHoles:with-holes &
                     $temp flip &type.generic-arguments with-generics @type
                     &fmt "\n\t" Fmt:write &fmt $name ~ ByteSlice:unpack Fmt:write
                     &fmt ": " Fmt:write
@@ -430,7 +432,12 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
             $ctx.type-resolver $ctx.arena &word.type TypeResolver:resolve-type match {
                 case Error -> { make Result<OneOrMany<Word>, ResolveError>.Error break }
                 case Success -> {}
-            } make Sizeof make Word.Sizeof
+            }
+            $ctx.arena flip & WithoutHoles:without-holes match {
+                case Error -> { $ctx flip & "no holes allowed here" abort<OneOrMany<Word>> break }
+                case Success -> {}
+            }
+            make Sizeof make Word.Sizeof
         }
         case P:Word.Load -> { ~ make Load make Word.Load }
         case P:Word.FunRef -> {
@@ -450,7 +457,7 @@ fn resolve-word(ctx: .WordCtx, word: .P:Word) -> Result<OneOrMany<Word>, Resolve
             ~ @token
             make Local {
                 $token "synth:ref" make ByteSlice make SyntheticName make LocalName.Synthetic @name
-                make Maybe<Type>.None @parameter
+                make Maybe<WithoutHoles:Type>.None @parameter
             } $ctx.arena flip $ctx.env flip Env:insert @local-id
             $ctx.arena 2 Array:new-with-capacity<Word> @words
             &words $token $local-id make InitLocal make Word.InitLocal Array:push-assert-no-alloc<_>

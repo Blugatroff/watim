@@ -15,6 +15,7 @@ import "./type.watim" as Type (
     ModuleId, CustomTypeHandle, Type, NamedType, CustomTypeType,
     FunType, CustomTypeHandle-format, NamedType-format,
     Types-format, CustomTypeType-format, FunType-format)
+import "./type-without-holes.watim" as WithoutHoles
 import "./intrinsics.watim" as Intrinsics (Intrinsic, Intrinsic-format)
 
 struct FunctionHandle { module: ModuleId index: i32 }
@@ -198,13 +199,13 @@ fn Cast-format(fmt: .Formatter, self: .Cast) {
 
 struct Sizeof {
     token: Token
-    type: Type
+    type: WithoutHoles:Type
 }
 fn Sizeof-format(fmt: .Formatter, self: .Sizeof) {
     $fmt "(Sizeof " Fmt:write
     $fmt &self.token Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type:format
+    $fmt &self.type WithoutHoles:format
     $fmt ")" Fmt:write
 }
 

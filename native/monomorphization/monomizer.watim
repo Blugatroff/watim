@@ -13,10 +13,11 @@ import "../../std/io.watim" as IO
 
 import "../logging.watim" as Logging
 import "../lexer.watim" as Lexer (Token, Token-format)
-import "../resolving/type.watim" as Checked (
+import "../resolving/type.watim" as Resolved (
     ModuleId, ModuleId-format,
-    CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format
+    CustomTypeHandle, CustomTypeHandle-eq, CustomTypeHandle-format,
 )
+import "../resolving/type-without-holes.watim" as Checked
 import "../resolving/words.watim" as Resolved (
     ScopeId, ScopeId-format, root-scope,
     LocalId, LocalId-format, LocalId-eq,
@@ -383,7 +384,7 @@ struct CustomTypeKey {
     type: Maybe<Type>
 }
 fn CustomTypeKey-eq(a: .CustomTypeKey, b: .CustomTypeKey) -> bool {
-    &a.handle &b.handle Checked:CustomTypeHandle-eq
+    &a.handle &b.handle CustomTypeHandle-eq
     \TypeId-eq &a.generic-arguments &b.generic-arguments Array:eq<TypeId> and
 }
 fn CustomTypeKey-format(fmt: .Formatter, self: .CustomTypeKey) {
@@ -391,7 +392,7 @@ fn CustomTypeKey-format(fmt: .Formatter, self: .CustomTypeKey) {
     &self.type match {
         case Some -> { $fmt flip Type-format }
         case None -> {
-            $fmt &self.handle Checked:CustomTypeHandle-format
+            $fmt &self.handle CustomTypeHandle-format
             $fmt " " Fmt:write
             $fmt \TypeId-format &self.generic-arguments Array:format<TypeId>
         }
@@ -437,7 +438,6 @@ fn monomize-type(ctx: .Ctx, type: .Checked:Type, generic-arguments: .Array<TypeI
         case Checked:Type.I32 -> { I32-id break }
         case Checked:Type.I64 -> { I64-id break }
         case Checked:Type.Generic -> { .index ~ $generic-arguments flip Array:get<TypeId> ~ break }
-        case Checked:Type.Hole -> { drop 0 0 / drop }
         case _ -> { drop }
     }
 
@@ -447,9 +447,6 @@ fn monomize-type(ctx: .Ctx, type: .Checked:Type, generic-arguments: .Array<TypeI
     $type match {
         case Checked:Type.Ptr -> {
             $ctx flip ~ $generic-arguments monomize-type make Type.Ptr make Key.Other
-        }
-        case Checked:Type.Tuple -> {
-            $ctx flip .items $generic-arguments monomize-types make Type.Tuple make Key.Other
         }
         case Checked:Type.Fun -> {
             @fun-type
@@ -536,7 +533,7 @@ fn monomize-custom-type(
             $resolved-struct.name
             $ctx &resolved-struct.fields $generic-arguments monomize-named-types @fields
             $fields
-            0 !.[] $ctx.arena $fields.len Array:new-with-capacity<i32>
+            0 !.Core:Unit $ctx.arena $fields.len Array:new-with-capacity<i32>
             make Struct make CustomType.Struct $ctx flip add-monomized-custom-type
         }
         case Resolved:TypeDefinition.Variant -> {
@@ -1906,10 +1903,10 @@ fn type-size(sizes: .Array<i32>, type: TypeId) -> i32 {
 }
 
 fn field-offset(sizes: .Array<i32>, struc: .Struct, field-index: i32) -> i32 {
-    $sizes !.[] $struc.sizes-used-for-offset-cache = if {
+    $sizes !.Core:Unit $struc.sizes-used-for-offset-cache = if {
         &struc.field-offsets $field-index Array:get<i32> ~
     } else {
-        $sizes !.[] #struc.sizes-used-for-offset-cache
+        $sizes !.Core:Unit #struc.sizes-used-for-offset-cache
         &struc.field-offsets 0 Array:truncate<i32>
         0 @i
         0 @offset

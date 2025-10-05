@@ -7,6 +7,7 @@ import "../lexer.watim" as Lexer (Token, Token-format)
 
 import "../resolving/type.watim" as Type (Type)
 import "../resolving/type.watim" as Resolved (CustomTypeHandle, CustomTypeHandle-format)
+import "../resolving/type-without-holes.watim" as WithoutHoles
 import "../resolving/words.watim" as Resolved (
     GlobalId, LocalId, GlobalId-format, LocalId-format,
     FunctionHandle, FunctionHandle-format,
@@ -67,7 +68,7 @@ fn FromLocal-format-shallow(fmt: .Formatter, self: .FromLocal) {
 struct FromGlobal {
     token: Token
     var: GlobalId
-    type: Type
+    type: WithoutHoles:Type
     fields: Array<FieldAccess>
     result-type: InferenceHole
     by-reference: bool
@@ -85,7 +86,7 @@ fn FromGlobal-format(fmt: .Formatter, self: .FromGlobal) {
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "type=" Fmt:write
-    $fmt &self.type Type:format
+    $fmt &self.type WithoutHoles:format
     $fmt "\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "fields=" Fmt:write

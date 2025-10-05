@@ -12,6 +12,7 @@ import "./type.watim" as Type (
     CustomTypeHandle, CustomTypeHandle-format,
     ModuleId,
 )
+import "./type-without-holes.watim" as WithoutHoles
 import "./words.watim" as Words (
     LocalId, LocalId-format, GlobalId,
     Scope, ScopeId, Scope-format,
@@ -21,7 +22,7 @@ import "./words.watim" as Words (
 struct Struct {
     name: Token
     generic-parameters: Array<Token>
-    fields: Array<NamedType>
+    fields: Array<WithoutHoles:NamedType>
 }
 fn Struct-format(fmt: .Formatter, self: .Struct) {
     $fmt "(Struct\n" Fmt:write
@@ -36,20 +37,20 @@ fn Struct-format(fmt: .Formatter, self: .Struct) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "fields=" Fmt:write
-    $fmt \NamedType-format &self.fields Array:format-multi-line<NamedType>
+    $fmt \WithoutHoles:NamedType-format &self.fields Array:format-multi-line<_>
     $fmt Fmt:dedent
     $fmt ")" Fmt:write
 }
 
 struct VariantCase {
     name: Token
-    type: Maybe<Type>
+    type: Maybe<WithoutHoles:Type>
 }
 fn VariantCase-format(fmt: .Formatter, self: .VariantCase) {
     $fmt "(VariantCase " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt \Type:format &self.type Maybe:format<Type>
+    $fmt \WithoutHoles:format &self.type Maybe:format<_>
     $fmt ")" Fmt:write
 }
 fn VariantCase-name(self: .VariantCase) -> ByteSlice {
@@ -177,14 +178,14 @@ fn Import-format(fmt: .Formatter, self: .Import) {
 
 struct Global {
     name: Token
-    type: Type
+    type: WithoutHoles:Type
     reffed: bool
 }
 fn Global-format(fmt: .Formatter, self: .Global) {
     $fmt "(Global " Fmt:write
     $fmt &self.name Token-format
     $fmt " " Fmt:write
-    $fmt &self.type Type:format
+    $fmt &self.type WithoutHoles:format
     $fmt " " Fmt:write
     $fmt $self.reffed bool-format
     $fmt ")" Fmt:write
@@ -192,8 +193,8 @@ fn Global-format(fmt: .Formatter, self: .Global) {
 
 struct Signature {
     generic-parameters: Array<Token>
-    parameters: Array<NamedType>
-    returns: Array<Type>
+    parameters: Array<WithoutHoles:NamedType>
+    returns: Array<WithoutHoles:Type>
 }
 fn Signature-format(fmt: .Formatter, self: .Signature) {
     $fmt "(Signature\n" Fmt:write
@@ -204,11 +205,11 @@ fn Signature-format(fmt: .Formatter, self: .Signature) {
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "parameters=" Fmt:write
-    $fmt \NamedType-format &self.parameters Array:format<NamedType>
+    $fmt \WithoutHoles:NamedType-format &self.parameters Array:format<_>
     $fmt ",\n" Fmt:write
     $fmt Fmt:write-indent
     $fmt "returns=" Fmt:write
-    $fmt &self.returns Types-format
+    $fmt &self.returns WithoutHoles:Types-format
     $fmt ")" Fmt:write
     $fmt Fmt:dedent
 }
@@ -269,13 +270,13 @@ fn LocalName-token(self: .LocalName) -> .Token {
 struct Local {
     name: LocalName
     // if this local is a parameter, then this will be non-None
-    parameter: Maybe<Type>
+    parameter: Maybe<WithoutHoles:Type>
 }
 fn Local-format(fmt: .Formatter, self: .Local) {
     $fmt "(Local " Fmt:write
     $fmt &self.name LocalName-format
     $fmt " " Fmt:write
-    $fmt \Type:format &self.parameter Maybe:format<Type>
+    $fmt \WithoutHoles:format &self.parameter Maybe:format<_>
     $fmt ")" Fmt:write
 }
 

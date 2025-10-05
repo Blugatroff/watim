@@ -337,7 +337,7 @@ fn run-single-file-command(fs: .FileSystem, command: SingleFileCommand) { block 
             &arena Arena:clear
             break
         }
-        case _ -> { drop Core:unreachable<[]> drop }
+        case _ -> { drop Core:unreachable<Core:Unit> drop }
     }
 } }
 

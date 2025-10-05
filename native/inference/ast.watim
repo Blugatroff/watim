@@ -18,11 +18,15 @@ import "../resolving/top-items.watim" as Resolved (
     Import, Import-format, Extern, Extern-format,
     Signature, Signature-format, LocalName, LocalName-format,
 )
-import "../resolving/type.watim" as Type (
-    CustomTypeHandle, Type, NamedType, CustomTypeType,
-    FunType, CustomTypeHandle-format, ModuleId,
-    NamedType-format, Types-format, CustomTypeType-format,
-    FunType-format)
+import "../resolving/type.watim" as ResolvedType (
+    ModuleId, CustomTypeHandle, CustomTypeHandle-format,
+)
+import "../resolving/type-without-holes.watim" as Type (
+    Type, NamedType, CustomTypeType,
+    FunType, CustomTypeType-format,
+    NamedType-format, Types-format,
+    FunType-format,
+)
 
 struct Local {
     name: LocalName
