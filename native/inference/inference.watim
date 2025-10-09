@@ -58,11 +58,11 @@ fn infer-function(
     modules: .Array<Resolved:Module>,
     globals: .Array<Resolved:Global>,
     function: .Unstacked:Function,
+    log-level: LogLevel
 ) -> Result<Function, InferenceError> { block {
     make Ctx {
         $arena @arena
-        make LogLevel.NoLogs @log-level
-        // make LogLevel.FullSources @log-level
+        $log-level @log-level
         $arena 2 Fmt:to-fd "    " Fmt:use-indentation Arena:push<_> @fmt
         $modules @modules
         &function.locals @locals
@@ -1437,14 +1437,15 @@ fn check-from-node(ctx: .Ctx, source: .Source:FromNode, known: .Type) -> Maybe<I
             $signature.returns.len $return-depth - 1 - @return-index
             &signature.returns $return-index Array:get<_> @return
 
-            $source.arguments.len $signature.parameters.len /= if {
-                0 !.Token "check FromCall: arguments.len /= parameters.len" error make Maybe<InferenceError>.Some break
-            }
-
             $ctx &source.arguments infer-over-array match {
                 case Error -> { make Maybe<InferenceError>.Some break }
                 case Success -> {}
             } @argument-types
+
+            $source.arguments.len $signature.parameters.len /= if {
+                $ctx &source.token $signature &source.generic-arguments &argument-types
+                call-argument-mismatch-error make Maybe<InferenceError>.Some break
+            }
 
             $ctx &signature.returns &source.generic-arguments $return-index $known fit-to-types match {
                 case UnificationResult.Success -> {}
@@ -3411,6 +3412,14 @@ fn infer-signature-application(
     signature: .Signature,
     return-index: i32,
 ) -> Result<Maybe<Type>, InferenceError> { block {
+    $arguments.len $signature.parameters.len /= if {
+        $ctx $arguments infer-over-array match {
+            case Error -> { make Result<Maybe<Type>, InferenceError>.Error break }
+            case Success -> {}
+        } @argument-types
+        $ctx $token $signature $generic-arguments &argument-types
+        call-argument-mismatch-error make Result<Maybe<Type>, InferenceError>.Error break
+    }
     0 loop {
         @i $i $arguments.len = if { make Maybe<InferenceError>.None break }
         $arguments $i Array:get<_> @argument

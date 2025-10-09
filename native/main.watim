@@ -37,16 +37,37 @@ fn print-usage-and-exit() {
     2 "The native Watim compiler\n\n" IO:write-all IO:check
     2 "Usage: watim <command> <watim-source-file> [options]\n" IO:write-all IO:check
     2 "Commands:\n" IO:write-all IO:check
-    2 "  lex       [path]            Lex code and print the Tokens.\n" IO:write-all IO:check
-    2 "  parse     [path]            Parse code and print the AST\n" IO:write-all IO:check
-    2 "  resolve   [path]            resolve all identifiers\n" IO:write-all IO:check
-    2 "  unstack   [path] [function] run unstacker for a function\n" IO:write-all IO:check
-    2 "  graph     [path] [function] generate graph from unstacked function\n" IO:write-all IO:check
-    2 "  infer     [path] [function] run type inference for function\n" IO:write-all IO:check
-    2 "  check     [path]            unstack and infer everything\n" IO:write-all IO:check
-    2 "  monomize  [path]            monomorphize all generic functions\n" IO:write-all IO:check
-    2 "  optimize  [path]            run optimization passes\n" IO:write-all IO:check
-    2 "  compile   [path]            compile to webassembly text format\n" IO:write-all IO:check
+    2 "  lex       Lex code and print the Tokens.\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  parse     Parse code and print the AST\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  resolve   resolve all identifiers\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  unstack   run unstacker for a function\n" IO:write-all IO:check
+    2 "    <path> <function>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  graph     generate graph from unstacked function\n" IO:write-all IO:check
+    2 "    <path> <function>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  infer     run type inference for function\n" IO:write-all IO:check
+    2 "    <path> <function> [log-level]\n" IO:write-all IO:check
+    2 "    log-level = 0 | 1 | 2\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  check     unstack and infer everything\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  monomize  monomorphize all generic functions\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  optimize  run optimization passes\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+    2 IO:newline
+    2 "  compile   compile to webassembly text format\n" IO:write-all IO:check
+    2 "    <path>\n" IO:write-all IO:check
+
     2 "Options:\n" IO:write-all IO:check
     2 "  -q, --quiet  Don't print any logs to stderr\n" IO:write-all IO:check
     1 Core:exit
@@ -94,6 +115,7 @@ struct UnstackArgs {
 struct InferArgs {
     file-path: Maybe<ByteSlice>
     function: ByteSlice
+    log-level: Inference:LogLevel
 }
 
 variant ProjectWideCommand {
@@ -166,7 +188,20 @@ fn parse-args(arena: .Arena) -> CliArgs {
             make ProjectWideCommand.Graph make CliCommand.ProjectWide break
         }
         $command ByteSlice:unpack "infer" Bytes:eq if {
-            $path &args 1 Array:remove<_> make InferArgs
+            $path
+            &args 1 Array:remove<_>
+            $args.len 1 gt if {
+                &args 1 Array:remove<_> @log-level
+                block (-> Inference:LogLevel) {
+                    $log-level ByteSlice:unpack "0" Bytes:eq if { make Inference:LogLevel.NoLogs break }
+                    $log-level ByteSlice:unpack "1" Bytes:eq if { make Inference:LogLevel.OnlyStructure break }
+                    $log-level ByteSlice:unpack "2" Bytes:eq if { make Inference:LogLevel.FullSources break }
+                    2 $log-level ByteSlice:unpack IO:write-all IO:check
+                    2 " is not a valid log-level, expected `0`, `1` or `2`\n" IO:write-all IO:check
+                    1 Core:exit Core:unreachable<Inference:LogLevel>
+                }
+            } else { make Inference:LogLevel.NoLogs }
+            make InferArgs
             make ProjectWideCommand.Infer make CliCommand.ProjectWide break
         }
         $command ByteSlice:unpack "check" Bytes:eq if {
@@ -452,7 +487,7 @@ fn run-project-wide-command(fs: .FileSystem, command: ProjectWideCommand) { bloc
                     @function
                     &arena &resolved-modules.values $function Unstacker:unstack-function @function
 
-                    &inference-arena &resolved-modules.values &module.globals.values &function Inference:infer-function match {
+                    &inference-arena &resolved-modules.values &module.globals.values &function $args.log-level Inference:infer-function match {
                         case Success -> {}
                         case Error -> {
                             & $file-path ~ InferenceError-with-file-path
@@ -640,7 +675,7 @@ fn infer-module(arena: .Arena, modules: .Array<Resolved:Module>, module: .Resolv
                 @function
                 $arena Arena:temp @temp @save
                 $temp $modules $function Unstacker:unstack-function @function
-                $arena $modules &module.globals.values &function Inference:infer-function match {
+                $arena $modules &module.globals.values &function make Inference:LogLevel.NoLogs Inference:infer-function match {
                     case Error -> { make Result<Array<Checked:FunctionOrExtern>, Inference:InferenceError>.Error break }
                     case Success -> {}
                 } make Checked:FunctionOrExtern.Function
